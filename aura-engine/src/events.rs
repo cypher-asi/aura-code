@@ -38,6 +38,10 @@ pub enum EngineEvent {
     LoopFinished {
         outcome: String,
     },
+    TaskOutputDelta {
+        task_id: TaskId,
+        delta: String,
+    },
     LogLine {
         message: String,
     },

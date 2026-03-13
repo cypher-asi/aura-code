@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 
 use aura_core::*;
-use aura_services::{AgentService, ClaudeClient, ProjectService, SessionService, TaskService};
+use aura_services::{AgentService, ClaudeClient, ClaudeStreamEvent, ProjectService, SessionService, TaskService};
 use aura_settings::SettingsService;
 use aura_store::RocksStore;
 
@@ -336,11 +336,27 @@ impl DevLoopEngine {
         let user_message =
             build_execution_prompt(&project, &spec, task, session, &codebase_snapshot);
 
+        let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
+        let event_tx = self.event_tx.clone();
+        let task_id = task.task_id;
+
+        let forwarder = tokio::spawn(async move {
+            while let Some(evt) = stream_rx.recv().await {
+                if let ClaudeStreamEvent::Delta(text) = evt {
+                    let _ = event_tx.send(EngineEvent::TaskOutputDelta {
+                        task_id,
+                        delta: text,
+                    });
+                }
+            }
+        });
+
         let response = self
             .claude_client
-            .complete(api_key, TASK_EXECUTION_SYSTEM_PROMPT, &user_message, 8192)
+            .complete_stream(api_key, TASK_EXECUTION_SYSTEM_PROMPT, &user_message, 8192, stream_tx)
             .await?;
 
+        let _ = forwarder.await;
         parse_execution_response(&response)
     }
 
@@ -411,11 +427,22 @@ struct RawFollowUp {
 pub fn parse_execution_response(response: &str) -> Result<TaskExecution, EngineError> {
     let trimmed = response.trim();
 
+    // 1) Try parsing the entire response as JSON
     if let Ok(parsed) = serde_json::from_str::<RawExecutionResponse>(trimmed) {
         return Ok(raw_to_execution(parsed));
     }
 
-    if let Some(json_str) = extract_fenced_json(trimmed) {
+    // 2) Try extracting from the last fenced JSON block (models sometimes wrap JSON in markdown)
+    if let Some(json_str) = extract_last_fenced_json(trimmed) {
+        if let Ok(parsed) = serde_json::from_str::<RawExecutionResponse>(&json_str) {
+            return Ok(raw_to_execution(parsed));
+        }
+    }
+
+    // 3) Scan for an embedded JSON object by finding balanced braces.
+    //    Handles the common case where the model emits thinking/reasoning
+    //    text before (or after) the actual JSON payload.
+    if let Some(json_str) = extract_balanced_json(trimmed) {
         if let Ok(parsed) = serde_json::from_str::<RawExecutionResponse>(&json_str) {
             return Ok(raw_to_execution(parsed));
         }
@@ -444,15 +471,79 @@ fn raw_to_execution(raw: RawExecutionResponse) -> TaskExecution {
     }
 }
 
-fn extract_fenced_json(text: &str) -> Option<String> {
+/// Extract JSON from the *last* fenced code block, which is more likely to
+/// contain the final structured output when the model thinks out loud first.
+fn extract_last_fenced_json(text: &str) -> Option<String> {
+    let mut result = None;
     let start_markers = ["```json", "```"];
+
     for marker in &start_markers {
-        if let Some(start) = text.find(marker) {
-            let after_marker = start + marker.len();
+        let mut search_from = 0;
+        while let Some(start) = text[search_from..].find(marker) {
+            let abs_start = search_from + start;
+            let after_marker = abs_start + marker.len();
             if let Some(end) = text[after_marker..].find("```") {
-                return Some(text[after_marker..after_marker + end].trim().to_string());
+                result = Some(text[after_marker..after_marker + end].trim().to_string());
+                search_from = after_marker + end + 3;
+            } else {
+                break;
             }
         }
+        if result.is_some() {
+            return result;
+        }
+    }
+    None
+}
+
+/// Walk through the text looking for `{` and track brace depth to find a
+/// complete top-level JSON object. Tries each `{` as a potential start so
+/// it can skip over braces that appear inside prose.
+fn extract_balanced_json(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        if bytes[i] == b'{' {
+            let mut depth: i32 = 0;
+            let mut in_string = false;
+            let mut escape_next = false;
+            let start = i;
+            let mut j = i;
+
+            while j < len {
+                let ch = bytes[j];
+                if escape_next {
+                    escape_next = false;
+                    j += 1;
+                    continue;
+                }
+                if ch == b'\\' && in_string {
+                    escape_next = true;
+                    j += 1;
+                    continue;
+                }
+                if ch == b'"' {
+                    in_string = !in_string;
+                } else if !in_string {
+                    if ch == b'{' {
+                        depth += 1;
+                    } else if ch == b'}' {
+                        depth -= 1;
+                        if depth == 0 {
+                            let candidate = &text[start..=j];
+                            if serde_json::from_str::<serde_json::Value>(candidate).is_ok() {
+                                return Some(candidate.to_string());
+                            }
+                            break;
+                        }
+                    }
+                }
+                j += 1;
+            }
+        }
+        i += 1;
     }
     None
 }

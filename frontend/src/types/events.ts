@@ -4,6 +4,7 @@ export type EngineEventType =
   | "task_completed"
   | "task_failed"
   | "task_became_ready"
+  | "task_output_delta"
   | "follow_up_task_created"
   | "session_rolled_over"
   | "loop_paused"
@@ -20,6 +21,7 @@ export interface EngineEvent {
   type: EngineEventType;
   task_id?: string;
   task_title?: string;
+  delta?: string;
   reason?: string;
   old_session_id?: string;
   new_session_id?: string;

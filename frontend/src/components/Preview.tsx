@@ -7,6 +7,7 @@ import { X, Sparkles, Loader2 } from "lucide-react";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
+import { useEventContext } from "../context/EventContext";
 import { TaskStatusIcon } from "./TaskStatusIcon";
 import { formatRelativeTime } from "../utils/format";
 import type { PreviewItem } from "../context/SidekickContext";
@@ -156,20 +157,72 @@ function SpecPreview({ spec }: { spec: import("../types").Spec }) {
 }
 
 function TaskPreview({ task }: { task: import("../types").Task }) {
+  const { subscribe } = useEventContext();
+  const [streamBuf, setStreamBuf] = useState("");
+  const streamRef = useRef<HTMLDivElement>(null);
+  const autoScrollRef = useRef(true);
+  const isActive = task.status === "in_progress";
+
+  useEffect(() => {
+    setStreamBuf("");
+  }, [task.task_id]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    setStreamBuf("");
+    return subscribe("task_output_delta", (e) => {
+      if (e.task_id !== task.task_id) return;
+      setStreamBuf((prev) => prev + (e.delta ?? ""));
+    });
+  }, [task.task_id, isActive, subscribe]);
+
+  useEffect(() => {
+    if (autoScrollRef.current && streamRef.current) {
+      streamRef.current.scrollTop = streamRef.current.scrollHeight;
+    }
+  }, [streamBuf]);
+
+  const handleStreamScroll = useCallback(() => {
+    const el = streamRef.current;
+    if (!el) return;
+    autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  }, []);
+
+  const displayOutput = isActive && streamBuf ? streamBuf : task.execution_notes;
+
   return (
     <>
       <div className={styles.taskMeta}>
-        <Text variant="muted" size="sm" as="span">Status</Text>
-        <span><TaskStatusIcon status={task.status} /></span>
-        <Text variant="muted" size="sm" as="span">Description</Text>
-        <Text size="sm" as="span">{task.description || "—"}</Text>
-        {task.execution_notes && (
-          <>
-            <Text variant="muted" size="sm" as="span">Exec Notes</Text>
-            <Text size="sm" as="span">{task.execution_notes}</Text>
-          </>
-        )}
+        <div className={styles.taskField}>
+          <Text variant="muted" size="sm">Status</Text>
+          <span><TaskStatusIcon status={task.status} /></span>
+        </div>
+        <div className={styles.taskField}>
+          <Text variant="muted" size="sm">Description</Text>
+          <Text size="sm">{task.description || "—"}</Text>
+        </div>
       </div>
+      {(displayOutput || isActive) && (
+        <div className={styles.taskStreamWrapper}>
+          <Text variant="muted" size="sm">
+            {isActive ? (
+              <span className={styles.streamingIndicator}>
+                <Loader2 size={12} className={styles.spinner} />
+                Output
+              </span>
+            ) : (
+              "Exec Notes"
+            )}
+          </Text>
+          <div
+            ref={streamRef}
+            className={styles.taskStream}
+            onScroll={handleStreamScroll}
+          >
+            {displayOutput || "Waiting for output..."}
+          </div>
+        </div>
+      )}
     </>
   );
 }
