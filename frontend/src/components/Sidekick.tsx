@@ -143,6 +143,7 @@ export function Sidekick() {
             ]}
             value={activeTab}
             onChange={(id) => setActiveTab(id as "specs" | "tasks" | "progress")}
+            tabClassName={styles.sidekickTab}
           />
           <div className={styles.actions}>
             <Button variant="filled" size="sm" iconOnly icon={<Play size={16} />} onClick={navigateToExecution} title="Start Dev Loop" />
