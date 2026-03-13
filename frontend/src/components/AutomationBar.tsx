@@ -3,6 +3,7 @@ import { Button, Text, ModalConfirm } from "@cypher-asi/zui";
 import { Play, Pause, Square } from "lucide-react";
 import { api } from "../api/client";
 import { useEventContext } from "../context/EventContext";
+import { useSidekick } from "../context/SidekickContext";
 import { StatusBadge } from "./StatusBadge";
 import type { ProjectId } from "../types";
 import styles from "./Sidekick.module.css";
@@ -15,6 +16,7 @@ interface AutomationBarProps {
 
 export function AutomationBar({ projectId }: AutomationBarProps) {
   const { subscribe } = useEventContext();
+  const { setActiveTab } = useSidekick();
   const [running, setRunning] = useState(false);
   const [paused, setPaused] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -52,6 +54,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
   const handleStart = async () => {
     try {
       setStarting(true);
+      setActiveTab("tasks");
       await api.startLoop(projectId);
       setRunning(true);
       setPaused(false);
