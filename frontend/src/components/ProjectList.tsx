@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { Project } from "../types";
-import styles from "./ProjectList.module.css";
+import { Item, ButtonPlus, Group, Text } from "@cypher-asi/zui";
+import { Circle } from "lucide-react";
 
 const STATUS_COLORS: Record<string, string> = {
-  planning: "var(--color-primary)",
+  planning: "var(--color-accent)",
   active: "var(--status-done)",
   paused: "var(--status-in-progress)",
   completed: "var(--status-done)",
@@ -22,39 +23,34 @@ export function ProjectList() {
   }, []);
 
   return (
-    <div className={styles.container}>
-      <div className={styles.header}>
-        <span className={styles.title}>Projects</span>
-        <button
-          className={styles.newBtn}
-          onClick={() => navigate("/new-project")}
-          title="New Project"
-        >
-          +
-        </button>
-      </div>
-      {projects.length === 0 ? (
-        <div className={styles.empty}>No projects yet</div>
-      ) : (
-        <ul className={styles.list}>
-          {projects.map((p) => (
-            <li key={p.project_id}>
-              <Link
-                to={`/projects/${p.project_id}`}
-                className={
-                  p.project_id === projectId ? styles.itemActive : styles.item
-                }
-              >
-                <span
-                  className={styles.statusDot}
-                  style={{ background: STATUS_COLORS[p.current_status] || "var(--status-pending)" }}
+    <div>
+      <Group
+        label="Projects"
+        stats={<ButtonPlus onClick={() => navigate("/new-project")} size="sm" title="New Project" />}
+      >
+        {projects.length === 0 ? (
+          <Text variant="muted" size="sm" style={{ padding: "var(--space-3) var(--space-4)" }}>
+            No projects yet
+          </Text>
+        ) : (
+          projects.map((p) => (
+            <Item
+              key={p.project_id}
+              selected={p.project_id === projectId}
+              onClick={() => navigate(`/projects/${p.project_id}`)}
+            >
+              <Item.Icon>
+                <Circle
+                  size={8}
+                  fill={STATUS_COLORS[p.current_status] || "var(--status-pending)"}
+                  stroke="none"
                 />
-                {p.name}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+              </Item.Icon>
+              <Item.Label>{p.name}</Item.Label>
+            </Item>
+          ))
+        )}
+      </Group>
     </div>
   );
 }
