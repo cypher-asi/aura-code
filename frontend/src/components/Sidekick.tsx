@@ -143,6 +143,7 @@ export function Sidekick() {
             ]}
             value={activeTab}
             onChange={(id) => setActiveTab(id as "specs" | "tasks" | "progress")}
+            className={styles.tabsFullBleed}
             tabClassName={styles.sidekickTab}
           />
           <div className={styles.actions}>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { ProjectProgress } from "../types";
 import { useProjectContext } from "../context/ProjectContext";
-import { PageEmptyState, Panel, Spinner, Text } from "@cypher-asi/zui";
+import { PageEmptyState, Panel, Text } from "@cypher-asi/zui";
 import styles from "./aura.module.css";
 
 export function ProgressDashboard() {
@@ -25,11 +25,7 @@ export function ProgressDashboard() {
     return () => clearInterval(interval);
   }, [projectId]);
 
-  if (loading) {
-    return <Spinner />;
-  }
-
-  if (!progress) {
+  if (!progress && !loading) {
     return <PageEmptyState title="No progress data" />;
   }
 

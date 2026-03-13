@@ -5,7 +5,7 @@ import type { EngineEvent } from "../types/events";
 import { useEventContext } from "../context/EventContext";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
-import { Explorer, PageEmptyState, Spinner } from "@cypher-asi/zui";
+import { Explorer, PageEmptyState } from "@cypher-asi/zui";
 import type { ExplorerNode } from "@cypher-asi/zui";
 import { FileText } from "lucide-react";
 
@@ -98,11 +98,7 @@ export function SpecList() {
     }
   };
 
-  if (loading) {
-    return <Spinner />;
-  }
-
-  if (mergedSpecs.length === 0) {
+  if (mergedSpecs.length === 0 && !loading) {
     return (
       <PageEmptyState
         icon={<FileText size={32} />}

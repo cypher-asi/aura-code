@@ -4,7 +4,7 @@ import type { Spec, Task } from "../types";
 import { StatusBadge } from "../components/StatusBadge";
 import { useProjectContext } from "../context/ProjectContext";
 import { useSidekick } from "../context/SidekickContext";
-import { Explorer, PageEmptyState, Spinner } from "@cypher-asi/zui";
+import { Explorer, PageEmptyState } from "@cypher-asi/zui";
 import type { ExplorerNode } from "@cypher-asi/zui";
 import { ListTodo } from "lucide-react";
 
@@ -90,11 +90,7 @@ export function TaskList() {
     [explorerData],
   );
 
-  if (loading) {
-    return <Spinner />;
-  }
-
-  if (tasks.length === 0) {
+  if (tasks.length === 0 && !loading) {
     return (
       <PageEmptyState
         icon={<ListTodo size={32} />}
