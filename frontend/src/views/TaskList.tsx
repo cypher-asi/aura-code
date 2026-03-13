@@ -4,37 +4,9 @@ import type { Spec, Task } from "../types";
 import { StatusBadge } from "../components/StatusBadge";
 import { useProjectContext } from "../context/ProjectContext";
 import { useSidekick } from "../context/SidekickContext";
-import { Page, PageEmptyState, Group, Item, Text } from "@cypher-asi/zui";
+import { Explorer, PageEmptyState, Spinner } from "@cypher-asi/zui";
+import type { ExplorerNode } from "@cypher-asi/zui";
 import { ListTodo } from "lucide-react";
-
-function TaskRow({ task, expanded, onToggle }: { task: Task; expanded: boolean; onToggle: () => void }) {
-  return (
-    <>
-      <Item onClick={onToggle} hasChildren expanded={expanded}>
-        <Item.Icon>
-          <Text variant="muted" size="xs" as="span">#{task.order_index}</Text>
-        </Item.Icon>
-        <Item.Label>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
-            <StatusBadge status={task.status} />
-            <span>{task.title}</span>
-          </span>
-        </Item.Label>
-        <Item.Chevron expanded={expanded} onToggle={onToggle} />
-      </Item>
-      {expanded && (
-        <div style={{ padding: "var(--space-2) var(--space-3) var(--space-3) var(--space-6)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)", lineHeight: 1.6 }}>
-          <p>{task.description}</p>
-          {task.execution_notes && (
-            <p style={{ marginTop: "var(--space-2)", color: "var(--color-text-muted)" }}>
-              <strong>Notes:</strong> {task.execution_notes}
-            </p>
-          )}
-        </div>
-      )}
-    </>
-  );
-}
 
 export function TaskList() {
   const ctx = useProjectContext();
@@ -43,7 +15,6 @@ export function TaskList() {
   const [localSpecs, setLocalSpecs] = useState<Spec[]>([]);
   const [localTasks, setLocalTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -70,53 +41,78 @@ export function TaskList() {
     return Array.from(map.values()).sort((a, b) => a.order_index - b.order_index);
   }, [localTasks, sidekick.tasks]);
 
-  const specMap = new Map(specs.map((s) => [s.spec_id, s]));
-  const groupedTasks = specs.map((spec) => ({
-    spec,
-    tasks: tasks.filter((t) => t.spec_id === spec.spec_id),
-  }));
-  const ungrouped = tasks.filter((t) => !specMap.has(t.spec_id));
+  const specMap = useMemo(() => new Map(specs.map((s) => [s.spec_id, s])), [specs]);
+
+  const groupedTasks = useMemo(
+    () =>
+      specs.map((spec) => ({
+        spec,
+        tasks: tasks.filter((t) => t.spec_id === spec.spec_id),
+      })),
+    [specs, tasks],
+  );
+
+  const ungrouped = useMemo(
+    () => tasks.filter((t) => !specMap.has(t.spec_id)),
+    [tasks, specMap],
+  );
+
+  const explorerData: ExplorerNode[] = useMemo(() => {
+    const specNodes: ExplorerNode[] = groupedTasks.map(({ spec, tasks: specTasks }) => ({
+      id: spec.spec_id,
+      label: spec.title,
+      children: specTasks.map((task) => ({
+        id: task.task_id,
+        label: task.title,
+        icon: <StatusBadge status={task.status} />,
+        metadata: { type: "task" },
+      })),
+    }));
+
+    if (ungrouped.length > 0) {
+      specNodes.push({
+        id: "__other__",
+        label: "Other",
+        children: ungrouped.map((task) => ({
+          id: task.task_id,
+          label: task.title,
+          icon: <StatusBadge status={task.status} />,
+          metadata: { type: "task" },
+        })),
+      });
+    }
+
+    return specNodes;
+  }, [groupedTasks, ungrouped]);
+
+  const defaultExpandedIds = useMemo(
+    () => explorerData.map((node) => node.id),
+    [explorerData],
+  );
+
+  if (loading) {
+    return <Spinner />;
+  }
+
+  if (tasks.length === 0) {
+    return (
+      <PageEmptyState
+        icon={<ListTodo size={32} />}
+        title="No tasks yet"
+        description="Tasks are created automatically when specs are generated."
+      />
+    );
+  }
 
   return (
-    <Page
-      title="Tasks"
-      subtitle={`${tasks.length} tasks across ${specs.length} specs`}
-      isLoading={loading}
-    >
-      {tasks.length === 0 ? (
-        <PageEmptyState
-          icon={<ListTodo size={32} />}
-          title="No tasks yet"
-          description="Tasks are created automatically when specs are generated."
-        />
-      ) : (
-        <>
-          {groupedTasks.map(({ spec, tasks: specTasks }) => (
-            <Group key={spec.spec_id} label={spec.title} count={specTasks.length}>
-              {specTasks.map((task) => (
-                <TaskRow
-                  key={task.task_id}
-                  task={task}
-                  expanded={expanded === task.task_id}
-                  onToggle={() => setExpanded(expanded === task.task_id ? null : task.task_id)}
-                />
-              ))}
-            </Group>
-          ))}
-          {ungrouped.length > 0 && (
-            <Group label="Other" count={ungrouped.length}>
-              {ungrouped.map((task) => (
-                <TaskRow
-                  key={task.task_id}
-                  task={task}
-                  expanded={expanded === task.task_id}
-                  onToggle={() => setExpanded(expanded === task.task_id ? null : task.task_id)}
-                />
-              ))}
-            </Group>
-          )}
-        </>
-      )}
-    </Page>
+    <Explorer
+      data={explorerData}
+      searchable
+      searchPlaceholder="Search tasks..."
+      enableDragDrop={false}
+      enableMultiSelect={false}
+      defaultExpandedIds={defaultExpandedIds}
+      onSelect={() => {}}
+    />
   );
 }
