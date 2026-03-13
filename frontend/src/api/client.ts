@@ -225,6 +225,7 @@ export const api = {
       `${BASE_URL}/api/projects/${projectId}/chat-sessions/${chatSessionId}/messages/stream`,
       {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content, action }),
       },
       {
