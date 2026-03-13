@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { api } from "../api/client";
 import type { Spec } from "../types";
-import { Spinner } from "@cypher-asi/zui";
-import styles from "./views.module.css";
+import { PageHeader, PageEmptyState, Panel, Breadcrumb, Spinner } from "@cypher-asi/zui";
+import styles from "./aura.module.css";
 
 export function SpecViewer() {
   const { projectId, specId } = useParams<{ projectId: string; specId: string }>();
+  const navigate = useNavigate();
   const [spec, setSpec] = useState<Spec | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -24,31 +25,25 @@ export function SpecViewer() {
 
   if (loading) return <Spinner />;
   if (!spec) {
-    return (
-      <div className={styles.emptyState}>
-        <h3>Spec not found</h3>
-      </div>
-    );
+    return <PageEmptyState title="Spec not found" />;
   }
 
   return (
     <div>
-      <div className={styles.viewHeader}>
-        <Link to={`/projects/${projectId}/specs`} style={{ fontSize: 13, marginBottom: 8, display: "inline-block" }}>
-          &larr; Back to specs
-        </Link>
-        <h1 className={styles.viewTitle}>
-          <span style={{ color: "var(--color-text-dim)", marginRight: 8 }}>
-            #{spec.order_index + 1}
-          </span>
-          {spec.title}
-        </h1>
-      </div>
-      <div className={`${styles.card} ${styles.markdown}`}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-          {spec.markdown_contents}
-        </ReactMarkdown>
-      </div>
+      <Breadcrumb
+        items={[
+          { label: "Specs", onClick: () => navigate(`/projects/${projectId}/specs`) },
+          { label: `#${spec.order_index + 1} ${spec.title}` },
+        ]}
+      />
+      <PageHeader title={spec.title} subtitle={`Spec #${spec.order_index + 1}`} />
+      <Panel variant="solid" border="solid" borderRadius="md" style={{ padding: "var(--space-6)" }}>
+        <div className={styles.markdown}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+            {spec.markdown_contents}
+          </ReactMarkdown>
+        </div>
+      </Panel>
     </div>
   );
 }

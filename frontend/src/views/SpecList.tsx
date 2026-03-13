@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { Spec } from "../types";
-import { Spinner } from "@cypher-asi/zui";
-import styles from "./views.module.css";
+import { Page, PageEmptyState, Item, Text } from "@cypher-asi/zui";
+import { FileText } from "lucide-react";
 
 export function SpecList() {
   const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
   const [specs, setSpecs] = useState<Spec[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -19,32 +20,27 @@ export function SpecList() {
       .finally(() => setLoading(false));
   }, [projectId]);
 
-  if (loading) return <Spinner />;
-
   return (
-    <div>
-      <div className={styles.viewHeader}>
-        <h1 className={styles.viewTitle}>Specs</h1>
-        <p className={styles.viewSubtitle}>{specs.length} spec files</p>
-      </div>
-
+    <Page title="Specs" subtitle={`${specs.length} spec files`} isLoading={loading}>
       {specs.length === 0 ? (
-        <div className={styles.emptyState}>
-          <h3>No specs generated</h3>
-          <p>Go to the project page and click "Generate Specs" to create them.</p>
-        </div>
+        <PageEmptyState
+          icon={<FileText size={32} />}
+          title="No specs generated"
+          description='Go to the project page and click "Generate Specs" to create them.'
+        />
       ) : (
         specs.map((spec) => (
-          <Link
+          <Item
             key={spec.spec_id}
-            to={`/projects/${projectId}/specs/${spec.spec_id}`}
-            className={styles.specItem}
+            onClick={() => navigate(`/projects/${projectId}/specs/${spec.spec_id}`)}
           >
-            <span className={styles.specOrder}>{spec.order_index + 1}</span>
-            <span className={styles.specTitle}>{spec.title}</span>
-          </Link>
+            <Item.Icon>
+              <Text variant="muted" size="xs" as="span">{spec.order_index + 1}</Text>
+            </Item.Icon>
+            <Item.Label>{spec.title}</Item.Label>
+          </Item>
         ))
       )}
-    </div>
+    </Page>
   );
 }

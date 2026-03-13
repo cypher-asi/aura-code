@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { ApiKeyInfo } from "../types";
 import { StatusBadge } from "../components/StatusBadge";
-import { Spinner } from "@cypher-asi/zui";
-import styles from "./views.module.css";
+import { Page, Panel, Heading, Label, Input, Button, Spinner, Text } from "@cypher-asi/zui";
+import styles from "./aura.module.css";
 
 export function SettingsView() {
   const [info, setInfo] = useState<ApiKeyInfo | null>(null);
@@ -49,58 +49,43 @@ export function SettingsView() {
   if (loading) return <Spinner />;
 
   return (
-    <div>
-      <div className={styles.viewHeader}>
-        <h1 className={styles.viewTitle}>Settings</h1>
-        <p className={styles.viewSubtitle}>Manage your Claude API key</p>
-      </div>
-
-      <div className={styles.card} style={{ maxWidth: 560 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Claude API Key</h3>
+    <Page title="Settings" subtitle="Manage your Claude API key">
+      <Panel variant="solid" border="solid" borderRadius="md" style={{ maxWidth: 560, padding: "var(--space-6)", display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+        <Heading level={4}>Claude API Key</Heading>
 
         {info && info.status !== "not_set" && (
-          <div className={styles.infoGrid} style={{ marginBottom: 16 }}>
-            <span className={styles.infoLabel}>Status</span>
+          <div className={styles.infoGrid} style={{ marginBottom: "var(--space-2)" }}>
+            <Text variant="muted" size="sm" as="span">Status</Text>
             <span><StatusBadge status={info.status} /></span>
-            <span className={styles.infoLabel}>Masked Key</span>
-            <span className={styles.infoValue} style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}>
-              {info.masked_key || "—"}
-            </span>
+            <Text variant="muted" size="sm" as="span">Masked Key</Text>
+            <Text size="sm" as="span" style={{ fontFamily: "var(--font-mono)" }}>{info.masked_key || "—"}</Text>
             {info.updated_at && (
               <>
-                <span className={styles.infoLabel}>Updated</span>
-                <span className={styles.infoValue}>{new Date(info.updated_at).toLocaleString()}</span>
+                <Text variant="muted" size="sm" as="span">Updated</Text>
+                <Text size="sm" as="span">{new Date(info.updated_at).toLocaleString()}</Text>
               </>
             )}
           </div>
         )}
 
-        <div className={styles.formGroup}>
-          <label className={styles.formLabel}>
+        <div>
+          <Label size="sm" uppercase={false} style={{ display: "block", marginBottom: "var(--space-1)" }}>
             {info?.status === "not_set" ? "Enter API Key" : "Update API Key"}
-          </label>
-          <input
-            className={styles.formInput}
-            type="password"
-            value={keyInput}
-            onChange={(e) => setKeyInput(e.target.value)}
-            placeholder="sk-ant-..."
-          />
+          </Label>
+          <Input type="password" value={keyInput} onChange={(e) => setKeyInput(e.target.value)} placeholder="sk-ant-..." mono />
         </div>
 
-        <div className={styles.actions}>
-          <button className={styles.btnPrimary} onClick={handleSave} disabled={saving || !keyInput.trim()}>
+        <div style={{ display: "flex", gap: "var(--space-2)" }}>
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={saving || !keyInput.trim()}>
             {saving ? <><Spinner size="sm" /> Saving...</> : "Save"}
-          </button>
+          </Button>
           {info && info.status !== "not_set" && (
-            <button className={styles.btnDanger} onClick={handleDelete}>
-              Delete Key
-            </button>
+            <Button variant="danger" size="sm" onClick={handleDelete}>Delete Key</Button>
           )}
         </div>
 
-        {message && <p className={styles.successText}>{message}</p>}
-      </div>
-    </div>
+        {message && <Text variant="secondary" size="sm">{message}</Text>}
+      </Panel>
+    </Page>
   );
 }

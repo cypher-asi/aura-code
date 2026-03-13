@@ -1,10 +1,12 @@
-import styles from "./views.module.css";
+import { PageEmptyState } from "@cypher-asi/zui";
+import { Rocket } from "lucide-react";
 
 export function HomeView() {
   return (
-    <div className={styles.emptyState}>
-      <h3>Welcome to Aura</h3>
-      <p>Select a project from the sidebar or create a new one to get started.</p>
-    </div>
+    <PageEmptyState
+      icon={<Rocket size={32} />}
+      title="Welcome to Aura"
+      description="Select a project from the sidebar or create a new one to get started."
+    />
   );
 }

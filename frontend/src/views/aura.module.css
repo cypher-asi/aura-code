@@ -1,0 +1,189 @@
+/* App-specific styles that ZUI does not cover */
+
+.infoGrid {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px 16px;
+  font-size: 14px;
+  align-items: center;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.statCard {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  padding: 16px;
+  text-align: center;
+}
+
+.statValue {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.statLabel {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.progressBarContainer {
+  background: var(--color-bg-secondary);
+  border-radius: 0;
+  height: 10px;
+  overflow: hidden;
+}
+
+.progressBarFill {
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 0.4s ease;
+}
+
+.progressStage {
+  font-size: 13px;
+  color: var(--color-accent);
+  animation: pulseFade 1.5s ease-in-out infinite;
+}
+
+@keyframes pulseFade {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.markdown {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.markdown h1 { font-size: 24px; margin: 24px 0 12px; }
+.markdown h2 { font-size: 20px; margin: 20px 0 10px; }
+.markdown h3 { font-size: 16px; margin: 16px 0 8px; }
+.markdown p { margin-bottom: 12px; }
+.markdown code {
+  font-family: var(--font-mono);
+  background: var(--color-bg-secondary);
+  padding: 2px 6px;
+  font-size: 13px;
+}
+.markdown pre {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  padding: 16px;
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+.markdown pre code { background: none; padding: 0; }
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+.markdown th, .markdown td {
+  border: 1px solid var(--color-border);
+  padding: 8px 12px;
+  text-align: left;
+}
+.markdown th {
+  background: var(--color-bg-secondary);
+  font-weight: 600;
+}
+.markdown ul, .markdown ol {
+  padding-left: 24px;
+  margin-bottom: 12px;
+}
+.markdown li { margin-bottom: 4px; }
+.markdown blockquote {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 16px;
+  color: var(--color-text-muted);
+  margin-bottom: 12px;
+}
+
+/* Execution-specific */
+.executionView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  height: 100%;
+}
+
+.panels {
+  display: flex;
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+}
+
+.panels > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.logContent {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.logLine {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.logTimestamp {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.logEvent {
+  color: var(--color-accent);
+}
+
+.feedList {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.progressSection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.progressBarSmall {
+  width: 120px;
+  height: 6px;
+  background: var(--color-bg-secondary);
+  overflow: hidden;
+}
+
+.progressBarSmallFill {
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 0.4s ease;
+}
+
+.progressPct {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  min-width: 36px;
+  text-align: right;
+}
+
+@media (max-width: 900px) {
+  .panels {
+    flex-direction: column;
+  }
+}
