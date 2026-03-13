@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Input, Button } from "@cypher-asi/zui";
+import { Input } from "@cypher-asi/zui";
 import { FolderOpen } from "lucide-react";
 import { api } from "../api/client";
 
@@ -26,24 +26,41 @@ export function PathInput({ value, onChange, placeholder, mode }: PathInputProps
   };
 
   return (
-    <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
-      <div style={{ flex: 1 }}>
-        <Input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          mono
-        />
-      </div>
-      <Button
-        variant="ghost"
-        size="sm"
+    <div style={{ position: "relative", width: "100%" }}>
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        mono
+        style={{ paddingRight: "var(--space-10)" }}
+      />
+      <button
+        type="button"
         onClick={handleBrowse}
         disabled={picking}
         title={mode === "folder" ? "Browse for folder" : "Browse for file"}
+        style={{
+          position: "absolute",
+          right: "var(--space-2)",
+          top: "50%",
+          transform: "translateY(-50%)",
+          background: "none",
+          border: "none",
+          color: "var(--color-text-secondary)",
+          cursor: picking ? "default" : "pointer",
+          opacity: picking ? 0.4 : 0.6,
+          padding: "var(--space-1)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: "var(--radius-sm)",
+          transition: "opacity var(--transition-fast)",
+        }}
+        onMouseEnter={(e) => { if (!picking) e.currentTarget.style.opacity = "1"; }}
+        onMouseLeave={(e) => { if (!picking) e.currentTarget.style.opacity = "0.6"; }}
       >
         <FolderOpen size={16} />
-      </Button>
+      </button>
     </div>
   );
 }
