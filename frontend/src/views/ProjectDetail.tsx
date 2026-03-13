@@ -6,8 +6,8 @@ import type { EngineEvent } from "../types/events";
 import { useEventContext } from "../context/EventContext";
 import { useSidekick } from "../context/SidekickContext";
 import { StatusBadge } from "../components/StatusBadge";
-import { PageHeader, PageEmptyState, Panel, Button, Spinner, Tabs, Text } from "@cypher-asi/zui";
-import { Play, Archive, FileText, ListChecks } from "lucide-react";
+import { PageHeader, PageEmptyState, Button, Spinner, Tabs, Text } from "@cypher-asi/zui";
+import { Play, Archive, FileText, ListChecks, Info } from "lucide-react";
 import styles from "./aura.module.css";
 
 export function ProjectDetail() {
@@ -115,22 +115,29 @@ export function ProjectDetail() {
             {project.current_status !== "archived" && (
               <Button variant="danger" size="sm" iconOnly icon={<Archive size={16} />} onClick={handleArchive} title="Archive" />
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              icon={<Info size={16} />}
+              onClick={() => sidekick.toggleInfo(
+                "Project Info",
+                <div className={styles.infoGrid}>
+                  <Text variant="muted" size="sm" as="span">Status</Text>
+                  <span><StatusBadge status={project.current_status} /></span>
+                  <Text variant="muted" size="sm" as="span">Folder</Text>
+                  <Text size="sm" as="span">{project.linked_folder_path || "—"}</Text>
+                  <Text variant="muted" size="sm" as="span">Requirements</Text>
+                  <Text size="sm" as="span">{project.requirements_doc_path || "—"}</Text>
+                  <Text variant="muted" size="sm" as="span">Created</Text>
+                  <Text size="sm" as="span">{new Date(project.created_at).toLocaleString()}</Text>
+                </div>,
+              )}
+              title="Project Info"
+            />
           </div>
         }
       />
-
-      <Panel variant="solid" border="solid" borderRadius="md" style={{ padding: "var(--space-5)", marginBottom: "var(--space-5)" }}>
-        <div className={styles.infoGrid}>
-          <Text variant="muted" size="sm" as="span">Status</Text>
-          <span><StatusBadge status={project.current_status} /></span>
-          <Text variant="muted" size="sm" as="span">Folder</Text>
-          <Text size="sm" as="span">{project.linked_folder_path || "—"}</Text>
-          <Text variant="muted" size="sm" as="span">Requirements</Text>
-          <Text size="sm" as="span">{project.requirements_doc_path || "—"}</Text>
-          <Text variant="muted" size="sm" as="span">Created</Text>
-          <Text size="sm" as="span">{new Date(project.created_at).toLocaleString()}</Text>
-        </div>
-      </Panel>
 
       {message && <Text variant="secondary" size="sm" style={{ marginBottom: "var(--space-4)" }}>{message}</Text>}
 
