@@ -1,2 +1,4 @@
 /target
 .cursor
+frontend/node_modules
+frontend/dist

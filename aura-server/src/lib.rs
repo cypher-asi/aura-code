@@ -4,7 +4,7 @@ pub mod handlers;
 pub mod router;
 pub mod state;
 
-pub use router::create_router;
+pub use router::{create_router, create_router_with_frontend};
 pub use state::AppState;
 
 use std::path::Path;

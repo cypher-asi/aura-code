@@ -1,17 +1,24 @@
+use std::path::PathBuf;
+
 use axum::routing::{get, post};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::{ServeDir, ServeFile};
 
 use crate::handlers::{agents, dev_loop, projects, settings, specs, tasks, ws};
 use crate::state::AppState;
 
 pub fn create_router(state: AppState) -> Router {
+    create_router_with_frontend(state, None)
+}
+
+pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    Router::new()
+    let api_router = Router::new()
         // Settings
         .route(
             "/api/settings/api-key",
@@ -94,5 +101,14 @@ pub fn create_router(state: AppState) -> Router {
         // WebSocket
         .route("/ws/events", get(ws::ws_events))
         .layer(cors)
-        .with_state(state)
+        .with_state(state);
+
+    match frontend_dir {
+        Some(dir) => {
+            let index = dir.join("index.html");
+            api_router
+                .fallback_service(ServeDir::new(&dir).not_found_service(ServeFile::new(index)))
+        }
+        None => api_router,
+    }
 }
