@@ -324,6 +324,28 @@ impl ClaudeClient {
         Ok(accumulated_text)
     }
 
+    /// Streaming variant that pre-fills the assistant turn with `prefill` (e.g. `"{"`)
+    /// to steer the model toward structured output. The prefill is prepended to the
+    /// returned text so callers receive the complete response.
+    pub async fn complete_stream_with_prefill(
+        &self,
+        api_key: &str,
+        system_prompt: &str,
+        user_message: &str,
+        max_tokens: u32,
+        prefill: &str,
+        event_tx: mpsc::UnboundedSender<ClaudeStreamEvent>,
+    ) -> Result<String, ClaudeClientError> {
+        let messages = vec![
+            ("user".to_string(), user_message.to_string()),
+            ("assistant".to_string(), prefill.to_string()),
+        ];
+        let continuation = self
+            .complete_stream_multi(api_key, system_prompt, messages, max_tokens, event_tx)
+            .await?;
+        Ok(format!("{prefill}{continuation}"))
+    }
+
     /// Multi-turn streaming variant. Accepts a full conversation history as
     /// `(role, content)` pairs and streams the assistant response via `event_tx`.
     pub async fn complete_stream_multi(
