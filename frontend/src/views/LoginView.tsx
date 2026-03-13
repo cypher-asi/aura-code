@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
-import { Panel, Input, Button, Tabs, Heading, Text, Spinner } from "@cypher-asi/zui";
+import { Panel, Input, Button, Tabs, Heading, Text, Spinner, Topbar, ButtonWindow } from "@cypher-asi/zui";
 import { useAuth } from "../context/AuthContext";
 import { ApiClientError } from "../api/client";
+import { windowCommand } from "../lib/windowCommand";
 import styles from "./LoginView.module.css";
 
 type AuthTab = "signin" | "register";
@@ -67,7 +68,20 @@ export function LoginView() {
   }
 
   return (
-    <div className={styles.container}>
+    <div className={styles.page}>
+      <Topbar
+        className="titlebar-drag"
+        onDoubleClick={() => windowCommand("maximize")}
+        title="AURA"
+        actions={
+          <div className="titlebar-no-drag" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+            <ButtonWindow action="minimize" size="sm" onClick={() => windowCommand("minimize")} />
+            <ButtonWindow action="maximize" size="sm" onClick={() => windowCommand("maximize")} />
+            <ButtonWindow action="close" size="sm" onClick={() => windowCommand("close")} />
+          </div>
+        }
+      />
+      <div className={styles.container}>
       <Panel variant="solid" border="solid" borderRadius="lg" className={styles.card}>
         <div className={styles.header}>
           <Heading level={2}>
@@ -138,6 +152,7 @@ export function LoginView() {
           </Button>
         </form>
       </Panel>
+      </div>
     </div>
   );
 }
