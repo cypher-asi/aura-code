@@ -11,6 +11,7 @@ export function Sidekick() {
     isOpen,
     mode,
     title,
+    streamedText,
     streamStage,
     tokenCount,
     savedSpecs,
@@ -23,9 +24,9 @@ export function Sidekick() {
 
   useEffect(() => {
     if (mode === "streaming" && streamEndRef.current) {
-      streamEndRef.current.scrollIntoView({ behavior: "smooth" });
+      streamEndRef.current.scrollIntoView({ behavior: "auto" });
     }
-  }, [savedSpecs, streamStage, mode]);
+  }, [streamedText, savedSpecs, mode]);
 
   return (
     <Drawer
@@ -53,7 +54,14 @@ export function Sidekick() {
               </div>
             )}
             <div className={styles.streamArea}>
-              {savedSpecs.length > 0 ? (
+              {streamedText ? (
+                <div className={styles.streamText}>{streamedText}</div>
+              ) : (
+                <Text variant="muted" size="sm">
+                  Waiting for response...
+                </Text>
+              )}
+              {savedSpecs.length > 0 &&
                 savedSpecs.map((spec) => (
                   <div key={spec.spec_id} className={styles.savedSpecBlock}>
                     <div className={styles.savedSpecTitle}>{spec.title}</div>
@@ -66,12 +74,7 @@ export function Sidekick() {
                       </ReactMarkdown>
                     </div>
                   </div>
-                ))
-              ) : (
-                <Text variant="muted" size="sm">
-                  Waiting for response...
-                </Text>
-              )}
+                ))}
               <div ref={streamEndRef} />
             </div>
           </>

@@ -28,6 +28,15 @@
   padding: var(--space-4);
 }
 
+.streamText {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text-secondary);
+}
+
 .viewerArea {
   flex: 1;
   overflow-y: auto;
