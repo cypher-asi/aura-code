@@ -141,19 +141,21 @@ export function ProjectList() {
       projects.map((p) => ({
         id: p.project_id,
         label: p.name,
-        icon: <FolderOpen size={14} />,
         suffix: (
-          <button
-            type="button"
-            className={styles.newChatButton}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleNewSession(p.project_id);
-            }}
-            aria-label="New Chat"
-          >
-            <Plus size={14} />
-          </button>
+          <span className={styles.projectSuffix}>
+            <FolderOpen size={14} className={styles.projectFolderIcon} />
+            <button
+              type="button"
+              className={styles.newChatButton}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleNewSession(p.project_id);
+              }}
+              aria-label="New Chat"
+            >
+              <Plus size={14} />
+            </button>
+          </span>
         ),
         metadata: { type: "project" },
         children:

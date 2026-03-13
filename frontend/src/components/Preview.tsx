@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -43,8 +44,10 @@ function previewTitle(item: PreviewItem): string {
 
 export function Preview() {
   const { previewItem, closePreview } = useSidekick();
+  const lastItem = useRef<PreviewItem | null>(null);
 
-  if (!previewItem) return null;
+  if (previewItem) lastItem.current = previewItem;
+  const displayItem = previewItem ?? lastItem.current;
 
   return (
     <Sidebar
@@ -55,18 +58,21 @@ export function Preview() {
       minWidth={200}
       maxWidth={600}
       storageKey="aura-preview"
+      collapsed={!previewItem}
       header={
-        <div className={styles.previewHeader}>
-          <Text size="sm" className={styles.previewTitle} style={{ fontWeight: 600 }}>
-            {previewTitle(previewItem)}
-          </Text>
-          <Button variant="ghost" size="sm" iconOnly icon={<X size={14} />} onClick={closePreview} />
-        </div>
+        displayItem ? (
+          <div className={styles.previewHeader}>
+            <Text size="sm" className={styles.previewTitle} style={{ fontWeight: 600 }}>
+              {previewTitle(displayItem)}
+            </Text>
+            <Button variant="ghost" size="sm" iconOnly icon={<X size={14} />} onClick={closePreview} />
+          </div>
+        ) : undefined
       }
     >
       <div className={styles.previewBody}>
-        {previewItem.kind === "spec" && <SpecPreview spec={previewItem.spec} />}
-        {previewItem.kind === "task" && <TaskPreview task={previewItem.task} />}
+        {displayItem?.kind === "spec" && <SpecPreview spec={displayItem.spec} />}
+        {displayItem?.kind === "task" && <TaskPreview task={displayItem.task} />}
       </div>
     </Sidebar>
   );

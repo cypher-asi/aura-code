@@ -50,6 +50,14 @@
   overflow: hidden;
 }
 
+.sidekickBody [class*="label"] {
+  text-align: left;
+}
+
+.sidekickBody [class*="itemContent"] {
+  padding-right: var(--space-6, 24px);
+}
+
 .emptyState {
   display: flex;
   align-items: center;
