@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Panel, Input, Button, Tabs, Heading, Text, Spinner, Topbar, ButtonWindow } from "@cypher-asi/zui";
 import { useAuth } from "../context/AuthContext";
 import { ApiClientError } from "../api/client";
@@ -14,6 +15,9 @@ const AUTH_TABS = [
 
 export function LoginView() {
   const { login, register } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? "/";
   const [activeTab, setActiveTab] = useState<AuthTab>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -54,6 +58,7 @@ export function LoginView() {
       } else {
         await register(email, password);
       }
+      navigate(from, { replace: true });
     } catch (err) {
       if (err instanceof ApiClientError) {
         setError(err.body.error);
