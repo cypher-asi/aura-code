@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { api } from "../api/client";
 import { Modal, Input, Button, Spinner, Text } from "@cypher-asi/zui";
 
@@ -17,7 +17,7 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
   const [error, setError] = useState("");
   const [nameError, setNameError] = useState("");
 
-  const reset = () => {
+  const reset = useCallback(() => {
     setName("");
     setDescription("");
     setFolderPath("");
@@ -25,12 +25,12 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
     setLoading(false);
     setError("");
     setNameError("");
-  };
+  }, []);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     reset();
     onClose();
-  };
+  }, [reset, onClose]);
 
   const handleSubmit = async () => {
     if (!name.trim()) {
