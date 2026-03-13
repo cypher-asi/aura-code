@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Spec, Task } from "../types";
 import { StatusBadge } from "../components/StatusBadge";
+import { useProjectContext } from "../context/ProjectContext";
 import { Page, PageEmptyState, Group, Item, Text } from "@cypher-asi/zui";
 import { ListTodo } from "lucide-react";
 
@@ -36,7 +36,8 @@ function TaskRow({ task, expanded, onToggle }: { task: Task; expanded: boolean; 
 }
 
 export function TaskList() {
-  const { projectId } = useParams<{ projectId: string }>();
+  const ctx = useProjectContext();
+  const projectId = ctx?.project.project_id;
   const [specs, setSpecs] = useState<Spec[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +71,7 @@ export function TaskList() {
         <PageEmptyState
           icon={<ListTodo size={32} />}
           title="No tasks yet"
-          description='Go to the project page and click "Extract Tasks" to create them.'
+          description='Click the "Extract Tasks" button above to create them.'
         />
       ) : (
         <>

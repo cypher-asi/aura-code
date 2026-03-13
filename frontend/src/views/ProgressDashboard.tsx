@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { ProjectProgress } from "../types";
+import { useProjectContext } from "../context/ProjectContext";
 import { Page, PageEmptyState, Panel, Text } from "@cypher-asi/zui";
 import styles from "./aura.module.css";
 
 export function ProgressDashboard() {
-  const { projectId } = useParams<{ projectId: string }>();
+  const ctx = useProjectContext();
+  const projectId = ctx?.project.project_id;
   const [progress, setProgress] = useState<ProjectProgress | null>(null);
   const [loading, setLoading] = useState(true);
 

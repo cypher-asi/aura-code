@@ -1,15 +1,16 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Spec } from "../types";
 import type { EngineEvent } from "../types/events";
 import { useEventContext } from "../context/EventContext";
 import { useSidekick } from "../context/SidekickContext";
+import { useProjectContext } from "../context/ProjectContext";
 import { Page, PageEmptyState, Item, Text } from "@cypher-asi/zui";
 import { FileText } from "lucide-react";
 
 export function SpecList() {
-  const { projectId } = useParams<{ projectId: string }>();
+  const ctx = useProjectContext();
+  const projectId = ctx?.project.project_id;
   const [specs, setSpecs] = useState<Spec[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -75,7 +76,7 @@ export function SpecList() {
         <PageEmptyState
           icon={<FileText size={32} />}
           title="No specs generated"
-          description='Go to the project page and click "Generate Specs" to create them.'
+          description='Click the "Generate Specs" button above to create them.'
         />
       ) : (
         specs.map((spec) => (
