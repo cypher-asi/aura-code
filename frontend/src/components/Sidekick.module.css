@@ -57,12 +57,6 @@
   height: 100%;
 }
 
-.viewerArea {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--space-4);
-}
-
 .infoArea {
   flex: 1;
   overflow-y: auto;
@@ -74,55 +68,6 @@
   grid-template-columns: 140px 1fr;
   gap: var(--space-2) var(--space-3);
   align-items: baseline;
-}
-
-.markdown {
-  font-size: 14px;
-  line-height: 1.7;
-}
-.markdown h1 { font-size: 24px; margin: 24px 0 12px; }
-.markdown h2 { font-size: 20px; margin: 20px 0 10px; }
-.markdown h3 { font-size: 16px; margin: 16px 0 8px; }
-.markdown p { margin-bottom: 12px; }
-.markdown code {
-  font-family: var(--font-mono);
-  background: var(--color-bg-secondary);
-  padding: 2px 6px;
-  font-size: 13px;
-}
-.markdown pre {
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  padding: 16px;
-  overflow-x: auto;
-  margin-bottom: 16px;
-}
-.markdown pre code { background: none; padding: 0; }
-.markdown table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 16px;
-  font-size: 13px;
-}
-.markdown th, .markdown td {
-  border: 1px solid var(--color-border);
-  padding: 8px 12px;
-  text-align: left;
-}
-.markdown th {
-  background: var(--color-bg-secondary);
-  font-weight: 600;
-}
-.markdown ul, .markdown ol {
-  padding-left: 24px;
-  margin-bottom: 12px;
-}
-.markdown li { margin-bottom: 4px; }
-.markdown blockquote {
-  border-left: 3px solid var(--color-accent);
-  padding-left: 16px;
-  color: var(--color-text-muted);
-  margin-bottom: 12px;
 }
 
 .stopIcon {
