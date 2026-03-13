@@ -114,7 +114,6 @@ export function ProjectList() {
             ? sessionsByProject[p.project_id].map((s) => ({
                 id: s.chat_session_id,
                 label: s.title,
-                icon: <MessageSquare size={12} />,
                 metadata: { type: "session", projectId: p.project_id },
               }))
             : [{ id: `_load_${p.project_id}`, label: "Loading...", disabled: true }],
