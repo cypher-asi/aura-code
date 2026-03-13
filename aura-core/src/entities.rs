@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::enums::{AgentStatus, ProjectStatus, SessionStatus, TaskStatus};
-use crate::ids::{AgentId, ProjectId, SessionId, SpecId, TaskId};
+use crate::enums::{AgentStatus, ChatRole, ProjectStatus, SessionStatus, TaskStatus};
+use crate::ids::{AgentId, ChatMessageId, ChatSessionId, ProjectId, SessionId, SpecId, TaskId};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
@@ -66,4 +66,23 @@ pub struct Session {
     pub status: SessionStatus,
     pub started_at: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChatSession {
+    pub chat_session_id: ChatSessionId,
+    pub project_id: ProjectId,
+    pub title: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub message_id: ChatMessageId,
+    pub chat_session_id: ChatSessionId,
+    pub project_id: ProjectId,
+    pub role: ChatRole,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
 }

@@ -54,3 +54,5 @@ define_id!(SpecId);
 define_id!(TaskId);
 define_id!(AgentId);
 define_id!(SessionId);
+define_id!(ChatSessionId);
+define_id!(ChatMessageId);
