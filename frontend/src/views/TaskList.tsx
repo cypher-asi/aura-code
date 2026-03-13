@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Spec, Task } from "../types";
 import { StatusBadge } from "../components/StatusBadge";
-import { Spinner } from "../components/Spinner";
+import { Spinner } from "@cypher-asi/zui";
 import styles from "./views.module.css";
 
 export function TaskList() {
@@ -24,7 +24,7 @@ export function TaskList() {
       .finally(() => setLoading(false));
   }, [projectId]);
 
-  if (loading) return <Spinner size={28} />;
+  if (loading) return <Spinner />;
 
   const specMap = new Map(specs.map((s) => [s.spec_id, s]));
   const groupedTasks = specs.map((spec) => ({

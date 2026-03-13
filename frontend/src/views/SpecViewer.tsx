@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { api } from "../api/client";
 import type { Spec } from "../types";
-import { Spinner } from "../components/Spinner";
+import { Spinner } from "@cypher-asi/zui";
 import styles from "./views.module.css";
 
 export function SpecViewer() {
@@ -22,7 +22,7 @@ export function SpecViewer() {
       .finally(() => setLoading(false));
   }, [projectId, specId]);
 
-  if (loading) return <Spinner size={28} />;
+  if (loading) return <Spinner />;
   if (!spec) {
     return (
       <div className={styles.emptyState}>

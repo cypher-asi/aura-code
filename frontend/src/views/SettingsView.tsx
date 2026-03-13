@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { ApiKeyInfo } from "../types";
 import { StatusBadge } from "../components/StatusBadge";
-import { Spinner } from "../components/Spinner";
+import { Spinner } from "@cypher-asi/zui";
 import styles from "./views.module.css";
 
 export function SettingsView() {
@@ -46,7 +46,7 @@ export function SettingsView() {
     }
   };
 
-  if (loading) return <Spinner size={28} />;
+  if (loading) return <Spinner />;
 
   return (
     <div>
@@ -90,7 +90,7 @@ export function SettingsView() {
 
         <div className={styles.actions}>
           <button className={styles.btnPrimary} onClick={handleSave} disabled={saving || !keyInput.trim()}>
-            {saving ? <><Spinner size={14} /> Saving...</> : "Save"}
+            {saving ? <><Spinner size="sm" /> Saving...</> : "Save"}
           </button>
           {info && info.status !== "not_set" && (
             <button className={styles.btnDanger} onClick={handleDelete}>

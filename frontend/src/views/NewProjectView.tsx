@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { Spinner } from "../components/Spinner";
+import { Spinner } from "@cypher-asi/zui";
 import styles from "./views.module.css";
 
 export function NewProjectView() {
@@ -84,7 +84,7 @@ export function NewProjectView() {
           {error && <p className={styles.errorText}>{error}</p>}
           <div className={styles.actions} style={{ marginTop: 16 }}>
             <button type="submit" className={styles.btnPrimary} disabled={loading}>
-              {loading ? <><Spinner size={14} /> Creating...</> : "Create Project"}
+              {loading ? <><Spinner size="sm" /> Creating...</> : "Create Project"}
             </button>
             <button
               type="button"

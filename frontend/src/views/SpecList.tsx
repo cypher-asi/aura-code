@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { Spec } from "../types";
-import { Spinner } from "../components/Spinner";
+import { Spinner } from "@cypher-asi/zui";
 import styles from "./views.module.css";
 
 export function SpecList() {
@@ -19,7 +19,7 @@ export function SpecList() {
       .finally(() => setLoading(false));
   }, [projectId]);
 
-  if (loading) return <Spinner size={28} />;
+  if (loading) return <Spinner />;
 
   return (
     <div>

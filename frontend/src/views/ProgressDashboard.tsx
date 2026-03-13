@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { ProjectProgress } from "../types";
-import { Spinner } from "../components/Spinner";
+import { Spinner } from "@cypher-asi/zui";
 import styles from "./views.module.css";
 
 export function ProgressDashboard() {
@@ -24,7 +24,7 @@ export function ProgressDashboard() {
     return () => clearInterval(interval);
   }, [projectId]);
 
-  if (loading) return <Spinner size={28} />;
+  if (loading) return <Spinner />;
   if (!progress) {
     return (
       <div className={styles.emptyState}>

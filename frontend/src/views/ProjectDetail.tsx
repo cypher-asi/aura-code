@@ -5,7 +5,7 @@ import type { Project } from "../types";
 import type { EngineEvent } from "../types/events";
 import { useEventContext } from "../context/EventContext";
 import { StatusBadge } from "../components/StatusBadge";
-import { Spinner } from "../components/Spinner";
+import { Spinner } from "@cypher-asi/zui";
 import styles from "./views.module.css";
 
 export function ProjectDetail() {
@@ -55,7 +55,7 @@ export function ProjectDetail() {
       .finally(() => setLoading(false));
   }, [projectId]);
 
-  if (loading) return <Spinner size={28} />;
+  if (loading) return <Spinner />;
   if (!project) {
     return (
       <div className={styles.emptyState}>
@@ -125,7 +125,7 @@ export function ProjectDetail() {
           onClick={handleGenerateSpecs}
           disabled={genLoading}
         >
-          {genLoading ? <><Spinner size={14} /> Generating...</> : "Generate Specs"}
+          {genLoading ? <><Spinner size="sm" /> Generating...</> : "Generate Specs"}
         </button>
         {genLoading && genStage && (
           <span className={styles.progressStage}>{genStage}</span>
@@ -135,7 +135,7 @@ export function ProjectDetail() {
           onClick={handleExtractTasks}
           disabled={extractLoading}
         >
-          {extractLoading ? <><Spinner size={14} /> Extracting...</> : "Extract Tasks"}
+          {extractLoading ? <><Spinner size="sm" /> Extracting...</> : "Extract Tasks"}
         </button>
         <button
           className={styles.btnSuccess}

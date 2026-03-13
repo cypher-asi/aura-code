@@ -1,16 +1,36 @@
-import styles from "./StatusBadge.module.css";
+import { Badge } from "@cypher-asi/zui";
+import type { BadgeVariant } from "@cypher-asi/zui";
+
+const STATUS_TO_VARIANT: Record<string, BadgeVariant> = {
+  pending: "pending",
+  ready: "provisioning",
+  in_progress: "running",
+  done: "stopped",
+  failed: "error",
+  blocked: "error",
+  planning: "pending",
+  active: "running",
+  paused: "pending",
+  completed: "stopped",
+  archived: "stopped",
+  idle: "pending",
+  working: "running",
+  stopped: "stopped",
+  error: "error",
+};
 
 interface StatusBadgeProps {
   status: string;
 }
 
 export function StatusBadge({ status }: StatusBadgeProps) {
-  const cls = styles[status] || styles.pending;
+  const variant = STATUS_TO_VARIANT[status] || "pending";
   const label = status.replace(/_/g, " ");
+  const pulse = status === "in_progress" || status === "working" || status === "active";
+
   return (
-    <span className={`${styles.badge} ${cls}`}>
-      <span className={styles.dot} />
+    <Badge variant={variant} pulse={pulse}>
       {label}
-    </span>
+    </Badge>
   );
 }
