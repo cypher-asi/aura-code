@@ -1,6 +1,3 @@
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
 import { useState, useRef, useEffect } from "react";
 import { Sidebar, Tabs, Button, Text, Menu } from "@cypher-asi/zui";
 import { Play, Archive, Info, ArrowLeft, Ellipsis } from "lucide-react";
@@ -33,24 +30,8 @@ function InfoPanel({ project, onClose }: { project: import("../types").Project; 
   );
 }
 
-function SpecViewer({ spec, onBack }: { spec: import("../types").Spec; onBack: () => void }) {
-  return (
-    <div className={styles.viewerArea}>
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-4)" }}>
-        <Button variant="ghost" size="sm" iconOnly icon={<ArrowLeft size={14} />} onClick={onBack} />
-        <Text size="sm" style={{ fontWeight: 600 }}>{spec.title}</Text>
-      </div>
-      <div className={styles.markdown}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-          {spec.markdown_contents}
-        </ReactMarkdown>
-      </div>
-    </div>
-  );
-}
-
 export function Sidekick() {
-  const { activeTab, setActiveTab, selectedSpec, clearSpec, showInfo, toggleInfo } = useSidekick();
+  const { activeTab, setActiveTab, showInfo, toggleInfo } = useSidekick();
   const ctx = useProjectContext();
   const [moreOpen, setMoreOpen] = useState(false);
   const moreBtnRef = useRef<HTMLDivElement>(null);
@@ -98,22 +79,6 @@ export function Sidekick() {
         storageKey="aura-sidekick"
       >
         <InfoPanel project={project} onClose={() => toggleInfo("", null)} />
-      </Sidebar>
-    );
-  }
-
-  if (selectedSpec) {
-    return (
-      <Sidebar
-        className={styles.sidekickPanel}
-        resizable
-        resizePosition="left"
-        defaultWidth={420}
-        minWidth={300}
-        maxWidth={700}
-        storageKey="aura-sidekick"
-      >
-        <SpecViewer spec={selectedSpec} onBack={clearSpec} />
       </Sidebar>
     );
   }
