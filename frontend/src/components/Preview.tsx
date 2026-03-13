@@ -2,8 +2,8 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { Sidebar, Button, Text } from "@cypher-asi/zui";
-import { X, Sparkles, Loader2 } from "lucide-react";
+import { Sidebar, Button, Text, PageEmptyState } from "@cypher-asi/zui";
+import { X, Sparkles, Loader2, Zap } from "lucide-react";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
@@ -86,16 +86,26 @@ function SprintPreview({ sprint }: { sprint: Sprint }) {
         }}
         placeholder="Sprint title"
       />
-      <textarea
-        className={styles.sprintPromptArea}
-        value={prompt}
-        onChange={(e) => {
-          setPrompt(e.target.value);
-          save({ prompt: e.target.value });
-          propagate({ prompt: e.target.value });
-        }}
-        placeholder="Write your sprint document here..."
-      />
+      {!generatedAt && !prompt ? (
+        <div className={styles.sprintEmptyState}>
+          <PageEmptyState
+            icon={<Zap size={28} />}
+            title="No sprint generated"
+            description="Click Generate to expand this sprint with AI, or write your sprint document manually."
+          />
+        </div>
+      ) : (
+        <textarea
+          className={styles.sprintPromptArea}
+          value={prompt}
+          onChange={(e) => {
+            setPrompt(e.target.value);
+            save({ prompt: e.target.value });
+            propagate({ prompt: e.target.value });
+          }}
+          placeholder="Write your sprint document here..."
+        />
+      )}
       <div className={styles.sprintFooter}>
         {generatedAt && (
           <Text variant="muted" size="sm" className={styles.lastGenerated}>
