@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
 import type { Project } from "../types";
 
 export interface ProjectActions {
@@ -14,10 +14,36 @@ export interface ProjectActions {
   navigateToExecution: () => void;
 }
 
-const ProjectContext = createContext<ProjectActions | null>(null);
+interface ProjectContextValue {
+  actions: ProjectActions | null;
+  register: (actions: ProjectActions) => void;
+  unregister: () => void;
+}
 
-export const ProjectProvider = ProjectContext.Provider;
+const ProjectContext = createContext<ProjectContextValue>({
+  actions: null,
+  register: () => {},
+  unregister: () => {},
+});
+
+export function ProjectContextProvider({ children }: { children: ReactNode }) {
+  const [actions, setActions] = useState<ProjectActions | null>(null);
+
+  const register = useCallback((a: ProjectActions) => setActions(a), []);
+  const unregister = useCallback(() => setActions(null), []);
+
+  return (
+    <ProjectContext.Provider value={{ actions, register, unregister }}>
+      {children}
+    </ProjectContext.Provider>
+  );
+}
 
 export function useProjectContext(): ProjectActions | null {
-  return useContext(ProjectContext);
+  return useContext(ProjectContext).actions;
+}
+
+export function useProjectRegister() {
+  const { register, unregister } = useContext(ProjectContext);
+  return { register, unregister };
 }

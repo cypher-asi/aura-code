@@ -4,11 +4,13 @@ import { Settings } from "lucide-react";
 import { ProjectList } from "./ProjectList";
 import { Sidekick } from "./Sidekick";
 import { SidekickProvider } from "../context/SidekickContext";
+import { ProjectContextProvider } from "../context/ProjectContext";
 import { windowCommand } from "../lib/windowCommand";
 
 export function AppShell() {
   return (
     <SidekickProvider>
+    <ProjectContextProvider>
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
         <Topbar
           className="titlebar-drag"
@@ -35,6 +37,7 @@ export function AppShell() {
           <Sidekick />
         </div>
       </div>
+    </ProjectContextProvider>
     </SidekickProvider>
   );
 }
