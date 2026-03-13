@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ProjectId, Task } from "../types";
 import { api } from "../api/client";
 import { useEventContext } from "../context/EventContext";
-import { StatusBadge } from "../components/StatusBadge";
+import { TaskStatusIcon } from "../components/TaskStatusIcon";
 import { Panel, Heading, Item, Text } from "@cypher-asi/zui";
 import styles from "./aura.module.css";
 
@@ -90,7 +90,7 @@ export function TaskFeed({ projectId }: TaskFeedProps) {
             key={task.task_id}
             selected={task.task_id === activeTaskId}
           >
-            <Item.Icon><StatusBadge status={task.status} /></Item.Icon>
+            <Item.Icon><TaskStatusIcon status={task.status} /></Item.Icon>
             <Item.Label>{task.title}</Item.Label>
           </Item>
         ))}
