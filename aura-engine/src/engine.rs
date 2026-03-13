@@ -168,6 +168,11 @@ impl DevLoopEngine {
         let api_key = self.settings.get_decrypted_api_key()?;
         let mut completed_count: usize = 0;
 
+        let promoted = self.task_service.resolve_initial_readiness(&project_id)?;
+        for t in &promoted {
+            self.emit(EngineEvent::TaskBecameReady { task_id: t.task_id });
+        }
+
         loop {
             if *stop_rx.borrow() == LoopCommand::Pause {
                 let _ = self.agent_service.finish_working(&project_id, &agent_id);

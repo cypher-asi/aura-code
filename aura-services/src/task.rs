@@ -229,6 +229,37 @@ impl TaskService {
         }
     }
 
+    /// Promote any Pending tasks with no (or all-done) dependencies to Ready.
+    /// Called at loop start to fix tasks that were stored as Pending without
+    /// an initial readiness pass.
+    pub fn resolve_initial_readiness(&self, project_id: &ProjectId) -> Result<Vec<Task>, TaskError> {
+        let all_tasks = self.store.list_tasks_by_project(project_id)?;
+        let done_ids: HashSet<TaskId> = all_tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Done)
+            .map(|t| t.task_id)
+            .collect();
+
+        let mut promoted = Vec::new();
+        for task in &all_tasks {
+            if task.status != TaskStatus::Pending {
+                continue;
+            }
+            let deps_satisfied = task.dependency_ids.is_empty()
+                || task.dependency_ids.iter().all(|d| done_ids.contains(d));
+            if deps_satisfied {
+                let ready_task = self.transition_task(
+                    project_id,
+                    &task.spec_id,
+                    &task.task_id,
+                    TaskStatus::Ready,
+                )?;
+                promoted.push(ready_task);
+            }
+        }
+        Ok(promoted)
+    }
+
     // -- Next-task selection --
 
     pub fn select_next_task(&self, project_id: &ProjectId) -> Result<Option<Task>, TaskError> {

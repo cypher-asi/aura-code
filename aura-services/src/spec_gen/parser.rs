@@ -217,7 +217,7 @@ pub(crate) fn parse_tasks_from_markdown(
                 spec_id: *spec_id,
                 title: title.to_string(),
                 description: description.to_string(),
-                status: TaskStatus::Pending,
+                status: TaskStatus::Ready,
                 order_index,
                 dependency_ids: vec![],
                 assigned_agent_id: None,
