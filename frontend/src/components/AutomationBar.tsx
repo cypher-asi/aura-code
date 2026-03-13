@@ -82,7 +82,9 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
     }
   };
 
-  const idle = !running && !paused;
+  const canPlay = (!running && !paused && !starting) || paused;
+  const canPause = running && !paused;
+  const canStop = running || paused;
 
   return (
     <>
@@ -92,36 +94,33 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
           <StatusBadge status={status} />
         </div>
         <div className={styles.automationControls}>
-          {(idle || paused) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              icon={<Play size={14} />}
-              onClick={handleStart}
-              title={paused ? "Resume" : "Start"}
-            />
-          )}
-          {running && !paused && (
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              icon={<Pause size={14} />}
-              onClick={handlePause}
-              title="Pause"
-            />
-          )}
-          {(running || paused) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              icon={<Square size={14} />}
-              onClick={handleStop}
-              title="Stop"
-            />
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon={<Play size={14} />}
+            onClick={handleStart}
+            disabled={!canPlay}
+            title={paused ? "Resume" : "Start"}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon={<Pause size={14} />}
+            onClick={handlePause}
+            disabled={!canPause}
+            title="Pause"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon={<Square size={14} />}
+            onClick={handleStop}
+            disabled={!canStop}
+            title="Stop"
+          />
         </div>
       </div>
 
