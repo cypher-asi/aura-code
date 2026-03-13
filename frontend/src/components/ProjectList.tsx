@@ -5,7 +5,7 @@ import { api } from "../api/client";
 import type { Project, ChatSession } from "../types";
 import { ButtonPlus, Group, Text, Item, Menu, Modal, ModalConfirm, Input, Button } from "@cypher-asi/zui";
 import type { MenuItem } from "@cypher-asi/zui";
-import { FolderOpen, MessageSquare, ChevronRight, ChevronDown, Pencil, Trash2 } from "lucide-react";
+import { MessageSquare, ChevronRight, ChevronDown, Pencil, Trash2 } from "lucide-react";
 import styles from "./ProjectList.module.css";
 
 const projectMenuItems: MenuItem[] = [

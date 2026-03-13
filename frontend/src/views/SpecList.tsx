@@ -38,7 +38,7 @@ export function SpecList() {
 
   useEffect(() => {
     fetchSpecs();
-  }, [fetchSpecs]);
+  }, [fetchSpecs, sidekick.refreshKey]);
 
   useEffect(() => {
     const unsubs = [
@@ -76,7 +76,7 @@ export function SpecList() {
         <PageEmptyState
           icon={<FileText size={32} />}
           title="No specs generated"
-          description='Click the "Generate Specs" button above to create them.'
+          description='Use the chat to generate specs for this project.'
         />
       ) : (
         specs.map((spec) => (

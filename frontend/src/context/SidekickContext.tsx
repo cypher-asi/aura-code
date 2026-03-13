@@ -1,33 +1,14 @@
-import { createContext, useContext, useCallback, useState, useRef, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useCallback, useState, type ReactNode } from "react";
 import type { Spec } from "../types";
 
 type SidekickTab = "specs" | "tasks" | "progress";
-
-interface ChatState {
-  isStreaming: boolean;
-  streamTitle: string;
-  streamedText: string;
-  streamStage: string;
-  tokenCount: number;
-  savedSpecs: Spec[];
-  savedTaskCount: number;
-}
 
 interface PanelState {
   activeTab: SidekickTab;
   selectedSpec: Spec | null;
   infoContent: ReactNode;
   showInfo: boolean;
-}
-
-interface ChatActions {
-  startStreaming: (title: string) => void;
-  appendDelta: (text: string) => void;
-  setStreamStage: (stage: string) => void;
-  setTokenCount: (count: number) => void;
-  appendSavedSpec: (spec: Spec) => void;
-  incrementTaskCount: () => void;
-  finishStreaming: () => void;
+  refreshKey: number;
 }
 
 interface PanelActions {
@@ -35,104 +16,23 @@ interface PanelActions {
   viewSpec: (spec: Spec) => void;
   clearSpec: () => void;
   toggleInfo: (title: string, content: ReactNode) => void;
+  triggerRefresh: () => void;
 }
 
-type SidekickContextValue = ChatState & PanelState & ChatActions & PanelActions;
-
-const INITIAL_CHAT: ChatState = {
-  isStreaming: false,
-  streamTitle: "",
-  streamedText: "",
-  streamStage: "",
-  tokenCount: 0,
-  savedSpecs: [],
-  savedTaskCount: 0,
-};
+type SidekickContextValue = PanelState & PanelActions;
 
 const INITIAL_PANEL: PanelState = {
   activeTab: "specs",
   selectedSpec: null,
   infoContent: null,
   showInfo: false,
+  refreshKey: 0,
 };
 
 const SidekickContext = createContext<SidekickContextValue | null>(null);
 
 export function SidekickProvider({ children }: { children: React.ReactNode }) {
-  const [chat, setChat] = useState<ChatState>(INITIAL_CHAT);
   const [panel, setPanel] = useState<PanelState>(INITIAL_PANEL);
-  const streamBufferRef = useRef("");
-  const rafRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    };
-  }, []);
-
-  const startStreaming = useCallback((title: string) => {
-    streamBufferRef.current = "";
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-    setChat({
-      isStreaming: true,
-      streamTitle: title,
-      streamedText: "",
-      streamStage: "",
-      tokenCount: 0,
-      savedSpecs: [],
-      savedTaskCount: 0,
-    });
-  }, []);
-
-  const appendDelta = useCallback((text: string) => {
-    streamBufferRef.current += text;
-    if (rafRef.current === null) {
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = null;
-        const snapshot = streamBufferRef.current;
-        setChat((prev) =>
-          prev.isStreaming ? { ...prev, streamedText: snapshot } : prev,
-        );
-      });
-    }
-  }, []);
-
-  const setStreamStage = useCallback((stage: string) => {
-    setChat((prev) =>
-      prev.isStreaming ? { ...prev, streamStage: stage } : prev,
-    );
-  }, []);
-
-  const setTokenCount = useCallback((count: number) => {
-    setChat((prev) =>
-      prev.isStreaming ? { ...prev, tokenCount: count } : prev,
-    );
-  }, []);
-
-  const appendSavedSpec = useCallback((spec: Spec) => {
-    setChat((prev) =>
-      prev.isStreaming
-        ? { ...prev, savedSpecs: [...prev.savedSpecs, spec] }
-        : prev,
-    );
-  }, []);
-
-  const incrementTaskCount = useCallback(() => {
-    setChat((prev) =>
-      prev.isStreaming
-        ? { ...prev, savedTaskCount: prev.savedTaskCount + 1 }
-        : prev,
-    );
-  }, []);
-
-  const finishStreaming = useCallback(() => {
-    setChat((prev) =>
-      prev.isStreaming ? { ...prev, isStreaming: false } : prev,
-    );
-  }, []);
 
   const setActiveTab = useCallback((tab: SidekickTab) => {
     setPanel((prev) => ({ ...prev, activeTab: tab, selectedSpec: null, showInfo: false }));
@@ -155,22 +55,19 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const triggerRefresh = useCallback(() => {
+    setPanel((prev) => ({ ...prev, refreshKey: prev.refreshKey + 1 }));
+  }, []);
+
   return (
     <SidekickContext.Provider
       value={{
-        ...chat,
         ...panel,
-        startStreaming,
-        appendDelta,
-        setStreamStage,
-        setTokenCount,
-        appendSavedSpec,
-        incrementTaskCount,
-        finishStreaming,
         setActiveTab,
         viewSpec,
         clearSpec,
         toggleInfo,
+        triggerRefresh,
       }}
     >
       {children}

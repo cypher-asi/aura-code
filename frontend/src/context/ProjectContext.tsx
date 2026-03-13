@@ -4,10 +4,7 @@ import type { Project } from "../types";
 export interface ProjectActions {
   project: Project;
   setProject: (p: Project) => void;
-  genLoading: boolean;
   message: string;
-  handleGenerateSpecs: () => void;
-  handleStopGeneration: () => void;
   handleArchive: () => void;
   navigateToExecution: () => void;
 }
