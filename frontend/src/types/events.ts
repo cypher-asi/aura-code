@@ -13,7 +13,8 @@ export type EngineEventType =
   | "spec_gen_started"
   | "spec_gen_progress"
   | "spec_gen_completed"
-  | "spec_gen_failed";
+  | "spec_gen_failed"
+  | "spec_saved";
 
 export interface EngineEvent {
   type: EngineEventType;
@@ -29,4 +30,5 @@ export interface EngineEvent {
   agent_id?: string;
   stage?: string;
   spec_count?: number;
+  spec?: import("./entities").Spec;
 }

@@ -70,6 +70,7 @@ export interface SpecGenStreamCallbacks {
   onProgress: (stage: string) => void;
   onDelta: (text: string) => void;
   onGenerating: (tokens: number) => void;
+  onSpecSaved: (spec: Spec) => void;
   onComplete: (specs: Spec[]) => void;
   onError: (message: string) => void;
 }
@@ -111,7 +112,7 @@ export const api = {
       method: "POST",
     }),
   generateSpecsStream: (projectId: ProjectId, cb: SpecGenStreamCallbacks) =>
-    streamSSE<"progress" | "delta" | "generating" | "complete" | "error">(
+    streamSSE<"progress" | "delta" | "generating" | "spec_saved" | "complete" | "error">(
       `${BASE_URL}/api/projects/${projectId}/specs/generate/stream`,
       { method: "POST" },
       {
@@ -126,6 +127,9 @@ export const api = {
               break;
             case "generating":
               cb.onGenerating(d.tokens as number);
+              break;
+            case "spec_saved":
+              cb.onSpecSaved(d.spec as Spec);
               break;
             case "complete":
               cb.onComplete(d.specs as Spec[]);
