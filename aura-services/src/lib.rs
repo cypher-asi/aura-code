@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod chat;
 pub mod claude;
 pub mod error;
 pub mod project;
@@ -8,9 +9,10 @@ pub mod task;
 pub mod task_extraction;
 
 pub use agent::AgentService;
-pub use claude::{ClaudeClient, ClaudeStreamEvent};
+pub use chat::{ChatService, ChatStreamEvent};
+pub use claude::ClaudeClient;
 pub use error::{
-    AgentError, ClaudeClientError, ProjectError, SessionError, SpecGenError, TaskError,
+    AgentError, ChatError, ClaudeClientError, ProjectError, SessionError, SpecGenError, TaskError,
 };
 pub use project::{CreateProjectInput, ProjectService, UpdateProjectInput};
 pub use session::SessionService;
