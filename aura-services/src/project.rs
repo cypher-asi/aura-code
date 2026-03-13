@@ -113,6 +113,12 @@ impl ProjectService {
         Ok(project)
     }
 
+    pub fn delete_project(&self, id: &ProjectId) -> Result<(), ProjectError> {
+        self.get_project(id)?;
+        self.store.delete_project(id)?;
+        Ok(())
+    }
+
     pub fn archive_project(&self, id: &ProjectId) -> Result<Project, ProjectError> {
         let mut project = self.get_project(id)?;
         project.current_status = ProjectStatus::Archived;

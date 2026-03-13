@@ -73,6 +73,20 @@ pub async fn update_project(
     Ok(Json(project))
 }
 
+pub async fn delete_project(
+    State(state): State<AppState>,
+    Path(project_id): Path<ProjectId>,
+) -> ApiResult<StatusCode> {
+    state
+        .project_service
+        .delete_project(&project_id)
+        .map_err(|e| match &e {
+            aura_services::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
+            _ => ApiError::internal(e.to_string()),
+        })?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn archive_project(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,

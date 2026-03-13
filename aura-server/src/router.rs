@@ -38,7 +38,9 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
         )
         .route(
             "/api/projects/:project_id",
-            get(projects::get_project).put(projects::update_project),
+            get(projects::get_project)
+                .put(projects::update_project)
+                .delete(projects::delete_project),
         )
         .route(
             "/api/projects/:project_id/archive",
