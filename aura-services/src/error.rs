@@ -1,0 +1,62 @@
+use aura_core::{ProjectId, TaskStatus};
+use aura_settings::SettingsError;
+use aura_store::StoreError;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ProjectError {
+    #[error("store error: {0}")]
+    Store(#[from] StoreError),
+    #[error("project not found: {0}")]
+    NotFound(ProjectId),
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SpecGenError {
+    #[error("store error: {0}")]
+    Store(#[from] StoreError),
+    #[error("project not found: {0}")]
+    ProjectNotFound(ProjectId),
+    #[error("requirements file not found: {0}")]
+    RequirementsFileNotFound(String),
+    #[error("requirements file read error: {0}")]
+    RequirementsFileRead(#[from] std::io::Error),
+    #[error("Claude API error: {0}")]
+    Claude(#[from] ClaudeClientError),
+    #[error("settings error: {0}")]
+    Settings(#[from] SettingsError),
+    #[error("response parse error: {0}")]
+    ParseError(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ClaudeClientError {
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("API error {status}: {message}")]
+    Api { status: u16, message: String },
+    #[error("response parse error: {0}")]
+    Parse(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum TaskError {
+    #[error("store error: {0}")]
+    Store(#[from] StoreError),
+    #[error("illegal transition from {current:?} to {target:?}")]
+    IllegalTransition {
+        current: TaskStatus,
+        target: TaskStatus,
+    },
+    #[error("task not found")]
+    NotFound,
+    #[error("dependency cycle detected")]
+    CycleDetected,
+    #[error("Claude API error: {0}")]
+    Claude(#[from] ClaudeClientError),
+    #[error("settings error: {0}")]
+    Settings(#[from] SettingsError),
+    #[error("task extraction parse error: {0}")]
+    ParseError(String),
+}
