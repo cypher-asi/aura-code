@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, Mutex};
 use tracing::warn;
 
 use aura_core::*;
@@ -358,14 +358,23 @@ impl DevLoopEngine {
 
         let task_id = task.task_id;
 
+        let token_counts: Arc<Mutex<(u64, u64)>> = Arc::new(Mutex::new((0, 0)));
+
         let response = {
             let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
             let event_tx = self.event_tx.clone();
             let tid = task_id;
+            let tc = token_counts.clone();
             let forwarder = tokio::spawn(async move {
                 while let Some(evt) = stream_rx.recv().await {
-                    if let ClaudeStreamEvent::Delta(text) = evt {
-                        let _ = event_tx.send(EngineEvent::TaskOutputDelta { task_id: tid, delta: text });
+                    match evt {
+                        ClaudeStreamEvent::Delta(text) => {
+                            let _ = event_tx.send(EngineEvent::TaskOutputDelta { task_id: tid, delta: text });
+                        }
+                        ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } => {
+                            *tc.lock().await = (input_tokens, output_tokens);
+                        }
+                        _ => {}
                     }
                 }
             });
@@ -385,7 +394,12 @@ impl DevLoopEngine {
         };
 
         match parse_execution_response(&response) {
-            Ok(execution) => return Ok(execution),
+            Ok(mut execution) => {
+                let (inp, out) = *token_counts.lock().await;
+                execution.input_tokens = inp;
+                execution.output_tokens = out;
+                return Ok(execution);
+            }
             Err(first_err) => {
                 warn!(task_id = %task_id, error = %first_err, "first execution parse failed, retrying");
 
@@ -407,10 +421,17 @@ impl DevLoopEngine {
                     let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
                     let event_tx = self.event_tx.clone();
                     let tid = task_id;
+                    let tc = token_counts.clone();
                     let forwarder = tokio::spawn(async move {
                         while let Some(evt) = stream_rx.recv().await {
-                            if let ClaudeStreamEvent::Delta(text) = evt {
-                                let _ = event_tx.send(EngineEvent::TaskOutputDelta { task_id: tid, delta: text });
+                            match evt {
+                                ClaudeStreamEvent::Delta(text) => {
+                                    let _ = event_tx.send(EngineEvent::TaskOutputDelta { task_id: tid, delta: text });
+                                }
+                                ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } => {
+                                    *tc.lock().await = (input_tokens, output_tokens);
+                                }
+                                _ => {}
                             }
                         }
                     });
@@ -428,7 +449,12 @@ impl DevLoopEngine {
                     let _ = forwarder.await;
 
                     match parse_execution_response(&retry_resp) {
-                        Ok(execution) => return Ok(execution),
+                        Ok(mut execution) => {
+                            let (inp, out) = *token_counts.lock().await;
+                            execution.input_tokens = inp;
+                            execution.output_tokens = out;
+                            return Ok(execution);
+                        }
                         Err(e) => {
                             warn!(task_id = %task_id, attempt, error = %e, "retry parse failed");
                             last_response = retry_resp;
