@@ -43,6 +43,7 @@ export function TaskList() {
   }, [localTasks, sidekick.tasks]);
 
   const specMap = useMemo(() => new Map(specs.map((s) => [s.spec_id, s])), [specs]);
+  const taskMap = useMemo(() => new Map(tasks.map((t) => [t.task_id, t])), [tasks]);
 
   const groupedTasks = useMemo(
     () =>
@@ -111,7 +112,12 @@ export function TaskList() {
       enableDragDrop={false}
       enableMultiSelect={false}
       defaultExpandedIds={defaultExpandedIds}
-      onSelect={() => {}}
+      onSelect={(ids) => {
+        const id = ids[0];
+        if (!id) return;
+        const task = taskMap.get(id);
+        if (task) sidekick.viewTask(task);
+      }}
     />
   );
 }
