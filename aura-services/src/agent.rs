@@ -16,11 +16,7 @@ impl AgentService {
         Self { store }
     }
 
-    pub fn create_agent(
-        &self,
-        project_id: &ProjectId,
-        name: String,
-    ) -> Result<Agent, AgentError> {
+    pub fn create_agent(&self, project_id: &ProjectId, name: String) -> Result<Agent, AgentError> {
         let now = Utc::now();
         let agent = Agent {
             agent_id: AgentId::new(),
@@ -109,16 +105,15 @@ impl AgentService {
         project_id: &ProjectId,
         agent_id: &AgentId,
     ) -> Result<Agent, AgentError> {
-        self.store.get_agent(project_id, agent_id).map_err(|e| match e {
-            aura_store::StoreError::NotFound(_) => AgentError::NotFound,
-            other => AgentError::Store(other),
-        })
+        self.store
+            .get_agent(project_id, agent_id)
+            .map_err(|e| match e {
+                aura_store::StoreError::NotFound(_) => AgentError::NotFound,
+                other => AgentError::Store(other),
+            })
     }
 
-    pub fn list_agents(
-        &self,
-        project_id: &ProjectId,
-    ) -> Result<Vec<Agent>, AgentError> {
+    pub fn list_agents(&self, project_id: &ProjectId) -> Result<Vec<Agent>, AgentError> {
         Ok(self.store.list_agents_by_project(project_id)?)
     }
 }

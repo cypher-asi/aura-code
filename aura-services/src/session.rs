@@ -6,7 +6,7 @@ use aura_core::*;
 use aura_store::RocksStore;
 
 use crate::claude::ClaudeClient;
-use crate::error::{ClaudeClientError, SessionError};
+use crate::error::SessionError;
 
 pub(crate) const SUMMARY_SYSTEM_PROMPT: &str = r#"
 You are a context summarizer. Given the conversation history of an AI coding
@@ -78,8 +78,7 @@ impl SessionService {
         output_tokens: u64,
     ) -> Result<Session, SessionError> {
         let mut session = self.get_session(project_id, agent_id, session_id)?;
-        let turn_usage =
-            (input_tokens + output_tokens) as f64 / self.model_context_window as f64;
+        let turn_usage = (input_tokens + output_tokens) as f64 / self.model_context_window as f64;
         session.context_usage_estimate = (session.context_usage_estimate + turn_usage).min(1.0);
         self.store.put_session(&session)?;
         Ok(session)
@@ -146,7 +145,10 @@ impl SessionService {
         project_id: &ProjectId,
         agent_id: &AgentId,
     ) -> Result<usize, SessionError> {
-        Ok(self.store.list_sessions_by_agent(project_id, agent_id)?.len())
+        Ok(self
+            .store
+            .list_sessions_by_agent(project_id, agent_id)?
+            .len())
     }
 
     pub async fn generate_rollover_summary(

@@ -1,4 +1,4 @@
-use aura_core::{ProjectId, TaskStatus};
+use aura_core::{AgentStatus, ProjectId, TaskStatus};
 use aura_settings::SettingsError;
 use aura_store::StoreError;
 
@@ -59,4 +59,27 @@ pub enum TaskError {
     Settings(#[from] SettingsError),
     #[error("task extraction parse error: {0}")]
     ParseError(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AgentError {
+    #[error("store error: {0}")]
+    Store(#[from] StoreError),
+    #[error("illegal agent transition from {current:?} to {target:?}")]
+    IllegalTransition {
+        current: AgentStatus,
+        target: AgentStatus,
+    },
+    #[error("agent not found")]
+    NotFound,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SessionError {
+    #[error("store error: {0}")]
+    Store(#[from] StoreError),
+    #[error("session not found")]
+    NotFound,
+    #[error("Claude API error: {0}")]
+    Claude(ClaudeClientError),
 }
