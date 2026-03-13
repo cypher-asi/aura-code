@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Sidebar, Tabs, Button, Text, Menu } from "@cypher-asi/zui";
-import { Play, Archive, Info, ArrowLeft, Ellipsis } from "lucide-react";
+import { Archive, Info, ArrowLeft, Ellipsis } from "lucide-react";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
 import { StatusBadge } from "./StatusBadge";
@@ -65,7 +65,7 @@ export function Sidekick() {
     );
   }
 
-  const { project, handleArchive, navigateToExecution } = ctx;
+  const { project, handleArchive } = ctx;
 
   if (showInfo) {
     return (
@@ -112,7 +112,6 @@ export function Sidekick() {
             tabClassName={styles.sidekickTab}
           />
           <div className={styles.actions}>
-            <Button variant="filled" size="sm" iconOnly icon={<Play size={16} />} onClick={navigateToExecution} title="Start Dev Loop" />
             <div ref={moreBtnRef} className={styles.moreButtonWrap}>
               <Button
                 variant="ghost"

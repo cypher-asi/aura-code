@@ -23,7 +23,7 @@
 }
 
 .zid {
-  font-size: var(--font-size-2xs);
+  font-size: 0.6875rem;
   color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
