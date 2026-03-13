@@ -1,5 +1,5 @@
 import { createContext, useContext, useCallback, useState, type ReactNode } from "react";
-import type { Spec } from "../types";
+import type { Spec, Task } from "../types";
 
 type SidekickTab = "specs" | "tasks" | "progress";
 
@@ -8,7 +8,8 @@ interface PanelState {
   selectedSpec: Spec | null;
   infoContent: ReactNode;
   showInfo: boolean;
-  refreshKey: number;
+  specs: Spec[];
+  tasks: Task[];
 }
 
 interface PanelActions {
@@ -16,7 +17,9 @@ interface PanelActions {
   viewSpec: (spec: Spec) => void;
   clearSpec: () => void;
   toggleInfo: (title: string, content: ReactNode) => void;
-  triggerRefresh: () => void;
+  pushSpec: (spec: Spec) => void;
+  pushTask: (task: Task) => void;
+  clearGeneratedArtifacts: () => void;
 }
 
 type SidekickContextValue = PanelState & PanelActions;
@@ -26,7 +29,8 @@ const INITIAL_PANEL: PanelState = {
   selectedSpec: null,
   infoContent: null,
   showInfo: false,
-  refreshKey: 0,
+  specs: [],
+  tasks: [],
 };
 
 const SidekickContext = createContext<SidekickContextValue | null>(null);
@@ -55,8 +59,28 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const triggerRefresh = useCallback(() => {
-    setPanel((prev) => ({ ...prev, refreshKey: prev.refreshKey + 1 }));
+  const pushSpec = useCallback((spec: Spec) => {
+    setPanel((prev) => {
+      const exists = prev.specs.some((s) => s.spec_id === spec.spec_id);
+      const next = exists
+        ? prev.specs.map((s) => (s.spec_id === spec.spec_id ? spec : s))
+        : [...prev.specs, spec];
+      return { ...prev, specs: next.sort((a, b) => a.order_index - b.order_index) };
+    });
+  }, []);
+
+  const pushTask = useCallback((task: Task) => {
+    setPanel((prev) => {
+      const exists = prev.tasks.some((t) => t.task_id === task.task_id);
+      const next = exists
+        ? prev.tasks.map((t) => (t.task_id === task.task_id ? task : t))
+        : [...prev.tasks, task];
+      return { ...prev, tasks: next.sort((a, b) => a.order_index - b.order_index) };
+    });
+  }, []);
+
+  const clearGeneratedArtifacts = useCallback(() => {
+    setPanel((prev) => ({ ...prev, specs: [], tasks: [] }));
   }, []);
 
   return (
@@ -67,7 +91,9 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
         viewSpec,
         clearSpec,
         toggleInfo,
-        triggerRefresh,
+        pushSpec,
+        pushTask,
+        clearGeneratedArtifacts,
       }}
     >
       {children}
