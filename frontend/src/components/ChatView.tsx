@@ -76,6 +76,13 @@ export function ChatView() {
       .catch(console.error);
   }, [projectId, chatSessionId]);
 
+  // Auto-focus textarea when entering a chat session
+  useEffect(() => {
+    if (chatSessionId) {
+      textareaRef.current?.focus();
+    }
+  }, [chatSessionId]);
+
   // Auto-scroll when messages change or streaming text updates
   useEffect(() => {
     scrollToBottom();

@@ -6,7 +6,7 @@ import { useSidekick } from "../context/SidekickContext";
 import type { Project, ChatSession } from "../types";
 import { ButtonPlus, Explorer, Menu, Modal, Input, Button, Text } from "@cypher-asi/zui";
 import type { ExplorerNode, MenuItem } from "@cypher-asi/zui";
-import { FolderOpen, MessageSquare, Pencil, Trash2 } from "lucide-react";
+import { FolderOpen, Plus, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import { NewProjectModal } from "./NewProjectModal";
 import styles from "./ProjectList.module.css";
 
@@ -142,6 +142,19 @@ export function ProjectList() {
         id: p.project_id,
         label: p.name,
         icon: <FolderOpen size={14} />,
+        suffix: (
+          <button
+            type="button"
+            className={styles.newChatButton}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleNewSession(p.project_id);
+            }}
+            aria-label="New Chat"
+          >
+            <Plus size={14} />
+          </button>
+        ),
         metadata: { type: "project" },
         children:
           sessionsByProject[p.project_id] !== undefined
@@ -160,7 +173,7 @@ export function ProjectList() {
               }))
             : [{ id: `_load_${p.project_id}`, label: "Loading...", disabled: true }],
       })),
-    [projects, sessionsByProject, streamingSessionId],
+    [projects, sessionsByProject, streamingSessionId, handleNewSession],
   );
 
   const defaultExpandedIds = useMemo(

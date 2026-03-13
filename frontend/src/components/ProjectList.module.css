@@ -26,6 +26,34 @@
   padding-right: calc(var(--space-2) + 24px);
 }
 
+.newChatButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Show on hover of the explorer row */
+*:hover > .newChatButton,
+.newChatButton:focus-visible {
+  opacity: 1;
+}
+
+.newChatButton:hover {
+  background: var(--color-bg-tertiary, rgba(255, 255, 255, 0.08));
+  color: var(--color-text);
+}
+
 .contextMenuOverlay {
   position: fixed;
   z-index: 9999;
