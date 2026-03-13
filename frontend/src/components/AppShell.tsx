@@ -1,6 +1,5 @@
 import { Link, Outlet } from "react-router-dom";
-import { Topbar, Sidebar, Button, ButtonWindow } from "@cypher-asi/zui";
-import { Settings } from "lucide-react";
+import { Topbar, Sidebar, ButtonWindow } from "@cypher-asi/zui";
 import { ProjectList } from "./ProjectList";
 import { UserProfile } from "./UserProfile";
 import { Sidekick } from "./Sidekick";
@@ -21,9 +20,6 @@ export function AppShell() {
           title={<span className="titlebar-center"><Link to="/" style={{ color: "inherit", textDecoration: "none" }}>AURA</Link></span>}
           actions={
             <div className="titlebar-no-drag" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-              <Link to="/settings">
-                <Button variant="ghost" size="sm" icon={<Settings size={16} />} iconOnly aria-label="Settings" />
-              </Link>
               <ButtonWindow action="minimize" size="sm" onClick={() => windowCommand("minimize")} />
               <ButtonWindow action="maximize" size="sm" onClick={() => windowCommand("maximize")} />
               <ButtonWindow action="close" size="sm" onClick={() => windowCommand("close")} />

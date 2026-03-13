@@ -1,5 +1,6 @@
+import { Link } from "react-router-dom";
 import { Button } from "@cypher-asi/zui";
-import { LogOut } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import styles from "./UserProfile.module.css";
 
@@ -16,6 +17,15 @@ export function UserProfile() {
           <span className={styles.zid}>{user.primary_zid}</span>
         )}
       </div>
+      <Link to="/settings">
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<Settings size={14} />}
+          iconOnly
+          aria-label="Settings"
+        />
+      </Link>
       <Button
         variant="ghost"
         size="sm"
