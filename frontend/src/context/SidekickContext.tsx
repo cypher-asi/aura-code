@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useState, useRef, type ReactNode } from "react";
+import { createContext, useContext, useCallback, useState, useRef, useEffect, type ReactNode } from "react";
 import type { Spec } from "../types";
 
 type SidekickMode = "idle" | "streaming" | "viewing" | "info";
@@ -47,9 +47,20 @@ const SidekickContext = createContext<SidekickContextValue | null>(null);
 export function SidekickProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<SidekickState>(INITIAL_STATE);
   const streamBufferRef = useRef("");
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
 
   const startStreaming = useCallback((title: string) => {
     streamBufferRef.current = "";
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
     setState({
       isOpen: true,
       mode: "streaming",
@@ -65,10 +76,15 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
 
   const appendDelta = useCallback((text: string) => {
     streamBufferRef.current += text;
-    const snapshot = streamBufferRef.current;
-    setState((prev) =>
-      prev.mode === "streaming" ? { ...prev, streamedText: snapshot } : prev,
-    );
+    if (rafRef.current === null) {
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const snapshot = streamBufferRef.current;
+        setState((prev) =>
+          prev.mode === "streaming" ? { ...prev, streamedText: snapshot } : prev,
+        );
+      });
+    }
   }, []);
 
   const setStreamStage = useCallback((stage: string) => {
