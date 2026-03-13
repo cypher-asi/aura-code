@@ -1,17 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { Project } from "../types";
-import { Item, ButtonPlus, Group, Text } from "@cypher-asi/zui";
-import { Circle } from "lucide-react";
-
-const STATUS_COLORS: Record<string, string> = {
-  planning: "var(--color-accent)",
-  active: "var(--status-done)",
-  paused: "var(--status-in-progress)",
-  completed: "var(--status-done)",
-  archived: "var(--status-pending)",
-};
+import { Explorer, ButtonPlus, Group, Text } from "@cypher-asi/zui";
+import type { ExplorerNode } from "@cypher-asi/zui";
+import { FolderOpen } from "lucide-react";
 
 export function ProjectList() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -21,6 +14,24 @@ export function ProjectList() {
   useEffect(() => {
     api.listProjects().then(setProjects).catch(console.error);
   }, []);
+
+  const treeData: ExplorerNode[] = useMemo(
+    () =>
+      projects.map((p) => ({
+        id: p.project_id,
+        label: p.name,
+        icon: <FolderOpen size={14} />,
+        children: [],
+      })),
+    [projects],
+  );
+
+  const handleSelect = (selectedIds: string[]) => {
+    const id = selectedIds[0];
+    if (id) {
+      navigate(`/projects/${id}`);
+    }
+  };
 
   return (
     <div>
@@ -33,22 +44,14 @@ export function ProjectList() {
             No projects yet
           </Text>
         ) : (
-          projects.map((p) => (
-            <Item
-              key={p.project_id}
-              selected={p.project_id === projectId}
-              onClick={() => navigate(`/projects/${p.project_id}`)}
-            >
-              <Item.Icon>
-                <Circle
-                  size={8}
-                  fill={STATUS_COLORS[p.current_status] || "var(--status-pending)"}
-                  stroke="none"
-                />
-              </Item.Icon>
-              <Item.Label>{p.name}</Item.Label>
-            </Item>
-          ))
+          <Explorer
+            data={treeData}
+            onSelect={handleSelect}
+            defaultSelectedIds={projectId ? [projectId] : []}
+            enableDragDrop={false}
+            enableMultiSelect={false}
+            compact
+          />
         )}
       </Group>
     </div>

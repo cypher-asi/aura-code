@@ -6,7 +6,7 @@ import type { EngineEvent } from "../types/events";
 import { useEventContext } from "../context/EventContext";
 import { StatusBadge } from "../components/StatusBadge";
 import { PageHeader, PageEmptyState, Panel, Button, Spinner, Tabs, Text } from "@cypher-asi/zui";
-import { Play, Archive } from "lucide-react";
+import { Play, Archive, FileText, ListChecks } from "lucide-react";
 import styles from "./aura.module.css";
 
 export function ProjectDetail() {
@@ -113,7 +113,20 @@ export function ProjectDetail() {
 
   return (
     <div>
-      <PageHeader title={project.name} subtitle={project.description} />
+      <PageHeader
+        title={project.name}
+        subtitle={project.description}
+        actions={
+          <div style={{ display: "flex", gap: "var(--space-1)", alignItems: "center" }}>
+            <Button variant="ghost" size="sm" iconOnly icon={genLoading ? <Spinner size="sm" /> : <FileText size={16} />} onClick={handleGenerateSpecs} disabled={genLoading} title="Generate Specs" />
+            <Button variant="ghost" size="sm" iconOnly icon={extractLoading ? <Spinner size="sm" /> : <ListChecks size={16} />} onClick={handleExtractTasks} disabled={extractLoading} title="Extract Tasks" />
+            <Button variant="filled" size="sm" iconOnly icon={<Play size={16} />} onClick={() => navigate(`/projects/${project.project_id}/execution`)} title="Start Dev Loop" />
+            {project.current_status !== "archived" && (
+              <Button variant="danger" size="sm" iconOnly icon={<Archive size={16} />} onClick={handleArchive} title="Archive" />
+            )}
+          </div>
+        }
+      />
 
       <Panel variant="solid" border="solid" borderRadius="md" style={{ padding: "var(--space-5)", marginBottom: "var(--space-5)" }}>
         <div className={styles.infoGrid}>
@@ -128,27 +141,11 @@ export function ProjectDetail() {
         </div>
       </Panel>
 
-      <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "center", marginBottom: "var(--space-5)" }}>
-        <Button variant="primary" size="sm" onClick={handleGenerateSpecs} disabled={genLoading}>
-          {genLoading ? <><Spinner size="sm" /> Generating...</> : "Generate Specs"}
-        </Button>
-        {genLoading && genStage && (
-          <span className={styles.progressStage}>
-            {genStage}{genTokens > 0 ? ` — ${genTokens.toLocaleString()} tokens generated` : ""}
-          </span>
-        )}
-        <Button variant="primary" size="sm" onClick={handleExtractTasks} disabled={extractLoading}>
-          {extractLoading ? <><Spinner size="sm" /> Extracting...</> : "Extract Tasks"}
-        </Button>
-        <Button variant="filled" size="sm" icon={<Play size={14} />} onClick={() => navigate(`/projects/${project.project_id}/execution`)}>
-          Start Dev Loop
-        </Button>
-        {project.current_status !== "archived" && (
-          <Button variant="danger" size="sm" icon={<Archive size={14} />} onClick={handleArchive}>
-            Archive
-          </Button>
-        )}
-      </div>
+      {(genLoading && genStage) && (
+        <Text variant="secondary" size="sm" style={{ marginBottom: "var(--space-4)" }}>
+          {genStage}{genTokens > 0 ? ` — ${genTokens.toLocaleString()} tokens generated` : ""}
+        </Text>
+      )}
 
       {message && <Text variant="secondary" size="sm" style={{ marginBottom: "var(--space-4)" }}>{message}</Text>}
 

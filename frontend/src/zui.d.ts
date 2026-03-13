@@ -405,6 +405,38 @@ declare module "@cypher-asi/zui" {
   }
   export function Navigator(props: NavigatorProps): JSX.Element;
 
+  // Explorer
+  export interface ExplorerNode {
+    id: string;
+    label: string;
+    icon?: ReactNode;
+    children?: ExplorerNode[];
+    metadata?: Record<string, unknown>;
+    disabled?: boolean;
+  }
+
+  export type DropPosition = "before" | "after" | "inside";
+
+  export interface ExplorerProps {
+    data: ExplorerNode[];
+    onSelect?: (selectedIds: string[]) => void;
+    onExpand?: (nodeId: string, expanded: boolean) => void;
+    onDrop?: (draggedId: string, targetId: string, position: DropPosition) => void;
+    defaultExpandedIds?: string[];
+    defaultSelectedIds?: string[];
+    className?: string;
+    enableDragDrop?: boolean;
+    enableMultiSelect?: boolean;
+    expandOnSelect?: boolean;
+    searchable?: boolean;
+    searchPlaceholder?: string;
+    onSearch?: (query: string) => void;
+    compact?: boolean;
+    chevronPosition?: "left" | "right";
+  }
+
+  export function Explorer(props: ExplorerProps): JSX.Element;
+
   // Utilities
   export function cn(...args: (string | undefined | null | false)[]): string;
 }
