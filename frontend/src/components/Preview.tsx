@@ -51,9 +51,9 @@ export function Preview() {
       className={styles.previewPanel}
       resizable
       resizePosition="left"
-      defaultWidth={420}
-      minWidth={300}
-      maxWidth={700}
+      defaultWidth={320}
+      minWidth={200}
+      maxWidth={600}
       storageKey="aura-preview"
       header={
         <div className={styles.previewHeader}>

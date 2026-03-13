@@ -30,7 +30,7 @@ export function AppShell() {
           }
         />
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-          <Sidebar className="nav-sidebar" resizable defaultWidth={240} minWidth={180} maxWidth={360} storageKey="aura-sidebar" footer={<UserProfile />}>
+          <Sidebar className="nav-sidebar" resizable defaultWidth={200} minWidth={140} maxWidth={300} storageKey="aura-sidebar" footer={<UserProfile />}>
             <ProjectList />
           </Sidebar>
           <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>

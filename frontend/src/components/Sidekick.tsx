@@ -53,9 +53,9 @@ export function Sidekick() {
         className={styles.sidekickPanel}
         resizable
         resizePosition="left"
-        defaultWidth={420}
-        minWidth={300}
-        maxWidth={700}
+        defaultWidth={320}
+        minWidth={200}
+        maxWidth={1200}
         storageKey="aura-sidekick"
       >
         <div className={styles.emptyState}>
@@ -73,9 +73,9 @@ export function Sidekick() {
         className={styles.sidekickPanel}
         resizable
         resizePosition="left"
-        defaultWidth={420}
-        minWidth={300}
-        maxWidth={700}
+        defaultWidth={320}
+        minWidth={200}
+        maxWidth={1200}
         storageKey="aura-sidekick"
       >
         <InfoPanel project={project} onClose={() => toggleInfo("", null)} />
@@ -94,9 +94,9 @@ export function Sidekick() {
       className={styles.sidekickPanel}
       resizable
       resizePosition="left"
-      defaultWidth={420}
-      minWidth={300}
-      maxWidth={700}
+      defaultWidth={320}
+      minWidth={200}
+      maxWidth={1200}
       storageKey="aura-sidekick"
       header={
         <div className={styles.panelHeader}>
