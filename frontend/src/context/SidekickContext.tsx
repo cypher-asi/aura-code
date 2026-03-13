@@ -3,9 +3,13 @@ import type { ChatSession, Spec, Task } from "../types";
 
 type SidekickTab = "specs" | "tasks" | "progress";
 
+export type PreviewItem =
+  | { kind: "spec"; spec: Spec }
+  | { kind: "task"; task: Task };
+
 interface PanelState {
   activeTab: SidekickTab;
-  selectedSpec: Spec | null;
+  previewItem: PreviewItem | null;
   infoContent: ReactNode;
   showInfo: boolean;
   specs: Spec[];
@@ -18,7 +22,8 @@ type SessionUpdateListener = (session: ChatSession) => void;
 interface PanelActions {
   setActiveTab: (tab: SidekickTab) => void;
   viewSpec: (spec: Spec) => void;
-  clearSpec: () => void;
+  viewTask: (task: Task) => void;
+  closePreview: () => void;
   toggleInfo: (title: string, content: ReactNode) => void;
   pushSpec: (spec: Spec) => void;
   pushTask: (task: Task) => void;
@@ -32,7 +37,7 @@ type SidekickContextValue = PanelState & PanelActions;
 
 const INITIAL_PANEL: PanelState = {
   activeTab: "specs",
-  selectedSpec: null,
+  previewItem: null,
   infoContent: null,
   showInfo: false,
   specs: [],
@@ -47,15 +52,19 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
   const titleListeners = useRef<Set<SessionUpdateListener>>(new Set());
 
   const setActiveTab = useCallback((tab: SidekickTab) => {
-    setPanel((prev) => ({ ...prev, activeTab: tab, selectedSpec: null, showInfo: false }));
+    setPanel((prev) => ({ ...prev, activeTab: tab, showInfo: false }));
   }, []);
 
   const viewSpec = useCallback((spec: Spec) => {
-    setPanel((prev) => ({ ...prev, selectedSpec: spec, showInfo: false }));
+    setPanel((prev) => ({ ...prev, previewItem: { kind: "spec", spec } }));
   }, []);
 
-  const clearSpec = useCallback(() => {
-    setPanel((prev) => ({ ...prev, selectedSpec: null }));
+  const viewTask = useCallback((task: Task) => {
+    setPanel((prev) => ({ ...prev, previewItem: { kind: "task", task } }));
+  }, []);
+
+  const closePreview = useCallback(() => {
+    setPanel((prev) => ({ ...prev, previewItem: null }));
   }, []);
 
   const toggleInfo = useCallback((_title: string, content: ReactNode) => {
@@ -110,7 +119,8 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
         ...panel,
         setActiveTab,
         viewSpec,
-        clearSpec,
+        viewTask,
+        closePreview,
         toggleInfo,
         pushSpec,
         pushTask,
