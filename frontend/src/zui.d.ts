@@ -445,6 +445,7 @@ declare module "@cypher-asi/zui" {
     id: string;
     label: string;
     icon?: ReactNode;
+    suffix?: ReactNode;
     children?: ExplorerNode[];
     metadata?: Record<string, unknown>;
     disabled?: boolean;
