@@ -145,7 +145,13 @@ impl RocksStore {
                     break;
                 }
             }
-            results.push(serde_json::from_slice(&value)?);
+            match serde_json::from_slice(&value) {
+                Ok(v) => results.push(v),
+                Err(e) => {
+                    let key_str = String::from_utf8_lossy(&key);
+                    tracing::warn!("Skipping unreadable entry {key_str}: {e}");
+                }
+            }
         }
         Ok(results)
     }
