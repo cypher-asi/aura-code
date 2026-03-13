@@ -6,6 +6,10 @@ pub enum ColumnFamilyName {
     Agents,
     Sessions,
     Settings,
+    Orgs,
+    OrgMembers,
+    UserOrgs,
+    OrgInvites,
 }
 
 impl ColumnFamilyName {
@@ -17,6 +21,10 @@ impl ColumnFamilyName {
             Self::Agents => "agents",
             Self::Sessions => "sessions",
             Self::Settings => "settings",
+            Self::Orgs => "orgs",
+            Self::OrgMembers => "org_members",
+            Self::UserOrgs => "user_orgs",
+            Self::OrgInvites => "org_invites",
         }
     }
 }
