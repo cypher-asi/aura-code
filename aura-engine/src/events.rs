@@ -57,4 +57,8 @@ pub enum EngineEvent {
         project_id: ProjectId,
         reason: String,
     },
+    SpecSaved {
+        project_id: ProjectId,
+        spec: Spec,
+    },
 }

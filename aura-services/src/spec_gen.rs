@@ -20,6 +20,7 @@ pub enum SpecStreamEvent {
     Progress(String),
     Delta(String),
     Generating { tokens: usize },
+    SpecSaved(Spec),
     Complete(Vec<Spec>),
     Error(String),
 }
@@ -276,6 +277,10 @@ impl SpecGenerationService {
         if let Err(e) = self.save_specs(project_id, &new_specs) {
             send(SpecStreamEvent::Error(format!("Failed to save specs: {e}")));
             return;
+        }
+
+        for spec in &new_specs {
+            send(SpecStreamEvent::SpecSaved(spec.clone()));
         }
 
         info!(%project_id, count = new_specs.len(), "Streaming spec generation complete");
