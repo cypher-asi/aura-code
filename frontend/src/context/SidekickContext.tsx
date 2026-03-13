@@ -1,5 +1,5 @@
-import { createContext, useContext, useCallback, useState, type ReactNode } from "react";
-import type { Spec, Task } from "../types";
+import { createContext, useContext, useCallback, useState, useRef, type ReactNode } from "react";
+import type { ChatSession, Spec, Task } from "../types";
 
 type SidekickTab = "specs" | "tasks" | "progress";
 
@@ -10,7 +10,10 @@ interface PanelState {
   showInfo: boolean;
   specs: Spec[];
   tasks: Task[];
+  streamingSessionId: string | null;
 }
+
+type SessionUpdateListener = (session: ChatSession) => void;
 
 interface PanelActions {
   setActiveTab: (tab: SidekickTab) => void;
@@ -20,6 +23,9 @@ interface PanelActions {
   pushSpec: (spec: Spec) => void;
   pushTask: (task: Task) => void;
   clearGeneratedArtifacts: () => void;
+  setStreamingSessionId: (id: string | null) => void;
+  notifySessionTitleUpdate: (session: ChatSession) => void;
+  onSessionTitleUpdate: (listener: SessionUpdateListener) => () => void;
 }
 
 type SidekickContextValue = PanelState & PanelActions;
@@ -31,12 +37,14 @@ const INITIAL_PANEL: PanelState = {
   showInfo: false,
   specs: [],
   tasks: [],
+  streamingSessionId: null,
 };
 
 const SidekickContext = createContext<SidekickContextValue | null>(null);
 
 export function SidekickProvider({ children }: { children: React.ReactNode }) {
   const [panel, setPanel] = useState<PanelState>(INITIAL_PANEL);
+  const titleListeners = useRef<Set<SessionUpdateListener>>(new Set());
 
   const setActiveTab = useCallback((tab: SidekickTab) => {
     setPanel((prev) => ({ ...prev, activeTab: tab, selectedSpec: null, showInfo: false }));
@@ -83,6 +91,19 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
     setPanel((prev) => ({ ...prev, specs: [], tasks: [] }));
   }, []);
 
+  const setStreamingSessionId = useCallback((id: string | null) => {
+    setPanel((prev) => ({ ...prev, streamingSessionId: id }));
+  }, []);
+
+  const notifySessionTitleUpdate = useCallback((session: ChatSession) => {
+    titleListeners.current.forEach((fn) => fn(session));
+  }, []);
+
+  const onSessionTitleUpdate = useCallback((listener: SessionUpdateListener) => {
+    titleListeners.current.add(listener);
+    return () => { titleListeners.current.delete(listener); };
+  }, []);
+
   return (
     <SidekickContext.Provider
       value={{
@@ -94,6 +115,9 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
         pushSpec,
         pushTask,
         clearGeneratedArtifacts,
+        setStreamingSessionId,
+        notifySessionTitleUpdate,
+        onSessionTitleUpdate,
       }}
     >
       {children}
