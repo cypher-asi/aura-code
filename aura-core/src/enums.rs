@@ -47,3 +47,20 @@ pub enum ChatRole {
     Assistant,
     System,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrgRole {
+    Owner,
+    Admin,
+    Member,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InviteStatus {
+    Pending,
+    Accepted,
+    Expired,
+    Revoked,
+}

@@ -1,12 +1,17 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::enums::{AgentStatus, ChatRole, ProjectStatus, SessionStatus, TaskStatus};
-use crate::ids::{AgentId, ChatMessageId, ChatSessionId, ProjectId, SessionId, SpecId, TaskId};
+use crate::enums::{
+    AgentStatus, ChatRole, InviteStatus, OrgRole, ProjectStatus, SessionStatus, TaskStatus,
+};
+use crate::ids::{
+    AgentId, ChatMessageId, ChatSessionId, InviteId, OrgId, ProjectId, SessionId, SpecId, TaskId,
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     pub project_id: ProjectId,
+    pub org_id: OrgId,
     pub name: String,
     pub description: String,
     pub linked_folder_path: String,
@@ -85,6 +90,52 @@ pub struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Org {
+    pub org_id: OrgId,
+    pub name: String,
+    pub owner_user_id: String,
+    pub billing: Option<OrgBilling>,
+    pub github: Option<OrgGithub>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OrgMember {
+    pub org_id: OrgId,
+    pub user_id: String,
+    pub display_name: String,
+    pub role: OrgRole,
+    pub joined_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OrgInvite {
+    pub invite_id: InviteId,
+    pub org_id: OrgId,
+    pub token: String,
+    pub created_by: String,
+    pub status: InviteStatus,
+    pub accepted_by: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub accepted_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OrgBilling {
+    pub billing_email: Option<String>,
+    pub plan: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OrgGithub {
+    pub github_org: String,
+    pub connected_by: String,
+    pub connected_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

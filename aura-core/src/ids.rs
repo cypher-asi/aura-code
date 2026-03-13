@@ -56,3 +56,5 @@ define_id!(AgentId);
 define_id!(SessionId);
 define_id!(ChatSessionId);
 define_id!(ChatMessageId);
+define_id!(OrgId);
+define_id!(InviteId);
