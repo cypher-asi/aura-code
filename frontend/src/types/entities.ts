@@ -1,4 +1,4 @@
-import type { ProjectId, SpecId, TaskId, AgentId, SessionId } from "./ids";
+import type { ProjectId, SprintId, SpecId, TaskId, AgentId, SessionId } from "./ids";
 import type {
   ProjectStatus,
   TaskStatus,
@@ -19,12 +19,23 @@ export interface Project {
   updated_at: string;
 }
 
+export interface Sprint {
+  sprint_id: SprintId;
+  project_id: ProjectId;
+  title: string;
+  prompt: string;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Spec {
   spec_id: SpecId;
   project_id: ProjectId;
   title: string;
   order_index: number;
   markdown_contents: string;
+  sprint_id?: SprintId;
   created_at: string;
   updated_at: string;
 }

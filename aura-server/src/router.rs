@@ -6,7 +6,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
-use crate::handlers::{agents, auth, chat, dev_loop, orgs, projects, settings, specs, tasks, ws};
+use crate::handlers::{agents, auth, chat, dev_loop, orgs, projects, settings, specs, sprints, tasks, ws};
 use crate::state::AppState;
 
 pub fn create_router(state: AppState) -> Router {
@@ -81,6 +81,21 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
         .route(
             "/api/projects/:project_id/archive",
             post(projects::archive_project),
+        )
+        // Sprints
+        .route(
+            "/api/projects/:project_id/sprints",
+            get(sprints::list_sprints).post(sprints::create_sprint),
+        )
+        .route(
+            "/api/projects/:project_id/sprints/reorder",
+            put(sprints::reorder_sprints),
+        )
+        .route(
+            "/api/projects/:project_id/sprints/:sprint_id",
+            get(sprints::get_sprint)
+                .put(sprints::update_sprint)
+                .delete(sprints::delete_sprint),
         )
         // Specs
         .route("/api/projects/:project_id/specs", get(specs::list_specs))

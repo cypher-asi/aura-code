@@ -33,6 +33,47 @@
   margin-bottom: var(--space-4);
 }
 
+.sprintEditor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+}
+
+.sprintTitleInput {
+  font-size: 15px;
+  font-weight: 600;
+  padding: var(--space-1) 0;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  outline: none;
+  width: 100%;
+}
+
+.sprintTitleInput:focus {
+  border-color: var(--color-accent);
+}
+
+.sprintPromptArea {
+  flex: 1;
+  resize: none;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-sans, inherit);
+  font-size: 13px;
+  line-height: 1.65;
+  outline: none;
+  padding: 0;
+  min-height: 200px;
+}
+
+.sprintPromptArea::placeholder {
+  color: var(--color-text-muted);
+}
+
 .taskDescription {
   font-size: 14px;
   line-height: 1.7;

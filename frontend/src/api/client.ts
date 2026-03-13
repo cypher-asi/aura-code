@@ -1,10 +1,12 @@
 import type {
   ProjectId,
+  SprintId,
   SpecId,
   TaskId,
   AgentId,
   TaskStatus,
   Project,
+  Sprint,
   Spec,
   Task,
   Agent,
@@ -199,6 +201,31 @@ export const api = {
     apiFetch<void>(`/api/projects/${id}`, { method: "DELETE" }),
   archiveProject: (id: ProjectId) =>
     apiFetch<Project>(`/api/projects/${id}/archive`, { method: "POST" }),
+
+  // Sprints
+  listSprints: (projectId: ProjectId) =>
+    apiFetch<Sprint[]>(`/api/projects/${projectId}/sprints`),
+  createSprint: (projectId: ProjectId, title: string, prompt?: string) =>
+    apiFetch<Sprint>(`/api/projects/${projectId}/sprints`, {
+      method: "POST",
+      body: JSON.stringify({ title, prompt: prompt ?? "" }),
+    }),
+  getSprint: (projectId: ProjectId, sprintId: SprintId) =>
+    apiFetch<Sprint>(`/api/projects/${projectId}/sprints/${sprintId}`),
+  updateSprint: (projectId: ProjectId, sprintId: SprintId, data: { title?: string; prompt?: string }) =>
+    apiFetch<Sprint>(`/api/projects/${projectId}/sprints/${sprintId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  deleteSprint: (projectId: ProjectId, sprintId: SprintId) =>
+    apiFetch<void>(`/api/projects/${projectId}/sprints/${sprintId}`, {
+      method: "DELETE",
+    }),
+  reorderSprints: (projectId: ProjectId, sprintIds: SprintId[]) =>
+    apiFetch<Sprint[]>(`/api/projects/${projectId}/sprints/reorder`, {
+      method: "PUT",
+      body: JSON.stringify({ sprint_ids: sprintIds }),
+    }),
 
   // Specs
   listSpecs: (projectId: ProjectId) =>

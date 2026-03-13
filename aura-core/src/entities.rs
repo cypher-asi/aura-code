@@ -5,7 +5,8 @@ use crate::enums::{
     AgentStatus, ChatRole, InviteStatus, OrgRole, ProjectStatus, SessionStatus, TaskStatus,
 };
 use crate::ids::{
-    AgentId, ChatMessageId, ChatSessionId, InviteId, OrgId, ProjectId, SessionId, SpecId, TaskId,
+    AgentId, ChatMessageId, ChatSessionId, InviteId, OrgId, ProjectId, SessionId, SpecId, SprintId,
+    TaskId,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -22,12 +23,25 @@ pub struct Project {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sprint {
+    pub sprint_id: SprintId,
+    pub project_id: ProjectId,
+    pub title: String,
+    pub prompt: String,
+    pub order_index: u32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Spec {
     pub spec_id: SpecId,
     pub project_id: ProjectId,
     pub title: String,
     pub order_index: u32,
     pub markdown_contents: String,
+    #[serde(default)]
+    pub sprint_id: Option<SprintId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

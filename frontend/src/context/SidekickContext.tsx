@@ -1,9 +1,10 @@
 import { createContext, useContext, useCallback, useState, useRef, type ReactNode } from "react";
-import type { ChatSession, Spec, Task } from "../types";
+import type { ChatSession, Sprint, Spec, Task } from "../types";
 
-type SidekickTab = "specs" | "tasks" | "progress" | "log";
+type SidekickTab = "sprint" | "specs" | "tasks" | "progress" | "log";
 
 export type PreviewItem =
+  | { kind: "sprint"; sprint: Sprint }
   | { kind: "spec"; spec: Spec }
   | { kind: "task"; task: Task };
 
@@ -21,6 +22,7 @@ type SessionUpdateListener = (session: ChatSession) => void;
 
 interface PanelActions {
   setActiveTab: (tab: SidekickTab) => void;
+  viewSprint: (sprint: Sprint) => void;
   viewSpec: (spec: Spec) => void;
   viewTask: (task: Task) => void;
   closePreview: () => void;
@@ -36,7 +38,7 @@ interface PanelActions {
 type SidekickContextValue = PanelState & PanelActions;
 
 const INITIAL_PANEL: PanelState = {
-  activeTab: "specs",
+  activeTab: "sprint",
   previewItem: null,
   infoContent: null,
   showInfo: false,
@@ -53,6 +55,10 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
 
   const setActiveTab = useCallback((tab: SidekickTab) => {
     setPanel((prev) => ({ ...prev, activeTab: tab, showInfo: false }));
+  }, []);
+
+  const viewSprint = useCallback((sprint: Sprint) => {
+    setPanel((prev) => ({ ...prev, previewItem: { kind: "sprint", sprint } }));
   }, []);
 
   const viewSpec = useCallback((spec: Spec) => {
@@ -118,6 +124,7 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
       value={{
         ...panel,
         setActiveTab,
+        viewSprint,
         viewSpec,
         viewTask,
         closePreview,

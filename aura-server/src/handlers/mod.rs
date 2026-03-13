@@ -6,5 +6,6 @@ pub mod orgs;
 pub mod projects;
 pub mod settings;
 pub mod specs;
+pub mod sprints;
 pub mod tasks;
 pub mod ws;
