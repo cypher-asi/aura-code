@@ -142,6 +142,7 @@ impl AuthService {
         match self.store.get_setting(AUTH_SESSION_KEY) {
             Ok(bytes) => {
                 let session: ZeroAuthSession = serde_json::from_slice(&bytes)?;
+                self.ensure_org(&session);
                 Ok(Some(session))
             }
             Err(aura_store::StoreError::NotFound(_)) => Ok(None),
@@ -181,6 +182,7 @@ impl AuthService {
                 };
                 let bytes = serde_json::to_vec(&updated)?;
                 self.store.put_setting(AUTH_SESSION_KEY, &bytes)?;
+                self.ensure_org(&updated);
                 Ok(Some(updated))
             }
             Err(AuthError::ZosApi { status: 401, .. }) => {
@@ -204,6 +206,14 @@ impl AuthService {
         }
         let _ = self.store.delete_setting(AUTH_SESSION_KEY);
         Ok(())
+    }
+
+    fn ensure_org(&self, session: &ZeroAuthSession) {
+        if let Some(ref org_svc) = self.org_service {
+            if let Err(e) = org_svc.ensure_default_org(&session.user_id, &session.display_name) {
+                warn!("Failed to ensure default org: {e}");
+            }
+        }
     }
 
     async fn fetch_user_info(&self, token: &str) -> Result<ZosUserResponse, AuthError> {
@@ -255,11 +265,7 @@ impl AuthService {
         let bytes = serde_json::to_vec(&session)?;
         self.store.put_setting(AUTH_SESSION_KEY, &bytes)?;
 
-        if let Some(ref org_svc) = self.org_service {
-            if let Err(e) = org_svc.ensure_default_org(&session.user_id, &session.display_name) {
-                warn!("Failed to ensure default org: {e}");
-            }
-        }
+        self.ensure_org(&session);
 
         Ok(session)
     }
