@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { Project, ChatSession } from "../types";
-import { ButtonPlus, Explorer, Text, Menu, Modal, ModalConfirm, Input, Button } from "@cypher-asi/zui";
+import { ButtonPlus, Explorer, Menu, Modal, ModalConfirm, Input, Button, Text } from "@cypher-asi/zui";
 import type { ExplorerNode, MenuItem } from "@cypher-asi/zui";
 import { FolderOpen, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import { NewProjectModal } from "./NewProjectModal";
@@ -259,32 +259,29 @@ export function ProjectList() {
   };
 
   return (
-    <div>
-      <div className={styles.header}>
-        <Text variant="muted" size="xs" weight="semibold">PROJECTS</Text>
-        <ButtonPlus onClick={() => setShowNewProject(true)} size="sm" title="New Project" />
+    <div className={styles.root}>
+      <div className={styles.explorerWrap} onContextMenu={handleContextMenu}>
+        <div className={styles.addButton}>
+          <ButtonPlus onClick={() => setShowNewProject(true)} size="sm" title="New Project" />
+        </div>
+        <Explorer
+          data={explorerData}
+          searchable
+          searchPlaceholder="Search..."
+          expandOnSelect
+          enableDragDrop={false}
+          enableMultiSelect={false}
+          defaultExpandedIds={defaultExpandedIds}
+          defaultSelectedIds={defaultSelectedIds}
+          onSelect={handleSelect}
+          onExpand={handleExpand}
+        />
       </div>
 
-      {projects.length === 0 ? (
+      {projects.length === 0 && (
         <Text variant="muted" size="sm" style={{ padding: "var(--space-3) var(--space-4)" }}>
           No projects yet
         </Text>
-      ) : (
-        <div onContextMenu={handleContextMenu}>
-          <Explorer
-            data={explorerData}
-            searchable
-            searchPlaceholder="Search..."
-            expandOnSelect
-            compact={false}
-            enableDragDrop={false}
-            enableMultiSelect={false}
-            defaultExpandedIds={defaultExpandedIds}
-            defaultSelectedIds={defaultSelectedIds}
-            onSelect={handleSelect}
-            onExpand={handleExpand}
-          />
-        </div>
       )}
 
       {ctxMenu &&
