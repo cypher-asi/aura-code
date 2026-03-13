@@ -337,7 +337,6 @@ impl DevLoopEngine {
 
         let task_id = task.task_id;
 
-        // First attempt: stream with prefill to force JSON output
         let response = {
             let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
             let event_tx = self.event_tx.clone();
@@ -352,12 +351,11 @@ impl DevLoopEngine {
 
             let resp = self
                 .claude_client
-                .complete_stream_with_prefill(
+                .complete_stream(
                     api_key,
                     TASK_EXECUTION_SYSTEM_PROMPT,
                     &user_message,
                     16384,
-                    "{",
                     stream_tx,
                 )
                 .await?;
@@ -383,7 +381,6 @@ impl DevLoopEngine {
                         ("user".to_string(), user_message.clone()),
                         ("assistant".to_string(), last_response.clone()),
                         ("user".to_string(), RETRY_CORRECTION_PROMPT.to_string()),
-                        ("assistant".to_string(), "{".to_string()),
                     ];
 
                     let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
@@ -409,12 +406,11 @@ impl DevLoopEngine {
                         .await?;
                     let _ = forwarder.await;
 
-                    let full_response = format!("{{{retry_resp}");
-                    match parse_execution_response(&full_response) {
+                    match parse_execution_response(&retry_resp) {
                         Ok(execution) => return Ok(execution),
                         Err(e) => {
                             warn!(task_id = %task_id, attempt, error = %e, "retry parse failed");
-                            last_response = full_response;
+                            last_response = retry_resp;
                         }
                     }
                 }
