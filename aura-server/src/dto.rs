@@ -25,6 +25,8 @@ pub struct CreateProjectRequest {
     pub description: String,
     pub linked_folder_path: String,
     pub requirements_doc_path: String,
+    pub github_integration_id: Option<GitHubIntegrationId>,
+    pub github_repo_full_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,6 +35,8 @@ pub struct UpdateProjectRequest {
     pub description: Option<String>,
     pub linked_folder_path: Option<String>,
     pub requirements_doc_path: Option<String>,
+    pub github_integration_id: Option<GitHubIntegrationId>,
+    pub github_repo_full_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,6 +101,42 @@ pub struct SetBillingRequest {
 #[derive(Debug, Deserialize)]
 pub struct SetGithubRequest {
     pub github_org: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GitHubInstallResponse {
+    pub install_url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GitHubIntegrationResponse {
+    pub integration_id: String,
+    pub org_id: String,
+    pub installation_id: i64,
+    pub github_account_login: String,
+    pub github_account_type: String,
+    pub connected_by: String,
+    pub connected_at: DateTime<Utc>,
+    pub repo_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GitHubRepoResponse {
+    pub github_repo_id: i64,
+    pub integration_id: String,
+    pub full_name: String,
+    pub name: String,
+    pub private: bool,
+    pub default_branch: String,
+    pub html_url: String,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GitHubCallbackQuery {
+    pub installation_id: i64,
+    pub setup_action: Option<String>,
+    pub state: Option<String>,
 }
 
 impl From<ZeroAuthSession> for AuthSessionResponse {

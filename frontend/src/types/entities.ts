@@ -25,6 +25,7 @@ export interface Sprint {
   title: string;
   prompt: string;
   order_index: number;
+  generated_at?: string;
   created_at: string;
   updated_at: string;
 }

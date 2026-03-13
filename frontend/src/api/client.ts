@@ -226,6 +226,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ sprint_ids: sprintIds }),
     }),
+  generateSprint: (projectId: ProjectId, sprintId: SprintId) =>
+    apiFetch<Sprint>(`/api/projects/${projectId}/sprints/${sprintId}/generate`, {
+      method: "POST",
+    }),
 
   // Specs
   listSpecs: (projectId: ProjectId) =>

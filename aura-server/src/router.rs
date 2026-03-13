@@ -97,6 +97,10 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
                 .put(sprints::update_sprint)
                 .delete(sprints::delete_sprint),
         )
+        .route(
+            "/api/projects/:project_id/sprints/:sprint_id/generate",
+            post(sprints::generate_sprint),
+        )
         // Specs
         .route("/api/projects/:project_id/specs", get(specs::list_specs))
         .route(

@@ -56,6 +56,7 @@ pub async fn create_sprint(
         title: body.title,
         prompt: body.prompt,
         order_index: existing.len() as u32,
+        generated_at: None,
         created_at: now,
         updated_at: now,
     };
@@ -123,6 +124,46 @@ pub async fn delete_sprint(
 
     info!(%project_id, %sprint_id, "Sprint deleted");
     Ok(Json(()))
+}
+
+const GENERATE_SYSTEM_PROMPT: &str = "\
+You are a requirements engineer. Take the user's input and expand it into a comprehensive, \
+well-structured requirements document. Preserve the user's intent. Output only the document text.";
+
+pub async fn generate_sprint(
+    State(state): State<AppState>,
+    Path((project_id, sprint_id)): Path<(ProjectId, SprintId)>,
+) -> ApiResult<Json<Sprint>> {
+    let mut sprint = state
+        .store
+        .get_sprint(&project_id, &sprint_id)
+        .map_err(|e| match e {
+            aura_store::StoreError::NotFound(_) => ApiError::not_found("sprint not found"),
+            _ => ApiError::internal(e.to_string()),
+        })?;
+
+    let api_key = state
+        .settings_service
+        .get_decrypted_api_key()
+        .map_err(|e| ApiError::internal(format!("API key error: {e}")))?;
+
+    let expanded = state
+        .claude_client
+        .complete(&api_key, GENERATE_SYSTEM_PROMPT, &sprint.prompt, 8192)
+        .await
+        .map_err(|e| ApiError::internal(format!("LLM generation failed: {e}")))?;
+
+    sprint.prompt = expanded;
+    sprint.generated_at = Some(Utc::now());
+    sprint.updated_at = Utc::now();
+
+    state
+        .store
+        .put_sprint(&sprint)
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+
+    info!(%project_id, %sprint_id, "Sprint generated via LLM");
+    Ok(Json(sprint))
 }
 
 pub async fn reorder_sprints(

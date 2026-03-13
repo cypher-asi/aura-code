@@ -3,6 +3,7 @@ pub mod auth;
 pub mod chat;
 pub mod claude;
 pub mod error;
+pub mod github;
 pub mod org;
 pub mod project;
 pub mod session;
@@ -15,9 +16,10 @@ pub use auth::AuthService;
 pub use chat::{ChatService, ChatStreamEvent};
 pub use claude::ClaudeClient;
 pub use error::{
-    AgentError, AuthError, ChatError, ClaudeClientError, OrgError, ProjectError, SessionError,
-    SpecGenError, TaskError,
+    AgentError, AuthError, ChatError, ClaudeClientError, GitHubError, OrgError, ProjectError,
+    SessionError, SpecGenError, TaskError,
 };
+pub use github::GitHubService;
 pub use org::OrgService;
 pub use project::{CreateProjectInput, ProjectService, UpdateProjectInput};
 pub use session::SessionService;

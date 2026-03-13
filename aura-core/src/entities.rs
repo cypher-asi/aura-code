@@ -33,6 +33,8 @@ pub struct Sprint {
     pub title: String,
     pub prompt: String,
     pub order_index: u32,
+    #[serde(default)]
+    pub generated_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

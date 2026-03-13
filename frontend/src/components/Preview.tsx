@@ -3,11 +3,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Sidebar, Button, Text } from "@cypher-asi/zui";
-import { X } from "lucide-react";
+import { X, Sparkles, Loader2 } from "lucide-react";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
 import { StatusBadge } from "./StatusBadge";
+import { formatRelativeTime } from "../utils/format";
 import type { PreviewItem } from "../context/SidekickContext";
 import type { Sprint } from "../types";
 import styles from "./Preview.module.css";
@@ -18,12 +19,15 @@ function SprintPreview({ sprint }: { sprint: Sprint }) {
   const sidekick = useSidekick();
   const [title, setTitle] = useState(sprint.title);
   const [prompt, setPrompt] = useState(sprint.prompt);
+  const [generatedAt, setGeneratedAt] = useState(sprint.generated_at);
+  const [generating, setGenerating] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     setTitle(sprint.title);
     setPrompt(sprint.prompt);
-  }, [sprint.sprint_id, sprint.title, sprint.prompt]);
+    setGeneratedAt(sprint.generated_at);
+  }, [sprint.sprint_id, sprint.title, sprint.prompt, sprint.generated_at]);
 
   const save = useCallback(
     (updates: { title?: string; prompt?: string }) => {
@@ -43,6 +47,28 @@ function SprintPreview({ sprint }: { sprint: Sprint }) {
     },
     [sidekick, sprint],
   );
+
+  const handleGenerate = useCallback(async () => {
+    if (!projectId || generating) return;
+    setGenerating(true);
+    try {
+      const updated = await api.generateSprint(projectId, sprint.sprint_id);
+      setTitle(updated.title);
+      setPrompt(updated.prompt);
+      setGeneratedAt(updated.generated_at);
+      sidekick.updatePreviewSprint({
+        sprint_id: sprint.sprint_id,
+        title: updated.title,
+        prompt: updated.prompt,
+        generated_at: updated.generated_at,
+      });
+      sidekick.notifySprintUpdate(updated);
+    } catch (err) {
+      console.error("Failed to generate sprint", err);
+    } finally {
+      setGenerating(false);
+    }
+  }, [projectId, sprint.sprint_id, generating, sidekick]);
 
   useEffect(() => {
     return () => clearTimeout(debounceRef.current);
@@ -70,6 +96,23 @@ function SprintPreview({ sprint }: { sprint: Sprint }) {
         }}
         placeholder="Write your sprint document here..."
       />
+      <div className={styles.sprintFooter}>
+        {generatedAt && (
+          <Text variant="muted" size="sm" className={styles.lastGenerated}>
+            Last generated: {formatRelativeTime(generatedAt)}
+          </Text>
+        )}
+        <Button
+          variant="secondary"
+          size="sm"
+          className={styles.generateBtn}
+          icon={generating ? <Loader2 size={14} className={styles.spinner} /> : <Sparkles size={14} />}
+          onClick={handleGenerate}
+          disabled={generating}
+        >
+          {generating ? "Generating..." : "Generate"}
+        </Button>
+      </div>
     </div>
   );
 }

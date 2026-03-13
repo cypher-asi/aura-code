@@ -282,6 +282,10 @@ impl OrgService {
         })
     }
 
+    pub fn require_admin_or_owner_pub(&self, org_id: &OrgId, user_id: &str) -> Result<OrgMember, OrgError> {
+        self.require_admin_or_owner(org_id, user_id)
+    }
+
     fn require_admin_or_owner(&self, org_id: &OrgId, user_id: &str) -> Result<OrgMember, OrgError> {
         let member = self.get_member(org_id, user_id)?;
         if member.role != OrgRole::Owner && member.role != OrgRole::Admin {
