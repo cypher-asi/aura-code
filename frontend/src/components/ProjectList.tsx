@@ -270,6 +270,12 @@ export function ProjectList() {
     setDeleteLoading(true);
     try {
       await api.deleteProject(deleteTarget.project_id);
+      try {
+        const last = JSON.parse(localStorage.getItem("aura-last-chat") || "{}");
+        if (last.projectId === deleteTarget.project_id) {
+          localStorage.removeItem("aura-last-chat");
+        }
+      } catch { /* ignore */ }
       if (projectId === deleteTarget.project_id) {
         navigate("/");
       }
@@ -287,6 +293,12 @@ export function ProjectList() {
     setDeleteSessionLoading(true);
     try {
       await api.deleteChatSession(deleteSessionTarget.project_id, deleteSessionTarget.chat_session_id);
+      try {
+        const last = JSON.parse(localStorage.getItem("aura-last-chat") || "{}");
+        if (last.chatSessionId === deleteSessionTarget.chat_session_id) {
+          localStorage.removeItem("aura-last-chat");
+        }
+      } catch { /* ignore */ }
       if (chatSessionId === deleteSessionTarget.chat_session_id) {
         navigate(`/projects/${deleteSessionTarget.project_id}/chat`);
       }

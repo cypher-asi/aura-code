@@ -46,6 +46,16 @@ export function ChatView() {
     }
   }, []);
 
+  // Persist last visited chat for restoring on app open
+  useEffect(() => {
+    if (projectId && chatSessionId) {
+      localStorage.setItem(
+        "aura-last-chat",
+        JSON.stringify({ projectId, chatSessionId }),
+      );
+    }
+  }, [projectId, chatSessionId]);
+
   // Load messages on session change
   useEffect(() => {
     if (!projectId || !chatSessionId) {
