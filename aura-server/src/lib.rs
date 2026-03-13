@@ -1,0 +1,61 @@
+pub mod dto;
+pub mod error;
+pub mod handlers;
+pub mod router;
+pub mod state;
+
+pub use router::create_router;
+pub use state::AppState;
+
+use std::path::Path;
+use std::sync::Arc;
+
+use tokio::sync::{broadcast, mpsc, Mutex};
+
+use aura_engine::EngineEvent;
+use aura_services::{
+    AgentService, ClaudeClient, ProjectService, SessionService, SpecGenerationService,
+    TaskExtractionService, TaskService,
+};
+use aura_settings::SettingsService;
+use aura_store::RocksStore;
+
+pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
+    let store = Arc::new(RocksStore::open(db_path).expect("failed to open RocksDB"));
+    let settings_service =
+        Arc::new(SettingsService::new(store.clone(), data_dir).expect("failed to init settings"));
+    let claude_client = Arc::new(ClaudeClient::new());
+    let project_service = Arc::new(ProjectService::new(store.clone()));
+    let spec_gen_service = Arc::new(SpecGenerationService::new(
+        store.clone(),
+        settings_service.clone(),
+        claude_client.clone(),
+    ));
+    let task_extraction_service = Arc::new(TaskExtractionService::new(
+        store.clone(),
+        settings_service.clone(),
+        claude_client.clone(),
+    ));
+    let task_service = Arc::new(TaskService::new(store.clone()));
+    let agent_service = Arc::new(AgentService::new(store.clone()));
+    let session_service = Arc::new(SessionService::new(store.clone()));
+
+    let (event_tx, _event_rx) = mpsc::unbounded_channel::<EngineEvent>();
+    let (event_broadcast, _) = broadcast::channel::<EngineEvent>(256);
+
+    AppState {
+        store,
+        settings_service,
+        project_service,
+        spec_gen_service,
+        task_extraction_service,
+        task_service,
+        agent_service,
+        session_service,
+        claude_client,
+        event_tx,
+        event_broadcast,
+        loop_handle: Arc::new(Mutex::new(None)),
+        loop_project_id: Arc::new(Mutex::new(None)),
+    }
+}
