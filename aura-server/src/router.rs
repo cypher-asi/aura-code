@@ -99,7 +99,8 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
         )
         .route(
             "/api/projects/:project_id/chat-sessions/:chat_session_id",
-            axum::routing::delete(chat::delete_chat_session),
+            axum::routing::put(chat::update_chat_session)
+                .delete(chat::delete_chat_session),
         )
         .route(
             "/api/projects/:project_id/chat-sessions/:chat_session_id/messages",

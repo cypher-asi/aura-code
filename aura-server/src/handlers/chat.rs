@@ -21,6 +21,11 @@ pub struct CreateChatSessionRequest {
 }
 
 #[derive(Deserialize)]
+pub struct UpdateChatSessionRequest {
+    pub title: String,
+}
+
+#[derive(Deserialize)]
 pub struct SendMessageRequest {
     pub content: String,
     pub action: Option<String>,
@@ -58,6 +63,18 @@ pub async fn delete_chat_session(
         .delete_session(&project_id, &chat_session_id)
         .map_err(|e| ApiError::internal(e.to_string()))?;
     Ok(Json(()))
+}
+
+pub async fn update_chat_session(
+    State(state): State<AppState>,
+    Path((project_id, chat_session_id)): Path<(ProjectId, ChatSessionId)>,
+    Json(body): Json<UpdateChatSessionRequest>,
+) -> ApiResult<Json<ChatSession>> {
+    let session = state
+        .chat_service
+        .update_session_title(&project_id, &chat_session_id, &body.title)
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    Ok(Json(session))
 }
 
 pub async fn list_messages(
@@ -108,6 +125,10 @@ pub async fn send_message_stream(
             ChatStreamEvent::MessageSaved(msg) => Event::default()
                 .event("message_saved")
                 .json_data(serde_json::json!({ "message": msg }))
+                .unwrap(),
+            ChatStreamEvent::TitleUpdated(session) => Event::default()
+                .event("title_updated")
+                .json_data(serde_json::json!({ "session": session }))
                 .unwrap(),
             ChatStreamEvent::Error(msg) => Event::default()
                 .event("error")
