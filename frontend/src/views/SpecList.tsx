@@ -40,12 +40,28 @@ export function SpecList() {
   }, [fetchSpecs]);
 
   useEffect(() => {
-    const unsub = subscribe("spec_gen_completed", (e: EngineEvent) => {
-      if (e.project_id === projectId) {
-        fetchSpecs(true);
-      }
-    });
-    return unsub;
+    const unsubs = [
+      subscribe("spec_gen_started", (e: EngineEvent) => {
+        if (e.project_id === projectId) {
+          setSpecs([]);
+          setSelectedId(null);
+        }
+      }),
+      subscribe("spec_saved", (e: EngineEvent) => {
+        if (e.project_id === projectId && e.spec) {
+          setSpecs((prev) => {
+            if (prev.some((s) => s.spec_id === e.spec!.spec_id)) return prev;
+            return [...prev, e.spec!].sort((a, b) => a.order_index - b.order_index);
+          });
+        }
+      }),
+      subscribe("spec_gen_completed", (e: EngineEvent) => {
+        if (e.project_id === projectId) {
+          fetchSpecs(true);
+        }
+      }),
+    ];
+    return () => unsubs.forEach((fn) => fn());
   }, [projectId, subscribe, fetchSpecs]);
 
   const handleSelect = (spec: Spec) => {
