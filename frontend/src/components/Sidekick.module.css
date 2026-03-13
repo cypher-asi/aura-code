@@ -5,10 +5,13 @@
 
 .panelHeader {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .sidekickTab {
   padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }
 
 .actions {
