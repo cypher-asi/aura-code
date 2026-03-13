@@ -41,6 +41,11 @@ pub enum LoopOutcome {
     Paused { completed_count: usize },
     Stopped { completed_count: usize },
     AllTasksBlocked,
+    TaskFailed {
+        completed_count: usize,
+        task_id: TaskId,
+        reason: String,
+    },
     Error(String),
 }
 
@@ -218,22 +223,24 @@ impl DevLoopEngine {
                 .execute_task(&project_id, &task, &session, &api_key)
                 .await;
 
-            match result {
+            let failure_reason = match result {
                 Ok(execution) => {
                     let project = self.project_service.get_project(&project_id)?;
                     let base_path = Path::new(&project.linked_folder_path);
 
                     if let Err(e) = file_ops::apply_file_ops(base_path, &execution.file_ops).await {
+                        let reason = format!("file operation failed: {e}");
                         self.task_service.fail_task(
                             &project_id,
                             &task.spec_id,
                             &task.task_id,
-                            &format!("file operation failed: {e}"),
+                            &reason,
                         )?;
                         self.emit(EngineEvent::TaskFailed {
                             task_id: task.task_id,
                             reason: e.to_string(),
                         });
+                        Some(reason)
                     } else {
                         self.task_service.complete_task(
                             &project_id,
@@ -264,31 +271,45 @@ impl DevLoopEngine {
                                 task_id: new_task.task_id,
                             });
                         }
-                    }
 
-                    self.session_service.update_context_usage(
-                        &project_id,
-                        &agent_id,
-                        &session.session_id,
-                        execution.input_tokens,
-                        execution.output_tokens,
-                    )?;
+                        self.session_service.update_context_usage(
+                            &project_id,
+                            &agent_id,
+                            &session.session_id,
+                            execution.input_tokens,
+                            execution.output_tokens,
+                        )?;
+                        None
+                    }
                 }
                 Err(e) => {
+                    let reason = format!("execution error: {e}");
                     self.task_service.fail_task(
                         &project_id,
                         &task.spec_id,
                         &task.task_id,
-                        &format!("execution error: {e}"),
+                        &reason,
                     )?;
                     self.emit(EngineEvent::TaskFailed {
                         task_id: task.task_id,
                         reason: e.to_string(),
                     });
+                    Some(reason)
                 }
-            }
+            };
 
             self.agent_service.finish_working(&project_id, &agent_id)?;
+
+            if let Some(reason) = failure_reason {
+                self.emit(EngineEvent::LoopFinished {
+                    outcome: "task_failed".into(),
+                });
+                return Ok(LoopOutcome::TaskFailed {
+                    completed_count,
+                    task_id: task.task_id,
+                    reason,
+                });
+            }
 
             let current_session =
                 self.session_service

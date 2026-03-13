@@ -288,12 +288,17 @@ fn loop_outcome_variants() {
     let paused = LoopOutcome::Paused { completed_count: 3 };
     let stopped = LoopOutcome::Stopped { completed_count: 1 };
     let blocked = LoopOutcome::AllTasksBlocked;
+    let task_failed = LoopOutcome::TaskFailed {
+        completed_count: 2,
+        task_id: TaskId::new(),
+        reason: "boom".into(),
+    };
     let error = LoopOutcome::Error("test".into());
 
-    // Just verify these construct without panic
     let _ = format!("{complete:?}");
     let _ = format!("{paused:?}");
     let _ = format!("{stopped:?}");
     let _ = format!("{blocked:?}");
+    let _ = format!("{task_failed:?}");
     let _ = format!("{error:?}");
 }
