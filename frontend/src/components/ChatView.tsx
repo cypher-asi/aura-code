@@ -122,6 +122,7 @@ export function ChatView() {
       setMessages((prev) => [...prev, userMsg]);
       setInput("");
       setIsStreaming(true);
+      sidekick.setStreamingSessionId(chatSessionId);
       setStreamingText("");
       streamBufferRef.current = "";
       autoScrollRef.current = true;
@@ -167,6 +168,9 @@ export function ChatView() {
             setStreamingText("");
             streamBufferRef.current = "";
           },
+          onTitleUpdated(session) {
+            sidekick.notifySessionTitleUpdate(session);
+          },
           onError(message) {
             console.error("Chat stream error:", message);
             if (streamBufferRef.current) {
@@ -183,7 +187,6 @@ export function ChatView() {
             streamBufferRef.current = "";
           },
           onDone() {
-            // If we have streamed content but no message_saved event yet, display it
             if (streamBufferRef.current && !isStreaming) {
               setMessages((prev) => [
                 ...prev,
@@ -197,6 +200,7 @@ export function ChatView() {
               streamBufferRef.current = "";
             }
             setIsStreaming(false);
+            sidekick.setStreamingSessionId(null);
             abortRef.current = null;
           },
         },
@@ -204,6 +208,7 @@ export function ChatView() {
       );
 
       setIsStreaming(false);
+      sidekick.setStreamingSessionId(null);
       abortRef.current = null;
     },
     [projectId, chatSessionId, isStreaming, sidekick],
