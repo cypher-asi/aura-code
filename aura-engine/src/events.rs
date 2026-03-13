@@ -41,4 +41,20 @@ pub enum EngineEvent {
     LogLine {
         message: String,
     },
+
+    SpecGenStarted {
+        project_id: ProjectId,
+    },
+    SpecGenProgress {
+        project_id: ProjectId,
+        stage: String,
+    },
+    SpecGenCompleted {
+        project_id: ProjectId,
+        spec_count: usize,
+    },
+    SpecGenFailed {
+        project_id: ProjectId,
+        reason: String,
+    },
 }

@@ -65,6 +65,18 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.progressStage {
+  font-size: 13px;
+  color: var(--color-primary);
+  animation: pulseFade 1.5s ease-in-out infinite;
+}
+
+@keyframes pulseFade {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .formGroup {

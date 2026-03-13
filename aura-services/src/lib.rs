@@ -14,6 +14,6 @@ pub use error::{
 };
 pub use project::{CreateProjectInput, ProjectService, UpdateProjectInput};
 pub use session::SessionService;
-pub use spec_gen::SpecGenerationService;
+pub use spec_gen::{ProgressTx, SpecGenerationService};
 pub use task::TaskService;
 pub use task_extraction::TaskExtractionService;

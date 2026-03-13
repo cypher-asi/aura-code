@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { Project } from "../types";
+import type { EngineEvent } from "../types/events";
+import { useEventContext } from "../context/EventContext";
 import { StatusBadge } from "../components/StatusBadge";
 import { Spinner } from "../components/Spinner";
 import styles from "./views.module.css";
@@ -12,8 +14,36 @@ export function ProjectDetail() {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [genLoading, setGenLoading] = useState(false);
+  const [genStage, setGenStage] = useState("");
   const [extractLoading, setExtractLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const { subscribe } = useEventContext();
+
+  useEffect(() => {
+    const unsubs = [
+      subscribe("spec_gen_started", (e: EngineEvent) => {
+        if (e.project_id === projectId) {
+          setGenStage("Starting spec generation...");
+        }
+      }),
+      subscribe("spec_gen_progress", (e: EngineEvent) => {
+        if (e.project_id === projectId && e.stage) {
+          setGenStage(e.stage);
+        }
+      }),
+      subscribe("spec_gen_completed", (e: EngineEvent) => {
+        if (e.project_id === projectId) {
+          setGenStage("");
+        }
+      }),
+      subscribe("spec_gen_failed", (e: EngineEvent) => {
+        if (e.project_id === projectId) {
+          setGenStage("");
+        }
+      }),
+    ];
+    return () => unsubs.forEach((fn) => fn());
+  }, [projectId, subscribe]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -97,6 +127,9 @@ export function ProjectDetail() {
         >
           {genLoading ? <><Spinner size={14} /> Generating...</> : "Generate Specs"}
         </button>
+        {genLoading && genStage && (
+          <span className={styles.progressStage}>{genStage}</span>
+        )}
         <button
           className={styles.btnPrimary}
           onClick={handleExtractTasks}

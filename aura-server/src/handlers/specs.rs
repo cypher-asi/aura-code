@@ -1,7 +1,9 @@
 use axum::extract::{Path, State};
 use axum::Json;
+use tokio::sync::mpsc;
 
 use aura_core::{ProjectId, Spec, SpecId};
+use aura_engine::EngineEvent;
 
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
@@ -37,21 +39,53 @@ pub async fn generate_specs(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
 ) -> ApiResult<Json<Vec<Spec>>> {
-    let specs = state
+    let _ = state.event_tx.send(EngineEvent::SpecGenStarted {
+        project_id,
+    });
+
+    let (progress_tx, mut progress_rx) = mpsc::unbounded_channel::<String>();
+
+    let event_tx = state.event_tx.clone();
+    let pid = project_id;
+    tokio::spawn(async move {
+        while let Some(stage) = progress_rx.recv().await {
+            let _ = event_tx.send(EngineEvent::SpecGenProgress {
+                project_id: pid,
+                stage,
+            });
+        }
+    });
+
+    let result = state
         .spec_gen_service
-        .generate_specs(&project_id)
-        .await
-        .map_err(|e| match &e {
-            aura_services::SpecGenError::ProjectNotFound(_) => {
-                ApiError::not_found("project not found")
-            }
-            aura_services::SpecGenError::RequirementsFileNotFound(p) => {
-                ApiError::bad_request(format!("requirements file not found: {p}"))
-            }
-            aura_services::SpecGenError::Settings(_) => {
-                ApiError::bad_request("API key not configured")
-            }
-            _ => ApiError::internal(e.to_string()),
-        })?;
-    Ok(Json(specs))
+        .generate_specs_with_progress(&project_id, Some(progress_tx))
+        .await;
+
+    match result {
+        Ok(specs) => {
+            let _ = state.event_tx.send(EngineEvent::SpecGenCompleted {
+                project_id,
+                spec_count: specs.len(),
+            });
+            Ok(Json(specs))
+        }
+        Err(e) => {
+            let _ = state.event_tx.send(EngineEvent::SpecGenFailed {
+                project_id,
+                reason: e.to_string(),
+            });
+            Err(match &e {
+                aura_services::SpecGenError::ProjectNotFound(_) => {
+                    ApiError::not_found("project not found")
+                }
+                aura_services::SpecGenError::RequirementsFileNotFound(p) => {
+                    ApiError::bad_request(format!("requirements file not found: {p}"))
+                }
+                aura_services::SpecGenError::Settings(_) => {
+                    ApiError::bad_request("API key not configured")
+                }
+                _ => ApiError::internal(e.to_string()),
+            })
+        }
+    }
 }

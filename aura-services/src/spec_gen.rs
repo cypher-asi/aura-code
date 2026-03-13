@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
 
 use aura_core::*;
 use aura_settings::SettingsService;
@@ -9,6 +10,8 @@ use aura_store::{BatchOp, ColumnFamilyName, RocksStore};
 
 use crate::claude::ClaudeClient;
 use crate::error::SpecGenError;
+
+pub type ProgressTx = mpsc::UnboundedSender<String>;
 
 const MAX_TOKENS: u32 = 8192;
 
@@ -58,11 +61,29 @@ impl SpecGenerationService {
         }
     }
 
+    fn emit(progress: &Option<ProgressTx>, msg: &str) {
+        if let Some(tx) = progress {
+            let _ = tx.send(msg.to_string());
+        }
+    }
+
     pub async fn generate_specs(&self, project_id: &ProjectId) -> Result<Vec<Spec>, SpecGenError> {
+        self.generate_specs_with_progress(project_id, None).await
+    }
+
+    pub async fn generate_specs_with_progress(
+        &self,
+        project_id: &ProjectId,
+        progress: Option<ProgressTx>,
+    ) -> Result<Vec<Spec>, SpecGenError> {
+        Self::emit(&progress, "Loading project");
+
         let project = self.store.get_project(project_id).map_err(|e| match e {
             aura_store::StoreError::NotFound(_) => SpecGenError::ProjectNotFound(*project_id),
             other => SpecGenError::Store(other),
         })?;
+
+        Self::emit(&progress, "Reading requirements document");
 
         let req_path = &project.requirements_doc_path;
         if !std::path::Path::new(req_path).is_file() {
@@ -70,7 +91,11 @@ impl SpecGenerationService {
         }
         let requirements_content = std::fs::read_to_string(req_path)?;
 
+        Self::emit(&progress, "Decrypting API key");
+
         let api_key = self.settings.get_decrypted_api_key()?;
+
+        Self::emit(&progress, "Calling Claude to generate specs — this may take a minute");
 
         let response = self
             .claude_client
@@ -82,8 +107,15 @@ impl SpecGenerationService {
             )
             .await?;
 
+        Self::emit(&progress, "Parsing AI response");
+
         let raw_specs = Self::parse_claude_response(&response)?;
         let new_specs = Self::raw_to_specs(project_id, raw_specs);
+
+        Self::emit(
+            &progress,
+            &format!("Saving {} specs to database", new_specs.len()),
+        );
 
         let existing_specs = self.store.list_specs_by_project(project_id)?;
         let existing_tasks = self.store.list_tasks_by_project(project_id)?;

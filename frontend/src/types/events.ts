@@ -9,7 +9,11 @@ export type EngineEventType =
   | "loop_paused"
   | "loop_stopped"
   | "loop_finished"
-  | "log_line";
+  | "log_line"
+  | "spec_gen_started"
+  | "spec_gen_progress"
+  | "spec_gen_completed"
+  | "spec_gen_failed";
 
 export interface EngineEvent {
   type: EngineEventType;
@@ -23,4 +27,6 @@ export interface EngineEvent {
   message?: string;
   project_id?: string;
   agent_id?: string;
+  stage?: string;
+  spec_count?: number;
 }
