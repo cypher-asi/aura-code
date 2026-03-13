@@ -70,6 +70,12 @@
   overflow: hidden;
 }
 
+.tabContent {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .sidekickBody [class*="label"] {
   text-align: left;
 }

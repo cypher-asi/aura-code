@@ -151,7 +151,9 @@ export function Sidekick() {
       }
     >
       <div className={styles.sidekickBody}>
-        {tabContent[activeTab]}
+        <div className={styles.tabContent}>
+          {tabContent[activeTab]}
+        </div>
       </div>
     </Sidebar>
   );
