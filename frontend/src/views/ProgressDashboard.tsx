@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { ProjectProgress } from "../types";
 import { useProjectContext } from "../context/ProjectContext";
-import { Page, PageEmptyState, Panel, Text } from "@cypher-asi/zui";
+import { PageEmptyState, Panel, Spinner, Text } from "@cypher-asi/zui";
 import styles from "./aura.module.css";
 
 export function ProgressDashboard() {
@@ -25,39 +25,37 @@ export function ProgressDashboard() {
     return () => clearInterval(interval);
   }, [projectId]);
 
-  if (!loading && !progress) {
+  if (loading) {
+    return <Spinner />;
+  }
+
+  if (!progress) {
     return <PageEmptyState title="No progress data" />;
   }
 
-  const pct = progress ? Math.round(progress.completion_percentage * 100) / 100 : 0;
+  const pct = Math.round(progress.completion_percentage * 100) / 100;
 
   return (
-    <Page
-      title="Progress"
-      subtitle={progress ? `${progress.done_tasks} of ${progress.total_tasks} tasks complete` : undefined}
-      isLoading={loading}
-    >
+    <div style={{ padding: "var(--space-4)" }}>
       <div style={{ textAlign: "center", marginBottom: "var(--space-5)" }}>
         <div style={{ fontSize: 56, fontWeight: 800, color: "var(--color-accent)" }}>
           {pct}%
         </div>
-        <div className={styles.progressBarContainer} style={{ maxWidth: 400, margin: "12px auto" }}>
+        <div className={styles.progressBarContainer}>
           <div className={styles.progressBarFill} style={{ width: `${pct}%` }} />
         </div>
       </div>
 
-      {progress && (
-        <div className={styles.statsGrid}>
-          <StatCard value={progress.total_tasks} label="Total" color="var(--color-text)" />
-          <StatCard value={progress.done_tasks} label="Done" color="var(--status-done)" />
-          <StatCard value={progress.in_progress_tasks} label="In Progress" color="var(--status-in-progress)" />
-          <StatCard value={progress.ready_tasks} label="Ready" color="var(--status-ready)" />
-          <StatCard value={progress.pending_tasks} label="Pending" color="var(--status-pending)" />
-          <StatCard value={progress.blocked_tasks} label="Blocked" color="var(--status-blocked)" />
-          <StatCard value={progress.failed_tasks} label="Failed" color="var(--status-failed)" />
-        </div>
-      )}
-    </Page>
+      <div className={styles.statsGrid}>
+        <StatCard value={progress.total_tasks} label="Total" color="var(--color-text)" />
+        <StatCard value={progress.done_tasks} label="Done" color="var(--status-done)" />
+        <StatCard value={progress.in_progress_tasks} label="In Progress" color="var(--status-in-progress)" />
+        <StatCard value={progress.ready_tasks} label="Ready" color="var(--status-ready)" />
+        <StatCard value={progress.pending_tasks} label="Pending" color="var(--status-pending)" />
+        <StatCard value={progress.blocked_tasks} label="Blocked" color="var(--status-blocked)" />
+        <StatCard value={progress.failed_tasks} label="Failed" color="var(--status-failed)" />
+      </div>
+    </div>
   );
 }
 
