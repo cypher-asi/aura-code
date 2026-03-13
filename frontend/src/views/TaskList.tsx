@@ -64,7 +64,7 @@ export function TaskList() {
       children: specTasks.map((task) => ({
         id: task.task_id,
         label: task.title,
-        icon: <StatusBadge status={task.status} />,
+        suffix: <StatusBadge status={task.status} />,
         metadata: { type: "task" },
       })),
     }));
@@ -76,7 +76,7 @@ export function TaskList() {
         children: ungrouped.map((task) => ({
           id: task.task_id,
           label: task.title,
-          icon: <StatusBadge status={task.status} />,
+          suffix: <StatusBadge status={task.status} />,
           metadata: { type: "task" },
         })),
       });
