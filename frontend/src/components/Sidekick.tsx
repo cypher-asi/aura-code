@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Sidebar, Tabs, Button, Text, Menu } from "@cypher-asi/zui";
 import { Archive, Info, ArrowLeft, Ellipsis } from "lucide-react";
+import { AutomationBar } from "./AutomationBar";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
 import { StatusBadge } from "./StatusBadge";
@@ -99,6 +100,8 @@ export function Sidekick() {
       maxWidth={1200}
       storageKey="aura-sidekick"
       header={
+        <>
+        <AutomationBar projectId={project.project_id} />
         <div className={styles.panelHeader}>
           <Tabs
             tabs={[
@@ -146,6 +149,7 @@ export function Sidekick() {
             </div>
           </div>
         </div>
+        </>
       }
     >
       <div className={styles.sidekickBody}>
