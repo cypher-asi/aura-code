@@ -27,11 +27,6 @@ html, body, #root {
   -webkit-app-region: no-drag;
 }
 
-/* Full-bleed sidebar nav items: remove ZUI Group inner padding */
-.nav-sidebar [class*="contentInner"] {
-  padding: 0;
-}
-
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
