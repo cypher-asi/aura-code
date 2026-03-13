@@ -108,7 +108,7 @@ export function TaskList() {
     <Explorer
       data={explorerData}
       searchable
-      searchPlaceholder="Search tasks..."
+      searchPlaceholder="Search..."
       enableDragDrop={false}
       enableMultiSelect={false}
       defaultExpandedIds={defaultExpandedIds}
