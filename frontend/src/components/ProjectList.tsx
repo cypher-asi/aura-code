@@ -1,14 +1,15 @@
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { Project, ChatSession } from "../types";
-import { ButtonPlus, Group, Text, Item, Menu, Modal, ModalConfirm, Input, Button } from "@cypher-asi/zui";
-import type { MenuItem } from "@cypher-asi/zui";
-import { MessageSquare, ChevronRight, ChevronDown, Pencil, Trash2 } from "lucide-react";
+import { ButtonPlus, Explorer, Text, Menu, Modal, ModalConfirm, Input, Button } from "@cypher-asi/zui";
+import type { ExplorerNode, MenuItem } from "@cypher-asi/zui";
+import { FolderOpen, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import styles from "./ProjectList.module.css";
 
 const projectMenuItems: MenuItem[] = [
+  { id: "new-chat", label: "New Chat", icon: <MessageSquare size={14} /> },
   { id: "rename", label: "Rename", icon: <Pencil size={14} /> },
   { type: "separator" },
   { id: "delete", label: "Delete", icon: <Trash2 size={14} /> },
@@ -27,7 +28,6 @@ interface ContextMenuState {
 
 export function ProjectList() {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [sessionsByProject, setSessionsByProject] = useState<Record<string, ChatSession[]>>({});
   const { projectId, chatSessionId } = useParams();
   const navigate = useNavigate();
@@ -58,18 +58,10 @@ export function ProjectList() {
   }, [fetchProjects]);
 
   useEffect(() => {
-    if (projectId && !expandedProjects.has(projectId)) {
-      setExpandedProjects((prev) => new Set(prev).add(projectId));
+    if (projectId && !(projectId in sessionsByProject)) {
+      fetchSessions(projectId);
     }
   }, [projectId]);
-
-  useEffect(() => {
-    for (const pid of expandedProjects) {
-      if (!sessionsByProject[pid]) {
-        fetchSessions(pid);
-      }
-    }
-  }, [expandedProjects, fetchSessions]);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -91,42 +83,112 @@ export function ProjectList() {
     };
   }, [ctxMenu]);
 
-  const toggleExpand = (pid: string) => {
-    setExpandedProjects((prev) => {
-      const next = new Set(prev);
-      if (next.has(pid)) {
-        next.delete(pid);
-      } else {
-        next.add(pid);
-      }
-      return next;
-    });
-  };
+  // Lookup maps for navigation from Explorer selection
+  const projectMap = useMemo(
+    () => new Map(projects.map((p) => [p.project_id, p])),
+    [projects],
+  );
 
-  const handleNewSession = async (pid: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const session = await api.createChatSession(pid, "New Chat");
-      fetchSessions(pid);
-      if (!expandedProjects.has(pid)) {
-        setExpandedProjects((prev) => new Set(prev).add(pid));
+  const sessionMeta = useMemo(() => {
+    const map = new Map<string, { projectId: string; session: ChatSession }>();
+    for (const [pid, sessions] of Object.entries(sessionsByProject)) {
+      for (const s of sessions) {
+        map.set(s.chat_session_id, { projectId: pid, session: s });
       }
-      navigate(`/projects/${pid}/chat/${session.chat_session_id}`);
-    } catch (err) {
-      console.error("Failed to create session", err);
     }
-  };
+    return map;
+  }, [sessionsByProject]);
 
-  const handleProjectContextMenu = (e: React.MouseEvent, project: Project) => {
-    e.preventDefault();
-    setCtxMenu({ x: e.clientX, y: e.clientY, project });
-  };
+  // Build Explorer tree data
+  const explorerData: ExplorerNode[] = useMemo(
+    () =>
+      projects.map((p) => ({
+        id: p.project_id,
+        label: p.name,
+        icon: <FolderOpen size={14} />,
+        metadata: { type: "project" },
+        children:
+          sessionsByProject[p.project_id] !== undefined
+            ? sessionsByProject[p.project_id].map((s) => ({
+                id: s.chat_session_id,
+                label: s.title,
+                icon: <MessageSquare size={12} />,
+                metadata: { type: "session", projectId: p.project_id },
+              }))
+            : [{ id: `_load_${p.project_id}`, label: "Loading...", disabled: true }],
+      })),
+    [projects, sessionsByProject],
+  );
 
-  const handleSessionContextMenu = (e: React.MouseEvent, session: ChatSession) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setCtxMenu({ x: e.clientX, y: e.clientY, session });
-  };
+  const defaultExpandedIds = useMemo(
+    () => (projectId ? [projectId] : []),
+    [projectId],
+  );
+
+  const defaultSelectedIds = useMemo(() => {
+    if (chatSessionId) return [chatSessionId];
+    if (projectId) return [projectId];
+    return [];
+  }, [projectId, chatSessionId]);
+
+  const handleSelect = useCallback(
+    (ids: string[]) => {
+      const id = ids[ids.length - 1];
+      if (!id) return;
+      if (projectMap.has(id)) {
+        navigate(`/projects/${id}`);
+      } else if (sessionMeta.has(id)) {
+        const { projectId: pid } = sessionMeta.get(id)!;
+        navigate(`/projects/${pid}/chat/${id}`);
+      }
+    },
+    [projectMap, sessionMeta, navigate],
+  );
+
+  const handleExpand = useCallback(
+    (nodeId: string, expanded: boolean) => {
+      if (expanded && projectMap.has(nodeId) && !(nodeId in sessionsByProject)) {
+        fetchSessions(nodeId);
+      }
+    },
+    [projectMap, sessionsByProject, fetchSessions],
+  );
+
+  // Context menu via event delegation on the Explorer wrapper
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      const target = (e.target as HTMLElement).closest("button[id]");
+      if (!target) return;
+      const nodeId = target.id;
+
+      const proj = projectMap.get(nodeId);
+      if (proj) {
+        e.preventDefault();
+        setCtxMenu({ x: e.clientX, y: e.clientY, project: proj });
+        return;
+      }
+
+      const meta = sessionMeta.get(nodeId);
+      if (meta) {
+        e.preventDefault();
+        setCtxMenu({ x: e.clientX, y: e.clientY, session: meta.session });
+      }
+    },
+    [projectMap, sessionMeta],
+  );
+
+  const handleNewSession = useCallback(
+    async (pid: string) => {
+      try {
+        const session = await api.createChatSession(pid, "New Chat");
+        fetchSessions(pid);
+        navigate(`/projects/${pid}/chat/${session.chat_session_id}`);
+      } catch (err) {
+        console.error("Failed to create session", err);
+      }
+    },
+    [fetchSessions, navigate],
+  );
 
   const handleMenuAction = (actionId: string) => {
     if (!ctxMenu) return;
@@ -134,7 +196,9 @@ export function ProjectList() {
     const sessionTarget = ctxMenu.session;
     setCtxMenu(null);
 
-    if (actionId === "rename" && target) {
+    if (actionId === "new-chat" && target) {
+      handleNewSession(target.project_id);
+    } else if (actionId === "rename" && target) {
       setRenameName(target.name);
       setRenameTarget(target);
     } else if (actionId === "delete" && target) {
@@ -192,67 +256,34 @@ export function ProjectList() {
     }
   };
 
-  const isProjectActive = (pid: string) => projectId === pid;
-  const isExpanded = (pid: string) => expandedProjects.has(pid);
-
   return (
     <div>
-      <Group
-        label="Projects"
-        stats={<ButtonPlus onClick={() => navigate("/new-project")} size="sm" title="New Project" />}
-      >
-        {projects.length === 0 ? (
-          <Text variant="muted" size="sm" style={{ padding: "var(--space-3) var(--space-4)" }}>
-            No projects yet
-          </Text>
-        ) : (
-          projects.map((p) => (
-            <div key={p.project_id}>
-              <Item
-                selected={isProjectActive(p.project_id) && !chatSessionId}
-                onClick={() => {
-                  toggleExpand(p.project_id);
-                  navigate(`/projects/${p.project_id}`);
-                }}
-                onContextMenu={(e: React.MouseEvent) => handleProjectContextMenu(e, p)}
-              >
-                <Item.Icon>
-                  {isExpanded(p.project_id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </Item.Icon>
-                <Item.Label>{p.name}</Item.Label>
-                <span
-                  className={styles.sessionPlusBtn}
-                  onClick={(e) => handleNewSession(p.project_id, e)}
-                  title="New Chat"
-                >
-                  <ButtonPlus size="sm" />
-                </span>
-              </Item>
+      <div className={styles.header}>
+        <Text variant="muted" size="xs" weight="semibold">PROJECTS</Text>
+        <ButtonPlus onClick={() => navigate("/new-project")} size="sm" title="New Project" />
+      </div>
 
-              {isExpanded(p.project_id) && (
-                <div className={styles.sessionList}>
-                  {(sessionsByProject[p.project_id] || []).map((s) => (
-                    <Item
-                      key={s.chat_session_id}
-                      selected={chatSessionId === s.chat_session_id}
-                      onClick={() => navigate(`/projects/${p.project_id}/chat/${s.chat_session_id}`)}
-                      onContextMenu={(e: React.MouseEvent) => handleSessionContextMenu(e, s)}
-                    >
-                      <Item.Icon><MessageSquare size={12} /></Item.Icon>
-                      <Item.Label>{s.title}</Item.Label>
-                    </Item>
-                  ))}
-                  {(sessionsByProject[p.project_id] || []).length === 0 && (
-                    <Text variant="muted" size="sm" className={styles.noSessions}>
-                      No chats yet
-                    </Text>
-                  )}
-                </div>
-              )}
-            </div>
-          ))
-        )}
-      </Group>
+      {projects.length === 0 ? (
+        <Text variant="muted" size="sm" style={{ padding: "var(--space-3) var(--space-4)" }}>
+          No projects yet
+        </Text>
+      ) : (
+        <div onContextMenu={handleContextMenu}>
+          <Explorer
+            data={explorerData}
+            searchable
+            searchPlaceholder="Search..."
+            expandOnSelect
+            compact={false}
+            enableDragDrop={false}
+            enableMultiSelect={false}
+            defaultExpandedIds={defaultExpandedIds}
+            defaultSelectedIds={defaultSelectedIds}
+            onSelect={handleSelect}
+            onExpand={handleExpand}
+          />
+        </div>
+      )}
 
       {ctxMenu &&
         createPortal(
