@@ -127,6 +127,12 @@ pub async fn generate_specs_stream(
                     .json_data(serde_json::json!({ "stage": stage }))
                     .unwrap()
             }
+            SpecStreamEvent::Delta(text) => {
+                Event::default()
+                    .event("delta")
+                    .json_data(serde_json::json!({ "text": text }))
+                    .unwrap()
+            }
             SpecStreamEvent::Generating { tokens } => {
                 Event::default()
                     .event("generating")

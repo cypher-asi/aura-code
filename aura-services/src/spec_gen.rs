@@ -18,6 +18,7 @@ pub type ProgressTx = mpsc::UnboundedSender<String>;
 #[serde(tag = "type", content = "data")]
 pub enum SpecStreamEvent {
     Progress(String),
+    Delta(String),
     Generating { tokens: usize },
     Complete(Vec<Spec>),
     Error(String),
@@ -225,6 +226,7 @@ impl SpecGenerationService {
                     ClaudeStreamEvent::Delta(text) => {
                         token_count += text.split_whitespace().count().max(1);
                         delta_count += 1;
+                        let _ = tx_fwd.send(SpecStreamEvent::Delta(text));
                         if delta_count % 20 == 0 {
                             let _ = tx_fwd.send(SpecStreamEvent::Generating { tokens: token_count });
                         }
