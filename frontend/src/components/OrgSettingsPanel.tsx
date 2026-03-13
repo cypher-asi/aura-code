@@ -2,10 +2,15 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useOrg } from "../context/OrgContext";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api/client";
-import { Modal, Navigator, Button, Input, Text } from "@cypher-asi/zui";
+import { Modal, Navigator } from "@cypher-asi/zui";
 import type { NavigatorItemProps } from "@cypher-asi/zui";
-import { Copy, Trash2, UserMinus, Settings, Users, Mail, CreditCard, Plug, RefreshCw, ExternalLink } from "lucide-react";
+import { Settings, Users, Mail, CreditCard, Plug } from "lucide-react";
 import type { OrgInvite, OrgGithub, OrgBilling, OrgRole, GitHubIntegration } from "../types";
+import { OrgSettingsGeneral } from "./OrgSettingsGeneral";
+import { OrgSettingsMembers } from "./OrgSettingsMembers";
+import { OrgSettingsInvites } from "./OrgSettingsInvites";
+import { OrgSettingsBilling } from "./OrgSettingsBilling";
+import { OrgSettingsIntegrations } from "./OrgSettingsIntegrations";
 import styles from "./OrgSettingsPanel.module.css";
 
 type Section = "general" | "members" | "invites" | "billing" | "integrations";
@@ -28,13 +33,11 @@ export function OrgSettingsPanel({ isOpen, onClose }: Props) {
   const { user } = useAuth();
   const [section, setSection] = useState<Section>("general");
 
-  // General
   const [teamName, setTeamName] = useState(activeOrg?.name ?? "");
   const [teamSaving, setTeamSaving] = useState(false);
   const [teamMessage, setTeamMessage] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Invites / Billing / GitHub
   const [invites, setInvites] = useState<OrgInvite[]>([]);
   const [billing, setBilling] = useState<OrgBilling | null>(null);
   const [github, setGithub] = useState<OrgGithub | null>(null);
@@ -72,9 +75,7 @@ export function OrgSettingsPanel({ isOpen, onClose }: Props) {
 
   const loadInvites = useCallback(async () => {
     if (!orgId) return;
-    try {
-      setInvites(await api.orgs.listInvites(orgId));
-    } catch { /* ignore */ }
+    try { setInvites(await api.orgs.listInvites(orgId)); } catch { /* ignore */ }
   }, [orgId]);
 
   const loadBilling = useCallback(async () => {
@@ -97,9 +98,7 @@ export function OrgSettingsPanel({ isOpen, onClose }: Props) {
 
   const loadGithubIntegrations = useCallback(async () => {
     if (!orgId) return;
-    try {
-      setGithubIntegrations(await api.orgs.listGithubIntegrations(orgId));
-    } catch { /* ignore */ }
+    try { setGithubIntegrations(await api.orgs.listGithubIntegrations(orgId)); } catch { /* ignore */ }
   }, [orgId]);
 
   useEffect(() => {
@@ -113,118 +112,55 @@ export function OrgSettingsPanel({ isOpen, onClose }: Props) {
 
   const handleCreateInvite = async () => {
     if (!orgId) return;
-    try {
-      await api.orgs.createInvite(orgId);
-      loadInvites();
-    } catch (err) {
-      console.error("Failed to create invite", err);
-    }
+    try { await api.orgs.createInvite(orgId); loadInvites(); } catch (err) { console.error("Failed to create invite", err); }
   };
 
   const handleRevokeInvite = async (inviteId: string) => {
     if (!orgId) return;
-    try {
-      await api.orgs.revokeInvite(orgId, inviteId);
-      loadInvites();
-    } catch (err) {
-      console.error("Failed to revoke invite", err);
-    }
+    try { await api.orgs.revokeInvite(orgId, inviteId); loadInvites(); } catch (err) { console.error("Failed to revoke invite", err); }
   };
 
   const handleRemoveMember = async (userId: string) => {
     if (!orgId) return;
-    try {
-      await api.orgs.removeMember(orgId, userId);
-      refreshMembers();
-    } catch (err) {
-      console.error("Failed to remove member", err);
-    }
+    try { await api.orgs.removeMember(orgId, userId); refreshMembers(); } catch (err) { console.error("Failed to remove member", err); }
   };
 
   const handleRoleChange = async (userId: string, role: OrgRole) => {
     if (!orgId) return;
-    try {
-      await api.orgs.updateMemberRole(orgId, userId, role);
-      refreshMembers();
-      refreshOrgs();
-    } catch (err) {
-      console.error("Failed to change role", err);
-    }
+    try { await api.orgs.updateMemberRole(orgId, userId, role); refreshMembers(); refreshOrgs(); } catch (err) { console.error("Failed to change role", err); }
   };
 
   const handleSaveBilling = async () => {
     if (!orgId) return;
     setSaving(true);
-    try {
-      await api.orgs.setBilling(orgId, billingEmail || null, billing?.plan ?? "free");
-      loadBilling();
-    } catch (err) {
-      console.error("Failed to save billing", err);
-    } finally {
-      setSaving(false);
-    }
+    try { await api.orgs.setBilling(orgId, billingEmail || null, billing?.plan ?? "free"); loadBilling(); } catch (err) { console.error("Failed to save billing", err); } finally { setSaving(false); }
   };
 
   const handleConnectGithub = async () => {
     if (!orgId || !githubOrg.trim()) return;
     setSaving(true);
-    try {
-      await api.orgs.setGithub(orgId, githubOrg.trim());
-      loadGithub();
-    } catch (err) {
-      console.error("Failed to connect GitHub", err);
-    } finally {
-      setSaving(false);
-    }
+    try { await api.orgs.setGithub(orgId, githubOrg.trim()); loadGithub(); } catch (err) { console.error("Failed to connect GitHub", err); } finally { setSaving(false); }
   };
 
   const handleDisconnectGithub = async () => {
     if (!orgId) return;
-    try {
-      await api.orgs.removeGithub(orgId);
-      setGithub(null);
-      setGithubOrg("");
-    } catch (err) {
-      console.error("Failed to disconnect GitHub", err);
-    }
+    try { await api.orgs.removeGithub(orgId); setGithub(null); setGithubOrg(""); } catch (err) { console.error("Failed to disconnect GitHub", err); }
   };
 
   const handleStartInstall = async () => {
     if (!orgId) return;
     setInstallLoading(true);
-    try {
-      const { install_url } = await api.orgs.startGithubInstall(orgId);
-      window.open(install_url, "_blank");
-    } catch (err) {
-      console.error("Failed to start GitHub install", err);
-    } finally {
-      setInstallLoading(false);
-    }
+    try { const { install_url } = await api.orgs.startGithubInstall(orgId); window.open(install_url, "_blank"); } catch (err) { console.error("Failed to start GitHub install", err); } finally { setInstallLoading(false); }
   };
 
   const handleRemoveIntegration = async (integrationId: string) => {
     if (!orgId) return;
-    try {
-      await api.orgs.removeGithubIntegration(orgId, integrationId);
-      loadGithubIntegrations();
-    } catch (err) {
-      console.error("Failed to remove integration", err);
-    }
+    try { await api.orgs.removeGithubIntegration(orgId, integrationId); loadGithubIntegrations(); } catch (err) { console.error("Failed to remove integration", err); }
   };
 
   const handleRefreshIntegration = async (integrationId: string) => {
     if (!orgId) return;
-    try {
-      await api.orgs.refreshGithubIntegration(orgId, integrationId);
-      loadGithubIntegrations();
-    } catch (err) {
-      console.error("Failed to refresh integration", err);
-    }
-  };
-
-  const copyInviteLink = (token: string) => {
-    const link = `${window.location.origin}/invite/${token}`;
-    navigator.clipboard.writeText(link);
+    try { await api.orgs.refreshGithubIntegration(orgId, integrationId); loadGithubIntegrations(); } catch (err) { console.error("Failed to refresh integration", err); }
   };
 
   if (!activeOrg) return null;
@@ -232,7 +168,6 @@ export function OrgSettingsPanel({ isOpen, onClose }: Props) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Team Settings" size="full" noPadding fullHeight>
       <div className={styles.settingsLayout}>
-        {/* ── Left sidebar ── */}
         <div className={styles.settingsNav}>
           <div className={styles.navHeader}>
             <h3>{activeOrg.name}</h3>
@@ -245,288 +180,63 @@ export function OrgSettingsPanel({ isOpen, onClose }: Props) {
           />
         </div>
 
-        {/* ── Content area ── */}
         <div className={styles.settingsContent}>
           {section === "general" && (
-            <>
-              <h2 className={styles.sectionTitle}>General</h2>
-
-              <div className={styles.settingsGroupLabel}>Team</div>
-              <div className={styles.settingsGroup}>
-                <div className={styles.settingsRow}>
-                  <div className={styles.rowInfo}>
-                    <span className={styles.rowLabel}>Team Name</span>
-                    <span className={styles.rowDescription}>
-                      The display name for your team
-                    </span>
-                  </div>
-                  <div className={styles.rowControl}>
-                    <Input
-                      size="sm"
-                      value={teamName}
-                      onChange={(e) => handleTeamNameChange(e.target.value)}
-                      placeholder="My Team"
-                      style={{ width: 200 }}
-                    />
-                  </div>
-                </div>
-              </div>
-              {(teamSaving || teamMessage) && (
-                <Text variant="muted" size="sm" style={{ marginTop: "var(--space-2)" }}>
-                  {teamSaving ? "Saving..." : teamMessage}
-                </Text>
-              )}
-            </>
+            <OrgSettingsGeneral
+              teamName={teamName}
+              onTeamNameChange={handleTeamNameChange}
+              teamSaving={teamSaving}
+              teamMessage={teamMessage}
+            />
           )}
 
           {section === "members" && (
-            <>
-              <h2 className={styles.sectionTitle}>Members</h2>
-
-              <div className={styles.settingsGroupLabel}>
-                Team Members ({members.length})
-              </div>
-              <div className={styles.settingsGroup}>
-                {members.map((m) => (
-                  <div key={m.user_id} className={styles.memberRow}>
-                    <span className={styles.memberName}>{m.display_name}</span>
-                    {myRole === "owner" && m.user_id !== user?.user_id ? (
-                      <select
-                        className={styles.roleSelect}
-                        value={m.role}
-                        onChange={(e) => handleRoleChange(m.user_id, e.target.value as OrgRole)}
-                      >
-                        <option value="member">Member</option>
-                        <option value="admin">Admin</option>
-                        <option value="owner">Owner</option>
-                      </select>
-                    ) : (
-                      <span className={styles.roleBadge}>{m.role}</span>
-                    )}
-                    {isAdminOrOwner && m.role !== "owner" && m.user_id !== user?.user_id && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={<UserMinus size={14} />}
-                        iconOnly
-                        aria-label="Remove member"
-                        onClick={() => handleRemoveMember(m.user_id)}
-                      />
-                    )}
-                  </div>
-                ))}
-                {members.length === 0 && (
-                  <div className={styles.emptyMessage}>No members yet</div>
-                )}
-              </div>
-            </>
+            <OrgSettingsMembers
+              members={members}
+              myRole={myRole}
+              currentUserId={user?.user_id}
+              isAdminOrOwner={isAdminOrOwner}
+              onRoleChange={handleRoleChange}
+              onRemoveMember={handleRemoveMember}
+            />
           )}
 
           {section === "invites" && (
-            <>
-              <h2 className={styles.sectionTitle}>Invites</h2>
-
-              <div className={styles.settingsGroupLabel}>Invite Links</div>
-              <div className={styles.settingsGroup}>
-                {isAdminOrOwner && (
-                  <div className={styles.inviteActions}>
-                    <Button variant="primary" size="sm" onClick={handleCreateInvite}>
-                      Generate Invite Link
-                    </Button>
-                  </div>
-                )}
-                {invites
-                  .filter((i) => i.status === "pending")
-                  .map((inv) => (
-                    <div key={inv.invite_id} className={styles.inviteRow}>
-                      <code className={styles.inviteToken}>
-                        {`${window.location.origin}/invite/${inv.token}`}
-                      </code>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={<Copy size={14} />}
-                        iconOnly
-                        aria-label="Copy link"
-                        onClick={() => copyInviteLink(inv.token)}
-                      />
-                      {isAdminOrOwner && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          icon={<Trash2 size={14} />}
-                          iconOnly
-                          aria-label="Revoke"
-                          onClick={() => handleRevokeInvite(inv.invite_id)}
-                        />
-                      )}
-                    </div>
-                  ))}
-                {invites.filter((i) => i.status === "pending").length === 0 && (
-                  <div className={styles.emptyMessage}>No pending invites</div>
-                )}
-              </div>
-            </>
+            <OrgSettingsInvites
+              invites={invites}
+              isAdminOrOwner={isAdminOrOwner}
+              onCreateInvite={handleCreateInvite}
+              onRevokeInvite={handleRevokeInvite}
+            />
           )}
 
           {section === "billing" && (
-            <>
-              <h2 className={styles.sectionTitle}>Billing</h2>
-
-              <div className={styles.settingsGroupLabel}>Plan</div>
-              <div className={styles.settingsGroup}>
-                <div className={styles.settingsRow}>
-                  <div className={styles.rowInfo}>
-                    <span className={styles.rowLabel}>Current Plan</span>
-                    <span className={styles.rowDescription}>
-                      Your team's active subscription
-                    </span>
-                  </div>
-                  <div className={styles.rowControl}>
-                    <span className={styles.roleBadge}>{billing?.plan ?? "free"}</span>
-                  </div>
-                </div>
-                {isAdminOrOwner && (
-                  <div className={styles.settingsRow}>
-                    <div className={styles.rowInfo}>
-                      <span className={styles.rowLabel}>Billing Email</span>
-                      <span className={styles.rowDescription}>
-                        Invoices and receipts will be sent here
-                      </span>
-                    </div>
-                    <div className={styles.rowControl}>
-                      <Input
-                        size="sm"
-                        value={billingEmail}
-                        onChange={(e) => setBillingEmail(e.target.value)}
-                        placeholder="billing@example.com"
-                        style={{ width: 200 }}
-                      />
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={handleSaveBilling}
-                        disabled={saving}
-                      >
-                        {saving ? "Saving..." : "Save"}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
+            <OrgSettingsBilling
+              billing={billing}
+              billingEmail={billingEmail}
+              onBillingEmailChange={setBillingEmail}
+              isAdminOrOwner={isAdminOrOwner}
+              saving={saving}
+              onSave={handleSaveBilling}
+            />
           )}
 
           {section === "integrations" && (
-            <>
-              <h2 className={styles.sectionTitle}>Integrations</h2>
-
-              <div className={styles.settingsGroupLabel}>GitHub App</div>
-              <div className={styles.settingsGroup}>
-                {isAdminOrOwner && (
-                  <div className={styles.inviteActions}>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={handleStartInstall}
-                      disabled={installLoading}
-                      icon={<ExternalLink size={14} />}
-                    >
-                      {installLoading ? "Opening..." : "Add GitHub Integration"}
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={loadGithubIntegrations} icon={<RefreshCw size={14} />}>
-                      Refresh
-                    </Button>
-                  </div>
-                )}
-
-                {githubIntegrations.map((integration) => (
-                  <div key={integration.integration_id} className={styles.settingsRow}>
-                    <div className={styles.rowInfo}>
-                      <span className={styles.rowLabel}>{integration.github_account_login}</span>
-                      <span className={styles.rowDescription}>
-                        {integration.github_account_type} &middot; {integration.repo_count} repos &middot; Connected{" "}
-                        {new Date(integration.connected_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className={styles.rowControl}>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={<RefreshCw size={14} />}
-                        iconOnly
-                        aria-label="Refresh repos"
-                        onClick={() => handleRefreshIntegration(integration.integration_id)}
-                      />
-                      {isAdminOrOwner && (
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => handleRemoveIntegration(integration.integration_id)}
-                        >
-                          Disconnect
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-
-                {githubIntegrations.length === 0 && (
-                  <div className={styles.emptyMessage}>No GitHub integrations connected</div>
-                )}
-              </div>
-
-              <div className={styles.settingsGroupLabel} style={{ marginTop: "var(--space-4)" }}>
-                GitHub (Legacy)
-              </div>
-              <div className={styles.settingsGroup}>
-                {github ? (
-                  <div className={styles.settingsRow}>
-                    <div className={styles.rowInfo}>
-                      <span className={styles.rowLabel}>GitHub Organization</span>
-                      <span className={styles.rowDescription}>
-                        Connected to <strong>{github.github_org}</strong>
-                      </span>
-                    </div>
-                    <div className={styles.rowControl}>
-                      {isAdminOrOwner && (
-                        <Button variant="danger" size="sm" onClick={handleDisconnectGithub}>
-                          Disconnect
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className={styles.settingsRow}>
-                    <div className={styles.rowInfo}>
-                      <span className={styles.rowLabel}>GitHub Organization</span>
-                      <span className={styles.rowDescription}>
-                        Connect a GitHub org manually (text-only, no API access)
-                      </span>
-                    </div>
-                    {isAdminOrOwner && (
-                      <div className={styles.rowControl}>
-                        <Input
-                          size="sm"
-                          value={githubOrg}
-                          onChange={(e) => setGithubOrg(e.target.value)}
-                          placeholder="org-name"
-                          style={{ width: 160 }}
-                        />
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={handleConnectGithub}
-                          disabled={saving || !githubOrg.trim()}
-                        >
-                          Connect
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </>
+            <OrgSettingsIntegrations
+              github={github}
+              githubOrg={githubOrg}
+              onGithubOrgChange={setGithubOrg}
+              githubIntegrations={githubIntegrations}
+              isAdminOrOwner={isAdminOrOwner}
+              saving={saving}
+              installLoading={installLoading}
+              onStartInstall={handleStartInstall}
+              onRefreshIntegrations={loadGithubIntegrations}
+              onRefreshIntegration={handleRefreshIntegration}
+              onRemoveIntegration={handleRemoveIntegration}
+              onConnectGithub={handleConnectGithub}
+              onDisconnectGithub={handleDisconnectGithub}
+            />
           )}
         </div>
       </div>

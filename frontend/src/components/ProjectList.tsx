@@ -6,10 +6,11 @@ import { useSidekick } from "../context/SidekickContext";
 import { useOrg } from "../context/OrgContext";
 import { clearLastChatIf } from "../utils/storage";
 import type { Project, ChatSession } from "../types";
-import { ButtonPlus, Explorer, Menu, Modal, Input, Button } from "@cypher-asi/zui";
+import { ButtonPlus, Explorer, Menu } from "@cypher-asi/zui";
 import type { ExplorerNode, MenuItem } from "@cypher-asi/zui";
 import { Plus, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import { NewProjectModal } from "./NewProjectModal";
+import { RenameProjectModal, DeleteProjectModal, DeleteSessionModal } from "./ProjectModals";
 import { formatRelativeTime } from "../utils/format";
 import styles from "./ProjectList.module.css";
 
@@ -116,7 +117,6 @@ export function ProjectList() {
     });
   }, [sidekick]);
 
-  // Lookup maps for navigation from Explorer selection
   const projectMap = useMemo(
     () => new Map(projects.map((p) => [p.project_id, p])),
     [projects],
@@ -209,7 +209,6 @@ export function ProjectList() {
     [projectMap, sessionsByProject, fetchSessions],
   );
 
-  // Context menu via event delegation on the Explorer wrapper
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
       const target = (e.target as HTMLElement).closest("button[id]");
@@ -353,66 +352,28 @@ export function ProjectList() {
           document.body,
         )}
 
-      <Modal
-        isOpen={!!renameTarget}
+      <RenameProjectModal
+        target={renameTarget}
+        name={renameName}
+        onNameChange={setRenameName}
+        loading={renameLoading}
         onClose={() => setRenameTarget(null)}
-        title="Rename Project"
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setRenameTarget(null)}>Cancel</Button>
-            <Button variant="primary" onClick={handleRename} disabled={renameLoading || !renameName.trim()}>
-              {renameLoading ? "Saving..." : "Save"}
-            </Button>
-          </>
-        }
-      >
-        <Input
-          value={renameName}
-          onChange={(e) => setRenameName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") handleRename(); }}
-          placeholder="Project name"
-          autoFocus
-        />
-      </Modal>
+        onRename={handleRename}
+      />
 
-      <Modal
-        isOpen={!!deleteTarget}
+      <DeleteProjectModal
+        target={deleteTarget}
+        loading={deleteLoading}
         onClose={() => setDeleteTarget(null)}
-        title="Delete Project"
-        size="sm"
-        footer={
-          <div className={styles.confirmFooter}>
-            <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(null)} disabled={deleteLoading}>Cancel</Button>
-            <Button variant="primary" size="sm" onClick={handleDelete} disabled={deleteLoading} className={styles.dangerButton}>
-              {deleteLoading ? "Deleting..." : "Delete"}
-            </Button>
-          </div>
-        }
-      >
-        <div className={styles.confirmMessage}>
-          Are you sure you want to delete &ldquo;{deleteTarget?.name}&rdquo;? This action cannot be undone.
-        </div>
-      </Modal>
+        onDelete={handleDelete}
+      />
 
-      <Modal
-        isOpen={!!deleteSessionTarget}
+      <DeleteSessionModal
+        target={deleteSessionTarget}
+        loading={deleteSessionLoading}
         onClose={() => setDeleteSessionTarget(null)}
-        title="Delete Chat"
-        size="sm"
-        footer={
-          <div className={styles.confirmFooter}>
-            <Button variant="ghost" size="sm" onClick={() => setDeleteSessionTarget(null)} disabled={deleteSessionLoading}>Cancel</Button>
-            <Button variant="primary" size="sm" onClick={handleDeleteSession} disabled={deleteSessionLoading} className={styles.dangerButton}>
-              {deleteSessionLoading ? "Deleting..." : "Delete"}
-            </Button>
-          </div>
-        }
-      >
-        <div className={styles.confirmMessage}>
-          Are you sure you want to delete this chat session? This action cannot be undone.
-        </div>
-      </Modal>
+        onDelete={handleDeleteSession}
+      />
 
       <NewProjectModal
         isOpen={showNewProject}

@@ -1,23 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
-import { Text, Button, Menu } from "@cypher-asi/zui";
-import type { MenuItem } from "@cypher-asi/zui";
-import { ArrowUp, Square, Plus, MessageSquare, FileText, ChevronDown } from "lucide-react";
+import { Text, Button } from "@cypher-asi/zui";
+import { MessageSquare } from "lucide-react";
 import { api } from "../api/client";
-import { useSidekick } from "../context/SidekickContext";
-import { useClickOutside } from "../hooks/use-click-outside";
+import { useChatStream } from "../hooks/use-chat-stream";
 import { setLastChat } from "../utils/storage";
+import { MessageBubble, StreamingBubble } from "./MessageBubble";
+import { ChatInputBar } from "./ChatInputBar";
 import type { ChatMessage } from "../types";
 import styles from "./ChatView.module.css";
-
-interface DisplayMessage {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-}
 
 export function ChatView() {
   const { projectId, chatSessionId } = useParams<{
@@ -25,25 +16,22 @@ export function ChatView() {
     chatSessionId: string;
   }>();
   const navigate = useNavigate();
-  const sidekick = useSidekick();
 
-  const [messages, setMessages] = useState<DisplayMessage[]>([]);
+  const {
+    messages,
+    isStreaming,
+    streamingText,
+    sendMessage,
+    stopStreaming,
+    resetMessages,
+    rafRef,
+  } = useChatStream({ projectId, chatSessionId });
+
   const [input, setInput] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
-
-  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState("opus-4.6");
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
 
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const streamBufferRef = useRef("");
-  const rafRef = useRef<number | null>(null);
-  const plusMenuRef = useRef<HTMLDivElement>(null);
-  const modelMenuRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = useCallback(() => {
     if (autoScrollRef.current && messageAreaRef.current) {
@@ -57,16 +45,15 @@ export function ChatView() {
     }
   }, [projectId, chatSessionId]);
 
-  // Load messages on session change
   useEffect(() => {
     if (!projectId || !chatSessionId) {
-      setMessages([]);
+      resetMessages([]);
       return;
     }
     api
       .getChatMessages(projectId, chatSessionId)
       .then((msgs) => {
-        setMessages(
+        resetMessages(
           msgs.map((m: ChatMessage) => ({
             id: m.message_id,
             role: m.role,
@@ -75,43 +62,17 @@ export function ChatView() {
         );
       })
       .catch(console.error);
-  }, [projectId, chatSessionId]);
+  }, [projectId, chatSessionId, resetMessages]);
 
-  // Auto-focus textarea when entering a chat session
-  useEffect(() => {
-    if (chatSessionId) {
-      textareaRef.current?.focus();
-    }
-  }, [chatSessionId]);
-
-  // Auto-scroll when messages change or streaming text updates
   useEffect(() => {
     scrollToBottom();
   }, [messages, streamingText, scrollToBottom]);
 
-  // Cleanup RAF on unmount
   useEffect(() => {
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, []);
-
-  useClickOutside(plusMenuRef, () => setPlusMenuOpen(false), plusMenuOpen);
-  useClickOutside(modelMenuRef, () => setModelMenuOpen(false), modelMenuOpen);
-
-  const MODEL_OPTIONS: Record<string, string> = {
-    "opus-4.6": "Opus 4.6",
-    "gpt-5.3-codex": "GPT 5.3 Codex",
-  };
-
-  const modelMenuItems: MenuItem[] = [
-    { id: "opus-4.6", label: "Opus 4.6" },
-    { id: "gpt-5.3-codex", label: "GPT 5.3 Codex" },
-  ];
-
-  const plusMenuItems: MenuItem[] = [
-    { id: "generate_specs", label: "Generate Specs", icon: <FileText size={14} /> },
-  ];
+  }, [rafRef]);
 
   const handleScroll = () => {
     const el = messageAreaRef.current;
@@ -120,148 +81,14 @@ export function ChatView() {
     autoScrollRef.current = atBottom;
   };
 
-  const autoResizeTextarea = () => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 160) + "px";
-  };
-
-  const sendMessage = useCallback(
-    async (content: string, action: string | null = null) => {
-      if (!projectId || !chatSessionId || isStreaming) return;
-      const trimmed = content.trim();
-      if (!trimmed && !action) return;
-
-      const userMsg: DisplayMessage = {
-        id: `temp-${Date.now()}`,
-        role: "user",
-        content: trimmed || (action === "generate_specs" ? "Generate specs for this project" : trimmed),
-      };
-
-      setMessages((prev) => [...prev, userMsg]);
+  const handleSend = useCallback(
+    (content: string, action?: string) => {
       setInput("");
-      setIsStreaming(true);
-      sidekick.setStreamingSessionId(chatSessionId);
-      setStreamingText("");
-      streamBufferRef.current = "";
-      autoScrollRef.current = true;
-
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
-
-      if (action === "generate_specs") {
-        sidekick.clearGeneratedArtifacts();
-        sidekick.setActiveTab("specs");
-      }
-
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      await api.sendMessageStream(
-        projectId,
-        chatSessionId,
-        userMsg.content,
-        action,
-        selectedModel,
-        {
-          onDelta(text) {
-            streamBufferRef.current += text;
-            if (rafRef.current === null) {
-              rafRef.current = requestAnimationFrame(() => {
-                rafRef.current = null;
-                setStreamingText(streamBufferRef.current);
-              });
-            }
-          },
-          onSpecSaved(spec) {
-            sidekick.pushSpec(spec);
-          },
-          onTaskSaved(task) {
-            sidekick.pushTask(task);
-          },
-          onMessageSaved(msg) {
-            setMessages((prev) => [
-              ...prev,
-              { id: msg.message_id, role: "assistant", content: msg.content },
-            ]);
-            setStreamingText("");
-            streamBufferRef.current = "";
-          },
-          onTitleUpdated(session) {
-            sidekick.notifySessionTitleUpdate(session);
-          },
-          onError(message) {
-            console.error("Chat stream error:", message);
-            if (streamBufferRef.current) {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: `error-${Date.now()}`,
-                  role: "assistant",
-                  content: streamBufferRef.current + `\n\n*Error: ${message}*`,
-                },
-              ]);
-            }
-            setStreamingText("");
-            streamBufferRef.current = "";
-          },
-          onDone() {
-            if (streamBufferRef.current && !isStreaming) {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: `stream-${Date.now()}`,
-                  role: "assistant",
-                  content: streamBufferRef.current,
-                },
-              ]);
-              setStreamingText("");
-              streamBufferRef.current = "";
-            }
-            setIsStreaming(false);
-            sidekick.setStreamingSessionId(null);
-            abortRef.current = null;
-          },
-        },
-        controller.signal,
-      );
-
-      setIsStreaming(false);
-      sidekick.setStreamingSessionId(null);
-      abortRef.current = null;
+      sendMessage(content, action ?? null, selectedModel);
     },
-    [projectId, chatSessionId, isStreaming, sidekick],
+    [sendMessage, selectedModel],
   );
 
-  const stopStreaming = useCallback(() => {
-    abortRef.current?.abort();
-    if (streamBufferRef.current) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `stopped-${Date.now()}`,
-          role: "assistant",
-          content: streamBufferRef.current,
-        },
-      ]);
-    }
-    setStreamingText("");
-    streamBufferRef.current = "";
-    setIsStreaming(false);
-    sidekick.setStreamingSessionId(null);
-    abortRef.current = null;
-  }, [sidekick]);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(input);
-    }
-  };
-
-  // If no session is selected, show empty prompt
   if (!chatSessionId) {
     return (
       <div className={styles.container}>
@@ -310,148 +137,22 @@ export function ChatView() {
         ) : (
           <>
             {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`${styles.message} ${
-                  msg.role === "user" ? styles.messageUser : styles.messageAssistant
-                }`}
-              >
-                <div
-                  className={`${styles.bubble} ${
-                    msg.role === "user" ? styles.bubbleUser : styles.bubbleAssistant
-                  }`}
-                >
-                  {msg.role === "user" ? (
-                    msg.content
-                  ) : (
-                    <div className={styles.markdown}>
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeHighlight]}
-                      >
-                        {msg.content}
-                      </ReactMarkdown>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <MessageBubble key={msg.id} message={msg} />
             ))}
-
-            {streamingText && (
-              <div className={`${styles.message} ${styles.messageAssistant}`}>
-                <div className={`${styles.bubble} ${styles.bubbleAssistant}`}>
-                  <div className={styles.markdown}>
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeHighlight]}
-                    >
-                      {streamingText}
-                    </ReactMarkdown>
-                    <span className={styles.streamingCursor} />
-                  </div>
-                </div>
-              </div>
-            )}
+            {streamingText && <StreamingBubble text={streamingText} />}
           </>
         )}
       </div>
 
-      <div className={styles.inputWrapper}>
-        <div className={styles.inputContainer}>
-          <textarea
-            ref={textareaRef}
-            className={styles.textarea}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              autoResizeTextarea();
-            }}
-            onKeyDown={handleKeyDown}
-            placeholder="Message AURA..."
-            rows={1}
-          />
-          <div className={styles.inputToolbar}>
-            <div className={styles.toolbarLeft}>
-              <div ref={plusMenuRef} className={styles.plusMenuWrap}>
-                <button
-                  type="button"
-                  className={styles.attachButton}
-                  onClick={() => setPlusMenuOpen((v) => !v)}
-                  aria-label="Actions"
-                >
-                  <Plus size={18} />
-                </button>
-                {plusMenuOpen && (
-                  <div className={styles.plusMenu}>
-                    <Menu
-                      items={plusMenuItems}
-                      onChange={(id) => {
-                        setPlusMenuOpen(false);
-                        if (id === "generate_specs") {
-                          sendMessage("Generate specs for this project", "generate_specs");
-                        }
-                      }}
-                      background="solid"
-                      border="solid"
-                      rounded="md"
-                      width={200}
-                      isOpen
-                    />
-                  </div>
-                )}
-              </div>
-              <div ref={modelMenuRef} className={styles.modelMenuWrap}>
-                <button
-                  type="button"
-                  className={styles.modelButton}
-                  onClick={() => setModelMenuOpen((v) => !v)}
-                >
-                  {MODEL_OPTIONS[selectedModel]} <ChevronDown size={12} />
-                </button>
-                {modelMenuOpen && (
-                  <div className={styles.modelMenu}>
-                    <Menu
-                      items={modelMenuItems}
-                      value={selectedModel}
-                      onChange={(id) => {
-                        setSelectedModel(id);
-                        setModelMenuOpen(false);
-                      }}
-                      background="solid"
-                      border="solid"
-                      rounded="md"
-                      width={180}
-                      isOpen
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className={styles.toolbarRight}>
-              {isStreaming ? (
-                <button
-                  type="button"
-                  className={`${styles.sendButton} ${styles.stopButton}`}
-                  onClick={stopStreaming}
-                  aria-label="Stop"
-                >
-                  <Square size={14} fill="currentColor" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className={styles.sendButton}
-                  onClick={() => sendMessage(input)}
-                  disabled={!input.trim()}
-                  aria-label="Send"
-                >
-                  <ArrowUp size={18} />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <ChatInputBar
+        input={input}
+        onInputChange={setInput}
+        onSend={handleSend}
+        onStop={stopStreaming}
+        isStreaming={isStreaming}
+        selectedModel={selectedModel}
+        onModelChange={setSelectedModel}
+      />
     </div>
   );
 }

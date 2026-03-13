@@ -26,7 +26,17 @@ import type {
   GitHubIntegration,
   GitHubRepo,
 } from "../types";
-import { streamSSE } from "./sse";
+import {
+  generateSprintStream,
+  generateSpecsStream,
+  sendMessageStream,
+} from "./streams";
+
+export type {
+  SpecGenStreamCallbacks,
+  SprintStreamCallbacks,
+  ChatStreamCallbacks,
+} from "./streams";
 
 const BASE_URL = "";
 
@@ -82,33 +92,6 @@ export interface LoopStatusResponse {
   running: boolean;
   paused: boolean;
   project_id: ProjectId | null;
-}
-
-export interface SpecGenStreamCallbacks {
-  onProgress: (stage: string) => void;
-  onDelta: (text: string) => void;
-  onGenerating: (tokens: number) => void;
-  onSpecSaved: (spec: Spec) => void;
-  onTaskSaved: (task: Task) => void;
-  onComplete: (specs: Spec[]) => void;
-  onError: (message: string) => void;
-}
-
-export interface SprintStreamCallbacks {
-  onDelta: (text: string) => void;
-  onGenerating: (inputTokens: number, outputTokens: number) => void;
-  onDone: (sprint: Sprint) => void;
-  onError: (message: string) => void;
-}
-
-export interface ChatStreamCallbacks {
-  onDelta: (text: string) => void;
-  onSpecSaved?: (spec: Spec) => void;
-  onTaskSaved?: (task: Task) => void;
-  onMessageSaved?: (message: ChatMessage) => void;
-  onTitleUpdated?: (session: ChatSession) => void;
-  onError: (message: string) => void;
-  onDone?: () => void;
 }
 
 export const api = {
@@ -259,34 +242,7 @@ export const api = {
     apiFetch<Sprint>(`/api/projects/${projectId}/sprints/${sprintId}/generate`, {
       method: "POST",
     }),
-  generateSprintStream: (projectId: ProjectId, sprintId: SprintId, cb: SprintStreamCallbacks, signal?: AbortSignal) =>
-    streamSSE<"delta" | "generating" | "done" | "error">(
-      `${BASE_URL}/api/projects/${projectId}/sprints/${sprintId}/generate/stream`,
-      { method: "POST" },
-      {
-        onEvent(eventType, data) {
-          const d = data as Record<string, unknown>;
-          switch (eventType) {
-            case "delta":
-              cb.onDelta(d.text as string);
-              break;
-            case "generating":
-              cb.onGenerating(d.input_tokens as number, d.output_tokens as number);
-              break;
-            case "done":
-              cb.onDone(d.sprint as Sprint);
-              break;
-            case "error":
-              cb.onError(d.message as string);
-              break;
-          }
-        },
-        onError(err) {
-          cb.onError(err.message);
-        },
-      },
-      signal,
-    ),
+  generateSprintStream,
 
   // Specs
   listSpecs: (projectId: ProjectId) =>
@@ -297,43 +253,7 @@ export const api = {
     apiFetch<Spec[]>(`/api/projects/${projectId}/specs/generate`, {
       method: "POST",
     }),
-  generateSpecsStream: (projectId: ProjectId, cb: SpecGenStreamCallbacks, signal?: AbortSignal) =>
-    streamSSE<"progress" | "delta" | "generating" | "spec_saved" | "task_saved" | "complete" | "error">(
-      `${BASE_URL}/api/projects/${projectId}/specs/generate/stream`,
-      { method: "POST" },
-      {
-        onEvent(eventType, data) {
-          const d = data as Record<string, unknown>;
-          switch (eventType) {
-            case "progress":
-              cb.onProgress(d.stage as string);
-              break;
-            case "delta":
-              cb.onDelta(d.text as string);
-              break;
-            case "generating":
-              cb.onGenerating(d.tokens as number);
-              break;
-            case "spec_saved":
-              cb.onSpecSaved(d.spec as Spec);
-              break;
-            case "task_saved":
-              cb.onTaskSaved(d.task as Task);
-              break;
-            case "complete":
-              cb.onComplete(d.specs as Spec[]);
-              break;
-            case "error":
-              cb.onError(d.message as string);
-              break;
-          }
-        },
-        onError(err) {
-          cb.onError(err.message);
-        },
-      },
-      signal,
-    ),
+  generateSpecsStream,
 
   // Tasks
   listTasks: (projectId: ProjectId) =>
@@ -390,58 +310,7 @@ export const api = {
     apiFetch<ChatMessage[]>(
       `/api/projects/${projectId}/chat-sessions/${chatSessionId}/messages`,
     ),
-  sendMessageStream: (
-    projectId: ProjectId,
-    chatSessionId: string,
-    content: string,
-    action: string | null,
-    model: string,
-    cb: ChatStreamCallbacks,
-    signal?: AbortSignal,
-  ) =>
-    streamSSE<"delta" | "spec_saved" | "task_saved" | "message_saved" | "title_updated" | "error" | "done">(
-      `${BASE_URL}/api/projects/${projectId}/chat-sessions/${chatSessionId}/messages/stream`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, action, model }),
-      },
-      {
-        onEvent(eventType, data) {
-          const d = data as Record<string, unknown>;
-          switch (eventType) {
-            case "delta":
-              cb.onDelta(d.text as string);
-              break;
-            case "spec_saved":
-              cb.onSpecSaved?.(d.spec as Spec);
-              break;
-            case "task_saved":
-              cb.onTaskSaved?.(d.task as Task);
-              break;
-            case "message_saved":
-              cb.onMessageSaved?.(d.message as ChatMessage);
-              break;
-            case "title_updated":
-              cb.onTitleUpdated?.(d.session as ChatSession);
-              break;
-            case "error":
-              cb.onError(d.message as string);
-              break;
-            case "done":
-              cb.onDone?.();
-              break;
-          }
-        },
-        onError(err) {
-          cb.onError(err.message);
-        },
-        onDone() {
-          cb.onDone?.();
-        },
-      },
-      signal,
-    ),
+  sendMessageStream,
 
   // Desktop file/folder picker
   pickFolder: () =>
