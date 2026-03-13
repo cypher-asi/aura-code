@@ -77,7 +77,8 @@ export function LoginView() {
       <Topbar
         className="titlebar-drag"
         onDoubleClick={() => windowCommand("maximize")}
-        title="AURA"
+        icon={<img src="/aura-icon.png" alt="" className="titlebar-icon" />}
+        title={<span className="titlebar-center">AURA</span>}
         actions={
           <div className="titlebar-no-drag" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
             <ButtonWindow action="minimize" size="sm" onClick={() => windowCommand("minimize")} />

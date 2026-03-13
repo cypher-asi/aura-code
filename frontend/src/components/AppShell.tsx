@@ -17,7 +17,8 @@ export function AppShell() {
         <Topbar
           className="titlebar-drag"
           onDoubleClick={() => windowCommand("maximize")}
-          title={<Link to="/" style={{ color: "inherit", textDecoration: "none" }}>AURA</Link>}
+          icon={<img src="/aura-icon.png" alt="" className="titlebar-icon" />}
+          title={<span className="titlebar-center"><Link to="/" style={{ color: "inherit", textDecoration: "none" }}>AURA</Link></span>}
           actions={
             <div className="titlebar-no-drag" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
               <Link to="/settings">

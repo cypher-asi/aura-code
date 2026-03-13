@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
-use tao::window::WindowBuilder;
+use tao::window::{Icon, WindowBuilder};
 use tokio::net::TcpListener;
 use wry::{WebContext, WebViewBuilder};
 
@@ -104,9 +104,18 @@ fn main() {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
+    let window_icon = {
+        let png_bytes = include_bytes!("../assets/aura-icon.png");
+        let img = image::load_from_memory(png_bytes).expect("failed to decode icon");
+        let rgba = img.to_rgba8();
+        let (w, h) = rgba.dimensions();
+        Icon::from_rgba(rgba.into_raw(), w, h).expect("failed to create window icon")
+    };
+
     let window = WindowBuilder::new()
         .with_title("AURA")
         .with_decorations(false)
+        .with_window_icon(Some(window_icon))
         .with_inner_size(tao::dpi::LogicalSize::new(1280.0, 800.0))
         .build(&event_loop)
         .expect("failed to build window");

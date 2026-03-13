@@ -15,6 +15,7 @@ html, body, #root {
 .titlebar-drag {
   -webkit-app-region: drag;
   height: var(--control-height-md);
+  position: relative;
 }
 
 .titlebar-no-drag {
@@ -24,6 +25,28 @@ html, body, #root {
 .titlebar-drag a,
 .titlebar-drag button,
 .titlebar-drag input {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.titlebar-center a {
+  pointer-events: auto;
+}
+
+.titlebar-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
   -webkit-app-region: no-drag;
 }
 
