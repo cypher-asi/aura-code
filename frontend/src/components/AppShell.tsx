@@ -29,7 +29,7 @@ export function AppShell() {
           <Sidebar resizable defaultWidth={240} minWidth={180} maxWidth={360} storageKey="aura-sidebar">
             <ProjectList />
           </Sidebar>
-          <main style={{ flex: 1, overflow: "auto", padding: "var(--space-6)" }}>
+          <main style={{ flex: 1, minWidth: 0, overflow: "auto", padding: "var(--space-6)" }}>
             <Outlet />
           </main>
           <Sidekick />
