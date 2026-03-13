@@ -6,6 +6,7 @@ import rehypeHighlight from "rehype-highlight";
 import { Text, Button } from "@cypher-asi/zui";
 import { Send, MessageSquare, FileText } from "lucide-react";
 import { api } from "../api/client";
+import { useSidekick } from "../context/SidekickContext";
 import type { ChatMessage } from "../types";
 import styles from "./ChatView.module.css";
 
@@ -21,6 +22,7 @@ export function ChatView() {
     chatSessionId: string;
   }>();
   const navigate = useNavigate();
+  const sidekick = useSidekick();
 
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
@@ -109,6 +111,10 @@ export function ChatView() {
         textareaRef.current.style.height = "auto";
       }
 
+      if (action === "generate_specs") {
+        sidekick.setActiveTab("specs");
+      }
+
       const controller = new AbortController();
       abortRef.current = controller;
 
@@ -128,7 +134,10 @@ export function ChatView() {
             }
           },
           onSpecSaved() {
-            // Sidekick will refresh via its own mechanism
+            sidekick.triggerRefresh();
+          },
+          onTaskSaved() {
+            sidekick.triggerRefresh();
           },
           onMessageSaved(msg) {
             setMessages((prev) => [
@@ -177,7 +186,7 @@ export function ChatView() {
       setIsStreaming(false);
       abortRef.current = null;
     },
-    [projectId, chatSessionId, isStreaming],
+    [projectId, chatSessionId, isStreaming, sidekick],
   );
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
