@@ -7,7 +7,7 @@ import { X, Sparkles, Loader2 } from "lucide-react";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
-import { StatusBadge } from "./StatusBadge";
+import { TaskStatusIcon } from "./TaskStatusIcon";
 import { formatRelativeTime } from "../utils/format";
 import type { PreviewItem } from "../context/SidekickContext";
 import type { Sprint } from "../types";
@@ -160,7 +160,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
     <>
       <div className={styles.taskMeta}>
         <Text variant="muted" size="sm" as="span">Status</Text>
-        <span><StatusBadge status={task.status} /></span>
+        <span><TaskStatusIcon status={task.status} /></span>
         <Text variant="muted" size="sm" as="span">Description</Text>
         <Text size="sm" as="span">{task.description || "—"}</Text>
         {task.execution_notes && (
