@@ -11,10 +11,15 @@
     /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+
+    "paths": {
+      "@cypher-asi/zui": ["./src/zui.d.ts"],
+      "@cypher-asi/zui/styles": ["./src/zui.d.ts"]
+    },
 
     /* Linting */
     "strict": true,

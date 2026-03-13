@@ -1,54 +1,10 @@
 :root {
-  --color-bg: #0f1117;
-  --color-surface: #161820;
-  --color-surface-raised: #1c1e2a;
-  --color-border: #2a2d3a;
-  --color-text: #e1e3eb;
-  --color-text-muted: #8b8fa3;
-  --color-text-dim: #5c6078;
-  --color-primary: #6c5ce7;
-  --color-primary-hover: #7c6ef7;
-  --color-accent: #00cec9;
-  --color-danger: #ff6b6b;
-  --color-warning: #ffa502;
-  --color-success: #2ed573;
-  --color-info: #45aaf2;
-
   --status-pending: #5c6078;
   --status-ready: #45aaf2;
   --status-in-progress: #ffa502;
   --status-done: #2ed573;
   --status-failed: #ff6b6b;
   --status-blocked: #ff8a50;
-
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-full: 9999px;
-
-  --font-mono: "JetBrains Mono", "Fira Code", "Consolas", monospace;
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
-
-  font-family: var(--font-sans);
-  line-height: 1.5;
-  color: var(--color-text);
-  background-color: var(--color-bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
 html, body, #root {
@@ -56,46 +12,17 @@ html, body, #root {
   width: 100%;
 }
 
-a {
-  color: var(--color-primary);
-  text-decoration: none;
-}
-a:hover {
-  color: var(--color-primary-hover);
-}
-
-button {
-  font-family: inherit;
-  cursor: pointer;
-  border: none;
-  outline: none;
-}
-
-input, textarea {
-  font-family: inherit;
-  color: var(--color-text);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: 8px 12px;
-  font-size: 14px;
-}
-input:focus, textarea:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(108, 92, 231, 0.25);
-}
-
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-surface);
+  background: var(--color-bg);
 }
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-dim);
+  background: var(--color-text-muted);
 }
