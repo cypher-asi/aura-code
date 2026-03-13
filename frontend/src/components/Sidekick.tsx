@@ -11,7 +11,6 @@ export function Sidekick() {
     isOpen,
     mode,
     title,
-    streamedText,
     streamStage,
     tokenCount,
     savedSpecs,
@@ -27,7 +26,7 @@ export function Sidekick() {
     if (mode === "streaming" && el) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [streamedText, savedSpecs, mode]);
+  }, [savedSpecs, mode]);
 
   return (
     <Drawer
@@ -55,21 +54,7 @@ export function Sidekick() {
               </div>
             )}
             <div className={styles.streamArea} ref={streamAreaRef}>
-              {streamedText ? (
-                <div className={styles.markdown}>
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    rehypePlugins={[rehypeHighlight]}
-                  >
-                    {streamedText}
-                  </ReactMarkdown>
-                </div>
-              ) : (
-                <Text variant="muted" size="sm">
-                  Waiting for response...
-                </Text>
-              )}
-              {savedSpecs.length > 0 &&
+              {savedSpecs.length > 0 ? (
                 savedSpecs.map((spec) => (
                   <div key={spec.spec_id} className={styles.savedSpecBlock}>
                     <div className={styles.savedSpecTitle}>{spec.title}</div>
@@ -82,7 +67,12 @@ export function Sidekick() {
                       </ReactMarkdown>
                     </div>
                   </div>
-                ))}
+                ))
+              ) : (
+                <Text variant="muted" size="sm">
+                  Waiting for response...
+                </Text>
+              )}
             </div>
           </>
         )}

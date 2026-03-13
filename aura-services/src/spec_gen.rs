@@ -54,6 +54,78 @@ pub struct RawSpecOutput {
     pub markdown: String,
 }
 
+/// Extracts complete JSON objects from a streaming character sequence.
+///
+/// Designed for Claude responses that are JSON arrays of spec objects (`[{...}, {...}]`).
+/// Tracks brace depth, string boundaries, and escape sequences to correctly detect
+/// when each top-level `{...}` object is complete, even when `{` or `}` appear inside
+/// JSON string values (e.g. in markdown content).
+struct IncrementalSpecParser {
+    in_string: bool,
+    escape_next: bool,
+    brace_depth: i32,
+    current_object: String,
+    in_object: bool,
+}
+
+impl IncrementalSpecParser {
+    fn new() -> Self {
+        Self {
+            in_string: false,
+            escape_next: false,
+            brace_depth: 0,
+            current_object: String::new(),
+            in_object: false,
+        }
+    }
+
+    fn feed(&mut self, text: &str) -> Vec<String> {
+        let mut complete_objects = Vec::new();
+
+        for ch in text.chars() {
+            if self.in_object {
+                self.current_object.push(ch);
+            }
+
+            if self.escape_next {
+                self.escape_next = false;
+                continue;
+            }
+
+            if self.in_string {
+                match ch {
+                    '\\' => self.escape_next = true,
+                    '"' => self.in_string = false,
+                    _ => {}
+                }
+                continue;
+            }
+
+            match ch {
+                '"' => self.in_string = true,
+                '{' => {
+                    if self.brace_depth == 0 {
+                        self.in_object = true;
+                        self.current_object.clear();
+                        self.current_object.push(ch);
+                    }
+                    self.brace_depth += 1;
+                }
+                '}' => {
+                    self.brace_depth -= 1;
+                    if self.brace_depth == 0 && self.in_object {
+                        self.in_object = false;
+                        complete_objects.push(std::mem::take(&mut self.current_object));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        complete_objects
+    }
+}
+
 pub struct SpecGenerationService {
     store: Arc<RocksStore>,
     settings: Arc<SettingsService>,
@@ -216,75 +288,163 @@ impl SpecGenerationService {
 
         send(SpecStreamEvent::Progress("Calling Claude to generate specs".into()));
 
-        let (claude_tx, mut claude_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-
-        let tx_fwd = tx.clone();
-        let forwarder = tokio::spawn(async move {
-            let mut token_count: usize = 0;
-            let mut delta_count: usize = 0;
-            while let Some(evt) = claude_rx.recv().await {
-                match evt {
-                    ClaudeStreamEvent::Delta(text) => {
-                        token_count += text.split_whitespace().count().max(1);
-                        delta_count += 1;
-                        let _ = tx_fwd.send(SpecStreamEvent::Delta(text));
-                        if delta_count % 20 == 0 {
-                            let _ = tx_fwd.send(SpecStreamEvent::Generating { tokens: token_count });
-                        }
-                    }
-                    ClaudeStreamEvent::Done { .. } => {
-                        let _ = tx_fwd.send(SpecStreamEvent::Generating { tokens: token_count });
-                    }
-                    ClaudeStreamEvent::Error(msg) => {
-                        let _ = tx_fwd.send(SpecStreamEvent::Error(msg));
-                    }
-                }
-            }
-        });
-
-        let response = self.claude_client.complete_stream(
-            &api_key,
-            SPEC_GENERATION_SYSTEM_PROMPT,
-            &requirements_content,
-            MAX_TOKENS,
-            claude_tx,
-        ).await;
-
-        let _ = forwarder.await;
-
-        let response_text = match response {
-            Ok(text) => text,
-            Err(e) => {
-                send(SpecStreamEvent::Error(format!("Claude API error: {e}")));
-                return;
-            }
-        };
-
-        send(SpecStreamEvent::Progress("Parsing AI response".into()));
-
-        let raw_specs = match Self::parse_claude_response(&response_text) {
-            Ok(specs) => specs,
-            Err(e) => {
-                send(SpecStreamEvent::Error(format!("Parse error: {e}")));
-                return;
-            }
-        };
-
-        let new_specs = Self::raw_to_specs(project_id, raw_specs);
-
-        send(SpecStreamEvent::Progress(format!("Saving {} specs to database", new_specs.len())));
-
-        if let Err(e) = self.save_specs(project_id, &new_specs) {
-            send(SpecStreamEvent::Error(format!("Failed to save specs: {e}")));
+        // Clear existing specs/tasks up front so incrementally saved specs are
+        // immediately visible via the API.
+        if let Err(e) = self.clear_project_specs(project_id) {
+            send(SpecStreamEvent::Error(format!("Failed to clear existing specs: {e}")));
             return;
         }
 
-        for spec in &new_specs {
-            send(SpecStreamEvent::SpecSaved(spec.clone()));
+        let (claude_tx, mut claude_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
+
+        // Spawn the Claude stream so we can process deltas concurrently.
+        let client = self.claude_client.clone();
+        let api_key_owned = api_key;
+        let req_owned = requirements_content;
+        let stream_handle = tokio::spawn(async move {
+            client
+                .complete_stream(
+                    &api_key_owned,
+                    SPEC_GENERATION_SYSTEM_PROMPT,
+                    &req_owned,
+                    MAX_TOKENS,
+                    claude_tx,
+                )
+                .await
+        });
+
+        // Process deltas inline with incremental JSON object extraction.
+        let mut parser = IncrementalSpecParser::new();
+        let mut token_count: usize = 0;
+        let mut delta_count: usize = 0;
+        let mut spec_index: u32 = 0;
+        let mut saved_specs: Vec<Spec> = Vec::new();
+        let now = Utc::now();
+
+        while let Some(evt) = claude_rx.recv().await {
+            match evt {
+                ClaudeStreamEvent::Delta(text) => {
+                    token_count += text.split_whitespace().count().max(1);
+                    delta_count += 1;
+                    let _ = tx.send(SpecStreamEvent::Delta(text.clone()));
+                    if delta_count % 20 == 0 {
+                        let _ = tx.send(SpecStreamEvent::Generating { tokens: token_count });
+                    }
+
+                    for json_obj in parser.feed(&text) {
+                        if let Ok(raw) = serde_json::from_str::<RawSpecOutput>(&json_obj) {
+                            let spec = Spec {
+                                spec_id: SpecId::new(),
+                                project_id: *project_id,
+                                title: raw.title,
+                                order_index: spec_index,
+                                markdown_contents: format!(
+                                    "## Purpose\n\n{}\n\n{}",
+                                    raw.purpose, raw.markdown
+                                ),
+                                created_at: now,
+                                updated_at: now,
+                            };
+                            if let Err(e) = self.save_single_spec(&spec) {
+                                error!(%project_id, error = %e, "Failed to save spec incrementally");
+                                continue;
+                            }
+                            spec_index += 1;
+                            saved_specs.push(spec.clone());
+                            let _ = tx.send(SpecStreamEvent::SpecSaved(spec));
+                        }
+                    }
+                }
+                ClaudeStreamEvent::Done { .. } => {
+                    let _ = tx.send(SpecStreamEvent::Generating { tokens: token_count });
+                }
+                ClaudeStreamEvent::Error(msg) => {
+                    let _ = tx.send(SpecStreamEvent::Error(msg));
+                }
+            }
         }
 
-        info!(%project_id, count = new_specs.len(), "Streaming spec generation complete");
-        send(SpecStreamEvent::Complete(new_specs));
+        // Retrieve the full response text (needed only for fallback).
+        let response_text = match stream_handle.await {
+            Ok(Ok(text)) => Some(text),
+            Ok(Err(e)) => {
+                if saved_specs.is_empty() {
+                    send(SpecStreamEvent::Error(format!("Claude API error: {e}")));
+                    return;
+                }
+                None
+            }
+            Err(e) => {
+                if saved_specs.is_empty() {
+                    send(SpecStreamEvent::Error(format!("Stream task error: {e}")));
+                    return;
+                }
+                None
+            }
+        };
+
+        // Fallback: if incremental parsing found nothing, try full-text parse.
+        if saved_specs.is_empty() {
+            if let Some(text) = response_text {
+                send(SpecStreamEvent::Progress("Parsing AI response".into()));
+                match Self::parse_claude_response(&text) {
+                    Ok(raw_specs) => {
+                        let new_specs = Self::raw_to_specs(project_id, raw_specs);
+                        send(SpecStreamEvent::Progress(format!(
+                            "Saving {} specs to database",
+                            new_specs.len()
+                        )));
+                        if let Err(e) = self.save_specs(project_id, &new_specs) {
+                            send(SpecStreamEvent::Error(format!("Failed to save specs: {e}")));
+                            return;
+                        }
+                        for spec in &new_specs {
+                            send(SpecStreamEvent::SpecSaved(spec.clone()));
+                        }
+                        saved_specs = new_specs;
+                    }
+                    Err(e) => {
+                        send(SpecStreamEvent::Error(format!("Parse error: {e}")));
+                        return;
+                    }
+                }
+            }
+        }
+
+        info!(%project_id, count = saved_specs.len(), "Streaming spec generation complete");
+        send(SpecStreamEvent::Complete(saved_specs));
+    }
+
+    fn clear_project_specs(&self, project_id: &ProjectId) -> Result<(), SpecGenError> {
+        let existing_specs = self.store.list_specs_by_project(project_id)?;
+        let existing_tasks = self.store.list_tasks_by_project(project_id)?;
+        let mut ops: Vec<BatchOp> = Vec::new();
+        for spec in &existing_specs {
+            ops.push(BatchOp::Delete {
+                cf: ColumnFamilyName::Specs,
+                key: format!("{}:{}", spec.project_id, spec.spec_id),
+            });
+        }
+        for task in &existing_tasks {
+            ops.push(BatchOp::Delete {
+                cf: ColumnFamilyName::Tasks,
+                key: format!("{}:{}:{}", task.project_id, task.spec_id, task.task_id),
+            });
+        }
+        if !ops.is_empty() {
+            self.store.write_batch(ops)?;
+        }
+        Ok(())
+    }
+
+    fn save_single_spec(&self, spec: &Spec) -> Result<(), SpecGenError> {
+        self.store.write_batch(vec![BatchOp::Put {
+            cf: ColumnFamilyName::Specs,
+            key: format!("{}:{}", spec.project_id, spec.spec_id),
+            value: serde_json::to_vec(spec)
+                .map_err(|e| SpecGenError::ParseError(e.to_string()))?,
+        }])?;
+        Ok(())
     }
 
     fn save_specs(&self, project_id: &ProjectId, new_specs: &[Spec]) -> Result<(), SpecGenError> {
