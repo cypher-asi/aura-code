@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
-use crate::handlers::{agents, auth, chat, dev_loop, projects, settings, specs, tasks, ws};
+use crate::handlers::{agents, auth, chat, dev_loop, orgs, projects, settings, specs, tasks, ws};
 use crate::state::AppState;
 
 pub fn create_router(state: AppState) -> Router {
@@ -26,6 +26,36 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
         .route("/api/auth/session", get(auth::get_session))
         .route("/api/auth/validate", post(auth::validate))
         .route("/api/auth/logout", post(auth::logout))
+        // Orgs
+        .route("/api/orgs", get(orgs::list_orgs).post(orgs::create_org))
+        .route(
+            "/api/orgs/:org_id",
+            get(orgs::get_org).put(orgs::update_org),
+        )
+        .route("/api/orgs/:org_id/members", get(orgs::list_members))
+        .route(
+            "/api/orgs/:org_id/members/:user_id",
+            put(orgs::update_member_role).delete(orgs::remove_member),
+        )
+        .route(
+            "/api/orgs/:org_id/invites",
+            post(orgs::create_invite).get(orgs::list_invites),
+        )
+        .route(
+            "/api/orgs/:org_id/invites/:invite_id",
+            delete(orgs::revoke_invite),
+        )
+        .route("/api/invites/:token/accept", post(orgs::accept_invite))
+        .route(
+            "/api/orgs/:org_id/billing",
+            put(orgs::set_billing).get(orgs::get_billing),
+        )
+        .route(
+            "/api/orgs/:org_id/integrations/github",
+            put(orgs::set_github)
+                .delete(orgs::remove_github)
+                .get(orgs::get_github),
+        )
         // Settings
         .route(
             "/api/settings/api-key",

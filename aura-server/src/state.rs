@@ -4,8 +4,8 @@ use tokio::sync::{broadcast, mpsc, Mutex};
 
 use aura_engine::{EngineEvent, LoopHandle};
 use aura_services::{
-    AgentService, AuthService, ChatService, ClaudeClient, ProjectService, SessionService,
-    SpecGenerationService, TaskExtractionService, TaskService,
+    AgentService, AuthService, ChatService, ClaudeClient, OrgService, ProjectService,
+    SessionService, SpecGenerationService, TaskExtractionService, TaskService,
 };
 use aura_settings::SettingsService;
 use aura_store::RocksStore;
@@ -13,6 +13,7 @@ use aura_store::RocksStore;
 #[derive(Clone)]
 pub struct AppState {
     pub store: Arc<RocksStore>,
+    pub org_service: Arc<OrgService>,
     pub auth_service: Arc<AuthService>,
     pub settings_service: Arc<SettingsService>,
     pub project_service: Arc<ProjectService>,

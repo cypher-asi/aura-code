@@ -2,6 +2,7 @@ pub mod agents;
 pub mod auth;
 pub mod chat;
 pub mod dev_loop;
+pub mod orgs;
 pub mod projects;
 pub mod settings;
 pub mod specs;

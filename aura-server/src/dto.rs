@@ -20,6 +20,7 @@ pub struct GetSettingResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateProjectRequest {
+    pub org_id: OrgId,
     pub name: String,
     pub description: String,
     pub linked_folder_path: String,
@@ -68,6 +69,34 @@ pub struct AuthSessionResponse {
     pub wallets: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub validated_at: DateTime<Utc>,
+}
+
+// -- Org DTOs --
+
+#[derive(Debug, Deserialize)]
+pub struct CreateOrgRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateOrgRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateMemberRoleRequest {
+    pub role: aura_core::OrgRole,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetBillingRequest {
+    pub billing_email: Option<String>,
+    pub plan: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetGithubRequest {
+    pub github_org: String,
 }
 
 impl From<ZeroAuthSession> for AuthSessionResponse {

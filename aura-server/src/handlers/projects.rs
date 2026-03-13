@@ -1,9 +1,15 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
+use serde::Deserialize;
 
-use aura_core::{Project, ProjectId};
+use aura_core::{OrgId, Project, ProjectId};
 use aura_services::{CreateProjectInput, UpdateProjectInput};
+
+#[derive(Debug, Deserialize)]
+pub struct ListProjectsQuery {
+    pub org_id: Option<OrgId>,
+}
 
 use crate::dto::{CreateProjectRequest, UpdateProjectRequest};
 use crate::error::{ApiError, ApiResult};
@@ -14,6 +20,7 @@ pub async fn create_project(
     Json(req): Json<CreateProjectRequest>,
 ) -> ApiResult<(StatusCode, Json<Project>)> {
     let input = CreateProjectInput {
+        org_id: req.org_id,
         name: req.name,
         description: req.description,
         linked_folder_path: req.linked_folder_path,
@@ -29,11 +36,20 @@ pub async fn create_project(
     Ok((StatusCode::CREATED, Json(project)))
 }
 
-pub async fn list_projects(State(state): State<AppState>) -> ApiResult<Json<Vec<Project>>> {
-    let projects = state
-        .project_service
-        .list_projects()
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+pub async fn list_projects(
+    State(state): State<AppState>,
+    Query(query): Query<ListProjectsQuery>,
+) -> ApiResult<Json<Vec<Project>>> {
+    let projects = match query.org_id {
+        Some(org_id) => state
+            .project_service
+            .list_projects_by_org(&org_id)
+            .map_err(|e| ApiError::internal(e.to_string()))?,
+        None => state
+            .project_service
+            .list_projects()
+            .map_err(|e| ApiError::internal(e.to_string()))?,
+    };
     Ok(Json(projects))
 }
 
