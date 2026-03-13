@@ -15,6 +15,8 @@ export interface Project {
   linked_folder_path: string;
   requirements_doc_path: string;
   current_status: ProjectStatus;
+  github_integration_id?: string;
+  github_repo_full_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -177,6 +179,28 @@ export interface OrgGithub {
   github_org: string;
   connected_by: string;
   connected_at: string;
+}
+
+export interface GitHubIntegration {
+  integration_id: string;
+  org_id: string;
+  installation_id: number;
+  github_account_login: string;
+  github_account_type: string;
+  connected_by: string;
+  connected_at: string;
+  repo_count: number;
+}
+
+export interface GitHubRepo {
+  github_repo_id: number;
+  integration_id: string;
+  full_name: string;
+  name: string;
+  private: boolean;
+  default_branch: string;
+  html_url: string;
+  updated_at: string;
 }
 
 export interface ApiError {

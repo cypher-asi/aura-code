@@ -54,11 +54,14 @@ fn make_project() -> Project {
     let now = Utc::now();
     Project {
         project_id: ProjectId::new(),
+        org_id: OrgId::new(),
         name: "Test".into(),
         description: "Test".into(),
         linked_folder_path: "/tmp".into(),
         requirements_doc_path: "/tmp/r.md".into(),
         current_status: ProjectStatus::Planning,
+        github_integration_id: None,
+        github_repo_full_name: None,
         created_at: now,
         updated_at: now,
     }

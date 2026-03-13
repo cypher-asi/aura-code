@@ -14,11 +14,14 @@ fn setup_project(store: &RocksStore) -> ProjectId {
     let now = chrono::Utc::now();
     let project = Project {
         project_id: pid,
+        org_id: OrgId::new(),
         name: "Test Project".into(),
         description: "desc".into(),
         linked_folder_path: ".".into(),
         requirements_doc_path: "req.md".into(),
         current_status: ProjectStatus::Planning,
+        github_integration_id: None,
+        github_repo_full_name: None,
         created_at: now,
         updated_at: now,
     };

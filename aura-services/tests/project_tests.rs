@@ -17,10 +17,13 @@ fn valid_input(dir: &TempDir) -> CreateProjectInput {
     std::fs::write(&req_file, "# Requirements\nBuild something").unwrap();
 
     CreateProjectInput {
+        org_id: OrgId::new(),
         name: "Test Project".into(),
         description: "A test project".into(),
         linked_folder_path: folder,
         requirements_doc_path: req_file.to_str().unwrap().to_string(),
+        github_integration_id: None,
+        github_repo_full_name: None,
     }
 }
 
@@ -119,6 +122,8 @@ fn update_project_applies_partial_updates() {
                 description: None,
                 linked_folder_path: None,
                 requirements_doc_path: None,
+                github_integration_id: None,
+                github_repo_full_name: None,
             },
         )
         .unwrap();

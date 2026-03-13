@@ -6,7 +6,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
-use crate::handlers::{agents, auth, chat, dev_loop, orgs, projects, settings, specs, sprints, tasks, ws};
+use crate::handlers::{agents, auth, chat, dev_loop, github, orgs, projects, settings, specs, sprints, tasks, ws};
 use crate::state::AppState;
 
 pub fn create_router(state: AppState) -> Router {
@@ -55,6 +55,31 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
             put(orgs::set_github)
                 .delete(orgs::remove_github)
                 .get(orgs::get_github),
+        )
+        // GitHub App integrations
+        .route(
+            "/api/orgs/:org_id/integrations/github/app",
+            get(github::list_integrations),
+        )
+        .route(
+            "/api/orgs/:org_id/integrations/github/install",
+            post(github::start_install),
+        )
+        .route(
+            "/api/github/callback",
+            get(github::github_callback),
+        )
+        .route(
+            "/api/orgs/:org_id/integrations/github/:integration_id",
+            delete(github::remove_integration),
+        )
+        .route(
+            "/api/orgs/:org_id/integrations/github/repos",
+            get(github::list_repos),
+        )
+        .route(
+            "/api/orgs/:org_id/integrations/github/:integration_id/refresh",
+            post(github::refresh_integration),
         )
         // Settings
         .route(

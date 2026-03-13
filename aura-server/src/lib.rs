@@ -15,8 +15,8 @@ use tracing::{debug, warn};
 
 use aura_engine::EngineEvent;
 use aura_services::{
-    AgentService, AuthService, ChatService, ClaudeClient, OrgService, ProjectService,
-    SessionService, SpecGenerationService, TaskExtractionService, TaskService,
+    AgentService, AuthService, ChatService, ClaudeClient, GitHubService, OrgService,
+    ProjectService, SessionService, SpecGenerationService, TaskExtractionService, TaskService,
 };
 use aura_settings::SettingsService;
 use aura_store::RocksStore;
@@ -38,6 +38,7 @@ fn spawn_event_rebroadcast(
 pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
     let store = Arc::new(RocksStore::open(db_path).expect("failed to open RocksDB"));
     let org_service = Arc::new(OrgService::new(store.clone()));
+    let github_service = Arc::new(GitHubService::new(store.clone(), org_service.clone()));
     let mut auth_service = AuthService::new(store.clone());
     auth_service.set_org_service(org_service.clone());
     let auth_service = Arc::new(auth_service);
@@ -73,6 +74,7 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
     AppState {
         store,
         org_service,
+        github_service,
         auth_service,
         settings_service,
         project_service,

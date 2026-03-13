@@ -23,6 +23,8 @@ import type {
   OrgBilling,
   OrgGithub,
   OrgRole,
+  GitHubIntegration,
+  GitHubRepo,
 } from "../types";
 import { streamSSE } from "./sse";
 
@@ -63,6 +65,8 @@ export interface CreateProjectRequest {
   description: string;
   linked_folder_path: string;
   requirements_doc_path: string;
+  github_integration_id?: string;
+  github_repo_full_name?: string;
 }
 
 export interface UpdateProjectRequest {
@@ -70,6 +74,8 @@ export interface UpdateProjectRequest {
   description?: string;
   linked_folder_path?: string;
   requirements_doc_path?: string;
+  github_integration_id?: string;
+  github_repo_full_name?: string;
 }
 
 export interface LoopStatusResponse {
@@ -180,6 +186,22 @@ export const api = {
     removeGithub: (orgId: string) =>
       apiFetch<void>(`/api/orgs/${orgId}/integrations/github`, {
         method: "DELETE",
+      }),
+    listGithubIntegrations: (orgId: string) =>
+      apiFetch<GitHubIntegration[]>(`/api/orgs/${orgId}/integrations/github/app`),
+    startGithubInstall: (orgId: string) =>
+      apiFetch<{ install_url: string }>(`/api/orgs/${orgId}/integrations/github/install`, {
+        method: "POST",
+      }),
+    removeGithubIntegration: (orgId: string, integrationId: string) =>
+      apiFetch<void>(`/api/orgs/${orgId}/integrations/github/${integrationId}`, {
+        method: "DELETE",
+      }),
+    listGithubRepos: (orgId: string) =>
+      apiFetch<GitHubRepo[]>(`/api/orgs/${orgId}/integrations/github/repos`),
+    refreshGithubIntegration: (orgId: string, integrationId: string) =>
+      apiFetch<GitHubRepo[]>(`/api/orgs/${orgId}/integrations/github/${integrationId}/refresh`, {
+        method: "POST",
       }),
   },
 

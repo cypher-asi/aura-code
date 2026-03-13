@@ -296,7 +296,7 @@ impl GitHubService {
         actor_user_id: &str,
         integration_id: &GitHubIntegrationId,
     ) -> Result<(), GitHubError> {
-        self.org_service.require_admin_or_owner_public(org_id, actor_user_id)?;
+        self.org_service.require_admin_or_owner_pub(org_id, actor_user_id)?;
 
         self.store
             .get_github_integration(org_id, integration_id)

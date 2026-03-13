@@ -139,6 +139,36 @@ pub struct GitHubCallbackQuery {
     pub state: Option<String>,
 }
 
+impl GitHubIntegrationResponse {
+    pub fn from_integration(int: GitHubIntegration, repo_count: usize) -> Self {
+        Self {
+            integration_id: int.integration_id.to_string(),
+            org_id: int.org_id.to_string(),
+            installation_id: int.installation_id,
+            github_account_login: int.github_account_login,
+            github_account_type: int.github_account_type,
+            connected_by: int.connected_by,
+            connected_at: int.connected_at,
+            repo_count,
+        }
+    }
+}
+
+impl From<GitHubRepo> for GitHubRepoResponse {
+    fn from(repo: GitHubRepo) -> Self {
+        Self {
+            github_repo_id: repo.github_repo_id,
+            integration_id: repo.integration_id.to_string(),
+            full_name: repo.full_name,
+            name: repo.name,
+            private: repo.private,
+            default_branch: repo.default_branch,
+            html_url: repo.html_url,
+            updated_at: repo.updated_at,
+        }
+    }
+}
+
 impl From<ZeroAuthSession> for AuthSessionResponse {
     fn from(s: ZeroAuthSession) -> Self {
         Self {

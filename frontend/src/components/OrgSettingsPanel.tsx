@@ -4,8 +4,8 @@ import { useAuth } from "../context/AuthContext";
 import { api } from "../api/client";
 import { Modal, Navigator, Button, Input, Text } from "@cypher-asi/zui";
 import type { NavigatorItemProps } from "@cypher-asi/zui";
-import { Copy, Trash2, UserMinus, Settings, Users, Mail, CreditCard, Plug } from "lucide-react";
-import type { OrgInvite, OrgGithub, OrgBilling, OrgRole } from "../types";
+import { Copy, Trash2, UserMinus, Settings, Users, Mail, CreditCard, Plug, RefreshCw, ExternalLink } from "lucide-react";
+import type { OrgInvite, OrgGithub, OrgBilling, OrgRole, GitHubIntegration } from "../types";
 import styles from "./OrgSettingsPanel.module.css";
 
 type Section = "general" | "members" | "invites" | "billing" | "integrations";
@@ -38,9 +38,11 @@ export function OrgSettingsPanel({ isOpen, onClose }: Props) {
   const [invites, setInvites] = useState<OrgInvite[]>([]);
   const [billing, setBilling] = useState<OrgBilling | null>(null);
   const [github, setGithub] = useState<OrgGithub | null>(null);
+  const [githubIntegrations, setGithubIntegrations] = useState<GitHubIntegration[]>([]);
   const [billingEmail, setBillingEmail] = useState("");
   const [githubOrg, setGithubOrg] = useState("");
   const [saving, setSaving] = useState(false);
+  const [installLoading, setInstallLoading] = useState(false);
 
   const orgId = activeOrg?.org_id;
   const myRole = members.find((m) => m.user_id === user?.user_id)?.role;
@@ -93,13 +95,21 @@ export function OrgSettingsPanel({ isOpen, onClose }: Props) {
     } catch { /* ignore */ }
   }, [orgId]);
 
+  const loadGithubIntegrations = useCallback(async () => {
+    if (!orgId) return;
+    try {
+      setGithubIntegrations(await api.orgs.listGithubIntegrations(orgId));
+    } catch { /* ignore */ }
+  }, [orgId]);
+
   useEffect(() => {
     if (!isOpen || !orgId) return;
     refreshMembers();
     loadInvites();
     loadBilling();
     loadGithub();
-  }, [isOpen, orgId, refreshMembers, loadInvites, loadBilling, loadGithub]);
+    loadGithubIntegrations();
+  }, [isOpen, orgId, refreshMembers, loadInvites, loadBilling, loadGithub, loadGithubIntegrations]);
 
   const handleCreateInvite = async () => {
     if (!orgId) return;
@@ -176,6 +186,39 @@ export function OrgSettingsPanel({ isOpen, onClose }: Props) {
       setGithubOrg("");
     } catch (err) {
       console.error("Failed to disconnect GitHub", err);
+    }
+  };
+
+  const handleStartInstall = async () => {
+    if (!orgId) return;
+    setInstallLoading(true);
+    try {
+      const { install_url } = await api.orgs.startGithubInstall(orgId);
+      window.open(install_url, "_blank");
+    } catch (err) {
+      console.error("Failed to start GitHub install", err);
+    } finally {
+      setInstallLoading(false);
+    }
+  };
+
+  const handleRemoveIntegration = async (integrationId: string) => {
+    if (!orgId) return;
+    try {
+      await api.orgs.removeGithubIntegration(orgId, integrationId);
+      loadGithubIntegrations();
+    } catch (err) {
+      console.error("Failed to remove integration", err);
+    }
+  };
+
+  const handleRefreshIntegration = async (integrationId: string) => {
+    if (!orgId) return;
+    try {
+      await api.orgs.refreshGithubIntegration(orgId, integrationId);
+      loadGithubIntegrations();
+    } catch (err) {
+      console.error("Failed to refresh integration", err);
     }
   };
 
@@ -378,7 +421,64 @@ export function OrgSettingsPanel({ isOpen, onClose }: Props) {
             <>
               <h2 className={styles.sectionTitle}>Integrations</h2>
 
-              <div className={styles.settingsGroupLabel}>GitHub</div>
+              <div className={styles.settingsGroupLabel}>GitHub App</div>
+              <div className={styles.settingsGroup}>
+                {isAdminOrOwner && (
+                  <div className={styles.inviteActions}>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleStartInstall}
+                      disabled={installLoading}
+                      icon={<ExternalLink size={14} />}
+                    >
+                      {installLoading ? "Opening..." : "Add GitHub Integration"}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={loadGithubIntegrations} icon={<RefreshCw size={14} />}>
+                      Refresh
+                    </Button>
+                  </div>
+                )}
+
+                {githubIntegrations.map((integration) => (
+                  <div key={integration.integration_id} className={styles.settingsRow}>
+                    <div className={styles.rowInfo}>
+                      <span className={styles.rowLabel}>{integration.github_account_login}</span>
+                      <span className={styles.rowDescription}>
+                        {integration.github_account_type} &middot; {integration.repo_count} repos &middot; Connected{" "}
+                        {new Date(integration.connected_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className={styles.rowControl}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<RefreshCw size={14} />}
+                        iconOnly
+                        aria-label="Refresh repos"
+                        onClick={() => handleRefreshIntegration(integration.integration_id)}
+                      />
+                      {isAdminOrOwner && (
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => handleRemoveIntegration(integration.integration_id)}
+                        >
+                          Disconnect
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {githubIntegrations.length === 0 && (
+                  <div className={styles.emptyMessage}>No GitHub integrations connected</div>
+                )}
+              </div>
+
+              <div className={styles.settingsGroupLabel} style={{ marginTop: "var(--space-4)" }}>
+                GitHub (Legacy)
+              </div>
               <div className={styles.settingsGroup}>
                 {github ? (
                   <div className={styles.settingsRow}>
@@ -401,7 +501,7 @@ export function OrgSettingsPanel({ isOpen, onClose }: Props) {
                     <div className={styles.rowInfo}>
                       <span className={styles.rowLabel}>GitHub Organization</span>
                       <span className={styles.rowDescription}>
-                        Connect a GitHub org to enable repository access
+                        Connect a GitHub org manually (text-only, no API access)
                       </span>
                     </div>
                     {isAdminOrOwner && (

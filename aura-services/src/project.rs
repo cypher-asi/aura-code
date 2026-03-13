@@ -15,6 +15,8 @@ pub struct CreateProjectInput {
     pub description: String,
     pub linked_folder_path: String,
     pub requirements_doc_path: String,
+    pub github_integration_id: Option<GitHubIntegrationId>,
+    pub github_repo_full_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -23,6 +25,8 @@ pub struct UpdateProjectInput {
     pub description: Option<String>,
     pub linked_folder_path: Option<String>,
     pub requirements_doc_path: Option<String>,
+    pub github_integration_id: Option<GitHubIntegrationId>,
+    pub github_repo_full_name: Option<String>,
 }
 
 pub struct ProjectService {
@@ -66,8 +70,8 @@ impl ProjectService {
             linked_folder_path: input.linked_folder_path,
             requirements_doc_path: input.requirements_doc_path,
             current_status: ProjectStatus::Planning,
-            github_integration_id: None,
-            github_repo_full_name: None,
+            github_integration_id: input.github_integration_id,
+            github_repo_full_name: input.github_repo_full_name,
             created_at: now,
             updated_at: now,
         };
@@ -129,6 +133,10 @@ impl ProjectService {
         }
         if let Some(path) = input.requirements_doc_path {
             project.requirements_doc_path = path;
+        }
+        if input.github_integration_id.is_some() || input.github_repo_full_name.is_some() {
+            project.github_integration_id = input.github_integration_id;
+            project.github_repo_full_name = input.github_repo_full_name;
         }
 
         project.updated_at = Utc::now();
