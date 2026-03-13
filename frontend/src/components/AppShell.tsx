@@ -4,6 +4,7 @@ import { Settings } from "lucide-react";
 import { ProjectList } from "./ProjectList";
 import { UserProfile } from "./UserProfile";
 import { Sidekick } from "./Sidekick";
+import { Preview } from "./Preview";
 import { SidekickProvider } from "../context/SidekickContext";
 import { ProjectContextProvider } from "../context/ProjectContext";
 import { windowCommand } from "../lib/windowCommand";
@@ -38,6 +39,7 @@ export function AppShell() {
             </div>
           </main>
           <Sidekick />
+          <Preview />
         </div>
       </div>
     </ProjectContextProvider>
