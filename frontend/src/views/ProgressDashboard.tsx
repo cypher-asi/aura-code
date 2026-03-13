@@ -63,7 +63,7 @@ export function ProgressDashboard() {
 
 function StatCard({ value, label, color }: { value: number; label: string; color: string }) {
   return (
-    <Panel variant="solid" border="solid" style={{ padding: "var(--space-4)", textAlign: "center" }}>
+    <Panel variant="solid" border="solid" style={{ padding: "var(--space-3)", textAlign: "center" }}>
       <div className={styles.statValue} style={{ color }}>{value}</div>
       <Text variant="muted" size="xs">{label}</Text>
     </Panel>
