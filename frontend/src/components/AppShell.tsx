@@ -1,17 +1,25 @@
 import { Link, Outlet } from "react-router-dom";
-import { Topbar, Sidebar, Button } from "@cypher-asi/zui";
+import { Topbar, Sidebar, Button, ButtonWindow } from "@cypher-asi/zui";
 import { Settings } from "lucide-react";
 import { ProjectList } from "./ProjectList";
+import { windowCommand } from "../lib/windowCommand";
 
 export function AppShell() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <Topbar
-        title={<Link to="/" style={{ color: "inherit", textDecoration: "none" }}>Aura</Link>}
+        className="titlebar-drag"
+        onDoubleClick={() => windowCommand("maximize")}
+        title={<Link to="/" style={{ color: "inherit", textDecoration: "none" }}>AURA</Link>}
         actions={
-          <Link to="/settings">
-            <Button variant="ghost" size="sm" icon={<Settings size={16} />} iconOnly aria-label="Settings" />
-          </Link>
+          <div className="titlebar-no-drag" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+            <Link to="/settings">
+              <Button variant="ghost" size="sm" icon={<Settings size={16} />} iconOnly aria-label="Settings" />
+            </Link>
+            <ButtonWindow action="minimize" size="sm" onClick={() => windowCommand("minimize")} />
+            <ButtonWindow action="maximize" size="sm" onClick={() => windowCommand("maximize")} />
+            <ButtonWindow action="close" size="sm" onClick={() => windowCommand("close")} />
+          </div>
         }
       />
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>

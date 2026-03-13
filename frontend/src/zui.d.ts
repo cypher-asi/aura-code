@@ -58,6 +58,18 @@ declare module "@cypher-asi/zui" {
   export function ButtonPlus(props: ButtonHTMLAttributes<HTMLButtonElement> & { size?: ButtonSize }): JSX.Element;
   export function ButtonCopy(props: ButtonHTMLAttributes<HTMLButtonElement> & { text: string; size?: ButtonSize }): JSX.Element;
 
+  // ButtonWindow
+  export type ButtonWindowAction = "minimize" | "maximize" | "close";
+  export interface ButtonWindowProps {
+    action: ButtonWindowAction;
+    onClick?: () => void;
+    size?: ButtonSize;
+    rounded?: ButtonRounded;
+    disabled?: boolean;
+    className?: string;
+  }
+  export function ButtonWindow(props: ButtonWindowProps): JSX.Element;
+
   // Input
   export type InputSize = "sm" | "md";
   export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
