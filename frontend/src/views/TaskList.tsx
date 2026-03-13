@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { api } from "../api/client";
 import type { Spec, Task } from "../types";
-import { StatusBadge } from "../components/StatusBadge";
+import { TaskStatusIcon } from "../components/TaskStatusIcon";
 import { useProjectContext } from "../context/ProjectContext";
 import { useSidekick } from "../context/SidekickContext";
 import { useDelayedEmpty } from "../hooks/use-delayed-empty";
@@ -63,7 +63,7 @@ export function TaskList() {
       children: specTasks.map((task) => ({
         id: task.task_id,
         label: task.title,
-        suffix: <StatusBadge status={task.status} />,
+        suffix: <TaskStatusIcon status={task.status} />,
         metadata: { type: "task" },
       })),
     }));
@@ -75,7 +75,7 @@ export function TaskList() {
         children: ungrouped.map((task) => ({
           id: task.task_id,
           label: task.title,
-          suffix: <StatusBadge status={task.status} />,
+          suffix: <TaskStatusIcon status={task.status} />,
           metadata: { type: "task" },
         })),
       });
