@@ -12,6 +12,20 @@ html, body, #root {
   width: 100%;
 }
 
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-drag a,
+.titlebar-drag button,
+.titlebar-drag input {
+  -webkit-app-region: no-drag;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
