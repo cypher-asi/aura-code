@@ -134,7 +134,8 @@ export function ProjectList() {
     return map;
   }, [sessionsByProject]);
 
-  // Build Explorer tree data
+  const { streamingSessionId } = sidekick;
+
   const explorerData: ExplorerNode[] = useMemo(
     () =>
       projects.map((p) => ({
@@ -147,16 +148,19 @@ export function ProjectList() {
             ? sessionsByProject[p.project_id].map((s) => ({
                 id: s.chat_session_id,
                 label: s.title,
-                suffix: (
-                  <span className={styles.sessionTime}>
-                    {formatRelativeTime(s.updated_at)}
-                  </span>
-                ),
+                suffix:
+                  streamingSessionId === s.chat_session_id ? (
+                    <span className={styles.streamingDot} />
+                  ) : (
+                    <span className={styles.sessionTime}>
+                      {formatRelativeTime(s.updated_at)}
+                    </span>
+                  ),
                 metadata: { type: "session", projectId: p.project_id },
               }))
             : [{ id: `_load_${p.project_id}`, label: "Loading...", disabled: true }],
       })),
-    [projects, sessionsByProject],
+    [projects, sessionsByProject, streamingSessionId],
   );
 
   const defaultExpandedIds = useMemo(
