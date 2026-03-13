@@ -13,12 +13,20 @@
 
 .addButton {
   position: absolute;
-  top: 6px;
+  top: 0;
   right: 4px;
   z-index: 1;
   display: flex;
   align-items: center;
   height: var(--control-height-sm);
+}
+
+.explorerWrap [class*="searchContainer"] {
+  padding: 0 !important;
+}
+
+.explorerWrap [class*="searchContainer"] input {
+  border-top: none !important;
 }
 
 /* Align search icon with topbar title and tree chevrons */

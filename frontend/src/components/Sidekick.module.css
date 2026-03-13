@@ -70,6 +70,14 @@
   overflow: hidden;
 }
 
+.sidekickBody [class*="searchContainer"] {
+  padding: 0 !important;
+}
+
+.sidekickBody [class*="searchContainer"] input {
+  border-top: none !important;
+}
+
 .sidekickBody [class*="label"] {
   text-align: left;
 }

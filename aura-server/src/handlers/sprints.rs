@@ -177,7 +177,7 @@ pub async fn generate_sprint_stream(
     State(state): State<AppState>,
     Path((project_id, sprint_id)): Path<(ProjectId, SprintId)>,
 ) -> ApiResult<Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>> {
-    let mut sprint = state
+    let sprint = state
         .store
         .get_sprint(&project_id, &sprint_id)
         .map_err(|e| match e {
@@ -193,95 +193,119 @@ pub async fn generate_sprint_stream(
     let (claude_tx, claude_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
     let (sse_tx, sse_rx) = mpsc::unbounded_channel::<Event>();
 
-    let claude_client = state.claude_client.clone();
-    let store = state.store.clone();
     let prompt = sprint.prompt.clone();
     let sse_tx_fwd = sse_tx.clone();
 
-    tokio::spawn(async move {
-        let result = claude_client
-            .complete_stream(
-                &api_key,
-                GENERATE_SYSTEM_PROMPT,
-                &prompt,
-                8192,
-                claude_tx,
-            )
-            .await;
+    tokio::spawn(save_sprint_result(
+        state.claude_client.clone(),
+        state.store.clone(),
+        api_key,
+        prompt.clone(),
+        sprint,
+        project_id,
+        sprint_id,
+        claude_tx,
+        sse_tx,
+    ));
 
-        match result {
-            Ok(full_text) => {
-                sprint.prompt = full_text;
-                sprint.generated_at = Some(Utc::now());
-                sprint.updated_at = Utc::now();
+    tokio::spawn(forward_claude_events(claude_rx, sse_tx_fwd));
 
-                if let Err(e) = store.put_sprint(&sprint) {
-                    error!(%project_id, %sprint_id, error = %e, "Failed to save generated sprint");
-                    let _ = sse_tx.send(
-                        Event::default()
-                            .event("error")
-                            .json_data(serde_json::json!({ "message": e.to_string() }))
-                            .unwrap(),
-                    );
-                    return;
-                }
+    let stream = UnboundedReceiverStream::new(sse_rx)
+        .map(|evt| Ok::<_, Infallible>(evt));
 
-                info!(%project_id, %sprint_id, "Sprint generated via streaming LLM");
-                let _ = sse_tx.send(
-                    Event::default()
-                        .event("done")
-                        .json_data(serde_json::json!({ "sprint": sprint }))
-                        .unwrap(),
-                );
-            }
-            Err(e) => {
-                error!(%project_id, %sprint_id, error = %e, "Streaming sprint generation failed");
+    Ok(Sse::new(stream))
+}
+
+async fn save_sprint_result(
+    claude_client: std::sync::Arc<aura_services::ClaudeClient>,
+    store: std::sync::Arc<aura_store::RocksStore>,
+    api_key: String,
+    prompt: String,
+    mut sprint: Sprint,
+    project_id: ProjectId,
+    sprint_id: SprintId,
+    claude_tx: mpsc::UnboundedSender<ClaudeStreamEvent>,
+    sse_tx: mpsc::UnboundedSender<Event>,
+) {
+    let result = claude_client
+        .complete_stream(
+            &api_key,
+            GENERATE_SYSTEM_PROMPT,
+            &prompt,
+            8192,
+            claude_tx,
+        )
+        .await;
+
+    match result {
+        Ok(full_text) => {
+            sprint.prompt = full_text;
+            sprint.generated_at = Some(Utc::now());
+            sprint.updated_at = Utc::now();
+
+            if let Err(e) = store.put_sprint(&sprint) {
+                error!(%project_id, %sprint_id, error = %e, "Failed to save generated sprint");
                 let _ = sse_tx.send(
                     Event::default()
                         .event("error")
                         .json_data(serde_json::json!({ "message": e.to_string() }))
                         .unwrap(),
                 );
+                return;
             }
-        }
-    });
 
-    tokio::spawn(async move {
-        let mut rx = claude_rx;
-        while let Some(evt) = rx.recv().await {
-            let event = match &evt {
-                ClaudeStreamEvent::Delta(text) => {
-                    Event::default()
-                        .event("delta")
-                        .json_data(serde_json::json!({ "text": text }))
-                        .unwrap()
-                }
-                ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } => {
-                    Event::default()
-                        .event("generating")
-                        .json_data(serde_json::json!({
-                            "input_tokens": input_tokens,
-                            "output_tokens": output_tokens,
-                        }))
-                        .unwrap()
-                }
-                ClaudeStreamEvent::Error(msg) => {
-                    Event::default()
-                        .event("error")
-                        .json_data(serde_json::json!({ "message": msg }))
-                        .unwrap()
-                }
-            };
-            if sse_tx_fwd.send(event).is_err() {
-                break;
+            info!(%project_id, %sprint_id, "Sprint generated via streaming LLM");
+            let _ = sse_tx.send(
+                Event::default()
+                    .event("done")
+                    .json_data(serde_json::json!({ "sprint": sprint }))
+                    .unwrap(),
+            );
+        }
+        Err(e) => {
+            error!(%project_id, %sprint_id, error = %e, "Streaming sprint generation failed");
+            let _ = sse_tx.send(
+                Event::default()
+                    .event("error")
+                    .json_data(serde_json::json!({ "message": e.to_string() }))
+                    .unwrap(),
+            );
+        }
+    }
+}
+
+async fn forward_claude_events(
+    mut rx: mpsc::UnboundedReceiver<ClaudeStreamEvent>,
+    sse_tx: mpsc::UnboundedSender<Event>,
+) {
+    while let Some(evt) = rx.recv().await {
+        let event = match &evt {
+            ClaudeStreamEvent::Delta(text) => {
+                Event::default()
+                    .event("delta")
+                    .json_data(serde_json::json!({ "text": text }))
+                    .unwrap()
             }
+            ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } => {
+                Event::default()
+                    .event("generating")
+                    .json_data(serde_json::json!({
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                    }))
+                    .unwrap()
+            }
+            ClaudeStreamEvent::Error(msg) => {
+                Event::default()
+                    .event("error")
+                    .json_data(serde_json::json!({ "message": msg }))
+                    .unwrap()
+            }
+        };
+        if sse_tx.send(event).is_err() {
+            break;
         }
-    });
-
-    let stream = UnboundedReceiverStream::new(sse_rx)
-        .map(|evt| Ok::<_, Infallible>(evt));
-
-    Ok(Sse::new(stream))
+    }
 }
 
 pub async fn reorder_sprints(
