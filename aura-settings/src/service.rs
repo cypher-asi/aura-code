@@ -115,8 +115,7 @@ impl SettingsService {
         match &entry.value {
             SettingsValue::Encrypted(blob) => {
                 let plaintext = self.encryption.decrypt(blob)?;
-                String::from_utf8(plaintext)
-                    .map_err(|e| SettingsError::Encryption(e.to_string()))
+                String::from_utf8(plaintext).map_err(|e| SettingsError::Encryption(e.to_string()))
             }
             SettingsValue::PlainText(val) => Ok(val.clone()),
         }

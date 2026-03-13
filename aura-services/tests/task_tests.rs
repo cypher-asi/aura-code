@@ -107,10 +107,7 @@ fn illegal_transitions_fail() {
 
     for (from, to) in illegal {
         let result = TaskService::validate_transition(from, to);
-        assert!(
-            result.is_err(),
-            "expected {from:?} -> {to:?} to be illegal"
-        );
+        assert!(result.is_err(), "expected {from:?} -> {to:?} to be illegal");
         assert!(matches!(
             result.unwrap_err(),
             TaskError::IllegalTransition { .. }
@@ -125,7 +122,13 @@ fn assign_task_transitions_ready_to_in_progress() {
 
     let project = make_project();
     let spec = make_spec(project.project_id, 0);
-    let task = make_task_with(project.project_id, spec.spec_id, TaskStatus::Ready, 0, vec![]);
+    let task = make_task_with(
+        project.project_id,
+        spec.spec_id,
+        TaskStatus::Ready,
+        0,
+        vec![],
+    );
 
     store.put_project(&project).unwrap();
     store.put_spec(&spec).unwrap();
@@ -147,7 +150,13 @@ fn complete_task_sets_done_and_clears_agent() {
 
     let project = make_project();
     let spec = make_spec(project.project_id, 0);
-    let mut task = make_task_with(project.project_id, spec.spec_id, TaskStatus::InProgress, 0, vec![]);
+    let mut task = make_task_with(
+        project.project_id,
+        spec.spec_id,
+        TaskStatus::InProgress,
+        0,
+        vec![],
+    );
     task.assigned_agent_id = Some(AgentId::new());
 
     store.put_project(&project).unwrap();
@@ -155,7 +164,12 @@ fn complete_task_sets_done_and_clears_agent() {
     store.put_task(&task).unwrap();
 
     let completed = svc
-        .complete_task(&project.project_id, &spec.spec_id, &task.task_id, "all good")
+        .complete_task(
+            &project.project_id,
+            &spec.spec_id,
+            &task.task_id,
+            "all good",
+        )
         .unwrap();
 
     assert_eq!(completed.status, TaskStatus::Done);
@@ -170,14 +184,25 @@ fn fail_task_sets_failed_and_records_reason() {
 
     let project = make_project();
     let spec = make_spec(project.project_id, 0);
-    let task = make_task_with(project.project_id, spec.spec_id, TaskStatus::InProgress, 0, vec![]);
+    let task = make_task_with(
+        project.project_id,
+        spec.spec_id,
+        TaskStatus::InProgress,
+        0,
+        vec![],
+    );
 
     store.put_project(&project).unwrap();
     store.put_spec(&spec).unwrap();
     store.put_task(&task).unwrap();
 
     let failed = svc
-        .fail_task(&project.project_id, &spec.spec_id, &task.task_id, "compile error")
+        .fail_task(
+            &project.project_id,
+            &spec.spec_id,
+            &task.task_id,
+            "compile error",
+        )
         .unwrap();
 
     assert_eq!(failed.status, TaskStatus::Failed);
@@ -191,7 +216,13 @@ fn retry_task_transitions_failed_to_ready() {
 
     let project = make_project();
     let spec = make_spec(project.project_id, 0);
-    let task = make_task_with(project.project_id, spec.spec_id, TaskStatus::Failed, 0, vec![]);
+    let task = make_task_with(
+        project.project_id,
+        spec.spec_id,
+        TaskStatus::Failed,
+        0,
+        vec![],
+    );
 
     store.put_project(&project).unwrap();
     store.put_spec(&spec).unwrap();
@@ -216,7 +247,13 @@ fn dependency_resolution_makes_pending_ready() {
     let project = make_project();
     let spec = make_spec(project.project_id, 0);
 
-    let root = make_task_with(project.project_id, spec.spec_id, TaskStatus::InProgress, 0, vec![]);
+    let root = make_task_with(
+        project.project_id,
+        spec.spec_id,
+        TaskStatus::InProgress,
+        0,
+        vec![],
+    );
     let leaf = make_task_with(
         project.project_id,
         spec.spec_id,
@@ -252,8 +289,20 @@ fn dependency_resolution_waits_for_all_deps() {
     let project = make_project();
     let spec = make_spec(project.project_id, 0);
 
-    let dep_a = make_task_with(project.project_id, spec.spec_id, TaskStatus::Done, 0, vec![]);
-    let dep_b = make_task_with(project.project_id, spec.spec_id, TaskStatus::InProgress, 1, vec![]);
+    let dep_a = make_task_with(
+        project.project_id,
+        spec.spec_id,
+        TaskStatus::Done,
+        0,
+        vec![],
+    );
+    let dep_b = make_task_with(
+        project.project_id,
+        spec.spec_id,
+        TaskStatus::InProgress,
+        1,
+        vec![],
+    );
     let leaf = make_task_with(
         project.project_id,
         spec.spec_id,
@@ -334,9 +383,27 @@ fn select_next_task_picks_lowest_spec_and_order() {
     let spec_0 = make_spec(project.project_id, 0);
     let spec_1 = make_spec(project.project_id, 1);
 
-    let t_s1_o0 = make_task_with(project.project_id, spec_1.spec_id, TaskStatus::Ready, 0, vec![]);
-    let t_s0_o1 = make_task_with(project.project_id, spec_0.spec_id, TaskStatus::Ready, 1, vec![]);
-    let t_s0_o0 = make_task_with(project.project_id, spec_0.spec_id, TaskStatus::Ready, 0, vec![]);
+    let t_s1_o0 = make_task_with(
+        project.project_id,
+        spec_1.spec_id,
+        TaskStatus::Ready,
+        0,
+        vec![],
+    );
+    let t_s0_o1 = make_task_with(
+        project.project_id,
+        spec_0.spec_id,
+        TaskStatus::Ready,
+        1,
+        vec![],
+    );
+    let t_s0_o0 = make_task_with(
+        project.project_id,
+        spec_0.spec_id,
+        TaskStatus::Ready,
+        0,
+        vec![],
+    );
 
     store.put_project(&project).unwrap();
     store.put_spec(&spec_0).unwrap();
@@ -359,7 +426,13 @@ fn select_next_task_returns_none_when_no_ready_tasks() {
 
     let project = make_project();
     let spec = make_spec(project.project_id, 0);
-    let task = make_task_with(project.project_id, spec.spec_id, TaskStatus::Pending, 0, vec![]);
+    let task = make_task_with(
+        project.project_id,
+        spec.spec_id,
+        TaskStatus::Pending,
+        0,
+        vec![],
+    );
 
     store.put_project(&project).unwrap();
     store.put_spec(&spec).unwrap();
@@ -392,14 +465,25 @@ fn follow_up_task_inherits_lineage() {
 
     let project = make_project();
     let spec = make_spec(project.project_id, 0);
-    let origin = make_task_with(project.project_id, spec.spec_id, TaskStatus::InProgress, 5, vec![]);
+    let origin = make_task_with(
+        project.project_id,
+        spec.spec_id,
+        TaskStatus::InProgress,
+        5,
+        vec![],
+    );
 
     store.put_project(&project).unwrap();
     store.put_spec(&spec).unwrap();
     store.put_task(&origin).unwrap();
 
     let follow_up = svc
-        .create_follow_up_task(&origin, "Fix edge case".into(), "Handle null input".into(), vec![])
+        .create_follow_up_task(
+            &origin,
+            "Fix edge case".into(),
+            "Handle null input".into(),
+            vec![],
+        )
         .unwrap();
 
     assert_eq!(follow_up.project_id, project.project_id);
@@ -415,8 +499,20 @@ fn follow_up_with_deps_starts_pending() {
 
     let project = make_project();
     let spec = make_spec(project.project_id, 0);
-    let origin = make_task_with(project.project_id, spec.spec_id, TaskStatus::InProgress, 0, vec![]);
-    let dep = make_task_with(project.project_id, spec.spec_id, TaskStatus::Ready, 1, vec![]);
+    let origin = make_task_with(
+        project.project_id,
+        spec.spec_id,
+        TaskStatus::InProgress,
+        0,
+        vec![],
+    );
+    let dep = make_task_with(
+        project.project_id,
+        spec.spec_id,
+        TaskStatus::Ready,
+        1,
+        vec![],
+    );
 
     store.put_project(&project).unwrap();
     store.put_spec(&spec).unwrap();
@@ -424,7 +520,12 @@ fn follow_up_with_deps_starts_pending() {
     store.put_task(&dep).unwrap();
 
     let follow_up = svc
-        .create_follow_up_task(&origin, "Needs dep".into(), "desc".into(), vec![dep.task_id])
+        .create_follow_up_task(
+            &origin,
+            "Needs dep".into(),
+            "desc".into(),
+            vec![dep.task_id],
+        )
         .unwrap();
 
     assert_eq!(follow_up.status, TaskStatus::Pending);

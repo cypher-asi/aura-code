@@ -73,12 +73,10 @@ impl ProjectService {
     }
 
     pub fn get_project(&self, id: &ProjectId) -> Result<Project, ProjectError> {
-        self.store
-            .get_project(id)
-            .map_err(|e| match e {
-                aura_store::StoreError::NotFound(_) => ProjectError::NotFound(*id),
-                other => ProjectError::Store(other),
-            })
+        self.store.get_project(id).map_err(|e| match e {
+            aura_store::StoreError::NotFound(_) => ProjectError::NotFound(*id),
+            other => ProjectError::Store(other),
+        })
     }
 
     pub fn list_projects(&self) -> Result<Vec<Project>, ProjectError> {

@@ -1,307 +1,379 @@
-# Requirements: Autonomous Multi-App Project Workspace (Rust + React/TypeScript)
+# Continuous Agentic Coding App — MVP Requirements
 
-## 1. Overview
+## 1. Purpose
 
-Build a multi-app product workspace where users manage autonomous software delivery workflows. The system combines:
+Build a local desktop app for continuous agentic coding.
 
-- **Backend/logic in Rust** (real-time orchestration, state management, workflows, persistence).
-- **Frontend in React + TypeScript** (multi-app UI, project navigation, live updates).
+The app reads project planning documents, stores project/task state locally, and runs an autonomous development loop that works through tasks over time. It should help turn a `requirements.md` file into a structured spec and then continuously execute tasks against a linked local code repository.
 
-The core value proposition is **ongoing autonomous execution**: agents continue working overnight by breaking tasks down, creating new contexts, and moving work through a structured hierarchy:
+**Hierarchy:** Project → Spec → Task (with Agents and Sessions doing the work)
 
-**Team → Project → Spec → Task → Code Changes/Commits**
+---
 
-## 2. Product Goals
+## 2. Tech Stack
 
-1. Provide a unified workspace for software project execution across multiple apps.
-2. Enable real-time visibility into agents, tasks, commits, and progress.
-3. Support autonomous workflows where agents continue operating without manual intervention.
-4. Enforce context hierarchy so all code changes are traceable to task/spec/project/team context.
-5. Maintain user context while switching apps (especially current project continuity).
-6. Support multi-team collaboration with secure auth and role-based administration.
+* **Core app:** Rust
+* **Local database:** RocksDB
+* **UI:** React + TypeScript
+* **Desktop shell / webview:** Rust webview-based desktop app
+* **LLM provider:** Claude API
 
-## 3. Information Architecture
+---
 
-### 3.1 Global Navigation
+## 3. Core User Flow
 
-- **Apps Bar** on the far left.
-- Selecting an app updates the main content area to that app’s module.
-- The bottom-left area shows current signed-in user and current team selector.
+1. User opens app.
+2. User enters Claude API key.
+3. User creates a project.
+4. User attaches:
+   * a `requirements.md` file
+   * a local folder path for the codebase
+5. App uses AI to generate a structured spec from the requirements.
+6. App splits spec into logical `.md` files ordered from most foundational to least foundational.
+7. App extracts tasks from spec files and stores them as task objects in the database.
+8. User reviews spec files and task progress in the UI.
+9. User starts development loop.
+10. Agent works through tasks continuously, refreshing context when needed and updating task/project state in the database.
 
-### 3.2 Project Navigation
+---
 
-- After selecting an app, display a **Projects nav bar** listing all Projects for current team.
-- Clicking a Project loads contextual content for the selected **App + Project** pair.
-- When switching between apps, the **currently selected Project remains the same**.
+## 4. Phase A — Planning Requirements
 
-### 3.3 Team and User Context
+### 4.1 API Key / Settings
 
-- A user can belong to multiple teams.
-- User can switch active team without logging out.
-- Project list and app data are scoped to active team.
-- Current user identity and current active team are always visible in bottom-left UI.
+The system must:
 
-### 3.4 Context Hierarchy (Domain Constraint)
+* allow the user to input a Claude API key
+* store the API key locally
+* encrypt the API key at rest
+* allow updating or deleting the API key
+* never display the plaintext key in the UI after initial entry
 
-The data and workflow model must enforce:
+---
 
-- All **code changes** happen within a **Task**.
-- Every **Task** belongs to a **Spec**.
-- Every **Spec** belongs to a **Project**.
-- Every **Project** belongs to a **Team**.
+### 4.2 Project Creation
 
-No code-change activity may exist outside this hierarchy.
+The system must:
 
-## 4. App Modules
+* allow creating a project
+* store project name, description, linked folder path, and created timestamp
+* allow attaching a `requirements.md` document to the project
+* allow viewing project details later
 
-### 4.1 Agents App
+---
 
-Purpose: Monitor autonomous and active agents.
+### 4.3 Requirements Ingestion
 
-Required capabilities:
+The system must:
 
-- List all agents in current project context.
-- Show live status (e.g., idle, planning, coding, blocked, awaiting review).
-- Show what each agent is currently working on in real time.
-- Surface currently active task/spec context per agent.
+* read the project `requirements.md`
+* send the contents to Claude
+* generate a structured implementation spec
 
-### 4.2 Tasks App
+The generated spec should:
 
-Purpose: Manage project execution via kanban flow.
+* break the program into logical implementation stages
+* order stages from most fundamental to least fundamental
+* produce multiple markdown spec files
+* include for each spec file:
+  * purpose
+  * major concepts
+  * interfaces
+  * use cases
+  * test cases
+  * dependencies
+  * state-machine diagrams where useful
 
-Required capabilities:
+---
 
-- Kanban-style board similar to Linear/Trello.
-- Columns in strict left-to-right order:
-  1. Requirements
-  2. Spec
-  3. Up Next
-  4. In Progress
-  5. Code Review
-  6. Done
-  7. Deployed
-- Support assigning tasks and moving tasks across columns.
-- Show relationship to parent spec and project.
+### 4.4 Spec File Management
 
-### 4.3 Commits App
+The system must:
 
-Purpose: Track code changes across agents/projects.
+* store generated spec files within the project
+* assign each spec file a stable identifier
+* display all spec files for a project
+* allow opening and reading each spec file in the UI
 
-Required capabilities:
+---
 
-- Live commit feed.
-- Historical commit timeline.
-- Filtering by project, agent, task, spec, time range.
-- Traceability from commit → task → spec → project → team.
+### 4.5 Task Extraction
 
-### 4.4 Stats App
+The system must:
 
-Purpose: Display progress and KPI analytics.
+* extract tasks from each generated spec file
+* create task records in RocksDB
+* associate each task with:
+  * project
+  * parent spec file
+  * status
+  * priority/order
+  * dependency information if available
 
-Required capabilities:
+Task statuses should support:
 
-- Project progress dashboards.
-- Throughput and cycle-time KPIs.
-- Agent productivity and utilization indicators.
-- Trend view across time windows.
+* pending
+* ready
+* in\_progress
+* blocked
+* done
+* failed
 
-### 4.5 Settings App
+---
 
-Purpose: Manage credentials and configuration.
+### 4.6 Planning UI
 
-Required capabilities:
+The UI must provide:
 
-- Secure entry and storage of API keys for providers (e.g., Claude, Codex).
-- Key validation status and last-updated metadata.
-- User-level and optionally team-level/project-level configuration controls.
-- Team admin management controls.
+* project list view
+* project detail view
+* spec file list by project
+* task list grouped by spec file
+* high-level project progress view
 
-## 5. Identity, Access, and Teams Requirements
+The progress view should show:
 
-### 5.1 Authentication
+* total tasks
+* completed tasks
+* active tasks
+* failed tasks
+* percentage complete
 
-- Users can register with email/password.
-- Users can log in with email/password.
-- Users can log out and manage sessions securely.
-- Support password reset flow.
+---
 
-### 5.2 Team Membership Model
+## 5. Phase B — Development Requirements
 
-- A single user can belong to multiple teams.
-- Teams have members and admins.
-- Team admins can promote other members to admin.
-- Team admins can invite existing users to join their team.
+### 5.1 Agent Loop
 
-### 5.3 Authorization and Visibility
+The system must support a continuous development loop that:
 
-- Data access is scoped by team membership.
-- Only team admins can perform admin actions (invite members, change admin roles).
-- Non-members cannot access team resources.
+* selects the next available task
+* loads relevant project and spec context
+* executes work for that task against the linked local folder
+* updates task state in the database
+* repeats until stopped or no tasks remain
 
-## 6. Autonomous Workflow and Harness Requirements
+---
 
-### 6.1 Core Autonomous Behavior
+### 5.2 Context Rotation
 
-The platform must support long-running agent workflows where agents:
+The agent loop must support "Ralph-style" context management:
 
-- Continue executing overnight.
-- Decompose large tasks into smaller actionable tasks.
-- Create and manage new execution contexts when needed.
-- Re-prioritize within project/spec constraints.
-- Report status and outcomes continuously.
+* track approximate context usage for the active session
+* when the current task completes, check context usage
+* if context usage is above 50%, start a new context/session
+* carry forward only the required summary/state into the next context
+* continue with the next task automatically
 
-### 6.2 Task Execution Harness
+---
 
-- Agent task execution must run through a **harness** abstraction rather than directly through a raw model provider.
-- The required harness for this application is **Aura Runtime**: https://github.com/cypher-asi/aura-runtime.
-- Harness integration must preserve task/spec/project/team lineage on every execution.
-- Harness execution metadata should be available for audit and debugging.
+### 5.3 Task Execution
 
-### 6.3 Orchestration Rules
+For MVP, the system should support:
 
-- Agents must always attach work to an existing task/spec/project/team context.
-- Auto-generated subtasks inherit parent team/project/spec lineage.
-- Any blocked state must include reason and recommended next action.
-- Handoffs between agents must preserve full context and history.
+* reading project files from the linked local folder
+* generating code or edits for the current task
+* writing proposed changes to the local codebase
+* recording execution logs
+* marking tasks complete or failed
 
-### 6.4 Human-in-the-loop Controls
+Optional but desirable for MVP:
 
-- Users can pause/resume autonomous workflows.
-- Users can approve/reject key transitions (configurable gates, e.g., Code Review → Done).
-- Users can reassign tasks among agents.
+* run local tests or commands
+* attach output logs to the task
+* use failures to update task notes
 
-## 7. Functional Requirements
+---
 
-### 7.1 Project and Context Management
+### 5.4 Task / Plan Updates During Execution
 
-- Create/read/update/archive projects.
-- Create/read/update specs within projects.
-- Create/read/update tasks within specs.
-- Enforce referential integrity across team/project/spec/task hierarchy.
+The system must:
 
-### 7.2 Real-time Data
+* allow the agent to update task state after each loop iteration
+* allow the agent to create follow-up tasks if needed
+* allow the agent to revise the plan when new dependencies or missing work are discovered
+* persist all changes to RocksDB
+* maintain project/spec lineage on all auto-generated tasks
 
-- Frontend receives real-time updates for:
-  - Agent status/activity
-  - Task movement/status
-  - Incoming commits
-  - KPI refresh triggers
-  - Team membership/admin changes relevant to active context
-- UI should gracefully degrade to polling if websocket/channel unavailable.
+---
 
-### 7.3 Search and Filtering
+### 5.5 Real-Time Progress UI
 
-- Global search by team/project/spec/task/agent/commit.
-- App-specific filters persisted per user session.
-- Deep links to app + team + project + selected entity.
+The UI must show real-time development progress, including:
 
-### 7.4 Auditability and History
+* current active task
+* current project
+* recent completed tasks
+* failed tasks
+* agent status
+* context/session number
+* latest log output
 
-- Log all important state transitions (task moves, agent assignment, workflow starts/stops, admin actions).
-- Maintain immutable event history for traceability.
-- Associate every commit and task transition with actor (human or agent).
+---
 
-## 8. Non-Functional Requirements
+## 6. Data Model
 
-### 8.1 Performance
+### 6.1 Project
 
-- Initial app shell load should be fast enough for interactive use on typical developer hardware.
-- Real-time updates should render with low latency suitable for "live" monitoring.
+| Field | Type | Description |
+|---|---|---|
+| project\_id | string (UUID) | Unique identifier |
+| name | string | Project name |
+| description | string | Project description |
+| linked\_folder\_path | string | Local codebase path |
+| requirements\_doc\_path | string | Path to or contents of requirements.md |
+| current\_status | enum | `planning`, `active`, `paused`, `completed`, `archived` |
+| created\_at | timestamp | Creation time |
+| updated\_at | timestamp | Last update time |
 
-### 8.2 Reliability
+---
 
-- Long-running workflows must survive service restarts.
-- Event delivery should be durable and replayable for recovery.
+### 6.2 Spec File
 
-### 8.3 Security
+| Field | Type | Description |
+|---|---|---|
+| spec\_id | string (UUID) | Unique identifier |
+| project\_id | string (UUID) | Parent project |
+| title | string | Spec file title |
+| order\_index | integer | Sort order (foundational → dependent) |
+| markdown\_contents | string | Full markdown body |
+| created\_at | timestamp | Creation time |
+| updated\_at | timestamp | Last update time |
 
-- Encrypt API keys at rest.
-- Never expose plaintext keys in logs/UI after save.
-- Securely store passwords using modern password hashing.
-- Enforce authentication and authorization for team/project data.
+---
 
-### 8.4 Scalability
+### 6.3 Task
 
-- Support multiple teams, multiple projects per team, and many concurrent agents.
-- Handle growing commit/event histories efficiently.
+| Field | Type | Description |
+|---|---|---|
+| task\_id | string (UUID) | Unique identifier |
+| project\_id | string (UUID) | Parent project |
+| spec\_id | string (UUID) | Parent spec file |
+| title | string | Task title |
+| description | string | Task description |
+| status | enum | `pending`, `ready`, `in_progress`, `blocked`, `done`, `failed` |
+| order\_index | integer | Execution priority/order |
+| dependency\_ids | list\<string\> | IDs of tasks this depends on |
+| assigned\_agent\_id | string (UUID) | Agent currently assigned (nullable) |
+| execution\_notes | string | Notes from agent execution |
+| created\_at | timestamp | Creation time |
+| updated\_at | timestamp | Last update time |
 
-### 8.5 Observability
+---
 
-- Structured backend logging.
-- Metrics for queue depth, workflow success/failure, update latency.
-- Traces for critical orchestration paths and harness executions.
+### 6.4 Agent
 
-## 9. Suggested Technical Architecture
+| Field | Type | Description |
+|---|---|---|
+| agent\_id | string (UUID) | Unique identifier |
+| project\_id | string (UUID) | Active project context |
+| name | string | Agent display name |
+| status | enum | `idle`, `working`, `blocked`, `stopped`, `error` |
+| current\_task\_id | string (UUID) | Task currently being worked (nullable) |
+| current\_session\_id | string (UUID) | Active session (nullable) |
+| created\_at | timestamp | Creation time |
+| updated\_at | timestamp | Last status update |
 
-### 9.1 Backend (Rust)
+---
 
-- Rust service exposing API for auth/team/project/spec/task/agent/commit/stats/settings domains.
-- Real-time channel support (e.g., WebSocket/SSE).
-- Workflow orchestration engine for autonomous agents.
-- Task execution harness integration using Aura Runtime.
-- Persistent event store + relational/state store.
+### 6.5 Agent Session
 
-### 9.2 Frontend (React + TypeScript)
+| Field | Type | Description |
+|---|---|---|
+| session\_id | string (UUID) | Unique identifier |
+| agent\_id | string (UUID) | Owning agent |
+| project\_id | string (UUID) | Project context for this session |
+| active\_task\_id | string (UUID) | Task being worked when session started |
+| context\_usage\_estimate | float | Approximate context window usage (0.0–1.0) |
+| summary\_of\_previous\_context | string | Carried-forward summary from prior session |
+| status | enum | `active`, `completed`, `failed`, `rolled_over` |
+| started\_at | timestamp | Session start time |
+| ended\_at | timestamp | Session end time (nullable) |
 
-- SPA with persistent app shell:
-  - Left Apps Bar
-  - Project nav bar
-  - Main contextual content
-  - Bottom-left user/team context section
-- State management for selected app/team/project and live entity streams.
-- Reusable data-table/board components for each app module.
+---
 
-### 9.3 Integration Boundaries
+### 6.6 Data Model Relationships
 
-- Clear API contracts between frontend and backend.
-- Event schema for live updates (agent/task/commit/stats/team channels).
-- Harness boundary for agent execution through Aura Runtime.
-- Provider abstraction for multiple model API keys and vendors.
+```
+Project
+   │
+   ├──────────┐
+   ▼          ▼
+  Spec      Agent
+   │          │
+   ▼          ▼
+  Task ◄── Session
+```
 
-## 10. UX Requirements
+**Key constraints:**
 
-- App switching should feel instant and preserve selected project context.
-- Team switching should consistently re-scope projects and all app data.
-- Current user and active team must always be visible in bottom-left.
-- Project changes should re-scope all views consistently.
-- Key entities (task/spec/project/team) should always be visibly identifiable in UI.
-- Autonomous activity must be understandable at a glance (who, what, where, status).
+* A Project has many Specs and many Agents.
+* A Spec belongs to exactly one Project.
+* A Task belongs to exactly one Spec (and transitively to one Project).
+* An Agent operates within one Project at a time.
+* A Session belongs to one Agent and tracks one continuous context window.
+* Tasks can be assigned to an Agent. Agents work on tasks through Sessions.
 
-## 11. MVP Scope
+---
 
-MVP must include:
+## 7. RocksDB Key Design
 
-1. Multi-app shell with Apps Bar and Projects nav bar.
-2. Persistent selected-project behavior across app switches.
-3. Basic implementations of Agents, Tasks (kanban), Commits, Stats, Settings.
-4. Team-based auth (email/password registration/login) and membership model.
-5. Team admin controls (promote admin, invite existing users).
-6. Task/spec/project/team hierarchy with enforced constraints.
-7. Basic autonomous workflow loop with real-time status updates.
-8. Aura Runtime harness integration for agent task execution.
-9. API key management for at least two providers.
+Key encoding must support the project hierarchy for efficient prefix-based lookups:
 
-## 12. Out of Scope (Initial)
+| Entity | Key Pattern | Example |
+|---|---|---|
+| Project | `project:{project_id}` | `project:abc-123` |
+| Spec | `spec:{project_id}:{spec_id}` | `spec:abc-123:def-456` |
+| Task | `task:{project_id}:{spec_id}:{task_id}` | `task:abc-123:def-456:ghi-789` |
+| Agent | `agent:{project_id}:{agent_id}` | `agent:abc-123:jkl-012` |
+| Session | `session:{project_id}:{agent_id}:{session_id}` | `session:abc-123:jkl-012:mno-345` |
+| Settings | `settings:{key}` | `settings:claude_api_key` |
 
-- Native mobile apps.
-- Advanced billing/organization administration.
-- External marketplace/plugin ecosystem.
-- Fully automated production deployment workflows.
+This allows prefix scans like `spec:abc-123:` to list all specs for a project, or `task:abc-123:def-456:` to list all tasks for a spec.
 
-## 13. Acceptance Criteria (High-Level)
+---
 
-1. User can register and log in via email/password.
-2. A user can belong to multiple teams and switch active team.
-3. Team admins can invite existing users and promote admins.
-4. User can switch among all 5 apps from the left Apps Bar.
-5. Bottom-left UI always shows current user and active team.
-6. User can select a project in Projects nav and see app-specific contextual content.
-7. Switching apps does not reset current project.
-8. Tasks board supports all required columns and transitions.
-9. Agents app reflects real-time status and active context.
-10. Commits app shows live + historical commit activity linked to tasks/specs/projects/teams.
-11. Stats app shows meaningful progress/KPI views.
-12. Settings securely stores provider API keys.
-13. Every code-change artifact is traceable to task → spec → project → team.
-14. Autonomous workflows can continue without manual interaction and resume after restart.
-15. Agent execution runs through Aura Runtime harness integration.
+## 8. MVP Non-Goals
+
+These are out of scope for the first version:
+
+* multi-user collaboration
+* teams, roles, or permissions
+* cloud sync or remote collaboration
+* branch management across many git workflows
+* full autonomous deployment
+* support for multiple model providers (Claude only for MVP)
+* deep IDE integration
+* complex retry orchestration
+* native mobile apps
+* billing / organization administration
+* external marketplace / plugin ecosystem
+
+---
+
+## 9. MVP Success Criteria
+
+The MVP is successful if a user can:
+
+* create a project
+* attach `requirements.md` to a project
+* generate a multi-file spec from requirements
+* see extracted tasks in the UI
+* start an autonomous development loop
+* watch the app work through tasks and rotate context automatically
+* see progress and logs update live
+* trace every piece of work back through Task → Spec → Project
+
+---
+
+## 10. Suggested MVP Build Order
+
+1. Local project creation + RocksDB storage
+2. Claude API key management
+3. Requirements ingestion + spec generation
+4. Spec file viewer
+5. Task extraction + task storage
+6. Progress dashboard
+7. Agent model + basic autonomous task loop
+8. Context rollover logic (sessions)
+9. Live execution / log view

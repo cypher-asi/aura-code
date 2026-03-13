@@ -58,19 +58,11 @@ impl SpecGenerationService {
         }
     }
 
-    pub async fn generate_specs(
-        &self,
-        project_id: &ProjectId,
-    ) -> Result<Vec<Spec>, SpecGenError> {
-        let project = self
-            .store
-            .get_project(project_id)
-            .map_err(|e| match e {
-                aura_store::StoreError::NotFound(_) => {
-                    SpecGenError::ProjectNotFound(*project_id)
-                }
-                other => SpecGenError::Store(other),
-            })?;
+    pub async fn generate_specs(&self, project_id: &ProjectId) -> Result<Vec<Spec>, SpecGenError> {
+        let project = self.store.get_project(project_id).map_err(|e| match e {
+            aura_store::StoreError::NotFound(_) => SpecGenError::ProjectNotFound(*project_id),
+            other => SpecGenError::Store(other),
+        })?;
 
         let req_path = &project.requirements_doc_path;
         if !std::path::Path::new(req_path).is_file() {
@@ -131,11 +123,7 @@ impl SpecGenerationService {
         Ok(specs)
     }
 
-    pub fn get_spec(
-        &self,
-        project_id: &ProjectId,
-        spec_id: &SpecId,
-    ) -> Result<Spec, SpecGenError> {
+    pub fn get_spec(&self, project_id: &ProjectId, spec_id: &SpecId) -> Result<Spec, SpecGenError> {
         Ok(self.store.get_spec(project_id, spec_id)?)
     }
 

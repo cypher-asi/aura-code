@@ -77,10 +77,7 @@ impl TaskExtractionService {
             .collect())
     }
 
-    pub async fn extract_all_tasks(
-        &self,
-        project_id: &ProjectId,
-    ) -> Result<Vec<Task>, TaskError> {
+    pub async fn extract_all_tasks(&self, project_id: &ProjectId) -> Result<Vec<Task>, TaskError> {
         let mut specs = self.store.list_specs_by_project(project_id)?;
         specs.sort_by_key(|s| s.order_index);
 
@@ -90,9 +87,7 @@ impl TaskExtractionService {
         let mut all_raw: Vec<(RawTaskOutput, ProjectId, SpecId, u32)> = Vec::new();
 
         for spec in &specs {
-            let raw_tasks = self
-                .extract_tasks_from_spec(spec, &api_key)
-                .await?;
+            let raw_tasks = self.extract_tasks_from_spec(spec, &api_key).await?;
             for (raw, order) in raw_tasks {
                 all_raw.push((raw, *project_id, spec.spec_id, order));
             }

@@ -52,10 +52,7 @@ impl TaskService {
         Ok(task)
     }
 
-    pub fn validate_transition(
-        current: TaskStatus,
-        target: TaskStatus,
-    ) -> Result<(), TaskError> {
+    pub fn validate_transition(current: TaskStatus, target: TaskStatus) -> Result<(), TaskError> {
         let legal = matches!(
             (current, target),
             (TaskStatus::Pending, TaskStatus::Ready)
@@ -171,7 +168,7 @@ impl TaskService {
                 all_tasks
                     .iter()
                     .find(|t| &t.task_id == dep_id)
-                    .map_or(false, |t| t.status == TaskStatus::Done)
+                    .is_some_and(|t| t.status == TaskStatus::Done)
             });
             if all_deps_done {
                 let ready_task = self.transition_task(
@@ -234,17 +231,12 @@ impl TaskService {
 
     // -- Next-task selection --
 
-    pub fn select_next_task(
-        &self,
-        project_id: &ProjectId,
-    ) -> Result<Option<Task>, TaskError> {
+    pub fn select_next_task(&self, project_id: &ProjectId) -> Result<Option<Task>, TaskError> {
         let all_tasks = self.store.list_tasks_by_project(project_id)?;
         let specs = self.store.list_specs_by_project(project_id)?;
 
-        let spec_order: HashMap<SpecId, u32> = specs
-            .iter()
-            .map(|s| (s.spec_id, s.order_index))
-            .collect();
+        let spec_order: HashMap<SpecId, u32> =
+            specs.iter().map(|s| (s.spec_id, s.order_index)).collect();
 
         let mut ready: Vec<&Task> = all_tasks
             .iter()
@@ -302,7 +294,10 @@ impl TaskService {
     ) -> Result<ProjectProgress, TaskError> {
         let tasks = self.store.list_tasks_by_project(project_id)?;
         let total = tasks.len();
-        let done = tasks.iter().filter(|t| t.status == TaskStatus::Done).count();
+        let done = tasks
+            .iter()
+            .filter(|t| t.status == TaskStatus::Done)
+            .count();
         let pct = if total == 0 {
             0.0
         } else {
