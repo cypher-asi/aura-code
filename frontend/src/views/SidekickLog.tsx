@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useEventContext } from "../context/EventContext";
-import { Button, Text } from "@cypher-asi/zui";
+import { Text } from "@cypher-asi/zui";
 import styles from "../components/Sidekick.module.css";
 
 interface LogEntry {
@@ -89,11 +89,7 @@ export function SidekickLog() {
 
   return (
     <div className={styles.logWrap}>
-      <div className={styles.logHeader}>
-        <Button variant="ghost" size="sm" onClick={() => setLines([])}>
-          Clear
-        </Button>
-      </div>
+      <div className={styles.logHeader} />
       <div
         ref={contentRef}
         className={styles.logContent}

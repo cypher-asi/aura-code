@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useEventContext } from "../context/EventContext";
-import { Panel, Heading, Button, Text } from "@cypher-asi/zui";
+import { Panel, Heading, Text } from "@cypher-asi/zui";
 import styles from "./aura.module.css";
 
 interface LogEntry {
@@ -91,7 +91,6 @@ export function LogPanel() {
     <Panel variant="solid" border="solid" style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "var(--space-3) var(--space-4)", borderBottom: "1px solid var(--color-border)" }}>
         <Heading level={5}>Log Output</Heading>
-        <Button variant="ghost" size="sm" onClick={() => setLines([])}>Clear</Button>
       </div>
       <div
         ref={contentRef}

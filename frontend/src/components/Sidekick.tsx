@@ -109,7 +109,7 @@ export function Sidekick() {
             tabs={[
               { id: "specs", label: "Specs" },
               { id: "tasks", label: "Tasks" },
-              { id: "progress", label: "Progress" },
+              { id: "progress", label: "KPIs" },
               { id: "log", label: "Log" },
             ]}
             value={activeTab}
