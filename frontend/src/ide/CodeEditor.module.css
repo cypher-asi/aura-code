@@ -1,0 +1,71 @@
+.editorBody {
+  display: flex;
+  flex: 1;
+  overflow: auto;
+  background: var(--color-bg, #0d1117);
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.gutter {
+  flex-shrink: 0;
+  padding: 12px 0;
+  text-align: right;
+  user-select: none;
+  color: var(--color-text-muted, #484f58);
+  background: var(--color-surface, #161b22);
+  border-right: 1px solid var(--color-border, #30363d);
+  min-width: 48px;
+}
+
+.gutterLine {
+  padding: 0 12px 0 8px;
+  display: block;
+}
+
+.codeArea {
+  flex: 1;
+  overflow-x: auto;
+  padding: 12px 16px;
+  margin: 0;
+  white-space: pre;
+  tab-size: 4;
+}
+
+/* Override highlight.js background so it inherits from our container */
+.codeArea :global(.hljs) {
+  background: transparent;
+  padding: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.headerPath {
+  opacity: 0.5;
+  font-size: 12px;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 48px;
+  color: var(--color-text-muted, #8b949e);
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 48px;
+  color: var(--color-danger, #f85149);
+}
