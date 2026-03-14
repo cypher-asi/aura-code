@@ -1,3 +1,15 @@
 [workspace]
-members = ["aura-core", "aura-desktop", "aura-engine", "aura-server", "aura-services", "aura-settings", "aura-store", "aura-terminal"]
+members = [
+    "aura-core",
+    "aura-claude",
+    "aura-pricing",
+    "aura-tools",
+    "aura-desktop",
+    "aura-engine",
+    "aura-server",
+    "aura-services",
+    "aura-settings",
+    "aura-store",
+    "aura-terminal",
+]
 resolver = "2"

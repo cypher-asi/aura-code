@@ -2,6 +2,8 @@ use aura_core::{AgentStatus, OrgId, ProjectId, TaskStatus};
 use aura_settings::SettingsError;
 use aura_store::StoreError;
 
+pub use aura_claude::ClaudeClientError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
     #[error("store error: {0}")]
@@ -28,18 +30,6 @@ pub enum SpecGenError {
     Settings(#[from] SettingsError),
     #[error("response parse error: {0}")]
     ParseError(String),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ClaudeClientError {
-    #[error("HTTP error: {0}")]
-    Http(#[from] reqwest::Error),
-    #[error("API error {status}: {message}")]
-    Api { status: u16, message: String },
-    #[error("response truncated: output hit max_tokens limit ({max_tokens}). Increase MAX_TOKENS or reduce input size.")]
-    Truncated { max_tokens: u32 },
-    #[error("response parse error: {0}")]
-    Parse(String),
 }
 
 #[derive(Debug, thiserror::Error)]

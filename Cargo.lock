@@ -322,6 +322,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "aura-claude"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+]
+
+[[package]]
 name = "aura-core"
 version = "0.1.0"
 dependencies = [
@@ -371,6 +385,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aura-pricing"
+version = "0.1.0"
+dependencies = [
+ "aura-core",
+ "aura-store",
+ "serde_json",
+]
+
+[[package]]
 name = "aura-server"
 version = "0.1.0"
 dependencies = [
@@ -402,9 +425,12 @@ dependencies = [
 name = "aura-services"
 version = "0.1.0"
 dependencies = [
+ "aura-claude",
  "aura-core",
+ "aura-pricing",
  "aura-settings",
  "aura-store",
+ "aura-tools",
  "bytes",
  "chrono",
  "futures",
@@ -470,6 +496,14 @@ dependencies = [
  "tracing",
  "uuid",
  "which",
+]
+
+[[package]]
+name = "aura-tools"
+version = "0.1.0"
+dependencies = [
+ "aura-claude",
+ "serde_json",
 ]
 
 [[package]]
