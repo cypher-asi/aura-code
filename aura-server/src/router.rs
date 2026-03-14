@@ -1,9 +1,12 @@
 use std::path::PathBuf;
 
+use axum::http::HeaderValue;
 use axum::routing::{delete, get, post, put};
 use axum::Router;
+use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::handlers::{agents, auth, billing, chat, dev_loop, github, log, orgs, pricing, projects, settings, specs, sprints, tasks, terminal, ws};
@@ -268,8 +271,13 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
     match frontend_dir {
         Some(dir) => {
             let index = dir.join("index.html");
-            api_router
-                .fallback_service(ServeDir::new(&dir).not_found_service(ServeFile::new(index)))
+            let serve = ServiceBuilder::new()
+                .layer(SetResponseHeaderLayer::overriding(
+                    axum::http::header::CACHE_CONTROL,
+                    HeaderValue::from_static("no-cache"),
+                ))
+                .service(ServeDir::new(&dir).not_found_service(ServeFile::new(index)));
+            api_router.fallback_service(serve)
         }
         None => api_router,
     }

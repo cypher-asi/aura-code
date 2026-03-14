@@ -11,6 +11,18 @@ fn npm() -> Command {
     }
 }
 
+fn watch_dir(dir: &Path) {
+    for entry in std::fs::read_dir(dir).expect("failed to read directory") {
+        let entry = entry.expect("failed to read entry");
+        let path = entry.path();
+        if path.is_dir() {
+            watch_dir(&path);
+        } else {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
+}
+
 fn main() {
     let frontend_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../frontend");
     let dist_dir = frontend_dir.join("dist");
@@ -40,10 +52,7 @@ fn main() {
 
     assert!(status.success(), "npm run build failed");
 
-    println!(
-        "cargo:rerun-if-changed={}",
-        frontend_dir.join("src").display()
-    );
+    watch_dir(&frontend_dir.join("src"));
     println!(
         "cargo:rerun-if-changed={}",
         frontend_dir.join("index.html").display()
