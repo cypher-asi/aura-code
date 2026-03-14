@@ -16,15 +16,19 @@ const EventContext = createContext<EventContextValue | null>(null);
 export function EventProvider({ children }: { children: React.ReactNode }) {
   const stream = useEventStream();
   const subscribersRef = useRef<Map<EngineEventType, Set<EventCallback>>>(new Map());
+  const lastDispatchedRef = useRef(0);
 
   useEffect(() => {
-    if (!stream.latestEvent) return;
-    const event = stream.latestEvent;
-    const subs = subscribersRef.current.get(event.type);
-    if (subs) {
-      subs.forEach((cb) => cb(event));
+    const all = stream.events;
+    const start = lastDispatchedRef.current;
+    if (all.length <= start) return;
+    for (let i = start; i < all.length; i++) {
+      const event = all[i];
+      const subs = subscribersRef.current.get(event.type);
+      if (subs) subs.forEach((cb) => cb(event));
     }
-  }, [stream.latestEvent]);
+    lastDispatchedRef.current = all.length;
+  }, [stream.events]);
 
   const subscribe = useCallback(
     (type: EngineEventType, callback: EventCallback) => {
