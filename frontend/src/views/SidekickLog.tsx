@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo } from "react";
 import { Text } from "@cypher-asi/zui";
-import { ChevronDown, Check } from "lucide-react";
+import { Check } from "lucide-react";
 import { useLogStream, EVENT_LABELS } from "../hooks/use-log-stream";
 import { useClickOutside } from "../hooks/use-click-outside";
 import type { LogEntry } from "../hooks/use-log-stream";
@@ -68,7 +68,7 @@ function LogFilterBar({
           className={styles.logFilterChip}
           onClick={() => setMoreOpen((v) => !v)}
         >
-          More <ChevronDown size={10} style={{ marginLeft: 2, verticalAlign: "middle" }} />
+          More
         </button>
         {moreOpen && (
           <div className={styles.logFilterDropdown}>
@@ -165,7 +165,7 @@ function LogRow({
 }
 
 export function SidekickLog() {
-  const { entries, contentRef, handleScroll, connected } = useLogStream();
+  const { entries, contentRef, handleScroll } = useLogStream();
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [activeFilters, setActiveFilters] = useState<Set<string>>(
     () => new Set(ALL_CATEGORIES),
@@ -195,12 +195,6 @@ export function SidekickLog() {
 
   return (
     <div className={styles.logWrap}>
-      <div className={styles.logHeader}>
-        <span className={styles.logStatusDot} data-connected={connected} />
-        <Text variant="muted" size="xs">
-          {connected ? "Connected" : "Disconnected"}
-        </Text>
-      </div>
       <LogFilterBar active={activeFilters} onToggle={toggleFilter} onToggleAll={toggleAll} />
       <div
         ref={contentRef}
@@ -210,9 +204,7 @@ export function SidekickLog() {
         {filtered.length === 0 ? (
           <Text variant="muted" size="sm">
             {entries.length === 0
-              ? connected
-                ? "Listening — events will appear when automation runs or specs are generated."
-                : "Connecting to event stream..."
+              ? "Listening — events will appear when automation runs or specs are generated."
               : "No events match the current filters."}
           </Text>
         ) : (
