@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Modal, ButtonWindow, Spinner, Text } from "@cypher-asi/zui";
+import { Modal, Spinner, Text } from "@cypher-asi/zui";
 import hljs from "highlight.js";
 import { api } from "../api/client";
 import { langFromPath, filenameFromPath } from "./lang";
@@ -65,7 +65,6 @@ export function CodeEditor({ filePath, onClose }: CodeEditorProps) {
       onClose={onClose}
       title={filename}
       subtitle={filePath}
-      headerActions={<ButtonWindow action="close" onClick={onClose} />}
       size="xl"
       fullHeight
       noPadding
