@@ -352,6 +352,7 @@ impl DevLoopEngine {
         let api_key = self.settings.get_decrypted_api_key()?;
         let mut completed_count: usize = 0;
         let mut follow_up_count: usize = 0;
+        let mut shell_retried: std::collections::HashSet<TaskId> = std::collections::HashSet::new();
         let mut work_log: Vec<String> = Vec::new();
 
         let orphaned = self.task_service.reset_in_progress_tasks(&project_id)?;
@@ -385,6 +386,25 @@ impl DevLoopEngine {
             let task = match self.task_service.select_next_task(&project_id)? {
                 Some(t) => t,
                 None => {
+                    let all_tasks = self.store.list_tasks_by_project(&project_id)?;
+                    let retryable: Vec<&Task> = all_tasks.iter()
+                        .filter(|t| t.status == TaskStatus::Failed
+                            && !shell_retried.contains(&t.task_id)
+                            && Self::extract_shell_command(t).is_some())
+                        .collect();
+
+                    if !retryable.is_empty() {
+                        for t in &retryable {
+                            shell_retried.insert(t.task_id);
+                            info!(task_id = %t.task_id, title = %t.title, "resetting failed shell task for retry");
+                            let _ = self.task_service.reset_task_to_ready(
+                                &project_id, &t.spec_id, &t.task_id,
+                            );
+                            self.emit(EngineEvent::TaskBecameReady { task_id: t.task_id });
+                        }
+                        continue;
+                    }
+
                     let progress = self.task_service.get_project_progress(&project_id)?;
                     if progress.blocked_tasks > 0 || progress.failed_tasks > 0 {
                         let _ = self.session_service.end_session(
