@@ -174,6 +174,11 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
             "/api/projects/:project_id/progress",
             get(tasks::get_progress),
         )
+        // Sessions (project-level)
+        .route(
+            "/api/projects/:project_id/sessions",
+            get(agents::list_project_sessions),
+        )
         // Agents
         .route("/api/projects/:project_id/agents", get(agents::list_agents))
         .route(

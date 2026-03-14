@@ -31,6 +31,18 @@ pub async fn get_agent(
     Ok(Json(agent))
 }
 
+pub async fn list_project_sessions(
+    State(state): State<AppState>,
+    Path(project_id): Path<ProjectId>,
+) -> ApiResult<Json<Vec<Session>>> {
+    let mut sessions = state
+        .store
+        .list_sessions_by_project(&project_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    sessions.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+    Ok(Json(sessions))
+}
+
 pub async fn list_sessions(
     State(state): State<AppState>,
     Path((project_id, agent_id)): Path<(ProjectId, AgentId)>,
