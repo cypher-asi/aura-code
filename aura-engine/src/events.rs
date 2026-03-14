@@ -2,6 +2,12 @@ use aura_core::*;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
+pub struct FileOpSummary {
+    pub op: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EngineEvent {
     LoopStarted {
@@ -52,6 +58,7 @@ pub enum EngineEvent {
         task_id: TaskId,
         files_written: usize,
         files_deleted: usize,
+        files: Vec<FileOpSummary>,
     },
     LogLine {
         message: String,

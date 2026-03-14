@@ -246,10 +246,19 @@ impl DevLoopEngine {
                     } else {
                         let files_written = execution.file_ops.iter().filter(|op| matches!(op, file_ops::FileOp::Create { .. } | file_ops::FileOp::Modify { .. })).count();
                         let files_deleted = execution.file_ops.iter().filter(|op| matches!(op, file_ops::FileOp::Delete { .. })).count();
+                        let files: Vec<crate::events::FileOpSummary> = execution.file_ops.iter().map(|op| {
+                            let (op_name, path) = match op {
+                                file_ops::FileOp::Create { path, .. } => ("create", path.as_str()),
+                                file_ops::FileOp::Modify { path, .. } => ("modify", path.as_str()),
+                                file_ops::FileOp::Delete { path } => ("delete", path.as_str()),
+                            };
+                            crate::events::FileOpSummary { op: op_name.to_string(), path: path.to_string() }
+                        }).collect();
                         self.emit(EngineEvent::FileOpsApplied {
                             task_id: task.task_id,
                             files_written,
                             files_deleted,
+                            files,
                         });
 
                         self.task_service.complete_task(
