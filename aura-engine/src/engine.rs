@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use tokio::sync::{mpsc, watch, Mutex};
 use tracing::{info, warn};
@@ -12,7 +13,7 @@ use aura_store::RocksStore;
 
 use crate::build_verify;
 use crate::error::EngineError;
-use crate::events::EngineEvent;
+use crate::events::{EngineEvent, PhaseTimingEntry};
 use crate::file_ops::{self, FileOp};
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,7 @@ pub struct TaskExecution {
     pub follow_up_tasks: Vec<FollowUpSuggestion>,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    pub parse_retries: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -202,7 +204,13 @@ impl DevLoopEngine {
             task_id: task.task_id,
             task_title: task.title.clone(),
             session_id: session.session_id,
+            prompt_tokens_estimate: None,
+            codebase_snapshot_bytes: None,
+            codebase_file_count: None,
         });
+
+        let task_start = Instant::now();
+        let model_name = model.clone();
 
         let result = if let Some(cmd) = Self::extract_shell_command(&task) {
             let project = self.project_service.get_project(&project_id)?;
@@ -213,6 +221,7 @@ impl DevLoopEngine {
 
         let end_status = match result {
             Ok(execution) => {
+                let llm_duration_ms = task_start.elapsed().as_millis() as u64;
                 let project = self.project_service.get_project(&project_id)?;
                 let base_path = Path::new(&project.linked_folder_path);
 
@@ -223,6 +232,7 @@ impl DevLoopEngine {
                     execution.input_tokens, execution.output_tokens,
                 );
 
+                let file_ops_start = Instant::now();
                 if let Err(e) = file_ops::apply_file_ops(base_path, &execution.file_ops).await {
                     let reason = format!("file operation failed: {e}");
                     let _ = self.task_service.fail_task(
@@ -231,20 +241,29 @@ impl DevLoopEngine {
                     self.emit(EngineEvent::TaskFailed {
                         task_id: task.task_id,
                         reason: e.to_string(),
+                        duration_ms: Some(task_start.elapsed().as_millis() as u64),
+                        phase: Some("file_ops".into()),
+                        parse_retries: Some(execution.parse_retries),
+                        build_fix_attempts: None,
+                        model: model_name.clone(),
                     });
                     SessionStatus::Failed
                 } else {
+                    let _file_ops_duration_ms = file_ops_start.elapsed().as_millis() as u64;
                     self.emit_file_ops_applied(&task, &execution.file_ops);
 
                     let session_ref = self.session_service.get_session(
                         &project_id, &agent.agent_id, &session.session_id,
                     ).unwrap_or_else(|_| session.clone());
 
-                    let (_, build_passed) = self
+                    let build_start = Instant::now();
+                    let (_, build_passed, build_attempts, _dup_bailouts) = self
                         .verify_and_fix_build(
                             &project, &task, &session_ref, &api_key, &execution,
                         )
                         .await?;
+                    let build_verify_duration_ms = build_start.elapsed().as_millis() as u64;
+                    let task_duration_ms = task_start.elapsed().as_millis() as u64;
 
                     if build_passed {
                         let _ = self.task_service.complete_task(
@@ -254,6 +273,15 @@ impl DevLoopEngine {
                         self.emit(EngineEvent::TaskCompleted {
                             task_id: task.task_id,
                             execution_notes: execution.notes.clone(),
+                            duration_ms: Some(task_duration_ms),
+                            input_tokens: Some(execution.input_tokens),
+                            output_tokens: Some(execution.output_tokens),
+                            llm_duration_ms: Some(llm_duration_ms),
+                            build_verify_duration_ms: Some(build_verify_duration_ms),
+                            files_changed_count: Some(execution.file_ops.len() as u32),
+                            parse_retries: Some(execution.parse_retries),
+                            build_fix_attempts: Some(build_attempts),
+                            model: model_name.clone(),
                         });
 
                         let newly_ready = self
@@ -284,6 +312,11 @@ impl DevLoopEngine {
                         self.emit(EngineEvent::TaskFailed {
                             task_id: task.task_id,
                             reason,
+                            duration_ms: Some(task_duration_ms),
+                            phase: Some("build_verify".into()),
+                            parse_retries: Some(execution.parse_retries),
+                            build_fix_attempts: Some(build_attempts),
+                            model: model_name.clone(),
                         });
                     }
                     SessionStatus::Completed
@@ -297,6 +330,11 @@ impl DevLoopEngine {
                 self.emit(EngineEvent::TaskFailed {
                     task_id: task.task_id,
                     reason: e.to_string(),
+                    duration_ms: Some(task_start.elapsed().as_millis() as u64),
+                    phase: Some("execution".into()),
+                    parse_retries: None,
+                    build_fix_attempts: None,
+                    model: model_name.clone(),
                 });
                 SessionStatus::Failed
             }
@@ -358,10 +396,19 @@ impl DevLoopEngine {
         mut stop_rx: watch::Receiver<LoopCommand>,
     ) -> Result<LoopOutcome, EngineError> {
         let api_key = self.settings.get_decrypted_api_key()?;
+        let loop_start = Instant::now();
         let mut completed_count: usize = 0;
+        let mut failed_count: usize = 0;
         let mut follow_up_count: usize = 0;
         let mut task_retry_counts: std::collections::HashMap<TaskId, u32> = std::collections::HashMap::new();
         let mut work_log: Vec<String> = Vec::new();
+        let mut total_input_tokens: u64 = 0;
+        let mut total_output_tokens: u64 = 0;
+        let mut tasks_retried: usize = 0;
+        let mut sessions_used: usize = 1;
+        let mut total_parse_retries: u32 = 0;
+        let mut total_build_fix_attempts: u32 = 0;
+        let mut duplicate_error_bailouts: u32 = 0;
 
         let orphaned = self.task_service.reset_in_progress_tasks(&project_id)?;
         for t in &orphaned {
@@ -404,6 +451,7 @@ impl DevLoopEngine {
                         for t in &retryable {
                             let count = task_retry_counts.entry(t.task_id).or_insert(0);
                             *count += 1;
+                            tasks_retried += 1;
                             info!(task_id = %t.task_id, title = %t.title, attempt = *count, "resetting failed task for retry");
                             let _ = self.task_service.retry_task(
                                 &project_id, &t.spec_id, &t.task_id,
@@ -414,21 +462,30 @@ impl DevLoopEngine {
                     }
 
                     let progress = self.task_service.get_project_progress(&project_id)?;
+                    let loop_metrics = |outcome: &str| EngineEvent::LoopFinished {
+                        outcome: outcome.into(),
+                        total_duration_ms: Some(loop_start.elapsed().as_millis() as u64),
+                        tasks_completed: Some(completed_count),
+                        tasks_failed: Some(failed_count),
+                        tasks_retried: Some(tasks_retried),
+                        total_input_tokens: Some(total_input_tokens),
+                        total_output_tokens: Some(total_output_tokens),
+                        sessions_used: Some(sessions_used),
+                        total_parse_retries: Some(total_parse_retries),
+                        total_build_fix_attempts: Some(total_build_fix_attempts),
+                        duplicate_error_bailouts: Some(duplicate_error_bailouts),
+                    };
                     if progress.blocked_tasks > 0 || progress.failed_tasks > 0 {
                         let _ = self.session_service.end_session(
                             &project_id, &agent_id, &session.session_id, SessionStatus::Completed,
                         );
-                        self.emit(EngineEvent::LoopFinished {
-                            outcome: "all_tasks_blocked".into(),
-                        });
+                        self.emit(loop_metrics("all_tasks_blocked"));
                         return Ok(LoopOutcome::AllTasksBlocked);
                     }
                     let _ = self.session_service.end_session(
                         &project_id, &agent_id, &session.session_id, SessionStatus::Completed,
                     );
-                    self.emit(EngineEvent::LoopFinished {
-                        outcome: "all_tasks_complete".into(),
-                    });
+                    self.emit(loop_metrics("all_tasks_complete"));
                     return Ok(LoopOutcome::AllTasksComplete);
                 }
             };
@@ -447,8 +504,12 @@ impl DevLoopEngine {
                 task_id: task.task_id,
                 task_title: task.title.clone(),
                 session_id: session.session_id,
+                prompt_tokens_estimate: None,
+                codebase_snapshot_bytes: None,
+                codebase_file_count: None,
             });
 
+            let task_start = Instant::now();
             let result = if let Some(cmd) = Self::extract_shell_command(&task) {
                 let project = self.project_service.get_project(&project_id)?;
                 Some(self.execute_shell_task(&project, &task, &cmd).await)
@@ -489,6 +550,7 @@ impl DevLoopEngine {
 
             let failure_reason = match result {
                 Ok(execution) => {
+                    let llm_duration_ms = task_start.elapsed().as_millis() as u64;
                     let project = self.project_service.get_project(&project_id)?;
                     let base_path = Path::new(&project.linked_folder_path);
 
@@ -499,6 +561,11 @@ impl DevLoopEngine {
                         execution.input_tokens, execution.output_tokens,
                     );
 
+                    total_input_tokens += execution.input_tokens;
+                    total_output_tokens += execution.output_tokens;
+                    total_parse_retries += execution.parse_retries;
+
+                    let file_ops_start = Instant::now();
                     if let Err(e) = file_ops::apply_file_ops(base_path, &execution.file_ops).await {
                         let reason = format!("file operation failed: {e}");
                         self.task_service.fail_task(
@@ -507,20 +574,33 @@ impl DevLoopEngine {
                             &task.task_id,
                             &reason,
                         )?;
+                        failed_count += 1;
                         self.emit(EngineEvent::TaskFailed {
                             task_id: task.task_id,
                             reason: e.to_string(),
+                            duration_ms: Some(task_start.elapsed().as_millis() as u64),
+                            phase: Some("file_ops".into()),
+                            parse_retries: Some(execution.parse_retries),
+                            build_fix_attempts: None,
+                            model: session.model.clone(),
                         });
                         work_log.push(format!("Task (failed): {}\nReason: {}", task.title, reason));
                         Some(reason)
                     } else {
+                        let file_ops_duration_ms = file_ops_start.elapsed().as_millis() as u64;
                         self.emit_file_ops_applied(&task, &execution.file_ops);
 
-                        let (_, build_passed) = self
+                        let build_start = Instant::now();
+                        let (_, build_passed, build_attempts, dup_bailouts) = self
                             .verify_and_fix_build(
                                 &project, &task, &session, &api_key, &execution,
                             )
                             .await?;
+                        let build_verify_duration_ms = build_start.elapsed().as_millis() as u64;
+                        let task_duration_ms = task_start.elapsed().as_millis() as u64;
+
+                        total_build_fix_attempts += build_attempts;
+                        duplicate_error_bailouts += dup_bailouts;
 
                         if !build_passed {
                             let reason = "build verification failed after all fix attempts".to_string();
@@ -530,9 +610,15 @@ impl DevLoopEngine {
                                 &task.task_id,
                                 &reason,
                             )?;
+                            failed_count += 1;
                             self.emit(EngineEvent::TaskFailed {
                                 task_id: task.task_id,
                                 reason: reason.clone(),
+                                duration_ms: Some(task_duration_ms),
+                                phase: Some("build_verify".into()),
+                                parse_retries: Some(execution.parse_retries),
+                                build_fix_attempts: Some(build_attempts),
+                                model: session.model.clone(),
                             });
                             work_log.push(format!("Task (failed): {}\nReason: {}", task.title, reason));
                             Some(reason)
@@ -548,6 +634,24 @@ impl DevLoopEngine {
                             self.emit(EngineEvent::TaskCompleted {
                                 task_id: task.task_id,
                                 execution_notes: execution.notes.clone(),
+                                duration_ms: Some(task_duration_ms),
+                                input_tokens: Some(execution.input_tokens),
+                                output_tokens: Some(execution.output_tokens),
+                                llm_duration_ms: Some(llm_duration_ms),
+                                build_verify_duration_ms: Some(build_verify_duration_ms),
+                                files_changed_count: Some(execution.file_ops.len() as u32),
+                                parse_retries: Some(execution.parse_retries),
+                                build_fix_attempts: Some(build_attempts),
+                                model: session.model.clone(),
+                            });
+
+                            self.emit(EngineEvent::LoopIterationSummary {
+                                task_id: task.task_id,
+                                phase_timings: vec![
+                                    PhaseTimingEntry { phase: "llm_call".into(), duration_ms: llm_duration_ms },
+                                    PhaseTimingEntry { phase: "file_ops".into(), duration_ms: file_ops_duration_ms },
+                                    PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
+                                ],
                             });
 
                             let newly_ready = self
@@ -617,9 +721,15 @@ impl DevLoopEngine {
                         &task.task_id,
                         &reason,
                     )?;
+                    failed_count += 1;
                     self.emit(EngineEvent::TaskFailed {
                         task_id: task.task_id,
                         reason: e.to_string(),
+                        duration_ms: Some(task_start.elapsed().as_millis() as u64),
+                        phase: Some("execution".into()),
+                        parse_retries: None,
+                        build_fix_attempts: None,
+                        model: session.model.clone(),
                     });
                     work_log.push(format!("Task (failed): {}\nReason: {}", task.title, reason));
                     Some(reason)
@@ -644,6 +754,7 @@ impl DevLoopEngine {
                     completed_count,
                     work_log.join("\n\n---\n\n"),
                 );
+                let summary_start = Instant::now();
                 let summary = tokio::select! {
                     res = self.session_service.generate_rollover_summary(
                         &self.claude_client,
@@ -668,6 +779,8 @@ impl DevLoopEngine {
                         }
                     }
                 };
+                let summary_duration_ms = summary_start.elapsed().as_millis() as u64;
+                let context_usage_pct = current_session.context_usage_estimate * 100.0;
                 let new_session = self.session_service.rollover_session(
                     &project_id,
                     &agent_id,
@@ -678,7 +791,10 @@ impl DevLoopEngine {
                 self.emit(EngineEvent::SessionRolledOver {
                     old_session_id: session.session_id,
                     new_session_id: new_session.session_id,
+                    summary_duration_ms: Some(summary_duration_ms),
+                    context_usage_pct: Some(context_usage_pct),
                 });
+                sessions_used += 1;
                 session = new_session;
                 work_log.clear();
             }
@@ -740,6 +856,7 @@ impl DevLoopEngine {
         let mut prior_attempts_shell: Vec<BuildFixAttemptRecord> = Vec::new();
 
         for attempt in 1..=max_attempts {
+            let shell_step_start = Instant::now();
             self.emit(EngineEvent::BuildVerificationStarted {
                 task_id: task.task_id,
                 command: command.to_string(),
@@ -758,12 +875,14 @@ impl DevLoopEngine {
             });
 
             let result = build_verify::run_build_command(base_path, command).await?;
+            let shell_step_duration_ms = shell_step_start.elapsed().as_millis() as u64;
 
             if result.success {
                 self.emit(EngineEvent::BuildVerificationPassed {
                     task_id: task.task_id,
                     command: command.to_string(),
                     stdout: result.stdout.clone(),
+                    duration_ms: Some(shell_step_duration_ms),
                 });
                 self.persist_build_step(task, BuildStepRecord {
                     kind: "passed".into(),
@@ -798,6 +917,7 @@ impl DevLoopEngine {
                             follow_up_tasks: vec![],
                             input_tokens: 0,
                             output_tokens: 0,
+                            parse_retries: 0,
                         };
                         let mut test_fix_ops = Vec::new();
                         let test_passed = self.run_and_handle_tests(
@@ -828,15 +948,26 @@ impl DevLoopEngine {
                     follow_up_tasks: vec![],
                     input_tokens: 0,
                     output_tokens: 0,
+                    parse_retries: 0,
                 });
             }
 
+            let shell_error_hash = Some(format!("{:x}", {
+                let stderr_ref = if !result.stderr.is_empty() { &result.stderr } else { &result.stdout };
+                let mut h = 0u64;
+                for b in stderr_ref.bytes() {
+                    h = h.wrapping_mul(31).wrapping_add(b as u64);
+                }
+                h
+            }));
             self.emit(EngineEvent::BuildVerificationFailed {
                 task_id: task.task_id,
                 command: command.to_string(),
                 stdout: result.stdout.clone(),
                 stderr: result.stderr.clone(),
                 attempt,
+                duration_ms: Some(shell_step_duration_ms),
+                error_hash: shell_error_hash,
             });
             self.persist_build_step(task, BuildStepRecord {
                 kind: "failed".into(),
@@ -1018,12 +1149,12 @@ impl DevLoopEngine {
                 let (inp, out) = *token_counts.lock().await;
                 execution.input_tokens = inp;
                 execution.output_tokens = out;
+                execution.parse_retries = 0;
                 return Ok(execution);
             }
             Err(first_err) => {
                 warn!(task_id = %task_id, error = %first_err, "first execution parse failed, retrying");
 
-                // Retry loop: send the failed response back and ask for valid JSON
                 let mut last_response = response;
                 for attempt in 1..=MAX_EXECUTION_RETRIES {
                     self.emit(EngineEvent::TaskRetrying {
@@ -1073,6 +1204,7 @@ impl DevLoopEngine {
                             let (inp, out) = *token_counts.lock().await;
                             execution.input_tokens = inp;
                             execution.output_tokens = out;
+                            execution.parse_retries = attempt;
                             return Ok(execution);
                         }
                         Err(e) => {
@@ -1105,6 +1237,7 @@ impl DevLoopEngine {
         }
     }
 
+    /// Returns (fix_ops, build_passed, attempts_used, duplicate_bailouts).
     async fn verify_and_fix_build(
         &self,
         project: &Project,
@@ -1112,10 +1245,10 @@ impl DevLoopEngine {
         session: &Session,
         api_key: &str,
         initial_execution: &TaskExecution,
-    ) -> Result<(Vec<FileOp>, bool), EngineError> {
+    ) -> Result<(Vec<FileOp>, bool, u32, u32), EngineError> {
         let build_command = match &project.build_command {
             Some(cmd) if !cmd.trim().is_empty() => cmd.clone(),
-            _ => return Ok((vec![], true)),
+            _ => return Ok((vec![], true, 0, 0)),
         };
 
         let test_command = project.test_command.as_ref()
@@ -1125,8 +1258,10 @@ impl DevLoopEngine {
         let base_path = Path::new(&project.linked_folder_path);
         let mut all_fix_ops: Vec<FileOp> = Vec::new();
         let mut prior_attempts: Vec<BuildFixAttemptRecord> = Vec::new();
+        let mut duplicate_bailouts: u32 = 0;
 
         for attempt in 1..=MAX_BUILD_FIX_RETRIES {
+            let build_step_start = Instant::now();
             self.emit(EngineEvent::BuildVerificationStarted {
                 task_id: task.task_id,
                 command: build_command.clone(),
@@ -1140,12 +1275,14 @@ impl DevLoopEngine {
             });
 
             let build_result = build_verify::run_build_command(base_path, &build_command).await?;
+            let step_duration_ms = build_step_start.elapsed().as_millis() as u64;
 
             if build_result.success {
                 self.emit(EngineEvent::BuildVerificationPassed {
                     task_id: task.task_id,
                     command: build_command.clone(),
                     stdout: build_result.stdout.clone(),
+                    duration_ms: Some(step_duration_ms),
                 });
                 self.persist_build_step(task, BuildStepRecord {
                     kind: "passed".into(),
@@ -1155,7 +1292,6 @@ impl DevLoopEngine {
                     attempt: Some(attempt),
                 });
 
-                // Run test command if configured
                 let test_passed = if let Some(ref test_cmd) = test_command {
                     let test_result = self.run_and_handle_tests(
                         project, task, session, api_key, initial_execution,
@@ -1167,10 +1303,18 @@ impl DevLoopEngine {
                 };
 
                 if test_passed {
-                    return Ok((all_fix_ops, true));
+                    return Ok((all_fix_ops, true, attempt, duplicate_bailouts));
                 }
                 continue;
             }
+
+            let error_hash = Some(format!("{:x}", {
+                let mut h = 0u64;
+                for b in build_result.stderr.bytes() {
+                    h = h.wrapping_mul(31).wrapping_add(b as u64);
+                }
+                h
+            }));
 
             self.emit(EngineEvent::BuildVerificationFailed {
                 task_id: task.task_id,
@@ -1178,6 +1322,8 @@ impl DevLoopEngine {
                 stdout: build_result.stdout.clone(),
                 stderr: build_result.stderr.clone(),
                 attempt,
+                duration_ms: Some(step_duration_ms),
+                error_hash,
             });
             self.persist_build_step(task, BuildStepRecord {
                 kind: "failed".into(),
@@ -1189,10 +1335,9 @@ impl DevLoopEngine {
 
             if attempt == MAX_BUILD_FIX_RETRIES {
                 info!(task_id = %task.task_id, "build still failing after max retries");
-                return Ok((all_fix_ops, false));
+                return Ok((all_fix_ops, false, attempt, duplicate_bailouts));
             }
 
-            // Bail early if the same error keeps repeating (stuck in a loop)
             let consecutive_dupes = prior_attempts
                 .iter()
                 .rev()
@@ -1205,7 +1350,8 @@ impl DevLoopEngine {
                     "same build error repeated {} times, aborting fix loop",
                     consecutive_dupes + 1
                 );
-                return Ok((all_fix_ops, false));
+                duplicate_bailouts += 1;
+                return Ok((all_fix_ops, false, attempt, duplicate_bailouts));
             }
 
             self.emit(EngineEvent::BuildFixAttempt {
@@ -1322,7 +1468,7 @@ impl DevLoopEngine {
             });
         }
 
-        Ok((all_fix_ops, false))
+        Ok((all_fix_ops, false, MAX_BUILD_FIX_RETRIES, duplicate_bailouts))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1352,7 +1498,9 @@ impl DevLoopEngine {
             summary: None,
         });
 
+        let test_start = Instant::now();
         let test_result = build_verify::run_build_command(base_path, test_command).await?;
+        let test_duration_ms = test_start.elapsed().as_millis() as u64;
         let (tests, summary) = build_verify::parse_test_output(
             &test_result.stdout, &test_result.stderr, test_result.success,
         );
@@ -1364,6 +1512,7 @@ impl DevLoopEngine {
                 stdout: test_result.stdout.clone(),
                 tests: tests.clone(),
                 summary: summary.clone(),
+                duration_ms: Some(test_duration_ms),
             });
             self.persist_test_step(task, TestStepRecord {
                 kind: "passed".into(),
@@ -1385,6 +1534,7 @@ impl DevLoopEngine {
             attempt,
             tests: tests.clone(),
             summary: summary.clone(),
+            duration_ms: Some(test_duration_ms),
         });
         self.persist_test_step(task, TestStepRecord {
             kind: "failed".into(),
@@ -1747,6 +1897,7 @@ fn raw_to_execution(raw: RawExecutionResponse) -> TaskExecution {
             .collect(),
         input_tokens: 0,
         output_tokens: 0,
+        parse_retries: 0,
     }
 }
 
