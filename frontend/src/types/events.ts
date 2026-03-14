@@ -31,6 +31,7 @@ export interface EngineEvent {
   execution_notes?: string;
   files_written?: number;
   files_deleted?: number;
+  files?: { op: string; path: string }[];
   message?: string;
   project_id?: string;
   agent_id?: string;

@@ -54,6 +54,7 @@ export interface Task {
   dependency_ids: TaskId[];
   assigned_agent_id: AgentId | null;
   execution_notes: string;
+  files_changed: { op: string; path: string }[];
   created_at: string;
   updated_at: string;
 }
