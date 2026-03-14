@@ -7,6 +7,7 @@ import { useChatStream } from "../hooks/use-chat-stream";
 import { setLastChat } from "../utils/storage";
 import { MessageBubble, StreamingBubble } from "./MessageBubble";
 import { ChatInputBar } from "./ChatInputBar";
+import type { ChatInputBarHandle } from "./ChatInputBar";
 import type { ChatMessage } from "../types";
 import styles from "./ChatView.module.css";
 
@@ -32,6 +33,7 @@ export function ChatView() {
 
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+  const inputBarRef = useRef<ChatInputBarHandle>(null);
 
   const scrollToBottom = useCallback(() => {
     if (autoScrollRef.current && messageAreaRef.current) {
@@ -42,6 +44,7 @@ export function ChatView() {
   useEffect(() => {
     if (projectId && chatSessionId) {
       setLastChat(projectId, chatSessionId);
+      inputBarRef.current?.focus();
     }
   }, [projectId, chatSessionId]);
 
@@ -145,6 +148,7 @@ export function ChatView() {
       </div>
 
       <ChatInputBar
+        ref={inputBarRef}
         input={input}
         onInputChange={setInput}
         onSend={handleSend}

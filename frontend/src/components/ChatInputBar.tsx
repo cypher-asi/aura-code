@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useImperativeHandle, forwardRef } from "react";
 import { Menu } from "@cypher-asi/zui";
 import type { MenuItem } from "@cypher-asi/zui";
 import { ArrowUp, Square, Plus, FileText, ChevronDown } from "lucide-react";
@@ -19,6 +19,10 @@ const plusMenuItems: MenuItem[] = [
   { id: "generate_specs", label: "Generate Specs", icon: <FileText size={14} /> },
 ];
 
+export interface ChatInputBarHandle {
+  focus: () => void;
+}
+
 interface Props {
   input: string;
   onInputChange: (value: string) => void;
@@ -29,7 +33,7 @@ interface Props {
   onModelChange: (model: string) => void;
 }
 
-export function ChatInputBar({
+export const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar({
   input,
   onInputChange,
   onSend,
@@ -37,12 +41,16 @@ export function ChatInputBar({
   isStreaming,
   selectedModel,
   onModelChange,
-}: Props) {
+}, ref) {
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => textareaRef.current?.focus(),
+  }));
 
   useClickOutside(plusMenuRef, () => setPlusMenuOpen(false), plusMenuOpen);
   useClickOutside(modelMenuRef, () => setModelMenuOpen(false), modelMenuOpen);
@@ -159,4 +167,4 @@ export function ChatInputBar({
       </div>
     </div>
   );
-}
+});
