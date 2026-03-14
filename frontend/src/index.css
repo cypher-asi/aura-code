@@ -52,16 +52,6 @@ html, body, #root {
   -webkit-app-region: no-drag;
 }
 
-.taskbar-section {
-  border-top: 1px solid var(--color-border);
-  background: var(--color-bg);
-  display: flex;
-  align-items: stretch;
-  flex-shrink: 0;
-  box-sizing: border-box;
-  min-height: var(--control-height-sm, 28px);
-}
-
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
