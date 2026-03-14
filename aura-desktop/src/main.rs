@@ -7,6 +7,8 @@ use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::window::{Icon, WindowBuilder};
 use tokio::net::TcpListener;
+use tracing::{debug, info, warn};
+use tracing_subscriber::EnvFilter;
 use wry::{WebContext, WebViewBuilder};
 
 const PREFERRED_PORT: u16 = 19847;
@@ -27,9 +29,13 @@ fn ipc_handler(proxy: EventLoopProxy<UserEvent>) -> impl Fn(wry::http::Request<S
             "maximize" => Some(UserEvent::Maximize),
             "close" => Some(UserEvent::Close),
             "drag" => Some(UserEvent::DragWindow),
-            _ => None,
+            other => {
+                warn!(message = other, "unknown IPC message");
+                None
+            }
         };
         if let Some(e) = event {
+            debug!(command = msg, "IPC event");
             let _ = proxy.send_event(e);
         }
     }
@@ -84,12 +90,25 @@ async fn pick_file() -> Json<serde_json::Value> {
 }
 
 fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                EnvFilter::new("aura_desktop=debug,aura_server=debug,aura_engine=debug,tower_http=debug,info")
+            }),
+        )
+        .init();
+
     let data_dir = default_data_dir();
     std::fs::create_dir_all(&data_dir).expect("failed to create data directory");
+    info!(path = %data_dir.display(), "data directory ready");
 
     let db_path = data_dir.join("db");
     let webview_data_dir = data_dir.join("webview");
     let frontend_dir = find_frontend_dir();
+    match frontend_dir {
+        Some(ref dir) => info!(path = %dir.display(), "serving frontend"),
+        None => warn!("no frontend dist found; pages will not load"),
+    }
 
     // Try the preferred fixed port so the WebView origin stays consistent
     // across restarts (localStorage is scoped per-origin including port).
@@ -102,6 +121,7 @@ fn main() {
         .expect("failed to set non-blocking");
     let port = std_listener.local_addr().unwrap().port();
     let url = format!("http://127.0.0.1:{port}");
+    info!(%url, "server binding ready");
 
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
 
@@ -122,6 +142,7 @@ fn main() {
     ready_rx
         .recv()
         .expect("server thread failed before becoming ready");
+    info!("axum server ready");
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
@@ -141,6 +162,7 @@ fn main() {
         .with_inner_size(tao::dpi::LogicalSize::new(1280.0, 800.0))
         .build(&event_loop)
         .expect("failed to build window");
+    info!("window created");
 
     let mut web_context = WebContext::new(Some(webview_data_dir));
 

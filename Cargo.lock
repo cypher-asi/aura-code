@@ -344,6 +344,8 @@ dependencies = [
  "serde_json",
  "tao",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "wry",
 ]
 
