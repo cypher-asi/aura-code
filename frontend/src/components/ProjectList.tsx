@@ -32,10 +32,19 @@ function InlineRenameInput({
   const [rect, setRect] = useState<DOMRect | null>(null);
   const saved = useRef(false);
 
+  const labelRef = useRef<HTMLElement | null>(null);
+
   useLayoutEffect(() => {
     const row = document.getElementById(target.project_id);
     const label = row?.querySelector<HTMLElement>("[class*='label']");
-    if (label) setRect(label.getBoundingClientRect());
+    if (label) {
+      labelRef.current = label;
+      setRect(label.getBoundingClientRect());
+      label.style.visibility = "hidden";
+    }
+    return () => {
+      if (labelRef.current) labelRef.current.style.visibility = "";
+    };
   }, [target.project_id]);
 
   useEffect(() => {
@@ -248,11 +257,11 @@ export function ProjectList() {
                 return {
                   id: s.chat_session_id,
                   label: s.title,
-                  icon: isAutomating ? <Loader2 size={10} className={styles.automationSpinner} /> : undefined,
-                  suffix:
-                    streamingSessionId === s.chat_session_id ? (
-                      <span className={styles.streamingDot} />
-                    ) : undefined,
+                  suffix: isAutomating
+                    ? <Loader2 size={10} className={styles.automationSpinner} />
+                    : streamingSessionId === s.chat_session_id
+                      ? <span className={styles.streamingDot} />
+                      : undefined,
                   metadata: { type: "session", projectId: p.project_id },
                 };
               })
