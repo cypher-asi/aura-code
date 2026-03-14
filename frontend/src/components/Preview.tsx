@@ -124,16 +124,6 @@ function SprintPreview({ sprint }: { sprint: Sprint }) {
         placeholder="Describe what this sprint should cover, then click Generate..."
       />
       <div className={styles.sprintFooter}>
-        {generating && tokenCount && (
-          <Text variant="muted" size="sm" className={styles.tokenCount}>
-            {tokenCount.output.toLocaleString()} tokens
-          </Text>
-        )}
-        {!generating && generatedAt && (
-          <Text variant="muted" size="sm" className={styles.lastGenerated}>
-            Last generated: {formatRelativeTime(generatedAt)}
-          </Text>
-        )}
         <Button
           variant="secondary"
           size="sm"
@@ -144,6 +134,16 @@ function SprintPreview({ sprint }: { sprint: Sprint }) {
         >
           {generating ? "Generating..." : "Generate"}
         </Button>
+        {generating && tokenCount && (
+          <Text variant="muted" size="sm" className={styles.tokenCount}>
+            {tokenCount.output.toLocaleString()} tokens
+          </Text>
+        )}
+        {!generating && generatedAt && (
+          <Text variant="muted" size="sm" className={styles.lastGenerated}>
+            Last generated: {formatRelativeTime(generatedAt)}
+          </Text>
+        )}
       </div>
     </div>
   );
