@@ -5,11 +5,12 @@ import { useEventStream } from "../hooks/use-event-stream";
 type EventCallback = (event: EngineEvent) => void;
 
 export interface BuildStep {
-  kind: "started" | "passed" | "failed" | "fix_attempt";
+  kind: "started" | "passed" | "failed" | "fix_attempt" | "skipped";
   command?: string;
   stderr?: string;
   stdout?: string;
   attempt?: number;
+  reason?: string;
   timestamp: number;
 }
 
@@ -78,12 +79,14 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (event.task_id && (
+      event.type === "build_verification_skipped" ||
       event.type === "build_verification_started" ||
       event.type === "build_verification_passed" ||
       event.type === "build_verification_failed" ||
       event.type === "build_fix_attempt"
     )) {
       const kindMap: Record<string, BuildStep["kind"]> = {
+        build_verification_skipped: "skipped",
         build_verification_started: "started",
         build_verification_passed: "passed",
         build_verification_failed: "failed",
@@ -95,6 +98,7 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
         stderr: event.stderr,
         stdout: event.stdout,
         attempt: event.attempt,
+        reason: event.reason,
         timestamp: Date.now(),
       };
       const map = taskOutputRef.current;

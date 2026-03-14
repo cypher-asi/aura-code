@@ -426,6 +426,18 @@
   overflow-y: auto;
 }
 
+.buildSkipped {
+  color: var(--color-text-muted, #6b7280);
+}
+.buildSkipped .activityIcon {
+  color: var(--color-text-muted, #6b7280);
+}
+
+.emptyVerification {
+  padding: 10px var(--space-3);
+  font-size: 12px;
+}
+
 /* ── Test Verification ── */
 
 .testPassed {

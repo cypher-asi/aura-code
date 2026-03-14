@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Sidebar, Button, Text, GroupCollapsible, Item } from "@cypher-asi/zui";
-import { X, ArrowLeft, Sparkles, Loader2, FilePlus, FilePen, FileX, RotateCcw, Play, Check, XCircle, Wrench, MinusCircle } from "lucide-react";
+import { X, ArrowLeft, Sparkles, Loader2, FilePlus, FilePen, FileX, RotateCcw, Play, Check, XCircle, Wrench, MinusCircle, SkipForward } from "lucide-react";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
@@ -243,6 +243,8 @@ function BuildStepIcon({ kind, active }: { kind: BuildStep["kind"]; active: bool
       return <XCircle size={12} />;
     case "fix_attempt":
       return active ? <Wrench size={12} className={styles.spinner} /> : <Wrench size={12} />;
+    case "skipped":
+      return <SkipForward size={12} />;
   }
 }
 
@@ -251,7 +253,8 @@ function BuildStepItem({ step, active }: { step: BuildStep; active: boolean }) {
 
   const statusClass =
     step.kind === "passed" ? styles.buildPassed :
-    step.kind === "failed" ? styles.buildFailed : "";
+    step.kind === "failed" ? styles.buildFailed :
+    step.kind === "skipped" ? styles.buildSkipped : "";
 
   const hasOutput = !!(step.stderr || step.stdout);
 
@@ -270,6 +273,9 @@ function BuildStepItem({ step, active }: { step: BuildStep; active: boolean }) {
       label = active
         ? `Attempting auto-fix${step.attempt ? ` (attempt ${step.attempt})` : ""}...`
         : `Attempting auto-fix${step.attempt ? ` (attempt ${step.attempt})` : ""}`;
+      break;
+    case "skipped":
+      label = step.reason ? `Build verification skipped — ${step.reason}` : "Build verification skipped";
       break;
   }
 
@@ -465,6 +471,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
       stderr: s.stderr,
       stdout: s.stdout,
       attempt: s.attempt,
+      reason: s.kind === "skipped" ? (s.stdout ?? undefined) : undefined,
       timestamp: 0,
     }));
 
@@ -601,6 +608,18 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
     }
   }, [projectId, effectiveSessionId, task.assigned_agent_id, sidekick]);
 
+  const emptyBuildMessage = isActive
+    ? "Build verification pending..."
+    : isTerminal
+      ? "No build verification recorded"
+      : "—";
+
+  const emptyTestMessage = isActive
+    ? "Test verification pending..."
+    : isTerminal
+      ? "No tests recorded"
+      : "—";
+
   return (
     <>
       <div className={styles.taskMeta}>
@@ -716,8 +735,8 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
         <CodeEditor filePath={editorPath} onClose={() => setEditorPath(null)} />
       )}
 
-      {taskOutput.buildSteps.length > 0 && (
-        <GroupCollapsible label="Build Verification" count={taskOutput.buildSteps.length} defaultOpen className={styles.section}>
+      <GroupCollapsible label="Build Verification" count={taskOutput.buildSteps.length || undefined} defaultOpen className={styles.section}>
+        {taskOutput.buildSteps.length > 0 ? (
           <div className={styles.liveOutputSection}>
             <div className={styles.activityList}>
               {taskOutput.buildSteps.map((step, i) => (
@@ -725,11 +744,15 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
               ))}
             </div>
           </div>
-        </GroupCollapsible>
-      )}
+        ) : (
+          <div className={styles.emptyVerification}>
+            <Text variant="muted" size="sm">{emptyBuildMessage}</Text>
+          </div>
+        )}
+      </GroupCollapsible>
 
-      {taskOutput.testSteps.length > 0 && (
-        <GroupCollapsible label="Test Verification" count={taskOutput.testSteps.length} defaultOpen className={styles.section}>
+      <GroupCollapsible label="Test Verification" count={taskOutput.testSteps.length || undefined} defaultOpen className={styles.section}>
+        {taskOutput.testSteps.length > 0 ? (
           <div className={styles.liveOutputSection}>
             <div className={styles.activityList}>
               {taskOutput.testSteps.map((step, i) => (
@@ -737,8 +760,12 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
               ))}
             </div>
           </div>
-        </GroupCollapsible>
-      )}
+        ) : (
+          <div className={styles.emptyVerification}>
+            <Text variant="muted" size="sm">{emptyTestMessage}</Text>
+          </div>
+        )}
+      </GroupCollapsible>
 
       {showNotes && (
         <GroupCollapsible label="Notes" defaultOpen className={styles.section}>

@@ -1111,6 +1111,11 @@ impl DevLoopEngine {
                         total_input_tokens += fix_inp;
                         total_output_tokens += fix_out;
 
+                        self.update_task_tracking(
+                            &project_id, &task, &session.user_id, &session.model,
+                            fix_inp, fix_out,
+                        );
+
                         if !build_passed {
                             let reason = "build verification failed after all fix attempts".to_string();
                             self.task_service.fail_task(

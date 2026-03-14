@@ -122,6 +122,8 @@ pub async fn run_single_task(
     tokio::spawn(async move {
         if let Err(e) = engine.run_single_task(project_id, task_id).await {
             let _ = event_tx.send(aura_engine::EngineEvent::TaskFailed {
+                project_id,
+                agent_id: aura_core::AgentId::new(),
                 task_id,
                 reason: e.to_string(),
                 duration_ms: None,

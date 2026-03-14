@@ -39,7 +39,7 @@ fn spawn_event_rebroadcast(
     tokio::spawn(async move {
         let mut write_count: u64 = 0;
         let mut delta_count: u64 = 0;
-        let mut delta_broadcast_buf: HashMap<aura_core::TaskId, String> = HashMap::new();
+        let mut delta_broadcast_buf: HashMap<aura_core::TaskId, (aura_core::ProjectId, aura_core::AgentId, String)> = HashMap::new();
         let mut flush_interval = interval(Duration::from_millis(DELTA_BROADCAST_INTERVAL_MS));
         flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -48,7 +48,7 @@ fn spawn_event_rebroadcast(
                 maybe_event = rx.recv() => {
                     let Some(event) = maybe_event else { break };
                     match &event {
-                        EngineEvent::TaskOutputDelta { task_id, delta } => {
+                        EngineEvent::TaskOutputDelta { project_id, agent_id, task_id, delta } => {
                             if let Ok(mut bufs) = task_output_buffers.lock() {
                                 bufs.entry(*task_id).or_default().push_str(delta);
                             }
@@ -56,7 +56,9 @@ fn spawn_event_rebroadcast(
                             if delta_count % LIVE_OUTPUT_FLUSH_INTERVAL == 0 {
                                 flush_live_output(&store, &task_output_buffers);
                             }
-                            delta_broadcast_buf.entry(*task_id).or_default().push_str(delta);
+                            let entry = delta_broadcast_buf.entry(*task_id)
+                                .or_insert_with(|| (*project_id, *agent_id, String::new()));
+                            entry.2.push_str(delta);
                         }
                         EngineEvent::TaskCompleted { task_id, .. }
                         | EngineEvent::TaskFailed { task_id, .. } => {
@@ -87,8 +89,13 @@ fn spawn_event_rebroadcast(
 
                     // Flush any buffered deltas before broadcasting a non-delta event,
                     // so the WS client always sees deltas before the event that follows them.
-                    for (task_id, text) in delta_broadcast_buf.drain() {
-                        let coalesced = EngineEvent::TaskOutputDelta { task_id, delta: text };
+                    for (task_id, (pid, aid, text)) in delta_broadcast_buf.drain() {
+                        let coalesced = EngineEvent::TaskOutputDelta {
+                            project_id: pid,
+                            agent_id: aid,
+                            task_id,
+                            delta: text,
+                        };
                         let _ = broadcast_tx.send(coalesced);
                     }
 
@@ -98,9 +105,14 @@ fn spawn_event_rebroadcast(
                     }
                 }
                 _ = flush_interval.tick() => {
-                    for (task_id, text) in delta_broadcast_buf.drain() {
+                    for (task_id, (pid, aid, text)) in delta_broadcast_buf.drain() {
                         debug!(%task_id, len = text.len(), "Flushing coalesced delta");
-                        let _ = broadcast_tx.send(EngineEvent::TaskOutputDelta { task_id, delta: text });
+                        let _ = broadcast_tx.send(EngineEvent::TaskOutputDelta {
+                            project_id: pid,
+                            agent_id: aid,
+                            task_id,
+                            delta: text,
+                        });
                     }
                 }
             }

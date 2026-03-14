@@ -19,6 +19,7 @@ export type EngineEventType =
   | "spec_gen_completed"
   | "spec_gen_failed"
   | "spec_saved"
+  | "build_verification_skipped"
   | "build_verification_started"
   | "build_verification_passed"
   | "build_verification_failed"
