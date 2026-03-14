@@ -7,11 +7,14 @@ pub mod state;
 pub use router::{create_router, create_router_with_frontend};
 pub use state::AppState;
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{debug, info, warn};
+
+use crate::state::TaskOutputBuffers;
 
 use aura_engine::EngineEvent;
 use aura_services::{
@@ -25,6 +28,7 @@ fn spawn_event_rebroadcast(
     mut rx: mpsc::UnboundedReceiver<EngineEvent>,
     broadcast_tx: broadcast::Sender<EngineEvent>,
     store: Arc<RocksStore>,
+    _task_output_buffers: TaskOutputBuffers,
 ) {
     tokio::spawn(async move {
         let mut write_count: u64 = 0;
@@ -108,8 +112,15 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
 
     let (event_tx, event_rx) = mpsc::unbounded_channel::<EngineEvent>();
     let (event_broadcast, _) = broadcast::channel::<EngineEvent>(256);
+    let task_output_buffers: TaskOutputBuffers =
+        Arc::new(std::sync::Mutex::new(HashMap::new()));
 
-    spawn_event_rebroadcast(event_rx, event_broadcast.clone(), store.clone());
+    spawn_event_rebroadcast(
+        event_rx,
+        event_broadcast.clone(),
+        store.clone(),
+        task_output_buffers.clone(),
+    );
 
     AppState {
         store,
@@ -129,5 +140,6 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
         event_broadcast,
         loop_handle: Arc::new(Mutex::new(None)),
         loop_project_id: Arc::new(Mutex::new(None)),
+        task_output_buffers,
     }
 }
