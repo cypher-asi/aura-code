@@ -64,7 +64,7 @@ export function TaskStatusIcon({ status }: TaskStatusIconProps) {
             cy={CENTER}
             r={R}
             fill="none"
-            stroke="var(--status-in-progress, #ffa502)"
+            stroke="var(--status-in-progress, #9CDCFE)"
             strokeWidth={STROKE}
             strokeDasharray={`${CIRCUMFERENCE * 0.25} ${CIRCUMFERENCE * 0.75}`}
             strokeLinecap="round"
