@@ -40,14 +40,16 @@
   padding-right: 0;
 }
 
-/* Hide the icon spacer on all items (no icon slot used) */
-.explorerWrap > [class*="explorer"] [class*="iconSpacer"] {
+/* Hide the icon spacer on parent (project) items */
+.explorerWrap [class*="itemContent"][aria-expanded] [class*="iconSpacer"] {
   display: none;
 }
 
-/* Child rows need relative positioning for the automation spinner overlay */
-.explorerWrap [class*="childrenInner"] [class*="itemContent"] {
-  position: relative;
+/* Child icon slots: zero width so they don't push labels, but still visible */
+.explorerWrap [class*="childrenInner"] [class*="iconSpacer"] {
+  width: 0;
+  min-width: 0;
+  overflow: visible;
 }
 
 .explorerWrap [class*="searchContainer"] input {
@@ -104,10 +106,7 @@
 .automationSpinner {
   animation: spin 1s linear infinite;
   color: var(--color-text-muted);
-  position: absolute;
-  left: 2px;
-  top: 50%;
-  transform: translateY(-50%);
+  margin-left: -10px;
 }
 
 @keyframes spin {
