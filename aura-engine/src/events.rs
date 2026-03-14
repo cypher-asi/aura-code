@@ -91,9 +91,13 @@ pub enum EngineEvent {
     },
     BuildVerificationPassed {
         task_id: TaskId,
+        command: String,
+        stdout: String,
     },
     BuildVerificationFailed {
         task_id: TaskId,
+        command: String,
+        stdout: String,
         stderr: String,
         attempt: u32,
     },

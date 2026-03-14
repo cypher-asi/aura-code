@@ -796,12 +796,16 @@ impl DevLoopEngine {
             if build_result.success {
                 self.emit(EngineEvent::BuildVerificationPassed {
                     task_id: task.task_id,
+                    command: build_command.clone(),
+                    stdout: build_result.stdout.clone(),
                 });
                 return Ok((all_fix_ops, true));
             }
 
             self.emit(EngineEvent::BuildVerificationFailed {
                 task_id: task.task_id,
+                command: build_command.clone(),
+                stdout: build_result.stdout.clone(),
                 stderr: build_result.stderr.clone(),
                 attempt,
             });
