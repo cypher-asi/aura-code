@@ -411,3 +411,47 @@
   max-height: 200px;
   overflow-y: auto;
 }
+
+/* ── Test Verification ── */
+
+.testPassed {
+  color: var(--status-done, #34d399);
+}
+
+.testFailed {
+  color: var(--status-failed, #ff6b6b);
+}
+
+.testSkipped {
+  color: var(--color-text-muted, #6b7280);
+}
+
+.testResultsList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: var(--space-1);
+  padding-left: var(--space-1);
+}
+
+.testResultItem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  font-size: 11px;
+  line-height: 1.5;
+  font-family: var(--font-mono);
+}
+
+.testResultName {
+  word-break: break-word;
+}
+
+.testErrorMsg {
+  padding-left: calc(12px + var(--space-1));
+  color: var(--status-failed, #ff6b6b);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  word-break: break-word;
+  line-height: 1.4;
+}

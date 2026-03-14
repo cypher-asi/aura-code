@@ -3,11 +3,11 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Sidebar, Button, Text, GroupCollapsible, Item } from "@cypher-asi/zui";
-import { X, ArrowLeft, Sparkles, Loader2, FilePlus, FilePen, FileX, RotateCcw, Play, Check, XCircle, Wrench } from "lucide-react";
+import { X, ArrowLeft, Sparkles, Loader2, FilePlus, FilePen, FileX, RotateCcw, Play, Check, XCircle, Wrench, MinusCircle } from "lucide-react";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
-import { useEventContext, useTaskOutput, type BuildStep } from "../context/EventContext";
+import { useEventContext, useTaskOutput, type BuildStep, type TestStep } from "../context/EventContext";
 import { TaskStatusIcon } from "./TaskStatusIcon";
 import { formatRelativeTime, toBullets, formatCost, formatTokens, formatModelName } from "../utils/format";
 import { parseTaskStream } from "../utils/parse-task-stream";
@@ -297,6 +297,83 @@ function BuildStepItem({ step }: { step: BuildStep }) {
   );
 }
 
+function TestResultIcon({ status }: { status: string }) {
+  switch (status) {
+    case "passed":
+      return <Check size={12} className={styles.testPassed} />;
+    case "failed":
+      return <XCircle size={12} className={styles.testFailed} />;
+    case "skipped":
+      return <MinusCircle size={12} className={styles.testSkipped} />;
+    default:
+      return <MinusCircle size={12} />;
+  }
+}
+
+function TestStepItem({ step }: { step: TestStep }) {
+  const [expanded, setExpanded] = useState(step.kind === "failed");
+
+  const statusClass =
+    step.kind === "passed" ? styles.buildPassed :
+    step.kind === "failed" ? styles.buildFailed : "";
+
+  const hasOutput = !!(step.stderr || step.stdout);
+
+  let label: string;
+  switch (step.kind) {
+    case "started":
+      label = `Running tests \`${step.command}\`...`;
+      break;
+    case "passed":
+      label = step.summary ? `Tests passed (${step.summary})` : "Tests passed";
+      break;
+    case "failed":
+      label = `Tests failed${step.attempt ? ` (attempt ${step.attempt})` : ""}${step.summary ? ` — ${step.summary}` : ""}`;
+      break;
+    case "fix_attempt":
+      label = `Attempting auto-fix${step.attempt ? ` (attempt ${step.attempt})` : ""}...`;
+      break;
+  }
+
+  return (
+    <div className={`${styles.activityItem} ${statusClass}`}>
+      <span className={styles.activityIcon}>
+        <BuildStepIcon kind={step.kind} />
+      </span>
+      <span className={styles.activityBody}>
+        <span className={styles.activityMessage}>{label}</span>
+        {hasOutput && (
+          <button
+            className={styles.buildToggle}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? "Hide output" : "Show output"}
+          </button>
+        )}
+        {step.tests.length > 0 && (
+          <div className={styles.testResultsList}>
+            {step.tests.map((t, i) => (
+              <div key={i} className={styles.testResultItem}>
+                <TestResultIcon status={t.status} />
+                <span className={styles.testResultName}>{t.name}</span>
+                {t.message && t.status === "failed" && (
+                  <div className={styles.testErrorMsg}>{t.message}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {expanded && step.stderr && (
+          <pre className={styles.buildOutput}>{step.stderr}</pre>
+        )}
+        {expanded && step.stdout && (
+          <pre className={styles.buildOutput}>{step.stdout}</pre>
+        )}
+      </span>
+    </div>
+  );
+}
+
 function TaskPreview({ task }: { task: import("../types").Task }) {
   const { subscribe, seedTaskOutput } = useEventContext();
   const taskOutput = useTaskOutput(task.task_id);
@@ -360,10 +437,21 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
       timestamp: 0,
     }));
 
+    const persistedTestSteps = task.test_steps?.map((s) => ({
+      kind: s.kind as TestStep["kind"],
+      command: s.command,
+      stderr: s.stderr,
+      stdout: s.stdout,
+      attempt: s.attempt,
+      tests: s.tests ?? [],
+      summary: s.summary,
+      timestamp: 0,
+    }));
+
     if (isTerminal) {
-      if (task.live_output || persistedBuildSteps?.length) {
+      if (task.live_output || persistedBuildSteps?.length || persistedTestSteps?.length) {
         hydratedRef.current = task.task_id;
-        seedTaskOutput(task.task_id, task.live_output, persistedBuildSteps);
+        seedTaskOutput(task.task_id, task.live_output, persistedBuildSteps, persistedTestSteps);
       }
       return;
     }
@@ -372,7 +460,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
     hydratedRef.current = task.task_id;
 
     if (task.live_output) {
-      seedTaskOutput(task.task_id, task.live_output, persistedBuildSteps);
+      seedTaskOutput(task.task_id, task.live_output, persistedBuildSteps, persistedTestSteps);
       return;
     }
 
@@ -567,6 +655,18 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
             <div className={styles.activityList}>
               {taskOutput.buildSteps.map((step, i) => (
                 <BuildStepItem key={i} step={step} />
+              ))}
+            </div>
+          </div>
+        </GroupCollapsible>
+      )}
+
+      {taskOutput.testSteps.length > 0 && (
+        <GroupCollapsible label="Test Verification" count={taskOutput.testSteps.length} defaultOpen className={styles.section}>
+          <div className={styles.liveOutputSection}>
+            <div className={styles.activityList}>
+              {taskOutput.testSteps.map((step, i) => (
+                <TestStepItem key={i} step={step} />
               ))}
             </div>
           </div>

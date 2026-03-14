@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod auth;
 pub mod chat;
+pub mod chat_tool_executor;
 pub mod chat_tools;
 pub mod claude;
 pub mod error;
@@ -15,6 +16,7 @@ pub mod task_extraction;
 pub use agent::AgentService;
 pub use auth::AuthService;
 pub use chat::{ChatService, ChatStreamEvent};
+pub use chat_tool_executor::{ChatToolExecutor, ToolExecResult};
 pub use claude::{
     ClaudeClient, ClaudeStreamEvent, ContentBlock, MessageContent, RichMessage, ToolCall,
     ToolDefinition, ToolStreamResponse,
