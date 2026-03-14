@@ -5,6 +5,7 @@ use tokio::sync::{broadcast, mpsc, Mutex};
 
 use aura_core::TaskId;
 use aura_engine::{EngineEvent, LoopHandle};
+use aura_terminal::TerminalManager;
 use aura_services::{
     AgentService, AuthService, ChatService, ClaudeClient, GitHubService, OrgService,
     ProjectService, SessionService, SpecGenerationService, TaskExtractionService, TaskService,
@@ -34,4 +35,5 @@ pub struct AppState {
     pub loop_handle: Arc<Mutex<Option<LoopHandle>>>,
     pub loop_project_id: Arc<Mutex<Option<aura_core::ProjectId>>>,
     pub task_output_buffers: TaskOutputBuffers,
+    pub terminal_manager: Arc<TerminalManager>,
 }

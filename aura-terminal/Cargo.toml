@@ -1,0 +1,15 @@
+[package]
+name = "aura-terminal"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+portable-pty = "0.8"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+base64 = "0.22"
+which = "7"
+dirs = "5"

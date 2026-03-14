@@ -70,6 +70,7 @@ fn build_test_app() -> (Router, AppState, tempfile::TempDir, tempfile::TempDir) 
         loop_handle: Arc::new(Mutex::new(None)),
         loop_project_id: Arc::new(Mutex::new(None)),
         task_output_buffers,
+        terminal_manager: Arc::new(aura_terminal::TerminalManager::new()),
     };
 
     let app = aura_server::create_router(state.clone());

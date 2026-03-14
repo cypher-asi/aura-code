@@ -1,14 +1,20 @@
+import { useState } from "react";
 import { Link, Outlet } from "react-router-dom";
 import { Topbar, Sidebar, ButtonWindow } from "@cypher-asi/zui";
 import { ProjectList } from "./ProjectList";
 import { Sidekick } from "./Sidekick";
 import { Preview } from "./Preview";
+import { OrgSelector } from "./OrgSelector";
+import { UserProfile } from "./UserProfile";
+import { OrgSettingsPanel } from "./OrgSettingsPanel";
 import { SidekickProvider } from "../context/SidekickContext";
 import { ProjectContextProvider } from "../context/ProjectContext";
 import { OrgProvider } from "../context/OrgContext";
 import { windowCommand } from "../lib/windowCommand";
 
 export function AppShell() {
+  const [orgSettingsOpen, setOrgSettingsOpen] = useState(false);
+
   return (
     <SidekickProvider>
     <OrgProvider>
@@ -28,7 +34,20 @@ export function AppShell() {
           }
         />
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-          <Sidebar className="nav-sidebar" resizable defaultWidth={200} minWidth={140} maxWidth={300} storageKey="aura-sidebar">
+          <Sidebar
+            className="nav-sidebar"
+            resizable
+            defaultWidth={200}
+            minWidth={140}
+            maxWidth={300}
+            storageKey="aura-sidebar"
+            footer={
+              <>
+                <OrgSelector onOpenSettings={() => setOrgSettingsOpen(true)} />
+                <UserProfile />
+              </>
+            }
+          >
             <ProjectList />
           </Sidebar>
           <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -40,6 +59,7 @@ export function AppShell() {
           <Preview />
         </div>
       </div>
+      <OrgSettingsPanel isOpen={orgSettingsOpen} onClose={() => setOrgSettingsOpen(false)} />
     </ProjectContextProvider>
     </OrgProvider>
     </SidekickProvider>

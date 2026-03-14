@@ -255,6 +255,7 @@ fn engine_event_serialization() {
     let event = EngineEvent::TaskStarted {
         task_id: TaskId::new(),
         task_title: "Test task".into(),
+        session_id: SessionId::new(),
     };
     let json = serde_json::to_string(&event).unwrap();
     assert!(json.contains("task_started"));

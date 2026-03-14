@@ -17,6 +17,7 @@ use tracing::{debug, info, warn};
 use crate::state::TaskOutputBuffers;
 
 use aura_engine::EngineEvent;
+use aura_terminal::TerminalManager;
 use aura_services::{
     AgentService, AuthService, ChatService, ClaudeClient, GitHubService, OrgService,
     ProjectService, SessionService, SpecGenerationService, TaskExtractionService, TaskService,
@@ -211,5 +212,6 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
         loop_handle: Arc::new(Mutex::new(None)),
         loop_project_id: Arc::new(Mutex::new(None)),
         task_output_buffers,
+        terminal_manager: Arc::new(TerminalManager::new()),
     }
 }

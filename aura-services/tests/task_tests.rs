@@ -69,6 +69,7 @@ fn make_project() -> Project {
         current_status: ProjectStatus::Planning,
         github_integration_id: None,
         github_repo_full_name: None,
+        build_command: None,
         created_at: now,
         updated_at: now,
     }
@@ -180,6 +181,7 @@ fn complete_task_sets_done_and_preserves_agent() {
             &spec.spec_id,
             &task.task_id,
             "all good",
+            vec![],
         )
         .unwrap();
 
@@ -280,7 +282,7 @@ fn dependency_resolution_makes_pending_ready() {
     store.put_task(&leaf).unwrap();
 
     // Complete root
-    svc.complete_task(&project.project_id, &spec.spec_id, &root.task_id, "done")
+    svc.complete_task(&project.project_id, &spec.spec_id, &root.task_id, "done", vec![])
         .unwrap();
 
     // Resolve deps
