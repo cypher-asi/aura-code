@@ -47,13 +47,13 @@ export function ProgressDashboard() {
       </div>
 
       <div className={styles.statsGrid}>
-        <StatCard value={progress.total_tasks} label="Total" color="var(--color-text)" />
-        <StatCard value={progress.done_tasks} label="Done" color="var(--status-done)" />
-        <StatCard value={progress.in_progress_tasks} label="In Progress" color="var(--status-in-progress)" />
-        <StatCard value={progress.ready_tasks} label="Ready" color="var(--status-ready)" />
-        <StatCard value={progress.pending_tasks} label="Pending" color="var(--status-pending)" />
-        <StatCard value={progress.blocked_tasks} label="Blocked" color="var(--status-blocked)" />
-        <StatCard value={progress.failed_tasks} label="Failed" color="var(--status-failed)" />
+        <StatCard value={progress.total_tasks} label="Total Tasks" color="var(--color-text)" />
+        <StatCard value={progress.done_tasks} label="Tasks Complete" color="var(--status-done)" />
+        <StatCard value={progress.in_progress_tasks} label="Tasks Active" color="var(--status-in-progress)" />
+        <StatCard value={progress.ready_tasks} label="Tasks Ready" color="var(--status-ready)" />
+        <StatCard value={progress.pending_tasks} label="Tasks Pending" color="var(--status-pending)" />
+        <StatCard value={progress.blocked_tasks} label="Tasks Blocked" color="var(--status-blocked)" />
+        <StatCard value={progress.failed_tasks} label="Tasks Failed" color="var(--status-failed)" />
       </div>
     </div>
   );
