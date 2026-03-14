@@ -25,7 +25,7 @@ pub enum SpecStreamEvent {
     Delta(String),
     Generating { tokens: usize },
     SpecSaved(Spec),
-    TaskSaved(Task),
+    TaskSaved(Box<Task>),
     Complete(Vec<Spec>),
     Error(String),
 }

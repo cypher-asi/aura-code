@@ -56,7 +56,7 @@ pub enum ChatStreamEvent {
         is_error: bool,
     },
     SpecSaved(Spec),
-    TaskSaved(Task),
+    TaskSaved(Box<Task>),
     MessageSaved(ChatMessage),
     TitleUpdated(ChatSession),
     Error(String),

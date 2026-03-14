@@ -181,15 +181,15 @@ fn parse_jest_output(output: &str) -> Vec<IndividualTestResult> {
     let mut results = Vec::new();
     for line in output.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("PASS ") {
+        if let Some(rest) = trimmed.strip_prefix("PASS ") {
             results.push(IndividualTestResult {
-                name: trimmed[5..].trim().to_string(),
+                name: rest.trim().to_string(),
                 status: "passed".to_string(),
                 message: None,
             });
-        } else if trimmed.starts_with("FAIL ") {
+        } else if let Some(rest) = trimmed.strip_prefix("FAIL ") {
             results.push(IndividualTestResult {
-                name: trimmed[5..].trim().to_string(),
+                name: rest.trim().to_string(),
                 status: "failed".to_string(),
                 message: None,
             });

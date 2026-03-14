@@ -40,7 +40,7 @@ fn sanitize_shell_command(cmd: &str) -> String {
             "see", "make", "run", "build", "compile", "show", "prove",
             "demonstrate", "try", "attempt",
         ];
-        if non_command_verbs.iter().any(|v| first_word == *v) {
+        if non_command_verbs.contains(&first_word) {
             return trimmed[..idx].trim_end().to_string();
         }
     }

@@ -62,7 +62,7 @@ impl SpecGenerationService {
                     token_count += text.split_whitespace().count().max(1);
                     delta_count += 1;
                     let _ = tx.send(SpecStreamEvent::Delta(text.clone()));
-                    if delta_count % 20 == 0 {
+                    if delta_count.is_multiple_of(20) {
                         let _ = tx.send(SpecStreamEvent::Generating { tokens: token_count });
                     }
 
@@ -208,7 +208,7 @@ impl SpecGenerationService {
             } else {
                 info!(%project_id, spec = %spec.title, count = tasks.len(), "Tasks extracted and saved");
                 for task in tasks {
-                    let _ = tx.send(SpecStreamEvent::TaskSaved(task));
+                    let _ = tx.send(SpecStreamEvent::TaskSaved(Box::new(task)));
                 }
             }
         }
@@ -250,7 +250,7 @@ impl SpecGenerationService {
                             error!(%project_id, error = %e, "Failed to save tasks for spec (fallback)");
                         } else {
                             for task in tasks {
-                                send(SpecStreamEvent::TaskSaved(task));
+                                send(SpecStreamEvent::TaskSaved(Box::new(task)));
                             }
                         }
                     }
