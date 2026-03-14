@@ -22,14 +22,15 @@ export function toBullets(text: string): string {
     if (trimmed.length === 0) continue;
 
     if (LIST_OR_HEADING.test(trimmed)) {
-      out.push(line);
+      const endsWithPunctuation = /[.!?:;)\]}>]$/.test(trimmed);
+      out.push(endsWithPunctuation ? line : `${line.trimEnd()}.`);
       continue;
     }
 
     const sentences = trimmed.split(/(?<=\.)\s+(?=[A-Z])/);
     for (const s of sentences) {
       const clean = s.replace(/\.\s*$/, "").trim();
-      if (clean.length > 0) out.push(`- ${clean}`);
+      if (clean.length > 0) out.push(`- ${clean}.`);
     }
   }
 

@@ -273,6 +273,10 @@
 .markdown ul, .markdown ol {
   padding-left: 18px;
   margin-bottom: 8px;
+  list-style-type: disc;
+}
+.markdown ol {
+  list-style-type: decimal;
 }
 .markdown li { margin-bottom: 2px; }
 .markdown blockquote {
