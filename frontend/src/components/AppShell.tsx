@@ -1,27 +1,12 @@
-import { useState } from "react";
 import { Link, Outlet } from "react-router-dom";
 import { Topbar, Sidebar, ButtonWindow } from "@cypher-asi/zui";
 import { ProjectList } from "./ProjectList";
-import { UserProfile } from "./UserProfile";
-import { OrgSelector } from "./OrgSelector";
-import { OrgSettingsPanel } from "./OrgSettingsPanel";
 import { Sidekick } from "./Sidekick";
 import { Preview } from "./Preview";
 import { SidekickProvider } from "../context/SidekickContext";
 import { ProjectContextProvider } from "../context/ProjectContext";
 import { OrgProvider } from "../context/OrgContext";
 import { windowCommand } from "../lib/windowCommand";
-
-function SidebarFooter() {
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  return (
-    <>
-      <OrgSelector onOpenSettings={() => setSettingsOpen(true)} />
-      <UserProfile />
-      <OrgSettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
-    </>
-  );
-}
 
 export function AppShell() {
   return (
@@ -43,7 +28,7 @@ export function AppShell() {
           }
         />
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-          <Sidebar className="nav-sidebar" resizable defaultWidth={200} minWidth={140} maxWidth={300} storageKey="aura-sidebar" footer={<SidebarFooter />}>
+          <Sidebar className="nav-sidebar" resizable defaultWidth={200} minWidth={140} maxWidth={300} storageKey="aura-sidebar">
             <ProjectList />
           </Sidebar>
           <main style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
