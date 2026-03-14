@@ -32,6 +32,10 @@ const EVENT_LABELS: Record<EngineEventType, string> = {
   spec_gen_completed: "Spec",
   spec_gen_failed: "Spec",
   spec_saved: "Spec",
+  build_verification_started: "Build",
+  build_verification_passed: "Build",
+  build_verification_failed: "Build",
+  build_fix_attempt: "Build",
 };
 
 function summarise(e: EngineEvent): string {
@@ -74,6 +78,14 @@ function summarise(e: EngineEvent): string {
       return `Spec generation failed: ${e.reason ?? "unknown"}`;
     case "spec_saved":
       return `Spec saved: ${e.spec?.title ?? e.project_id}`;
+    case "build_verification_started":
+      return `Build verification started${e.task_id ? `: ${e.task_id}` : ""}`;
+    case "build_verification_passed":
+      return `Build verification passed${e.task_id ? `: ${e.task_id}` : ""}`;
+    case "build_verification_failed":
+      return `Build verification failed${e.reason ? `: ${e.reason}` : ""}`;
+    case "build_fix_attempt":
+      return `Build fix attempt${e.attempt ? ` #${e.attempt}` : ""}`;
     default:
       return e.type;
   }
@@ -145,6 +157,10 @@ export function useLogStream() {
       "spec_gen_completed",
       "spec_gen_failed",
       "spec_saved",
+      "build_verification_started",
+      "build_verification_passed",
+      "build_verification_failed",
+      "build_fix_attempt",
     ];
     const unsubs = allTypes.map((type) =>
       subscribe(type, (e) => addEntry(e)),
