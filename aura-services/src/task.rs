@@ -20,6 +20,12 @@ pub struct ProjectProgress {
     pub done_tasks: usize,
     pub failed_tasks: usize,
     pub completion_percentage: f64,
+    pub total_tokens: u64,
+    pub lines_changed: u64,
+    pub lines_of_code: u64,
+    pub total_commits: u64,
+    pub total_pull_requests: u64,
+    pub total_messages: u64,
 }
 
 pub struct TaskService {
@@ -361,6 +367,12 @@ impl TaskService {
             (done as f64 / total as f64) * 100.0
         };
 
+        let lines_changed: u64 = tasks
+            .iter()
+            .flat_map(|t| &t.files_changed)
+            .map(|f| (f.lines_added as u64) + (f.lines_removed as u64))
+            .sum();
+
         Ok(ProjectProgress {
             project_id: *project_id,
             total_tasks: total,
@@ -386,6 +398,12 @@ impl TaskService {
                 .filter(|t| t.status == TaskStatus::Failed)
                 .count(),
             completion_percentage: pct,
+            total_tokens: 0,
+            lines_changed,
+            lines_of_code: 0,
+            total_commits: 0,
+            total_pull_requests: 0,
+            total_messages: 0,
         })
     }
 }

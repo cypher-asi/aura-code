@@ -103,6 +103,12 @@ export interface ProjectProgress {
   done_tasks: number;
   failed_tasks: number;
   completion_percentage: number;
+  total_tokens: number;
+  lines_changed: number;
+  lines_of_code: number;
+  total_commits: number;
+  total_pull_requests: number;
+  total_messages: number;
 }
 
 export interface ChatSession {
