@@ -489,6 +489,32 @@ declare module "@cypher-asi/zui" {
 
   // Utilities
   export function cn(...args: (string | undefined | null | false)[]): string;
+
+  // useResize
+  export type ResizeSide = "left" | "right" | "top" | "bottom";
+
+  export interface UseResizeOptions {
+    side: ResizeSide;
+    minSize: number;
+    maxSize: number;
+    defaultSize: number;
+    storageKey?: string;
+    elementRef: import("react").RefObject<HTMLElement | null>;
+    offset?: number;
+    enabled?: boolean;
+    onResizeStart?: () => void;
+    onResize?: (size: number) => void;
+    onResizeEnd?: (size: number) => void;
+  }
+
+  export interface UseResizeReturn {
+    size: number;
+    isResizing: boolean;
+    handleMouseDown: (e: React.MouseEvent) => void;
+    setSize: (size: number) => void;
+  }
+
+  export function useResize(options: UseResizeOptions): UseResizeReturn;
 }
 
 declare module "@cypher-asi/zui/styles" {}

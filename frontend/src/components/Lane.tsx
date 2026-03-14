@@ -1,6 +1,5 @@
 import { forwardRef, useRef, useImperativeHandle, type ReactNode, type CSSProperties } from "react";
-import clsx from "clsx";
-import { useResize } from "@cypher-asi/zui";
+import { cn, useResize } from "@cypher-asi/zui";
 import styles from "./Lane.module.css";
 
 export interface LaneProps {
@@ -78,7 +77,7 @@ export const Lane = forwardRef<HTMLDivElement, LaneProps>(
     return (
       <div
         ref={laneRef}
-        className={clsx(
+        className={cn(
           styles.lane,
           flex && styles.laneFlex,
           isResizing && styles.resizing,
@@ -89,7 +88,7 @@ export const Lane = forwardRef<HTMLDivElement, LaneProps>(
       >
         {resizable && (
           <div
-            className={clsx(
+            className={cn(
               styles.resizeHandle,
               resizePosition === "left" ? styles.resizeHandleLeft : styles.resizeHandleRight,
             )}
