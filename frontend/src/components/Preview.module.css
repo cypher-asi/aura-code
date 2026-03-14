@@ -368,3 +368,46 @@
   font-size: 11px;
   font-style: italic;
 }
+
+/* ── Build Verification ── */
+
+.buildPassed .activityIcon {
+  color: var(--status-done, #34d399);
+}
+
+.buildFailed .activityIcon {
+  color: var(--status-failed, #ff6b6b);
+}
+
+.buildToggle {
+  display: inline-block;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.buildToggle:hover {
+  color: var(--color-text);
+}
+
+.buildOutput {
+  margin-top: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg-tertiary, rgba(0,0,0,0.08));
+  max-height: 200px;
+  overflow-y: auto;
+}
