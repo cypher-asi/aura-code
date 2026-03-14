@@ -4,11 +4,13 @@ use chrono::Utc;
 use serde::Serialize;
 use tracing::warn;
 
+use aura_services::claude::compute_cost;
 use crate::events::PhaseTimingEntry;
 
 const METRICS_DIR: &str = ".aura";
 const LAST_RUN_FILE: &str = "last_run_metrics.json";
 const HISTORY_FILE: &str = "run_history.jsonl";
+const TASK_HISTORY_FILE: &str = "task_history.jsonl";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TaskMetrics {
@@ -77,6 +79,29 @@ impl LoopRunMetrics {
         }
     }
 
+    /// Recompute aggregate counters from the tasks vec and current loop state.
+    /// Call this before writing a live snapshot so the file stays accurate.
+    pub fn snapshot(
+        &mut self,
+        total_duration_ms: u64,
+        sessions: usize,
+        tasks_retried: usize,
+        duplicate_error_bailouts: u32,
+    ) {
+        self.outcome = "in_progress".to_string();
+        self.total_duration_ms = total_duration_ms;
+        self.sessions_used = sessions;
+        self.tasks_retried = tasks_retried;
+        self.duplicate_error_bailouts = duplicate_error_bailouts;
+        self.tasks_completed = self.tasks.iter().filter(|t| t.outcome == "completed").count();
+        self.tasks_failed = self.tasks.iter().filter(|t| t.outcome == "failed").count();
+        self.total_input_tokens = self.tasks.iter().map(|t| t.input_tokens).sum();
+        self.total_output_tokens = self.tasks.iter().map(|t| t.output_tokens).sum();
+        self.total_parse_retries = self.tasks.iter().map(|t| t.parse_retries).sum();
+        self.total_build_fix_attempts = self.tasks.iter().map(|t| t.build_fix_attempts).sum();
+        self.estimated_cost_usd = compute_cost(self.total_input_tokens, self.total_output_tokens);
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn finalize(
         &mut self,
@@ -103,51 +128,111 @@ impl LoopRunMetrics {
         self.total_parse_retries = parse_retries;
         self.total_build_fix_attempts = build_fix_attempts;
         self.duplicate_error_bailouts = dup_bailouts;
-        // Sonnet pricing: $3/M input, $15/M output
-        self.estimated_cost_usd = (input_tokens as f64 * 3.0
-            + output_tokens as f64 * 15.0)
-            / 1_000_000.0;
+        self.estimated_cost_usd = compute_cost(input_tokens, output_tokens);
     }
 }
 
-/// Write metrics to `<project_root>/.aura/last_run_metrics.json` (overwrite)
-/// and append to `<project_root>/.aura/run_history.jsonl`.
-pub fn write_run_metrics(project_root: &Path, metrics: &LoopRunMetrics) {
+/// Ensure the `.aura` directory exists under `project_root`, returning
+/// the path on success or `None` if creation failed.
+fn ensure_metrics_dir(project_root: &Path) -> Option<std::path::PathBuf> {
     let dir = project_root.join(METRICS_DIR);
     if let Err(e) = std::fs::create_dir_all(&dir) {
         warn!("Failed to create {}: {e}", dir.display());
-        return;
+        return None;
     }
+    Some(dir)
+}
 
-    // last_run_metrics.json -- always overwritten
-    let last_run_path = dir.join(LAST_RUN_FILE);
+/// Overwrite `last_run_metrics.json` with the current snapshot.
+fn write_snapshot_file(dir: &Path, metrics: &LoopRunMetrics) {
+    let path = dir.join(LAST_RUN_FILE);
     match serde_json::to_string_pretty(metrics) {
         Ok(json) => {
-            if let Err(e) = std::fs::write(&last_run_path, json.as_bytes()) {
-                warn!("Failed to write {}: {e}", last_run_path.display());
+            if let Err(e) = std::fs::write(&path, json.as_bytes()) {
+                warn!("Failed to write {}: {e}", path.display());
             }
         }
         Err(e) => warn!("Failed to serialize metrics: {e}"),
     }
+}
 
-    // run_history.jsonl -- append one line per run
-    let history_path = dir.join(HISTORY_FILE);
-    match serde_json::to_string(metrics) {
-        Ok(line) => {
-            use std::io::Write;
-            match std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&history_path)
-            {
-                Ok(mut f) => {
-                    if let Err(e) = writeln!(f, "{line}") {
-                        warn!("Failed to append to {}: {e}", history_path.display());
-                    }
-                }
-                Err(e) => warn!("Failed to open {}: {e}", history_path.display()),
+/// Append a single JSON line to the given file.
+fn append_jsonl(path: &Path, line: &str) {
+    use std::io::Write;
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        Ok(mut f) => {
+            if let Err(e) = writeln!(f, "{line}") {
+                warn!("Failed to append to {}: {e}", path.display());
             }
         }
-        Err(e) => warn!("Failed to serialize metrics for history: {e}"),
+        Err(e) => warn!("Failed to open {}: {e}", path.display()),
+    }
+}
+
+/// Write a live snapshot after each task completes or fails.
+///
+/// - Overwrites `last_run_metrics.json` with current aggregate state
+/// - Appends the individual `TaskMetrics` to `task_history.jsonl`
+pub fn write_live_snapshot(project_root: &Path, metrics: &LoopRunMetrics, task: &TaskMetrics) {
+    let Some(dir) = ensure_metrics_dir(project_root) else {
+        return;
+    };
+    write_snapshot_file(&dir, metrics);
+    if let Ok(line) = serde_json::to_string(task) {
+        append_jsonl(&dir.join(TASK_HISTORY_FILE), &line);
+    }
+}
+
+/// Write metrics for a single-task run (not the full loop).
+///
+/// Wraps the `TaskMetrics` in a one-task `LoopRunMetrics`, overwrites
+/// `last_run_metrics.json`, and appends to both `task_history.jsonl`
+/// and `run_history.jsonl`.
+pub fn write_single_task_metrics(project_root: &Path, task: TaskMetrics) {
+    let Some(dir) = ensure_metrics_dir(project_root) else {
+        return;
+    };
+
+    let mut run = LoopRunMetrics::new(String::new());
+    let outcome = task.outcome.clone();
+    run.tasks.push(task.clone());
+    run.finalize(
+        &outcome,
+        task.duration_ms,
+        if outcome == "completed" { 1 } else { 0 },
+        if outcome == "failed" { 1 } else { 0 },
+        0,
+        task.input_tokens,
+        task.output_tokens,
+        1,
+        task.parse_retries,
+        task.build_fix_attempts,
+        0,
+    );
+
+    write_snapshot_file(&dir, &run);
+    if let Ok(line) = serde_json::to_string(&task) {
+        append_jsonl(&dir.join(TASK_HISTORY_FILE), &line);
+    }
+    if let Ok(line) = serde_json::to_string(&run) {
+        append_jsonl(&dir.join(HISTORY_FILE), &line);
+    }
+}
+
+/// Write final metrics at loop exit.
+///
+/// - Overwrites `last_run_metrics.json` with final state
+/// - Appends the full run to `run_history.jsonl`
+pub fn write_run_metrics(project_root: &Path, metrics: &LoopRunMetrics) {
+    let Some(dir) = ensure_metrics_dir(project_root) else {
+        return;
+    };
+    write_snapshot_file(&dir, metrics);
+    if let Ok(line) = serde_json::to_string(metrics) {
+        append_jsonl(&dir.join(HISTORY_FILE), &line);
     }
 }

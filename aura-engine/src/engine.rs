@@ -36,7 +36,65 @@ pub struct FollowUpSuggestion {
 /// Tracks a single build-fix attempt for the retry history prompt.
 struct BuildFixAttemptRecord {
     stderr: String,
+    error_signature: String,
     files_changed: Vec<String>,
+}
+
+/// Produce a normalized "signature" from compiler stderr by stripping line
+/// numbers, column numbers, and file paths so that the same class of error
+/// across different attempts compares as equal even when line numbers shift.
+fn normalize_error_signature(stderr: &str) -> String {
+    let mut signature_lines: Vec<String> = Vec::new();
+    for line in stderr.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("For more information") || trimmed.starts_with("help:") {
+            continue;
+        }
+        // Strip Rust-style location prefixes like "  --> crates/foo/src/bar.rs:52:32"
+        // and "52 |  ..." gutter lines, normalizing to just the error message
+        if trimmed.starts_with("-->") {
+            signature_lines.push("-->LOCATION".into());
+            continue;
+        }
+        // Gutter lines: "52 |    code here"
+        if trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) && trimmed.contains('|') {
+            continue;
+        }
+        // Caret lines: "   ^^^^^"
+        if trimmed.chars().all(|c| c == '^' || c == '-' || c == ' ' || c == '~' || c == '+') {
+            continue;
+        }
+        // Keep error/warning message lines but strip line:col references
+        let normalized = normalize_line_col_refs(trimmed);
+        if !normalized.is_empty() {
+            signature_lines.push(normalized);
+        }
+    }
+    signature_lines.sort();
+    signature_lines.dedup();
+    signature_lines.join("\n")
+}
+
+/// Replace patterns like `:52:32` or `line 52` with `:N:N` so that
+/// identical errors on different lines produce the same signature.
+fn normalize_line_col_refs(line: &str) -> String {
+    let mut result = String::with_capacity(line.len());
+    let chars: Vec<char> = line.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == ':' && i + 1 < chars.len() && chars[i + 1].is_ascii_digit() {
+            result.push(':');
+            result.push('N');
+            i += 1;
+            while i < chars.len() && chars[i].is_ascii_digit() {
+                i += 1;
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,6 +271,10 @@ impl DevLoopEngine {
         let task_start = Instant::now();
         let model_name = model.clone();
 
+        let project_root = self.project_service.get_project(&project_id)
+            .map(|p| p.linked_folder_path.clone())
+            .unwrap_or_default();
+
         let result = if let Some(cmd) = Self::extract_shell_command(&task) {
             let project = self.project_service.get_project(&project_id)?;
             self.execute_shell_task(&project, &task, &cmd).await
@@ -236,21 +298,45 @@ impl DevLoopEngine {
                 let file_ops_start = Instant::now();
                 if let Err(e) = file_ops::apply_file_ops(base_path, &execution.file_ops).await {
                     let reason = format!("file operation failed: {e}");
+                    let task_dur = task_start.elapsed().as_millis() as u64;
                     let _ = self.task_service.fail_task(
                         &project_id, &task.spec_id, &task.task_id, &reason,
                     );
                     self.emit(EngineEvent::TaskFailed {
                         task_id: task.task_id,
                         reason: e.to_string(),
-                        duration_ms: Some(task_start.elapsed().as_millis() as u64),
+                        duration_ms: Some(task_dur),
                         phase: Some("file_ops".into()),
                         parse_retries: Some(execution.parse_retries),
                         build_fix_attempts: None,
                         model: model_name.clone(),
                     });
+                    if !project_root.is_empty() {
+                        metrics::write_single_task_metrics(
+                            Path::new(&project_root),
+                            metrics::TaskMetrics {
+                                task_id: task.task_id.to_string(),
+                                title: task.title.clone(),
+                                outcome: "failed".into(),
+                                duration_ms: task_dur,
+                                llm_duration_ms: Some(llm_duration_ms),
+                                build_verify_duration_ms: None,
+                                file_ops_duration_ms: None,
+                                input_tokens: execution.input_tokens,
+                                output_tokens: execution.output_tokens,
+                                files_changed: execution.file_ops.len() as u32,
+                                parse_retries: execution.parse_retries,
+                                build_fix_attempts: 0,
+                                model: model_name.clone(),
+                                failure_phase: Some("file_ops".into()),
+                                failure_reason: Some(reason),
+                                phase_timings: vec![],
+                            },
+                        );
+                    }
                     SessionStatus::Failed
                 } else {
-                    let _file_ops_duration_ms = file_ops_start.elapsed().as_millis() as u64;
+                    let file_ops_duration_ms = file_ops_start.elapsed().as_millis() as u64;
                     self.emit_file_ops_applied(&task, &execution.file_ops);
 
                     let session_ref = self.session_service.get_session(
@@ -285,6 +371,34 @@ impl DevLoopEngine {
                             model: model_name.clone(),
                         });
 
+                        if !project_root.is_empty() {
+                            metrics::write_single_task_metrics(
+                                Path::new(&project_root),
+                                metrics::TaskMetrics {
+                                    task_id: task.task_id.to_string(),
+                                    title: task.title.clone(),
+                                    outcome: "completed".into(),
+                                    duration_ms: task_duration_ms,
+                                    llm_duration_ms: Some(llm_duration_ms),
+                                    build_verify_duration_ms: Some(build_verify_duration_ms),
+                                    file_ops_duration_ms: Some(file_ops_duration_ms),
+                                    input_tokens: execution.input_tokens,
+                                    output_tokens: execution.output_tokens,
+                                    files_changed: execution.file_ops.len() as u32,
+                                    parse_retries: execution.parse_retries,
+                                    build_fix_attempts: build_attempts,
+                                    model: model_name.clone(),
+                                    failure_phase: None,
+                                    failure_reason: None,
+                                    phase_timings: vec![
+                                        PhaseTimingEntry { phase: "llm_call".into(), duration_ms: llm_duration_ms },
+                                        PhaseTimingEntry { phase: "file_ops".into(), duration_ms: file_ops_duration_ms },
+                                        PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
+                                    ],
+                                },
+                            );
+                        }
+
                         let newly_ready = self
                             .task_service
                             .resolve_dependencies_after_completion(&project_id, &task.task_id)
@@ -312,31 +426,82 @@ impl DevLoopEngine {
                         );
                         self.emit(EngineEvent::TaskFailed {
                             task_id: task.task_id,
-                            reason,
+                            reason: reason.clone(),
                             duration_ms: Some(task_duration_ms),
                             phase: Some("build_verify".into()),
                             parse_retries: Some(execution.parse_retries),
                             build_fix_attempts: Some(build_attempts),
                             model: model_name.clone(),
                         });
+                        if !project_root.is_empty() {
+                            metrics::write_single_task_metrics(
+                                Path::new(&project_root),
+                                metrics::TaskMetrics {
+                                    task_id: task.task_id.to_string(),
+                                    title: task.title.clone(),
+                                    outcome: "failed".into(),
+                                    duration_ms: task_duration_ms,
+                                    llm_duration_ms: Some(llm_duration_ms),
+                                    build_verify_duration_ms: Some(build_verify_duration_ms),
+                                    file_ops_duration_ms: Some(file_ops_duration_ms),
+                                    input_tokens: execution.input_tokens,
+                                    output_tokens: execution.output_tokens,
+                                    files_changed: execution.file_ops.len() as u32,
+                                    parse_retries: execution.parse_retries,
+                                    build_fix_attempts: build_attempts,
+                                    model: model_name.clone(),
+                                    failure_phase: Some("build_verify".into()),
+                                    failure_reason: Some(reason),
+                                    phase_timings: vec![
+                                        PhaseTimingEntry { phase: "llm_call".into(), duration_ms: llm_duration_ms },
+                                        PhaseTimingEntry { phase: "file_ops".into(), duration_ms: file_ops_duration_ms },
+                                        PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
+                                    ],
+                                },
+                            );
+                        }
                     }
                     SessionStatus::Completed
                 }
             }
             Err(e) => {
                 let reason = format!("execution error: {e}");
+                let task_dur = task_start.elapsed().as_millis() as u64;
                 let _ = self.task_service.fail_task(
                     &project_id, &task.spec_id, &task.task_id, &reason,
                 );
                 self.emit(EngineEvent::TaskFailed {
                     task_id: task.task_id,
                     reason: e.to_string(),
-                    duration_ms: Some(task_start.elapsed().as_millis() as u64),
+                    duration_ms: Some(task_dur),
                     phase: Some("execution".into()),
                     parse_retries: None,
                     build_fix_attempts: None,
                     model: model_name.clone(),
                 });
+                if !project_root.is_empty() {
+                    metrics::write_single_task_metrics(
+                        Path::new(&project_root),
+                        metrics::TaskMetrics {
+                            task_id: task.task_id.to_string(),
+                            title: task.title.clone(),
+                            outcome: "failed".into(),
+                            duration_ms: task_dur,
+                            llm_duration_ms: None,
+                            build_verify_duration_ms: None,
+                            file_ops_duration_ms: None,
+                            input_tokens: 0,
+                            output_tokens: 0,
+                            files_changed: 0,
+                            parse_retries: 0,
+                            build_fix_attempts: 0,
+                            model: model_name.clone(),
+                            failure_phase: Some("execution".into()),
+                            failure_reason: Some(reason),
+                            phase_timings: vec![],
+                        },
+                    );
+                }
                 SessionStatus::Failed
             }
         };
@@ -427,6 +592,22 @@ impl DevLoopEngine {
                 );
                 if !project_root.is_empty() {
                     metrics::write_run_metrics(Path::new(&project_root), &run_metrics);
+                }
+            }};
+        }
+
+        macro_rules! record_task {
+            ($task_metrics:expr) => {{
+                let tm: metrics::TaskMetrics = $task_metrics;
+                run_metrics.tasks.push(tm.clone());
+                if !project_root.is_empty() {
+                    run_metrics.snapshot(
+                        loop_start.elapsed().as_millis() as u64,
+                        sessions_used, tasks_retried, duplicate_error_bailouts,
+                    );
+                    metrics::write_live_snapshot(
+                        Path::new(&project_root), &run_metrics, &tm,
+                    );
                 }
             }};
         }
@@ -612,7 +793,7 @@ impl DevLoopEngine {
                             build_fix_attempts: None,
                             model: session.model.clone(),
                         });
-                        run_metrics.tasks.push(TaskMetrics {
+                        record_task!(TaskMetrics {
                             task_id: task.task_id.to_string(),
                             title: task.title.clone(),
                             outcome: "failed".into(),
@@ -666,7 +847,7 @@ impl DevLoopEngine {
                                 build_fix_attempts: Some(build_attempts),
                                 model: session.model.clone(),
                             });
-                            run_metrics.tasks.push(TaskMetrics {
+                            record_task!(TaskMetrics {
                                 task_id: task.task_id.to_string(),
                                 title: task.title.clone(),
                                 outcome: "failed".into(),
@@ -723,7 +904,7 @@ impl DevLoopEngine {
                                 phase_timings: task_phase_timings.clone(),
                             });
 
-                            run_metrics.tasks.push(TaskMetrics {
+                            record_task!(TaskMetrics {
                                 task_id: task.task_id.to_string(),
                                 title: task.title.clone(),
                                 outcome: "completed".into(),
@@ -820,7 +1001,7 @@ impl DevLoopEngine {
                         build_fix_attempts: None,
                         model: session.model.clone(),
                     });
-                    run_metrics.tasks.push(TaskMetrics {
+                    record_task!(TaskMetrics {
                         task_id: task.task_id.to_string(),
                         title: task.title.clone(),
                         outcome: "failed".into(),
@@ -1357,7 +1538,13 @@ impl DevLoopEngine {
     ) -> Result<(Vec<FileOp>, bool, u32, u32), EngineError> {
         let build_command = match &project.build_command {
             Some(cmd) if !cmd.trim().is_empty() => cmd.clone(),
-            _ => return Ok((vec![], true, 0, 0)),
+            _ => {
+                self.emit(EngineEvent::BuildVerificationSkipped {
+                    task_id: task.task_id,
+                    reason: "no build_command configured on project".into(),
+                });
+                return Ok((vec![], true, 0, 0));
+            }
         };
 
         let test_command = project.test_command.as_ref()
@@ -1452,7 +1639,7 @@ impl DevLoopEngine {
                 .rev()
                 .take_while(|a| a.stderr == build_result.stderr)
                 .count();
-            if consecutive_dupes >= 2 {
+            if consecutive_dupes >= 4 {
                 info!(
                     task_id = %task.task_id,
                     attempt,
@@ -1521,7 +1708,7 @@ impl DevLoopEngine {
             // Summarize what files this attempt changed for the history
             let mut attempt_files_changed: Vec<String> = Vec::new();
 
-            match parse_execution_response(&response) {
+            let fix_applied = match parse_execution_response(&response) {
                 Ok(fix_execution) => {
                     file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await?;
 
@@ -1560,21 +1747,25 @@ impl DevLoopEngine {
                     }
 
                     all_fix_ops.extend(fix_execution.file_ops);
+                    true
                 }
                 Err(e) => {
                     warn!(
                         task_id = %task.task_id,
                         attempt,
                         error = %e,
-                        "failed to parse build-fix response"
+                        "failed to parse build-fix response, fix not applied"
                     );
+                    false
                 }
-            }
+            };
 
-            prior_attempts.push(BuildFixAttemptRecord {
-                stderr: build_result.stderr,
-                files_changed: attempt_files_changed,
-            });
+            if fix_applied {
+                prior_attempts.push(BuildFixAttemptRecord {
+                    stderr: build_result.stderr,
+                    files_changed: attempt_files_changed,
+                });
+            }
         }
 
         Ok((all_fix_ops, false, MAX_BUILD_FIX_RETRIES, duplicate_bailouts))
@@ -2054,6 +2245,128 @@ fn build_fix_prompt(
     )
 }
 
+/// Classify build errors into categories so the fix prompt can include
+/// targeted guidance instead of generic "try a different approach."
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ErrorCategory {
+    RustStringLiteral,
+    RustMissingModule,
+    RustMissingMethod,
+    RustTypeError,
+    RustBorrowCheck,
+    NpmDependency,
+    NpmTypeScript,
+    GenericSyntax,
+    Unknown,
+}
+
+fn classify_build_errors(stderr: &str) -> Vec<ErrorCategory> {
+    let mut categories = Vec::new();
+
+    let rust_string_patterns = [
+        "unknown start of token",
+        "prefix `",
+        "unknown prefix",
+        "Unicode character",
+        "looks like",
+        "but it is not",
+    ];
+    if rust_string_patterns.iter().any(|p| stderr.contains(p)) {
+        categories.push(ErrorCategory::RustStringLiteral);
+    }
+
+    if stderr.contains("file not found for module") || stderr.contains("E0583") {
+        categories.push(ErrorCategory::RustMissingModule);
+    }
+
+    if stderr.contains("no method named") || stderr.contains("E0599") {
+        categories.push(ErrorCategory::RustMissingMethod);
+    }
+
+    if stderr.contains("the trait") && stderr.contains("is not implemented")
+        || stderr.contains("E0277")
+        || stderr.contains("type annotations needed")
+        || stderr.contains("E0283")
+    {
+        categories.push(ErrorCategory::RustTypeError);
+    }
+
+    if stderr.contains("cannot borrow") || stderr.contains("E0502") || stderr.contains("E0505") {
+        categories.push(ErrorCategory::RustBorrowCheck);
+    }
+
+    if stderr.contains("Cannot find module") || stderr.contains("ENOENT") {
+        categories.push(ErrorCategory::NpmDependency);
+    }
+
+    if stderr.contains("TS2304") || stderr.contains("TS2345") || stderr.contains("TS2322") {
+        categories.push(ErrorCategory::NpmTypeScript);
+    }
+
+    if categories.is_empty()
+        && (stderr.contains("expected") || stderr.contains("syntax error") || stderr.contains("parse error"))
+    {
+        categories.push(ErrorCategory::GenericSyntax);
+    }
+
+    if categories.is_empty() {
+        categories.push(ErrorCategory::Unknown);
+    }
+    categories
+}
+
+fn error_category_guidance(categories: &[ErrorCategory]) -> String {
+    let mut guidance = String::new();
+    for cat in categories {
+        let advice = match cat {
+            ErrorCategory::RustStringLiteral => "\
+DIAGNOSIS: Rust string literal / token errors detected.
+ROOT CAUSE: This almost always means JSON or text with special characters was placed directly in Rust source code without proper string escaping.
+MANDATORY FIX:
+- For test fixtures or multi-line strings containing JSON, quotes, backslashes, or special chars: use raw string literals r#\"...\"# (or r##\"...\"## if the content contains \"#).
+- For programmatic JSON construction: use serde_json::json!() macro instead of string literals.
+- NEVER put literal \\n (two characters) inside a Rust string to represent a newline; use actual newlines inside raw strings, or proper escape sequences inside regular strings.
+- NEVER use non-ASCII characters (em dashes, smart quotes, etc.) in Rust string literals; replace with ASCII equivalents.
+- Check ALL string literals in the file, not just the ones the compiler flagged — the same mistake is likely repeated.",
+
+            ErrorCategory::RustMissingModule => "\
+DIAGNOSIS: Missing Rust module file.
+FIX: If mod.rs or lib.rs declares `pub mod foo;`, the file `foo.rs` (or `foo/mod.rs`) MUST exist. Either create the file or remove the module declaration.",
+
+            ErrorCategory::RustMissingMethod => "\
+DIAGNOSIS: Method not found on type.
+FIX: Check the actual public API of the type (read its source file). Do not invent methods. If the method doesn't exist, either implement it or use an existing method that provides the same functionality.",
+
+            ErrorCategory::RustTypeError => "\
+DIAGNOSIS: Type mismatch or missing trait implementation.
+FIX: Read the function signatures carefully. Check generic type parameters. Provide explicit type annotations where the compiler asks for them. Do not use `[u8]` where `Vec<u8>` or `&[u8]` is needed.",
+
+            ErrorCategory::RustBorrowCheck => "\
+DIAGNOSIS: Borrow checker violation.
+FIX: Check ownership and lifetimes. Consider cloning, using references, or restructuring to avoid simultaneous mutable/immutable borrows.",
+
+            ErrorCategory::NpmDependency => "\
+DIAGNOSIS: Missing npm package or module.
+FIX: Ensure the dependency exists in package.json and has been installed. Check import paths for typos.",
+
+            ErrorCategory::NpmTypeScript => "\
+DIAGNOSIS: TypeScript type errors.
+FIX: Check that types align with the library's actual API. Read type definitions from node_modules/@types if needed.",
+
+            ErrorCategory::GenericSyntax => "\
+DIAGNOSIS: Syntax error.
+FIX: Look at the exact line/column the compiler indicates. Check for missing semicolons, unbalanced braces, or misplaced tokens.",
+
+            ErrorCategory::Unknown => "",
+        };
+        if !advice.is_empty() {
+            guidance.push_str(advice);
+            guidance.push_str("\n\n");
+        }
+    }
+    guidance
+}
+
 fn build_fix_prompt_with_history(
     project: &Project,
     spec: &Spec,
@@ -2106,13 +2419,24 @@ fn build_fix_prompt_with_history(
         }
     }
 
+    let categories = classify_build_errors(stderr);
+    let guidance = error_category_guidance(&categories);
+
     prompt.push_str(&format!(
         "# Build/Test Verification FAILED\n\
          The command `{}` failed after the previous file operations were applied.\n\
-         You MUST fix ALL errors below.\n\n\
-         ## stderr\n```\n{}\n```\n\n",
-        build_command, stderr
+         You MUST fix ALL errors below.\n\n",
+        build_command
     ));
+
+    if !guidance.is_empty() {
+        prompt.push_str(&format!(
+            "## Error Analysis & Required Fix Strategy\n{}\n",
+            guidance
+        ));
+    }
+
+    prompt.push_str(&format!("## stderr\n```\n{}\n```\n\n", stderr));
 
     if !stdout.is_empty() {
         prompt.push_str(&format!("## stdout\n```\n{}\n```\n\n", stdout));

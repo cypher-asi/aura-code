@@ -153,6 +153,10 @@ pub enum EngineEvent {
         spec: Spec,
     },
 
+    BuildVerificationSkipped {
+        task_id: TaskId,
+        reason: String,
+    },
     BuildVerificationStarted {
         task_id: TaskId,
         command: String,
