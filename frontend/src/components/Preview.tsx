@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Sidebar, Button, Text, GroupCollapsible, Item } from "@cypher-asi/zui";
-import { X, Sparkles, Loader2, FilePlus, FilePen, FileX, RotateCcw } from "lucide-react";
+import { X, Sparkles, Loader2, FilePlus, FilePen, FileX, RotateCcw, Check, Activity } from "lucide-react";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
@@ -11,6 +11,7 @@ import { useEventContext } from "../context/EventContext";
 import { TaskStatusIcon } from "./TaskStatusIcon";
 import { formatRelativeTime } from "../utils/format";
 import { parseTaskStream } from "../utils/parse-task-stream";
+import { deriveActivity } from "../utils/derive-activity";
 import type { PreviewItem } from "../context/SidekickContext";
 import type { Sprint } from "../types";
 import styles from "./Preview.module.css";
@@ -220,7 +221,12 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
     : task.execution_notes;
 
   const showNotes = isActive ? (parsed?.notes != null) : !!task.execution_notes;
-  const showRawFallback = isActive && streamBuf && !parsed?.notes;
+
+  const activity = useMemo(
+    () => (isActive ? deriveActivity(streamBuf) : []),
+    [isActive, streamBuf],
+  );
+  const showLiveOutput = isActive && activity.length > 0;
 
   const handleRetry = useCallback(async () => {
     if (!projectId || retrying) return;
@@ -285,20 +291,6 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
         </GroupCollapsible>
       )}
 
-      {showRawFallback && (
-        <div className={styles.taskStreamWrapper}>
-          <Text variant="muted" size="sm">
-            <span className={styles.streamingIndicator}>
-              <Loader2 size={12} className={styles.spinner} />
-              Output
-            </span>
-          </Text>
-          <div ref={streamRef} className={styles.taskStream} onScroll={handleStreamScroll}>
-            {streamBuf || "Waiting for output..."}
-          </div>
-        </div>
-      )}
-
       {showNotes && (
         <GroupCollapsible label="Notes" defaultOpen className={styles.section}>
           <div className={styles.notesContent}>
@@ -309,6 +301,32 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
             </div>
           </div>
         </GroupCollapsible>
+      )}
+
+      {showLiveOutput && (
+        <div className={styles.liveOutputSection}>
+          <Text variant="muted" size="sm" className={styles.liveOutputHeader}>
+            <Activity size={12} />
+            Live Output
+          </Text>
+          <div ref={streamRef} className={styles.activityList} onScroll={handleStreamScroll}>
+            {activity.map((item) => (
+              <div key={item.id} className={styles.activityItem} data-status={item.status}>
+                <span className={styles.activityIcon} data-status={item.status}>
+                  {item.status === "active"
+                    ? <Loader2 size={12} className={styles.spinner} />
+                    : <Check size={12} />}
+                </span>
+                <span className={styles.activityBody}>
+                  <span className={styles.activityMessage}>{item.message}</span>
+                  {item.detail && (
+                    <span className={styles.activityDetail}> {item.detail}</span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </>
   );
