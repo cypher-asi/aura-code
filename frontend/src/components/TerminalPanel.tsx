@@ -186,7 +186,7 @@ export function TerminalPanel({ cwd }: { cwd?: string } = {}) {
       <div
         className={`${styles.resizeHandle} ${dragging.current ? styles.resizeHandleActive : ""}`}
         onMouseDown={handleMouseDown}
-        style={collapsed ? { visibility: "hidden" } : undefined}
+        style={collapsed ? { display: "none" } : undefined}
       />
 
       <div className={styles.terminalHeader}>
