@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -39,11 +39,20 @@ pub struct ProjectProgress {
 
 pub struct TaskService {
     store: Arc<RocksStore>,
+    claim_locks: Mutex<HashMap<ProjectId, Arc<Mutex<()>>>>,
 }
 
 impl TaskService {
     pub fn new(store: Arc<RocksStore>) -> Self {
-        Self { store }
+        Self {
+            store,
+            claim_locks: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn project_claim_lock(&self, project_id: &ProjectId) -> Arc<Mutex<()>> {
+        let mut locks = self.claim_locks.lock().unwrap();
+        locks.entry(*project_id).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
     }
 
     pub fn transition_task(
@@ -366,6 +375,27 @@ impl TaskService {
         });
 
         Ok(ready.first().cloned().cloned())
+    }
+
+    /// Atomically select the next ready task and assign it to an agent.
+    /// Uses a per-project mutex so two agents can never claim the same task.
+    pub fn claim_next_task(
+        &self,
+        project_id: &ProjectId,
+        agent_id: &AgentId,
+        session_id: Option<SessionId>,
+    ) -> Result<Option<Task>, TaskError> {
+        let lock = self.project_claim_lock(project_id);
+        let _guard = lock.lock().unwrap();
+
+        let task = self.select_next_task(project_id)?;
+        match task {
+            Some(t) => {
+                let assigned = self.assign_task(project_id, &t.spec_id, &t.task_id, agent_id, session_id)?;
+                Ok(Some(assigned))
+            }
+            None => Ok(None),
+        }
     }
 
     // -- Follow-up task creation --

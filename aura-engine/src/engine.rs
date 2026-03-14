@@ -897,7 +897,7 @@ impl DevLoopEngine {
                 return Ok(LoopOutcome::Stopped { completed_count });
             }
 
-            let task = match self.task_service.select_next_task(&project_id)? {
+            let task = match self.task_service.claim_next_task(&project_id, &agent_id, Some(session.session_id))? {
                 Some(t) => t,
                 None => {
                     let all_tasks = self.store.list_tasks_by_project(&project_id)?;
@@ -953,8 +953,6 @@ impl DevLoopEngine {
                 }
             };
 
-            self.task_service
-                .assign_task(&project_id, &task.spec_id, &task.task_id, &agent_id, Some(session.session_id))?;
             self.session_service
                 .record_task_worked(&project_id, &agent_id, &session.session_id, task.task_id)?;
             self.agent_service.start_working(
