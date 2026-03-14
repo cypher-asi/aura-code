@@ -1,15 +1,6 @@
 .container {
-  padding: 0 var(--space-3);
-  gap: var(--space-2);
-  overflow: hidden;
-}
-
-.userOrg {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  gap: var(--space-1);
   overflow: hidden;
 }
 
@@ -20,6 +11,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 
 .separator {
@@ -29,10 +21,14 @@
   opacity: 0.4;
 }
 
-.org {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
-  white-space: nowrap;
+.orgWrap {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+/* Override OrgSelector border/padding when embedded in taskbar */
+.orgWrap > div {
+  border-top: none;
+  background: none;
 }

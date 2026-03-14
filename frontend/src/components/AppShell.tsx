@@ -49,7 +49,10 @@ export function AppShell() {
             >
               <ProjectList />
             </Sidebar>
-            <TaskbarLeft onOpenSettings={() => setSettingsOpen(true)} />
+            <TaskbarLeft
+              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenOrgSettings={() => setOrgSettingsOpen(true)}
+            />
           </div>
 
           {/* Middle column: main content + terminal (taskbar middle) */}
