@@ -124,23 +124,25 @@ export function ChatView() {
           ref={messageAreaRef}
           onScroll={handleScroll}
         >
-          {!hasMessages ? (
-            <div className={styles.emptyState}>
-              <MessageSquare size={40} className={styles.emptyIcon} />
-              <Text variant="muted" size="sm">
-                Send a message or use a quick action to get started
-              </Text>
-            </div>
-          ) : (
-            <>
-              {messages.map((msg) => (
-                <MessageBubble key={msg.id} message={msg} />
-              ))}
-              {(streamingText || activeToolCalls.length > 0) && (
-                <StreamingBubble text={streamingText} toolCalls={activeToolCalls} />
-              )}
-            </>
-          )}
+          <div className={styles.messageContent}>
+            {!hasMessages ? (
+              <div className={styles.emptyState}>
+                <MessageSquare size={40} className={styles.emptyIcon} />
+                <Text variant="muted" size="sm">
+                  Send a message or use a quick action to get started
+                </Text>
+              </div>
+            ) : (
+              <>
+                {messages.map((msg) => (
+                  <MessageBubble key={msg.id} message={msg} />
+                ))}
+                {(streamingText || activeToolCalls.length > 0) && (
+                  <StreamingBubble text={streamingText} toolCalls={activeToolCalls} />
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         <ChatInputBar
