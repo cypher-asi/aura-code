@@ -103,7 +103,11 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
       const next = exists
         ? prev.tasks.map((t) => (t.task_id === task.task_id ? task : t))
         : [...prev.tasks, task];
-      return { ...prev, tasks: next.sort((a, b) => a.order_index - b.order_index) };
+      let previewItem = prev.previewItem;
+      if (previewItem?.kind === "task" && previewItem.task.task_id === task.task_id) {
+        previewItem = { kind: "task", task };
+      }
+      return { ...prev, tasks: next.sort((a, b) => a.order_index - b.order_index), previewItem };
     });
   }, []);
 

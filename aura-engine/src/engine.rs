@@ -261,6 +261,7 @@ impl DevLoopEngine {
                         completed_count += 1;
                         self.emit(EngineEvent::TaskCompleted {
                             task_id: task.task_id,
+                            execution_notes: execution.notes.clone(),
                         });
 
                         let newly_ready = self

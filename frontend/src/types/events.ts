@@ -28,6 +28,7 @@ export interface EngineEvent {
   new_session_id?: string;
   completed_count?: number;
   outcome?: string;
+  execution_notes?: string;
   files_written?: number;
   files_deleted?: number;
   message?: string;

@@ -14,6 +14,7 @@ pub enum EngineEvent {
     },
     TaskCompleted {
         task_id: TaskId,
+        execution_notes: String,
     },
     TaskFailed {
         task_id: TaskId,

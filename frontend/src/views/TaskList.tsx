@@ -46,7 +46,15 @@ export function TaskList() {
         if (e.task_id) updateTaskStatus(e.task_id, "in_progress");
       }),
       subscribe("task_completed", (e) => {
-        if (e.task_id) updateTaskStatus(e.task_id, "done");
+        if (e.task_id) {
+          setLocalTasks((prev) =>
+            prev.map((t) =>
+              t.task_id === e.task_id
+                ? { ...t, status: "done" as const, execution_notes: e.execution_notes ?? t.execution_notes }
+                : t
+            ),
+          );
+        }
       }),
       subscribe("task_failed", (e) => {
         if (e.task_id) updateTaskStatus(e.task_id, "failed");
