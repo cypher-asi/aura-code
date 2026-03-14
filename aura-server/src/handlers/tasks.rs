@@ -3,6 +3,8 @@ use std::path::Path as FsPath;
 use axum::extract::{Path, State};
 use axum::Json;
 
+use serde::Serialize;
+
 use aura_core::{ProjectId, SpecId, Task, TaskId};
 use aura_services::task::ProjectProgress;
 
@@ -136,6 +138,25 @@ pub async fn get_progress(
     }
 
     Ok(Json(progress))
+}
+
+#[derive(Serialize)]
+pub struct TaskOutputResponse {
+    pub output: String,
+}
+
+pub async fn get_task_output(
+    State(state): State<AppState>,
+    Path((_project_id, task_id)): Path<(ProjectId, TaskId)>,
+) -> ApiResult<Json<TaskOutputResponse>> {
+    let output = state
+        .task_output_buffers
+        .lock()
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .get(&task_id)
+        .cloned()
+        .unwrap_or_default();
+    Ok(Json(TaskOutputResponse { output }))
 }
 
 async fn count_lines_of_code(folder: &str) -> u64 {
