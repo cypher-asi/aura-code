@@ -274,6 +274,10 @@ export const api = {
     apiFetch<Task>(`/api/projects/${projectId}/tasks/${taskId}/retry`, {
       method: "POST",
     }),
+  runTask: (projectId: ProjectId, taskId: TaskId) =>
+    apiFetch<void>(`/api/projects/${projectId}/tasks/${taskId}/run`, {
+      method: "POST",
+    }),
   getProgress: (projectId: ProjectId) =>
     apiFetch<ProjectProgress>(`/api/projects/${projectId}/progress`),
 
