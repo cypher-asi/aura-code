@@ -148,6 +148,7 @@ fn sample_task(project_id: ProjectId, spec_id: SpecId) -> Task {
         dependency_ids: vec![],
         assigned_agent_id: None,
         execution_notes: String::new(),
+        files_changed: vec![],
         created_at: now,
         updated_at: now,
     }
