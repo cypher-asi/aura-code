@@ -329,9 +329,22 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
   }, [projectId, task.task_id, retrying]);
 
   const handleViewSession = useCallback(async () => {
-    if (!projectId || !effectiveSessionId || !task.assigned_agent_id) return;
+    if (!projectId || !effectiveSessionId) return;
     try {
-      const session = await api.getSession(projectId, task.assigned_agent_id, effectiveSessionId);
+      let agentId = task.assigned_agent_id;
+      if (!agentId) {
+        const agents = await api.listAgents(projectId);
+        for (const a of agents) {
+          try {
+            const s = await api.getSession(projectId, a.agent_id, effectiveSessionId);
+            sidekick.pushPreview({ kind: "session", session: s });
+            return;
+          } catch { /* try next agent */ }
+        }
+        console.error("Failed to load session: agent not found");
+        return;
+      }
+      const session = await api.getSession(projectId, agentId, effectiveSessionId);
       sidekick.pushPreview({ kind: "session", session });
     } catch (err) {
       console.error("Failed to load session:", err);

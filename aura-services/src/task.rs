@@ -140,7 +140,6 @@ impl TaskService {
         task.status = TaskStatus::Done;
         task.execution_notes = notes.to_string();
         task.files_changed = files_changed;
-        task.assigned_agent_id = None;
         task.updated_at = Utc::now();
         self.store.put_task(&task)?;
         Ok(task)
@@ -163,7 +162,6 @@ impl TaskService {
         Self::validate_transition(task.status, TaskStatus::Failed)?;
         task.status = TaskStatus::Failed;
         task.execution_notes = reason.to_string();
-        task.assigned_agent_id = None;
         task.updated_at = Utc::now();
         self.store.put_task(&task)?;
         Ok(task)

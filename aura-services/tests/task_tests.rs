@@ -151,7 +151,7 @@ fn assign_task_transitions_ready_to_in_progress() {
 }
 
 #[test]
-fn complete_task_sets_done_and_clears_agent() {
+fn complete_task_sets_done_and_preserves_agent() {
     let (store, _dir) = setup();
     let svc = TaskService::new(store.clone());
 
@@ -179,9 +179,10 @@ fn complete_task_sets_done_and_clears_agent() {
         )
         .unwrap();
 
+    let agent_id = task.assigned_agent_id.unwrap();
     assert_eq!(completed.status, TaskStatus::Done);
     assert_eq!(completed.execution_notes, "all good");
-    assert!(completed.assigned_agent_id.is_none());
+    assert_eq!(completed.assigned_agent_id, Some(agent_id));
 }
 
 #[test]
