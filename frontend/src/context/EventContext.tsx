@@ -13,10 +13,22 @@ export interface BuildStep {
   timestamp: number;
 }
 
+export interface TestStep {
+  kind: "started" | "passed" | "failed" | "fix_attempt";
+  command?: string;
+  stderr?: string;
+  stdout?: string;
+  attempt?: number;
+  tests: { name: string; status: string; message?: string }[];
+  summary?: string;
+  timestamp: number;
+}
+
 export interface TaskOutputEntry {
   text: string;
   fileOps: { op: string; path: string }[];
   buildSteps: BuildStep[];
+  testSteps: TestStep[];
 }
 
 type TaskOutputListener = () => void;
@@ -28,10 +40,10 @@ interface EventContextValue {
   subscribe: (type: EngineEventType, callback: EventCallback) => () => void;
   getTaskOutput: (taskId: string) => TaskOutputEntry;
   subscribeTaskOutput: (taskId: string, listener: TaskOutputListener) => () => void;
-  seedTaskOutput: (taskId: string, text: string, buildSteps?: BuildStep[]) => void;
+  seedTaskOutput: (taskId: string, text: string, buildSteps?: BuildStep[], testSteps?: TestStep[]) => void;
 }
 
-const EMPTY_OUTPUT: TaskOutputEntry = { text: "", fileOps: [], buildSteps: [] };
+const EMPTY_OUTPUT: TaskOutputEntry = { text: "", fileOps: [], buildSteps: [], testSteps: [] };
 
 const EventContext = createContext<EventContextValue | null>(null);
 
@@ -49,14 +61,14 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   const dispatchEvent = useCallback((event: EngineEvent) => {
     if (event.type === "task_output_delta" && event.task_id && event.delta) {
       const map = taskOutputRef.current;
-      const existing = map.get(event.task_id) ?? { text: "", fileOps: [], buildSteps: [] };
+      const existing = map.get(event.task_id) ?? { text: "", fileOps: [], buildSteps: [], testSteps: [] };
       map.set(event.task_id, { ...existing, text: existing.text + event.delta });
       notifyTaskOutputListeners(event.task_id);
     }
 
     if (event.type === "file_ops_applied" && event.task_id && event.files) {
       const map = taskOutputRef.current;
-      const existing = map.get(event.task_id) ?? { text: "", fileOps: [], buildSteps: [] };
+      const existing = map.get(event.task_id) ?? { text: "", fileOps: [], buildSteps: [], testSteps: [] };
       map.set(event.task_id, { ...existing, fileOps: event.files });
       notifyTaskOutputListeners(event.task_id);
     }
@@ -82,8 +94,36 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
         timestamp: Date.now(),
       };
       const map = taskOutputRef.current;
-      const existing = map.get(event.task_id) ?? { text: "", fileOps: [], buildSteps: [] };
+      const existing = map.get(event.task_id) ?? { text: "", fileOps: [], buildSteps: [], testSteps: [] };
       map.set(event.task_id, { ...existing, buildSteps: [...existing.buildSteps, step] });
+      notifyTaskOutputListeners(event.task_id);
+    }
+
+    if (event.task_id && (
+      event.type === "test_verification_started" ||
+      event.type === "test_verification_passed" ||
+      event.type === "test_verification_failed" ||
+      event.type === "test_fix_attempt"
+    )) {
+      const kindMap: Record<string, TestStep["kind"]> = {
+        test_verification_started: "started",
+        test_verification_passed: "passed",
+        test_verification_failed: "failed",
+        test_fix_attempt: "fix_attempt",
+      };
+      const step: TestStep = {
+        kind: kindMap[event.type],
+        command: event.command,
+        stderr: event.stderr,
+        stdout: event.stdout,
+        attempt: event.attempt,
+        tests: event.tests ?? [],
+        summary: event.summary,
+        timestamp: Date.now(),
+      };
+      const map = taskOutputRef.current;
+      const existing = map.get(event.task_id) ?? { text: "", fileOps: [], buildSteps: [], testSteps: [] };
+      map.set(event.task_id, { ...existing, testSteps: [...existing.testSteps, step] });
       notifyTaskOutputListeners(event.task_id);
     }
 
@@ -140,15 +180,17 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   );
 
   const seedTaskOutput = useCallback(
-    (taskId: string, text: string, buildSteps?: BuildStep[]) => {
-      if (!text && (!buildSteps || buildSteps.length === 0)) return;
+    (taskId: string, text: string, buildSteps?: BuildStep[], testSteps?: TestStep[]) => {
+      if (!text && (!buildSteps || buildSteps.length === 0) && (!testSteps || testSteps.length === 0)) return;
       const existing = taskOutputRef.current.get(taskId);
       if (existing && existing.text) return;
       const seededBuildSteps = buildSteps?.map((s) => ({ ...s, timestamp: 0 })) ?? existing?.buildSteps ?? [];
+      const seededTestSteps = testSteps?.map((s) => ({ ...s, timestamp: 0 })) ?? existing?.testSteps ?? [];
       taskOutputRef.current.set(taskId, {
         text: text || existing?.text || "",
         fileOps: existing?.fileOps ?? [],
         buildSteps: existing?.buildSteps.length ? existing.buildSteps : seededBuildSteps,
+        testSteps: existing?.testSteps.length ? existing.testSteps : seededTestSteps,
       });
       notifyTaskOutputListeners(taskId);
     },
