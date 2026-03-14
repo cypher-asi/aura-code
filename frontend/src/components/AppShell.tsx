@@ -38,7 +38,7 @@ export function AppShell() {
         />
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
           {/* Left column: sidebar + taskbar left */}
-          <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
             <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
               <Sidebar
                 className="nav-sidebar"

@@ -1,7 +1,7 @@
 .container {
   padding: 0;
   gap: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .nameBtn {
@@ -37,7 +37,8 @@
 .orgWrap {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
 }
 
 /* Override OrgSelector border/padding when embedded in taskbar */
