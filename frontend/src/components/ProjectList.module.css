@@ -40,8 +40,8 @@
   padding-right: 0;
 }
 
-/* Hide the icon spacer on parent items (no icon slot used) */
-.explorerWrap > [class*="explorer"] [class*="iconSpacer"] {
+/* Hide the icon spacer on parent (project) items only */
+.explorerWrap [class*="itemContent"][aria-expanded] [class*="iconSpacer"] {
   display: none;
 }
 
@@ -93,7 +93,6 @@
 .automationSpinner {
   animation: spin 1s linear infinite;
   color: var(--color-accent);
-  margin-left: auto;
   flex-shrink: 0;
 }
 

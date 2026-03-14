@@ -232,17 +232,19 @@ export function ProjectList() {
         metadata: { type: "project" },
         children:
           sessionsByProject[p.project_id] !== undefined
-            ? sessionsByProject[p.project_id].map((s) => ({
-                id: s.chat_session_id,
-                label: s.title,
-                suffix:
-                  automatingProjectId === p.project_id && chatSessionId === s.chat_session_id ? (
-                    <Loader2 size={12} className={styles.automationSpinner} />
-                  ) : streamingSessionId === s.chat_session_id ? (
-                    <span className={styles.streamingDot} />
-                  ) : undefined,
-                metadata: { type: "session", projectId: p.project_id },
-              }))
+            ? sessionsByProject[p.project_id].map((s) => {
+                const isAutomating = automatingProjectId === p.project_id && chatSessionId === s.chat_session_id;
+                return {
+                  id: s.chat_session_id,
+                  label: s.title,
+                  icon: isAutomating ? <Loader2 size={12} className={styles.automationSpinner} /> : undefined,
+                  suffix:
+                    streamingSessionId === s.chat_session_id ? (
+                      <span className={styles.streamingDot} />
+                    ) : undefined,
+                  metadata: { type: "session", projectId: p.project_id },
+                };
+              })
             : [{ id: `_load_${p.project_id}`, label: "Loading...", disabled: true }],
       })),
     [projects, sessionsByProject, streamingSessionId, automatingProjectId, chatSessionId],
