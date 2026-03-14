@@ -224,9 +224,6 @@ export function ProjectList() {
         label: p.name,
         suffix: (
           <span className={styles.projectSuffix}>
-            {automatingProjectId === p.project_id && (
-              <Loader2 size={12} className={styles.automationSpinner} />
-            )}
             <span onClick={(e) => e.stopPropagation()} className={styles.newChatWrap}>
               <ButtonPlus
                 onClick={() => handleNewSession(p.project_id)}
@@ -243,18 +240,16 @@ export function ProjectList() {
                 id: s.chat_session_id,
                 label: s.title,
                 suffix:
-                  streamingSessionId === s.chat_session_id ? (
+                  automatingSessionId === s.chat_session_id ? (
+                    <Loader2 size={12} className={styles.automationSpinner} />
+                  ) : streamingSessionId === s.chat_session_id ? (
                     <span className={styles.streamingDot} />
-                  ) : (
-                    <span className={styles.sessionTime}>
-                      {formatRelativeTime(s.updated_at)}
-                    </span>
-                  ),
+                  ) : undefined,
                 metadata: { type: "session", projectId: p.project_id },
               }))
             : [{ id: `_load_${p.project_id}`, label: "Loading...", disabled: true }],
       })),
-    [projects, sessionsByProject, streamingSessionId, automatingProjectId],
+    [projects, sessionsByProject, streamingSessionId, automatingSessionId],
   );
 
   const defaultExpandedIds = useMemo(
