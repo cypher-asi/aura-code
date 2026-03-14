@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
@@ -371,6 +371,29 @@ const MAX_LOOP_TASK_RETRIES: u32 = 5;
 const MAX_FOLLOW_UPS_PER_LOOP: usize = 20;
 const TASK_EXECUTION_MAX_TOKENS: u32 = 32_768;
 
+/// Serializes filesystem writes and build/test verification per project,
+/// so parallel agents don't step on each other's file edits.
+#[derive(Debug, Clone, Default)]
+pub struct ProjectWriteCoordinator {
+    locks: Arc<Mutex<HashMap<ProjectId, Arc<Mutex<()>>>>>,
+}
+
+impl ProjectWriteCoordinator {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub async fn acquire(&self, project_id: &ProjectId) -> tokio::sync::OwnedMutexGuard<()> {
+        let lock = {
+            let mut map = self.locks.lock().await;
+            map.entry(*project_id)
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        lock.lock_owned().await
+    }
+}
+
 pub struct DevLoopEngine {
     store: Arc<RocksStore>,
     settings: Arc<SettingsService>,
@@ -380,6 +403,7 @@ pub struct DevLoopEngine {
     agent_service: Arc<AgentService>,
     session_service: Arc<SessionService>,
     event_tx: mpsc::UnboundedSender<EngineEvent>,
+    write_coordinator: ProjectWriteCoordinator,
 }
 
 impl DevLoopEngine {
@@ -403,7 +427,13 @@ impl DevLoopEngine {
             agent_service,
             session_service,
             event_tx,
+            write_coordinator: ProjectWriteCoordinator::new(),
         }
+    }
+
+    pub fn with_write_coordinator(mut self, coordinator: ProjectWriteCoordinator) -> Self {
+        self.write_coordinator = coordinator;
+        self
     }
 
     /// Execute a single task by ID without starting the full loop.
@@ -508,6 +538,8 @@ impl DevLoopEngine {
                     &project_id, &task, &user_id, &model,
                     execution.input_tokens, execution.output_tokens,
                 );
+
+                let _write_guard = self.write_coordinator.acquire(&project_id).await;
 
                 let file_ops_start = Instant::now();
                 let apply_result = if execution.files_already_applied {
@@ -1038,6 +1070,8 @@ impl DevLoopEngine {
                     total_input_tokens += execution.input_tokens;
                     total_output_tokens += execution.output_tokens;
                     total_parse_retries += execution.parse_retries;
+
+                    let _write_guard = self.write_coordinator.acquire(&project_id).await;
 
                     let file_ops_start = Instant::now();
                     let apply_result = if execution.files_already_applied {

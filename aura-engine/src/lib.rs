@@ -7,7 +7,7 @@ pub mod metrics;
 
 pub use engine::{
     parse_execution_response, DevLoopEngine, FollowUpSuggestion, LoopCommand, LoopHandle,
-    LoopOutcome, TaskExecution,
+    LoopOutcome, ProjectWriteCoordinator, TaskExecution,
 };
 pub use error::EngineError;
 pub use events::EngineEvent;
