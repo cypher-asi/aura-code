@@ -190,7 +190,12 @@ pub fn write_live_snapshot(project_root: &Path, metrics: &LoopRunMetrics, task: 
 /// Wraps the `TaskMetrics` in a one-task `LoopRunMetrics`, overwrites
 /// `last_run_metrics.json`, and appends to both `task_history.jsonl`
 /// and `run_history.jsonl`.
-pub fn write_single_task_metrics(project_root: &Path, project_id: &str, task: TaskMetrics) {
+pub fn write_single_task_metrics(
+    project_root: &Path,
+    project_id: &str,
+    task: TaskMetrics,
+    fee_schedule: &[FeeScheduleEntry],
+) {
     let Some(dir) = ensure_metrics_dir(project_root) else {
         return;
     };
@@ -198,7 +203,7 @@ pub fn write_single_task_metrics(project_root: &Path, project_id: &str, task: Ta
     let mut run = LoopRunMetrics::new(project_id.to_string());
     let outcome = task.outcome.clone();
     run.tasks.push(task.clone());
-    run.finalize(&outcome, task.duration_ms, 1, 0, 0);
+    run.finalize(&outcome, task.duration_ms, 1, 0, 0, fee_schedule);
 
     write_snapshot_file(&dir, &run);
     if let Ok(line) = serde_json::to_string(&task) {

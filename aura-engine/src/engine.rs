@@ -459,7 +459,10 @@ impl DevLoopEngine {
             &task.task_id,
             &session.session_id,
         )?;
+        let aid = agent.agent_id;
         self.emit(EngineEvent::TaskStarted {
+            project_id,
+            agent_id: aid,
             task_id: task.task_id,
             task_title: task.title.clone(),
             session_id: session.session_id,
@@ -474,6 +477,8 @@ impl DevLoopEngine {
         let project_root = self.project_service.get_project(&project_id)
             .map(|p| p.linked_folder_path.clone())
             .unwrap_or_default();
+        let fee_schedule = aura_services::pricing::PricingService::new(self.store.clone())
+            .get_fee_schedule();
 
         let baseline_test_failures = {
             let project = self.project_service.get_project(&project_id)?;
@@ -482,7 +487,7 @@ impl DevLoopEngine {
 
         let result = if let Some(cmd) = Self::extract_shell_command(&task) {
             let project = self.project_service.get_project(&project_id)?;
-            self.execute_shell_task(&project, &task, &cmd).await
+            self.execute_shell_task(&project, &task, &cmd, aid).await
         } else {
             self.execute_task_agentic(&project_id, &task, &session, &api_key).await
         };
@@ -517,6 +522,8 @@ impl DevLoopEngine {
                         &project_id, &task.spec_id, &task.task_id, &reason,
                     );
                     self.emit(EngineEvent::TaskFailed {
+                        project_id,
+                        agent_id: aid,
                         task_id: task.task_id,
                         reason: e.to_string(),
                         duration_ms: Some(task_dur),
@@ -547,12 +554,17 @@ impl DevLoopEngine {
                                 failure_reason: Some(reason),
                                 phase_timings: vec![],
                             },
+                            &fee_schedule,
                         );
                     }
+                    let _ = self.session_service.update_context_usage(
+                        &project_id, &agent.agent_id, &session.session_id,
+                        execution.input_tokens, execution.output_tokens,
+                    );
                     SessionStatus::Failed
                 } else {
                     let file_ops_duration_ms = file_ops_start.elapsed().as_millis() as u64;
-                    self.emit_file_ops_applied(&task, &execution.file_ops);
+                    self.emit_file_ops_applied(project_id, aid, &task, &execution.file_ops);
 
                     let session_ref = self.session_service.get_session(
                         &project_id, &agent.agent_id, &session.session_id,
@@ -581,6 +593,8 @@ impl DevLoopEngine {
                             &execution.notes, file_changes,
                         );
                         self.emit(EngineEvent::TaskCompleted {
+                            project_id,
+                            agent_id: aid,
                             task_id: task.task_id,
                             execution_notes: execution.notes.clone(),
                             duration_ms: Some(task_duration_ms),
@@ -620,6 +634,7 @@ impl DevLoopEngine {
                                         PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
                                     ],
                                 },
+                                &fee_schedule,
                             );
                         }
 
@@ -628,7 +643,7 @@ impl DevLoopEngine {
                             .resolve_dependencies_after_completion(&project_id, &task.task_id)
                             .unwrap_or_default();
                         for t in &newly_ready {
-                            self.emit(EngineEvent::TaskBecameReady { task_id: t.task_id });
+                            self.emit(EngineEvent::TaskBecameReady { project_id, agent_id: aid, task_id: t.task_id });
                         }
 
                         for follow_up in &execution.follow_up_tasks {
@@ -639,6 +654,8 @@ impl DevLoopEngine {
                                 vec![],
                             ) {
                                 self.emit(EngineEvent::FollowUpTaskCreated {
+                                    project_id,
+                                    agent_id: aid,
                                     task_id: new_task.task_id,
                                 });
                             }
@@ -649,6 +666,8 @@ impl DevLoopEngine {
                             &project_id, &task.spec_id, &task.task_id, &reason,
                         );
                         self.emit(EngineEvent::TaskFailed {
+                            project_id,
+                            agent_id: aid,
                             task_id: task.task_id,
                             reason: reason.clone(),
                             duration_ms: Some(task_duration_ms),
@@ -683,9 +702,14 @@ impl DevLoopEngine {
                                         PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
                                     ],
                                 },
+                                &fee_schedule,
                             );
                         }
                     }
+                    let _ = self.session_service.update_context_usage(
+                        &project_id, &agent.agent_id, &session.session_id,
+                        total_input, total_output,
+                    );
                     SessionStatus::Completed
                 }
             }
@@ -696,6 +720,8 @@ impl DevLoopEngine {
                     &project_id, &task.spec_id, &task.task_id, &reason,
                 );
                 self.emit(EngineEvent::TaskFailed {
+                    project_id,
+                    agent_id: aid,
                     task_id: task.task_id,
                     reason: e.to_string(),
                     duration_ms: Some(task_dur),
@@ -726,6 +752,7 @@ impl DevLoopEngine {
                             failure_reason: Some(reason),
                             phase_timings: vec![],
                         },
+                        &fee_schedule,
                     );
                 }
                 SessionStatus::Failed
@@ -806,6 +833,8 @@ impl DevLoopEngine {
             .map(|p| p.linked_folder_path.clone())
             .unwrap_or_default();
         let mut run_metrics = LoopRunMetrics::new(project_id.to_string());
+        let fee_schedule = aura_services::pricing::PricingService::new(self.store.clone())
+            .get_fee_schedule();
 
         macro_rules! flush_metrics {
             ($outcome:expr) => {{
@@ -813,6 +842,7 @@ impl DevLoopEngine {
                     $outcome,
                     loop_start.elapsed().as_millis() as u64,
                     sessions_used, tasks_retried, duplicate_error_bailouts,
+                    &fee_schedule,
                 );
                 if !project_root.is_empty() {
                     metrics::write_run_metrics(Path::new(&project_root), &run_metrics);
@@ -828,6 +858,7 @@ impl DevLoopEngine {
                     run_metrics.snapshot(
                         loop_start.elapsed().as_millis() as u64,
                         sessions_used, tasks_retried, duplicate_error_bailouts,
+                        &fee_schedule,
                     );
                     metrics::write_live_snapshot(
                         Path::new(&project_root), &run_metrics, &tm,
@@ -838,12 +869,12 @@ impl DevLoopEngine {
 
         let orphaned = self.task_service.reset_in_progress_tasks(&project_id)?;
         for t in &orphaned {
-            self.emit(EngineEvent::TaskBecameReady { task_id: t.task_id });
+            self.emit(EngineEvent::TaskBecameReady { project_id, agent_id, task_id: t.task_id });
         }
 
         let promoted = self.task_service.resolve_initial_readiness(&project_id)?;
         for t in &promoted {
-            self.emit(EngineEvent::TaskBecameReady { task_id: t.task_id });
+            self.emit(EngineEvent::TaskBecameReady { project_id, agent_id, task_id: t.task_id });
         }
 
         loop {
@@ -852,7 +883,7 @@ impl DevLoopEngine {
                     &project_id, &agent_id, &session.session_id, SessionStatus::Completed,
                 );
                 let _ = self.agent_service.finish_working(&project_id, &agent_id);
-                self.emit(EngineEvent::LoopPaused { completed_count });
+                self.emit(EngineEvent::LoopPaused { project_id, agent_id, completed_count });
                 flush_metrics!("paused");
                 return Ok(LoopOutcome::Paused { completed_count });
             }
@@ -861,7 +892,7 @@ impl DevLoopEngine {
                     &project_id, &agent_id, &session.session_id, SessionStatus::Completed,
                 );
                 let _ = self.agent_service.finish_working(&project_id, &agent_id);
-                self.emit(EngineEvent::LoopStopped { completed_count });
+                self.emit(EngineEvent::LoopStopped { project_id, agent_id, completed_count });
                 flush_metrics!("stopped");
                 return Ok(LoopOutcome::Stopped { completed_count });
             }
@@ -884,13 +915,15 @@ impl DevLoopEngine {
                             let _ = self.task_service.retry_task(
                                 &project_id, &t.spec_id, &t.task_id,
                             );
-                            self.emit(EngineEvent::TaskBecameReady { task_id: t.task_id });
+                            self.emit(EngineEvent::TaskBecameReady { project_id, agent_id, task_id: t.task_id });
                         }
                         continue;
                     }
 
                     let progress = self.task_service.get_project_progress(&project_id)?;
                     let loop_metrics = |outcome: &str| EngineEvent::LoopFinished {
+                        project_id,
+                        agent_id,
                         outcome: outcome.into(),
                         total_duration_ms: Some(loop_start.elapsed().as_millis() as u64),
                         tasks_completed: Some(completed_count),
@@ -931,6 +964,8 @@ impl DevLoopEngine {
                 &session.session_id,
             )?;
             self.emit(EngineEvent::TaskStarted {
+                project_id,
+                agent_id,
                 task_id: task.task_id,
                 task_title: task.title.clone(),
                 session_id: session.session_id,
@@ -947,7 +982,7 @@ impl DevLoopEngine {
             let task_start = Instant::now();
             let result = if let Some(cmd) = Self::extract_shell_command(&task) {
                 let project = self.project_service.get_project(&project_id)?;
-                Some(self.execute_shell_task(&project, &task, &cmd).await)
+                Some(self.execute_shell_task(&project, &task, &cmd, agent_id).await)
             } else {
                 tokio::select! {
                     res = self.execute_task_agentic(&project_id, &task, &session, &api_key) => {
@@ -963,7 +998,7 @@ impl DevLoopEngine {
                 let _ = self.task_service.reset_task_to_ready(
                     &project_id, &task.spec_id, &task.task_id,
                 );
-                self.emit(EngineEvent::TaskBecameReady { task_id: task.task_id });
+                self.emit(EngineEvent::TaskBecameReady { project_id, agent_id, task_id: task.task_id });
                 let _ = self.agent_service.finish_working(&project_id, &agent_id);
 
                 let cmd = *stop_rx.borrow();
@@ -971,14 +1006,14 @@ impl DevLoopEngine {
                     let _ = self.session_service.end_session(
                         &project_id, &agent_id, &session.session_id, SessionStatus::Completed,
                     );
-                    self.emit(EngineEvent::LoopStopped { completed_count });
+                    self.emit(EngineEvent::LoopStopped { project_id, agent_id, completed_count });
                     flush_metrics!("stopped");
                     return Ok(LoopOutcome::Stopped { completed_count });
                 } else {
                     let _ = self.session_service.end_session(
                         &project_id, &agent_id, &session.session_id, SessionStatus::Completed,
                     );
-                    self.emit(EngineEvent::LoopPaused { completed_count });
+                    self.emit(EngineEvent::LoopPaused { project_id, agent_id, completed_count });
                     flush_metrics!("paused");
                     return Ok(LoopOutcome::Paused { completed_count });
                 }
@@ -1023,6 +1058,8 @@ impl DevLoopEngine {
                         )?;
                         failed_count += 1;
                         self.emit(EngineEvent::TaskFailed {
+                            project_id,
+                            agent_id,
                             task_id: task.task_id,
                             reason: e.to_string(),
                             duration_ms: Some(task_dur),
@@ -1053,7 +1090,7 @@ impl DevLoopEngine {
                         Some(reason)
                     } else {
                         let file_ops_duration_ms = file_ops_start.elapsed().as_millis() as u64;
-                        self.emit_file_ops_applied(&task, &execution.file_ops);
+                        self.emit_file_ops_applied(project_id, agent_id, &task, &execution.file_ops);
 
                         let build_start = Instant::now();
                         let (_, build_passed, build_attempts, dup_bailouts, fix_inp, fix_out) = self
@@ -1080,6 +1117,8 @@ impl DevLoopEngine {
                             )?;
                             failed_count += 1;
                             self.emit(EngineEvent::TaskFailed {
+                                project_id,
+                                agent_id,
                                 task_id: task.task_id,
                                 reason: reason.clone(),
                                 duration_ms: Some(task_duration_ms),
@@ -1122,6 +1161,8 @@ impl DevLoopEngine {
                             )?;
                             completed_count += 1;
                             self.emit(EngineEvent::TaskCompleted {
+                                project_id,
+                                agent_id,
                                 task_id: task.task_id,
                                 execution_notes: execution.notes.clone(),
                                 duration_ms: Some(task_duration_ms),
@@ -1141,6 +1182,8 @@ impl DevLoopEngine {
                                 PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
                             ];
                             self.emit(EngineEvent::LoopIterationSummary {
+                                project_id,
+                                agent_id,
                                 task_id: task.task_id,
                                 phase_timings: task_phase_timings.clone(),
                             });
@@ -1168,7 +1211,7 @@ impl DevLoopEngine {
                                 .task_service
                                 .resolve_dependencies_after_completion(&project_id, &task.task_id)?;
                             for t in &newly_ready {
-                                self.emit(EngineEvent::TaskBecameReady { task_id: t.task_id });
+                                self.emit(EngineEvent::TaskBecameReady { project_id, agent_id, task_id: t.task_id });
                             }
 
                             for follow_up in &execution.follow_up_tasks {
@@ -1185,6 +1228,8 @@ impl DevLoopEngine {
                                     Ok(new_task) => {
                                         follow_up_count += 1;
                                         self.emit(EngineEvent::FollowUpTaskCreated {
+                                            project_id,
+                                            agent_id,
                                             task_id: new_task.task_id,
                                         });
                                     }
@@ -1235,6 +1280,8 @@ impl DevLoopEngine {
                     )?;
                     failed_count += 1;
                     self.emit(EngineEvent::TaskFailed {
+                        project_id,
+                        agent_id,
                         task_id: task.task_id,
                         reason: e.to_string(),
                         duration_ms: Some(task_dur),
@@ -1298,14 +1345,14 @@ impl DevLoopEngine {
                             let _ = self.session_service.end_session(
                                 &project_id, &agent_id, &session.session_id, SessionStatus::Completed,
                             );
-                            self.emit(EngineEvent::LoopStopped { completed_count });
+                            self.emit(EngineEvent::LoopStopped { project_id, agent_id, completed_count });
                             flush_metrics!("stopped");
                             return Ok(LoopOutcome::Stopped { completed_count });
                         } else {
                             let _ = self.session_service.end_session(
                                 &project_id, &agent_id, &session.session_id, SessionStatus::Completed,
                             );
-                            self.emit(EngineEvent::LoopPaused { completed_count });
+                            self.emit(EngineEvent::LoopPaused { project_id, agent_id, completed_count });
                             flush_metrics!("paused");
                             return Ok(LoopOutcome::Paused { completed_count });
                         }
@@ -1321,6 +1368,8 @@ impl DevLoopEngine {
                     None,
                 )?;
                 self.emit(EngineEvent::SessionRolledOver {
+                    project_id,
+                    agent_id,
                     old_session_id: session.session_id,
                     new_session_id: new_session.session_id,
                     summary_duration_ms: Some(summary_duration_ms),
@@ -1382,6 +1431,7 @@ impl DevLoopEngine {
         project: &Project,
         task: &Task,
         command: &str,
+        agent_id: AgentId,
     ) -> Result<TaskExecution, EngineError> {
         let base_path = Path::new(&project.linked_folder_path);
         let max_attempts: u32 = MAX_SHELL_TASK_RETRIES;
@@ -1390,6 +1440,8 @@ impl DevLoopEngine {
         for attempt in 1..=max_attempts {
             let shell_step_start = Instant::now();
             self.emit(EngineEvent::BuildVerificationStarted {
+                project_id: project.project_id,
+                agent_id,
                 task_id: task.task_id,
                 command: command.to_string(),
             });
@@ -1402,6 +1454,8 @@ impl DevLoopEngine {
             });
 
             let _ = self.event_tx.send(EngineEvent::TaskOutputDelta {
+                project_id: project.project_id,
+                agent_id,
                 task_id: task.task_id,
                 delta: format!("Running: {command} (attempt {attempt}/{max_attempts})\n"),
             });
@@ -1411,6 +1465,8 @@ impl DevLoopEngine {
 
             if result.success {
                 self.emit(EngineEvent::BuildVerificationPassed {
+                    project_id: project.project_id,
+                    agent_id,
                     task_id: task.task_id,
                     command: command.to_string(),
                     stdout: result.stdout.clone(),
@@ -1473,6 +1529,8 @@ impl DevLoopEngine {
 
                 let notes = format!("Command `{command}` succeeded on attempt {attempt}.\n{}", result.stdout);
                 let _ = self.event_tx.send(EngineEvent::TaskOutputDelta {
+                    project_id: project.project_id,
+                    agent_id,
                     task_id: task.task_id,
                     delta: notes.clone(),
                 });
@@ -1497,6 +1555,8 @@ impl DevLoopEngine {
                 h
             }));
             self.emit(EngineEvent::BuildVerificationFailed {
+                project_id: project.project_id,
+                agent_id,
                 task_id: task.task_id,
                 command: command.to_string(),
                 stdout: result.stdout.clone(),
@@ -1515,6 +1575,8 @@ impl DevLoopEngine {
 
             let detail = if !result.stderr.is_empty() { &result.stderr } else { &result.stdout };
             let _ = self.event_tx.send(EngineEvent::TaskOutputDelta {
+                project_id: project.project_id,
+                agent_id,
                 task_id: task.task_id,
                 delta: format!("Command failed (attempt {attempt}):\n{detail}\n"),
             });
@@ -1540,6 +1602,8 @@ impl DevLoopEngine {
 
             if attempt < max_attempts {
                 self.emit(EngineEvent::BuildFixAttempt {
+                    project_id: project.project_id,
+                    agent_id,
                     task_id: task.task_id,
                     attempt,
                 });
@@ -1612,7 +1676,7 @@ impl DevLoopEngine {
                             attempt_files.push(format!("{op_name} {path}"));
                         }
                         let _ = file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await;
-                        self.emit_file_ops_applied(task, &fix_execution.file_ops);
+                        self.emit_file_ops_applied(project.project_id, agent_id, task, &fix_execution.file_ops);
                     }
                 }
                 prior_attempts_shell.push(BuildFixAttemptRecord {
@@ -1655,16 +1719,22 @@ impl DevLoopEngine {
         let mut follow_ups: Vec<FollowUpSuggestion> = Vec::new();
         let mut task_done_called = false;
 
+        let pid = *project_id;
+        let aid = session.agent_id;
         const MAX_AGENTIC_ITERATIONS: usize = 50;
 
         for iteration in 0..MAX_AGENTIC_ITERATIONS {
             let (claude_tx, mut claude_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
             let event_tx = self.event_tx.clone();
             let tid = task_id;
+            let fwd_pid = pid;
+            let fwd_aid = aid;
             let forwarder = tokio::spawn(async move {
                 while let Some(evt) = claude_rx.recv().await {
                     if let ClaudeStreamEvent::Delta(text) = evt {
                         let _ = event_tx.send(EngineEvent::TaskOutputDelta {
+                            project_id: fwd_pid,
+                            agent_id: fwd_aid,
                             task_id: tid,
                             delta: text,
                         });
@@ -1766,6 +1836,8 @@ impl DevLoopEngine {
                     _ => {
                         if let Some(result) = exec_result_iter.next() {
                             let _ = self.event_tx.send(EngineEvent::TaskOutputDelta {
+                                project_id: pid,
+                                agent_id: aid,
                                 task_id,
                                 delta: format!("\n[tool: {} -> {}]\n", tc.name,
                                     if result.is_error { "error" } else { "ok" }),
@@ -1828,16 +1900,21 @@ impl DevLoopEngine {
 
         let token_counts: Arc<Mutex<(u64, u64)>> = Arc::new(Mutex::new((0, 0)));
 
+        let pid = *project_id;
+        let aid = session.agent_id;
+
         let response = {
             let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
             let event_tx = self.event_tx.clone();
             let tid = task_id;
+            let fwd_pid = pid;
+            let fwd_aid = aid;
             let tc = token_counts.clone();
             let forwarder = tokio::spawn(async move {
                 while let Some(evt) = stream_rx.recv().await {
                     match evt {
                         ClaudeStreamEvent::Delta(text) => {
-                            let _ = event_tx.send(EngineEvent::TaskOutputDelta { task_id: tid, delta: text });
+                            let _ = event_tx.send(EngineEvent::TaskOutputDelta { project_id: fwd_pid, agent_id: fwd_aid, task_id: tid, delta: text });
                         }
                         ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } => {
                             let mut g = tc.lock().await;
@@ -1875,6 +1952,8 @@ impl DevLoopEngine {
                 if !validation_report.is_empty() {
                     warn!(task_id = %task_id, "pre-write validation found issues, requesting correction");
                     self.emit(EngineEvent::TaskRetrying {
+                        project_id: pid,
+                        agent_id: aid,
                         task_id,
                         attempt: 1,
                         reason: format!("pre-write validation: {}", &validation_report[..validation_report.len().min(200)]),
@@ -1933,6 +2012,8 @@ impl DevLoopEngine {
                 let mut last_response = response;
                 for attempt in 1..=MAX_EXECUTION_RETRIES {
                     self.emit(EngineEvent::TaskRetrying {
+                        project_id: pid,
+                        agent_id: aid,
                         task_id,
                         attempt,
                         reason: format!("response was not valid JSON (attempt {attempt})"),
@@ -2058,8 +2139,17 @@ impl DevLoopEngine {
             Some(cmd) if !cmd.trim().is_empty() => cmd.clone(),
             _ => {
                 self.emit(EngineEvent::BuildVerificationSkipped {
+                    project_id: project.project_id,
+                    agent_id: session.agent_id,
                     task_id: task.task_id,
                     reason: "no build_command configured on project".into(),
+                });
+                self.persist_build_step(task, BuildStepRecord {
+                    kind: "skipped".into(),
+                    command: None,
+                    stderr: None,
+                    stdout: Some("no build_command configured on project".into()),
+                    attempt: None,
                 });
                 return Ok((vec![], true, 0, 0, 0, 0));
             }
@@ -2079,6 +2169,8 @@ impl DevLoopEngine {
         for attempt in 1..=MAX_BUILD_FIX_RETRIES {
             let build_step_start = Instant::now();
             self.emit(EngineEvent::BuildVerificationStarted {
+                project_id: project.project_id,
+                agent_id: session.agent_id,
                 task_id: task.task_id,
                 command: build_command.clone(),
             });
@@ -2095,6 +2187,8 @@ impl DevLoopEngine {
 
             if build_result.success {
                 self.emit(EngineEvent::BuildVerificationPassed {
+                    project_id: project.project_id,
+                    agent_id: session.agent_id,
                     task_id: task.task_id,
                     command: build_command.clone(),
                     stdout: build_result.stdout.clone(),
@@ -2136,6 +2230,8 @@ impl DevLoopEngine {
             }));
 
             self.emit(EngineEvent::BuildVerificationFailed {
+                project_id: project.project_id,
+                agent_id: session.agent_id,
                 task_id: task.task_id,
                 command: build_command.clone(),
                 stdout: build_result.stdout.clone(),
@@ -2175,6 +2271,8 @@ impl DevLoopEngine {
             }
 
             self.emit(EngineEvent::BuildFixAttempt {
+                project_id: project.project_id,
+                agent_id: session.agent_id,
                 task_id: task.task_id,
                 attempt,
             });
@@ -2263,6 +2361,8 @@ impl DevLoopEngine {
 
                     if !fix_execution.file_ops.is_empty() {
                         self.emit(EngineEvent::FileOpsApplied {
+                            project_id: project.project_id,
+                            agent_id: session.agent_id,
                             task_id: task.task_id,
                             files_written: fix_execution
                                 .file_ops
@@ -2320,6 +2420,8 @@ impl DevLoopEngine {
         baseline_test_failures: &HashSet<String>,
     ) -> Result<(bool, u64, u64), EngineError> {
         self.emit(EngineEvent::TestVerificationStarted {
+            project_id: project.project_id,
+            agent_id: session.agent_id,
             task_id: task.task_id,
             command: test_command.to_string(),
         });
@@ -2342,6 +2444,8 @@ impl DevLoopEngine {
 
         if test_result.success {
             self.emit(EngineEvent::TestVerificationPassed {
+                project_id: project.project_id,
+                agent_id: session.agent_id,
                 task_id: task.task_id,
                 command: test_command.to_string(),
                 stdout: test_result.stdout.clone(),
@@ -2382,6 +2486,8 @@ impl DevLoopEngine {
                     current_failures.len()
                 );
                 self.emit(EngineEvent::TestVerificationPassed {
+                    project_id: project.project_id,
+                    agent_id: session.agent_id,
                     task_id: task.task_id,
                     command: test_command.to_string(),
                     stdout: test_result.stdout.clone(),
@@ -2410,6 +2516,8 @@ impl DevLoopEngine {
         }
 
         self.emit(EngineEvent::TestVerificationFailed {
+            project_id: project.project_id,
+            agent_id: session.agent_id,
             task_id: task.task_id,
             command: test_command.to_string(),
             stdout: test_result.stdout.clone(),
@@ -2431,6 +2539,8 @@ impl DevLoopEngine {
 
         // Ask Claude to fix the test failures
         self.emit(EngineEvent::TestFixAttempt {
+            project_id: project.project_id,
+            agent_id: session.agent_id,
             task_id: task.task_id,
             attempt,
         });
@@ -2494,7 +2604,7 @@ impl DevLoopEngine {
             Ok(fix_execution) => {
                 file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await?;
                 if !fix_execution.file_ops.is_empty() {
-                    self.emit_file_ops_applied(task, &fix_execution.file_ops);
+                    self.emit_file_ops_applied(project.project_id, session.agent_id, task, &fix_execution.file_ops);
                 }
                 all_fix_ops.extend(fix_execution.file_ops);
             }
@@ -2511,7 +2621,7 @@ impl DevLoopEngine {
         Ok((false, test_fix_inp, test_fix_out))
     }
 
-    fn emit_file_ops_applied(&self, task: &Task, ops: &[FileOp]) {
+    fn emit_file_ops_applied(&self, project_id: ProjectId, agent_id: AgentId, task: &Task, ops: &[FileOp]) {
         let files_written = ops.iter().filter(|op| matches!(op, FileOp::Create { .. } | FileOp::Modify { .. } | FileOp::SearchReplace { .. })).count();
         let files_deleted = ops.iter().filter(|op| matches!(op, FileOp::Delete { .. })).count();
         let files: Vec<crate::events::FileOpSummary> = ops.iter().map(|op| {
@@ -2524,6 +2634,8 @@ impl DevLoopEngine {
             crate::events::FileOpSummary { op: op_name.to_string(), path: path.to_string() }
         }).collect();
         self.emit(EngineEvent::FileOpsApplied {
+            project_id,
+            agent_id,
             task_id: task.task_id,
             files_written,
             files_deleted,
