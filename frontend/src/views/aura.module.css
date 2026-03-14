@@ -261,6 +261,18 @@
   overflow-y: auto;
 }
 
+.feedList button[aria-selected="true"],
+.taskExplorer button[aria-selected="true"] {
+  background: var(--color-accent-muted);
+  color: #ffffff;
+}
+
+.feedList button[aria-selected="true"]:hover,
+.taskExplorer button[aria-selected="true"]:hover {
+  background: var(--color-accent-muted);
+  color: #ffffff;
+}
+
 .progressSection {
   display: flex;
   align-items: center;

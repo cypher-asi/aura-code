@@ -8,6 +8,7 @@ import { useSidekick } from "../context/SidekickContext";
 import { useDelayedEmpty } from "../hooks/use-delayed-empty";
 import { mergeById } from "../utils/collections";
 import { Explorer, PageEmptyState } from "@cypher-asi/zui";
+import styles from "./aura.module.css";
 import type { ExplorerNode } from "@cypher-asi/zui";
 import { ListTodo } from "lucide-react";
 
@@ -167,6 +168,7 @@ export function TaskList() {
   return (
     <Explorer
       data={explorerData}
+      className={styles.taskExplorer}
       searchable
       searchPlaceholder="Search"
       expandOnSelect
