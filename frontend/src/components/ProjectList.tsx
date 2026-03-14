@@ -16,7 +16,7 @@ import { formatRelativeTime } from "../utils/format";
 import styles from "./ProjectList.module.css";
 
 /**
- * Self-contained inline rename input that overlays a tree node.
+ * Self-contained inline rename input that overlays the label of a tree node.
  * All keystroke state is local so typing never re-renders the parent list.
  */
 function InlineRenameInput({
@@ -34,8 +34,9 @@ function InlineRenameInput({
   const saved = useRef(false);
 
   useLayoutEffect(() => {
-    const el = document.getElementById(target.project_id);
-    if (el) setRect(el.getBoundingClientRect());
+    const row = document.getElementById(target.project_id);
+    const label = row?.querySelector<HTMLElement>("[class*='label']");
+    if (label) setRect(label.getBoundingClientRect());
   }, [target.project_id]);
 
   useEffect(() => {
@@ -107,7 +108,7 @@ export function ProjectList() {
   const { activeOrg } = useOrg();
 
   const { subscribe } = useEventContext();
-  const [automatingProjectId, setAutomatingProjectId] = useState<string | null>(null);
+  const [automatingSessionId, setAutomatingSessionId] = useState<string | null>(null);
 
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const [renameTarget, setRenameTarget] = useState<Project | null>(null);
@@ -186,12 +187,15 @@ export function ProjectList() {
 
   useEffect(() => {
     const unsubs = [
-      subscribe("loop_started", (e) => {
-        if (e.project_id) setAutomatingProjectId(e.project_id);
+      subscribe("task_started", (e) => {
+        if (e.session_id) setAutomatingSessionId(e.session_id);
       }),
-      subscribe("loop_paused", () => setAutomatingProjectId(null)),
-      subscribe("loop_stopped", () => setAutomatingProjectId(null)),
-      subscribe("loop_finished", () => setAutomatingProjectId(null)),
+      subscribe("session_rolled_over", (e) => {
+        if (e.new_session_id) setAutomatingSessionId(e.new_session_id);
+      }),
+      subscribe("loop_paused", () => setAutomatingSessionId(null)),
+      subscribe("loop_stopped", () => setAutomatingSessionId(null)),
+      subscribe("loop_finished", () => setAutomatingSessionId(null)),
     ];
     return () => unsubs.forEach((u) => u());
   }, [subscribe]);
