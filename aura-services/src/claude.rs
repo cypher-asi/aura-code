@@ -7,11 +7,10 @@ use crate::error::ClaudeClientError;
 const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 pub const DEFAULT_MODEL: &str = "claude-opus-4-6";
 
-const COST_PER_INPUT_TOKEN: f64 = 5.0 / 1_000_000.0;
-const COST_PER_OUTPUT_TOKEN: f64 = 25.0 / 1_000_000.0;
-
+/// Deprecated: use `PricingService::compute_cost` or the pure functions in
+/// `crate::pricing` instead. Kept temporarily for backward compatibility.
 pub fn compute_cost(input_tokens: u64, output_tokens: u64) -> f64 {
-    input_tokens as f64 * COST_PER_INPUT_TOKEN + output_tokens as f64 * COST_PER_OUTPUT_TOKEN
+    crate::pricing::compute_cost_with_rates(input_tokens, output_tokens, 5.0, 25.0)
 }
 
 /// Approximate token count for a text string.

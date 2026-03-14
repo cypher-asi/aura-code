@@ -4,7 +4,8 @@ use chrono::Utc;
 use serde::Serialize;
 use tracing::warn;
 
-use aura_services::claude::compute_cost;
+use aura_core::FeeScheduleEntry;
+use aura_services::pricing::{compute_cost_with_rates, lookup_rate_in};
 use crate::events::PhaseTimingEntry;
 
 const METRICS_DIR: &str = ".aura";
@@ -87,19 +88,14 @@ impl LoopRunMetrics {
         sessions: usize,
         tasks_retried: usize,
         duplicate_error_bailouts: u32,
+        fee_schedule: &[FeeScheduleEntry],
     ) {
         self.outcome = "in_progress".to_string();
         self.total_duration_ms = total_duration_ms;
         self.sessions_used = sessions;
         self.tasks_retried = tasks_retried;
         self.duplicate_error_bailouts = duplicate_error_bailouts;
-        self.tasks_completed = self.tasks.iter().filter(|t| t.outcome == "completed").count();
-        self.tasks_failed = self.tasks.iter().filter(|t| t.outcome == "failed").count();
-        self.total_input_tokens = self.tasks.iter().map(|t| t.input_tokens).sum();
-        self.total_output_tokens = self.tasks.iter().map(|t| t.output_tokens).sum();
-        self.total_parse_retries = self.tasks.iter().map(|t| t.parse_retries).sum();
-        self.total_build_fix_attempts = self.tasks.iter().map(|t| t.build_fix_attempts).sum();
-        self.estimated_cost_usd = compute_cost(self.total_input_tokens, self.total_output_tokens);
+        self.recompute_aggregates(fee_schedule);
     }
 
     pub fn finalize(
@@ -109,19 +105,28 @@ impl LoopRunMetrics {
         sessions: usize,
         tasks_retried: usize,
         duplicate_error_bailouts: u32,
+        fee_schedule: &[FeeScheduleEntry],
     ) {
         self.outcome = outcome.to_string();
         self.total_duration_ms = total_duration_ms;
         self.sessions_used = sessions;
         self.tasks_retried = tasks_retried;
         self.duplicate_error_bailouts = duplicate_error_bailouts;
+        self.recompute_aggregates(fee_schedule);
+    }
+
+    fn recompute_aggregates(&mut self, fee_schedule: &[FeeScheduleEntry]) {
         self.tasks_completed = self.tasks.iter().filter(|t| t.outcome == "completed").count();
         self.tasks_failed = self.tasks.iter().filter(|t| t.outcome == "failed").count();
         self.total_input_tokens = self.tasks.iter().map(|t| t.input_tokens).sum();
         self.total_output_tokens = self.tasks.iter().map(|t| t.output_tokens).sum();
         self.total_parse_retries = self.tasks.iter().map(|t| t.parse_retries).sum();
         self.total_build_fix_attempts = self.tasks.iter().map(|t| t.build_fix_attempts).sum();
-        self.estimated_cost_usd = compute_cost(self.total_input_tokens, self.total_output_tokens);
+        self.estimated_cost_usd = self.tasks.iter().map(|t| {
+            let model = t.model.as_deref().unwrap_or("claude-opus-4-6");
+            let (inp_rate, out_rate) = lookup_rate_in(fee_schedule, model);
+            compute_cost_with_rates(t.input_tokens, t.output_tokens, inp_rate, out_rate)
+        }).sum();
     }
 }
 

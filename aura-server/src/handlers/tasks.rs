@@ -112,6 +112,7 @@ pub async fn get_progress(
 
     // Sessions + tokens + cost: aggregate across all sessions for this project
     if let Ok(sessions) = state.store.list_sessions_by_project(&project_id) {
+        let fee_schedule = state.pricing_service.get_fee_schedule();
         progress.total_sessions = sessions.len() as u64;
         progress.total_tokens = sessions
             .iter()
@@ -119,7 +120,13 @@ pub async fn get_progress(
             .sum();
         progress.total_cost = sessions
             .iter()
-            .map(|s| aura_services::claude::compute_cost(s.total_input_tokens, s.total_output_tokens))
+            .map(|s| {
+                let model = s.model.as_deref().unwrap_or("claude-opus-4-6");
+                let (inp, out) = aura_services::pricing::lookup_rate_in(&fee_schedule, model);
+                aura_services::pricing::compute_cost_with_rates(
+                    s.total_input_tokens, s.total_output_tokens, inp, out,
+                )
+            })
             .sum();
     }
 
