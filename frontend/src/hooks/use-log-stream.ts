@@ -1,26 +1,98 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useEventContext } from "../context/EventContext";
+import type { EngineEvent, EngineEventType } from "../types/events";
 import { formatTime } from "../utils/format";
 import { LOG_MAX_LINES } from "../constants";
 
 export interface LogEntry {
   timestamp: string;
-  message: string;
-  isEvent: boolean;
+  type: EngineEventType;
+  summary: string;
+  detail: EngineEvent;
 }
+
+const EVENT_LABELS: Record<EngineEventType, string> = {
+  loop_started: "Loop",
+  loop_paused: "Loop",
+  loop_stopped: "Loop",
+  loop_finished: "Loop",
+  task_started: "Task",
+  task_completed: "Task",
+  task_failed: "Task",
+  task_retrying: "Task",
+  task_became_ready: "Task",
+  task_output_delta: "Output",
+  file_ops_applied: "Files",
+  follow_up_task_created: "Task",
+  session_rolled_over: "Session",
+  log_line: "Log",
+  spec_gen_started: "Spec",
+  spec_gen_progress: "Spec",
+  spec_gen_completed: "Spec",
+  spec_gen_failed: "Spec",
+  spec_saved: "Spec",
+};
+
+function summarise(e: EngineEvent): string {
+  switch (e.type) {
+    case "loop_started":
+      return "Dev loop started";
+    case "loop_paused":
+      return `Loop paused (${e.completed_count ?? 0} completed)`;
+    case "loop_stopped":
+      return `Loop stopped (${e.completed_count ?? 0} completed)`;
+    case "loop_finished":
+      return `Loop finished: ${e.outcome ?? "unknown"}`;
+    case "task_started":
+      return `Started: ${e.task_title || e.task_id}`;
+    case "task_completed":
+      return `Completed: ${e.task_title || e.task_id}`;
+    case "task_failed":
+      return `Failed: ${e.task_title || e.task_id} — ${e.reason || "unknown"}`;
+    case "task_retrying":
+      return `Retrying: ${e.task_id} (attempt ${e.attempt ?? "?"})`;
+    case "task_became_ready":
+      return `Task ready: ${e.task_id}`;
+    case "task_output_delta":
+      return `Output: ${(e.delta ?? "").slice(0, 80)}`;
+    case "file_ops_applied":
+      return `Files: ${e.files_written ?? 0} written, ${e.files_deleted ?? 0} deleted`;
+    case "follow_up_task_created":
+      return `Follow-up created: ${e.task_id}`;
+    case "session_rolled_over":
+      return `Context rotated → Session ${e.new_session_id?.slice(0, 8)}`;
+    case "log_line":
+      return e.message || "";
+    case "spec_gen_started":
+      return "Spec generation started";
+    case "spec_gen_progress":
+      return `Spec generation: ${e.stage ?? ""}`;
+    case "spec_gen_completed":
+      return `Spec generation completed (${e.spec_count ?? 0} specs)`;
+    case "spec_gen_failed":
+      return `Spec generation failed: ${e.reason ?? "unknown"}`;
+    case "spec_saved":
+      return `Spec saved: ${e.spec?.title ?? e.project_id}`;
+    default:
+      return e.type;
+  }
+}
+
+export { EVENT_LABELS };
 
 export function useLogStream() {
   const { subscribe } = useEventContext();
-  const [lines, setLines] = useState<LogEntry[]>([]);
+  const [entries, setEntries] = useState<LogEntry[]>([]);
   const contentRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
 
-  const addLine = useCallback((message: string, isEvent = false) => {
-    setLines((prev) => {
+  const addEntry = useCallback((event: EngineEvent) => {
+    setEntries((prev) => {
       const entry: LogEntry = {
         timestamp: formatTime(new Date()),
-        message,
-        isEvent,
+        type: event.type,
+        summary: summarise(event),
+        detail: event,
       };
       const next = [...prev, entry];
       return next.length > LOG_MAX_LINES ? next.slice(-LOG_MAX_LINES) : next;
@@ -28,46 +100,38 @@ export function useLogStream() {
   }, []);
 
   useEffect(() => {
-    const unsubs = [
-      subscribe("log_line", (e) => {
-        addLine(e.message || "", false);
-      }),
-      subscribe("task_started", (e) => {
-        addLine(`Started: ${e.task_title || e.task_id}`, true);
-      }),
-      subscribe("task_completed", (e) => {
-        addLine(`Completed: ${e.task_id}`, true);
-      }),
-      subscribe("task_failed", (e) => {
-        addLine(`Failed: ${e.task_id} — ${e.reason || "unknown"}`, true);
-      }),
-      subscribe("session_rolled_over", (e) => {
-        addLine(
-          `Context rotated → Session ${e.new_session_id?.slice(0, 8)}`,
-          true,
-        );
-      }),
-      subscribe("loop_started", () => {
-        addLine("Dev loop started", true);
-      }),
-      subscribe("loop_paused", (e) => {
-        addLine(`Loop paused (${e.completed_count} completed)`, true);
-      }),
-      subscribe("loop_stopped", (e) => {
-        addLine(`Loop stopped (${e.completed_count} completed)`, true);
-      }),
-      subscribe("loop_finished", (e) => {
-        addLine(`Loop finished: ${e.outcome}`, true);
-      }),
+    const allTypes: EngineEventType[] = [
+      "loop_started",
+      "loop_paused",
+      "loop_stopped",
+      "loop_finished",
+      "task_started",
+      "task_completed",
+      "task_failed",
+      "task_retrying",
+      "task_became_ready",
+      "task_output_delta",
+      "file_ops_applied",
+      "follow_up_task_created",
+      "session_rolled_over",
+      "log_line",
+      "spec_gen_started",
+      "spec_gen_progress",
+      "spec_gen_completed",
+      "spec_gen_failed",
+      "spec_saved",
     ];
+    const unsubs = allTypes.map((type) =>
+      subscribe(type, (e) => addEntry(e)),
+    );
     return () => unsubs.forEach((u) => u());
-  }, [subscribe, addLine]);
+  }, [subscribe, addEntry]);
 
   useEffect(() => {
     if (autoScrollRef.current && contentRef.current) {
       contentRef.current.scrollTop = contentRef.current.scrollHeight;
     }
-  }, [lines]);
+  }, [entries]);
 
   const handleScroll = useCallback(() => {
     const el = contentRef.current;
@@ -76,5 +140,5 @@ export function useLogStream() {
     autoScrollRef.current = atBottom;
   }, []);
 
-  return { lines, contentRef, handleScroll };
+  return { entries, contentRef, handleScroll };
 }
