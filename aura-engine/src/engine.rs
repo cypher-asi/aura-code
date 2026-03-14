@@ -6,8 +6,11 @@ use tokio::sync::{mpsc, watch, Mutex};
 use tracing::{info, warn};
 
 use aura_core::*;
-use aura_services::{AgentService, ClaudeClient, ClaudeStreamEvent, ProjectService, SessionService, TaskService};
-use aura_services::claude::DEFAULT_MODEL;
+use aura_services::{
+    AgentService, ChatToolExecutor, ClaudeClient, ClaudeStreamEvent,
+    ProjectService, SessionService, TaskService, engine_tool_definitions,
+};
+use aura_services::claude::{ContentBlock, RichMessage, DEFAULT_MODEL};
 use aura_settings::SettingsService;
 use aura_store::RocksStore;
 
@@ -25,6 +28,7 @@ pub struct TaskExecution {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub parse_retries: u32,
+    pub files_already_applied: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -237,6 +241,118 @@ Response schema:
 "#, hash = "#")
 }
 
+fn agentic_execution_system_prompt(project: &Project) -> String {
+    let build_cmd = project.build_command.as_deref().unwrap_or("(not configured)");
+    let test_cmd = project.test_command.as_deref().unwrap_or("(not configured)");
+    format!(
+        r#"You are an expert software engineer executing a single implementation task.
+You have tools to explore the codebase, make changes, and verify your work.
+
+Workflow:
+1. Use get_task_context if you need to review the task details
+2. Explore relevant files using read_file, search_code, find_files, list_files
+3. Make changes using write_file (new files) or edit_file (targeted edits)
+4. Verify your changes compile: run_command with the build command
+5. Fix any errors iteratively
+6. When done, call task_done with your notes
+
+Build command: {build_cmd}
+Test command: {test_cmd}
+
+Rules:
+- Always verify your changes compile before calling task_done
+- Use edit_file for targeted changes to existing files, write_file for new files or full rewrites
+- Search before writing to understand existing code patterns
+- Never use non-ASCII characters (em dashes, smart quotes, ellipsis) in source code
+- For Rust: use raw string literals for multi-line strings, prefer serde_json::json!() for JSON in tests
+- For TypeScript: use forward slashes in import paths
+- If a build fails, read the errors carefully and fix them before calling task_done
+- Do NOT call task_done until the build passes
+"#
+    )
+}
+
+fn build_agentic_task_context(
+    project: &Project,
+    spec: &Spec,
+    task: &Task,
+    session: &Session,
+) -> String {
+    let mut ctx = String::new();
+    ctx.push_str(&format!("# Project: {}\n{}\n\n", project.name, project.description));
+    ctx.push_str(&format!("# Spec: {}\n{}\n\n", spec.title, spec.markdown_contents));
+    ctx.push_str(&format!("# Task: {}\n{}\n\n", task.title, task.description));
+
+    if !session.summary_of_previous_context.is_empty() {
+        ctx.push_str(&format!(
+            "# Previous Context Summary\n{}\n\n",
+            session.summary_of_previous_context
+        ));
+    }
+    if !task.execution_notes.is_empty() {
+        ctx.push_str(&format!(
+            "# Notes from Prior Attempts\n{}\n\n",
+            task.execution_notes
+        ));
+    }
+    ctx.push_str("Start by exploring the codebase to understand the current state, then implement the task.\n");
+    ctx
+}
+
+fn track_file_op(tool_name: &str, input: &serde_json::Value, ops: &mut Vec<FileOp>) {
+    let path = input.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    if path.is_empty() {
+        return;
+    }
+    match tool_name {
+        "write_file" => {
+            let content = input.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            ops.push(FileOp::Create { path, content });
+        }
+        "edit_file" => {
+            let old_text = input.get("old_text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let new_text = input.get("new_text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            ops.push(FileOp::SearchReplace {
+                path,
+                replacements: vec![crate::file_ops::Replacement { search: old_text, replace: new_text }],
+            });
+        }
+        "delete_file" => {
+            ops.push(FileOp::Delete { path });
+        }
+        _ => {}
+    }
+}
+
+fn simple_file_changes(ops: &[FileOp]) -> Vec<aura_core::FileChangeSummary> {
+    ops.iter().map(|op| match op {
+        FileOp::Create { path, content } => aura_core::FileChangeSummary {
+            op: "create".to_string(),
+            path: path.clone(),
+            lines_added: content.lines().count() as u32,
+            lines_removed: 0,
+        },
+        FileOp::Modify { path, content } => aura_core::FileChangeSummary {
+            op: "modify".to_string(),
+            path: path.clone(),
+            lines_added: content.lines().count() as u32,
+            lines_removed: 0,
+        },
+        FileOp::Delete { path } => aura_core::FileChangeSummary {
+            op: "delete".to_string(),
+            path: path.clone(),
+            lines_added: 0,
+            lines_removed: 0,
+        },
+        FileOp::SearchReplace { path, replacements } => aura_core::FileChangeSummary {
+            op: "modify".to_string(),
+            path: path.clone(),
+            lines_added: replacements.iter().map(|r| r.replace.lines().count() as u32).sum(),
+            lines_removed: replacements.iter().map(|r| r.search.lines().count() as u32).sum(),
+        },
+    }).collect()
+}
+
 const RETRY_CORRECTION_PROMPT: &str =
     "Your previous response was not valid JSON. Respond with ONLY a valid JSON object matching the schema above. No prose, no markdown fences.";
 
@@ -355,7 +471,7 @@ impl DevLoopEngine {
             let project = self.project_service.get_project(&project_id)?;
             self.execute_shell_task(&project, &task, &cmd).await
         } else {
-            self.execute_task(&project_id, &task, &session, &api_key).await
+            self.execute_task_agentic(&project_id, &task, &session, &api_key).await
         };
 
         let end_status = match result {
@@ -364,7 +480,11 @@ impl DevLoopEngine {
                 let project = self.project_service.get_project(&project_id)?;
                 let base_path = Path::new(&project.linked_folder_path);
 
-                let file_changes = file_ops::compute_file_changes(base_path, &execution.file_ops);
+                let file_changes = if execution.files_already_applied {
+                    simple_file_changes(&execution.file_ops)
+                } else {
+                    file_ops::compute_file_changes(base_path, &execution.file_ops)
+                };
 
                 self.update_task_tracking(
                     &project_id, &task, &user_id, &model,
@@ -372,7 +492,12 @@ impl DevLoopEngine {
                 );
 
                 let file_ops_start = Instant::now();
-                if let Err(e) = file_ops::apply_file_ops(base_path, &execution.file_ops).await {
+                let apply_result = if execution.files_already_applied {
+                    Ok(())
+                } else {
+                    file_ops::apply_file_ops(base_path, &execution.file_ops).await
+                };
+                if let Err(e) = apply_result {
                     let reason = format!("file operation failed: {e}");
                     let task_dur = task_start.elapsed().as_millis() as u64;
                     let _ = self.task_service.fail_task(
@@ -806,7 +931,7 @@ impl DevLoopEngine {
                 Some(self.execute_shell_task(&project, &task, &cmd).await)
             } else {
                 tokio::select! {
-                    res = self.execute_task(&project_id, &task, &session, &api_key) => {
+                    res = self.execute_task_agentic(&project_id, &task, &session, &api_key) => {
                         Some(res)
                     }
                     _ = stop_rx.changed() => {
@@ -847,7 +972,11 @@ impl DevLoopEngine {
                     let project = self.project_service.get_project(&project_id)?;
                     let base_path = Path::new(&project.linked_folder_path);
 
-                    let file_changes = file_ops::compute_file_changes(base_path, &execution.file_ops);
+                    let file_changes = if execution.files_already_applied {
+                        simple_file_changes(&execution.file_ops)
+                    } else {
+                        file_ops::compute_file_changes(base_path, &execution.file_ops)
+                    };
 
                     self.update_task_tracking(
                         &project_id, &task, &session.user_id, &session.model,
@@ -859,7 +988,12 @@ impl DevLoopEngine {
                     total_parse_retries += execution.parse_retries;
 
                     let file_ops_start = Instant::now();
-                    if let Err(e) = file_ops::apply_file_ops(base_path, &execution.file_ops).await {
+                    let apply_result = if execution.files_already_applied {
+                        Ok(())
+                    } else {
+                        file_ops::apply_file_ops(base_path, &execution.file_ops).await
+                    };
+                    if let Err(e) = apply_result {
                         let reason = format!("file operation failed: {e}");
                         let task_dur = task_start.elapsed().as_millis() as u64;
                         self.task_service.fail_task(
@@ -1296,6 +1430,7 @@ impl DevLoopEngine {
                             input_tokens: 0,
                             output_tokens: 0,
                             parse_retries: 0,
+                            files_already_applied: false,
                         };
                         let mut test_fix_ops = Vec::new();
                         let (test_passed, _test_inp, _test_out) = self.run_and_handle_tests(
@@ -1327,6 +1462,7 @@ impl DevLoopEngine {
                     input_tokens: 0,
                     output_tokens: 0,
                     parse_retries: 0,
+                    files_already_applied: false,
                 });
             }
 
@@ -1474,7 +1610,167 @@ impl DevLoopEngine {
         Err(EngineError::Build(detail))
     }
 
-    async fn execute_task(
+    async fn execute_task_agentic(
+        &self,
+        project_id: &ProjectId,
+        task: &Task,
+        session: &Session,
+        api_key: &str,
+    ) -> Result<TaskExecution, EngineError> {
+        let project = self.project_service.get_project(project_id)?;
+        let spec = self.store.get_spec(project_id, &task.spec_id)?;
+
+        let system_prompt = agentic_execution_system_prompt(&project);
+        let task_context = build_agentic_task_context(&project, &spec, task, session);
+        let tools = engine_tool_definitions();
+        let executor = ChatToolExecutor::new(
+            self.store.clone(),
+            self.project_service.clone(),
+            self.task_service.clone(),
+        );
+
+        let task_id = task.task_id;
+        let mut api_messages: Vec<RichMessage> = vec![RichMessage::user(&task_context)];
+        let mut total_input_tokens: u64 = 0;
+        let mut total_output_tokens: u64 = 0;
+        let mut tracked_file_ops: Vec<FileOp> = Vec::new();
+        let mut notes = String::new();
+        let mut follow_ups: Vec<FollowUpSuggestion> = Vec::new();
+        let mut task_done_called = false;
+
+        const MAX_AGENTIC_ITERATIONS: usize = 50;
+
+        for iteration in 0..MAX_AGENTIC_ITERATIONS {
+            let (claude_tx, mut claude_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
+            let event_tx = self.event_tx.clone();
+            let tid = task_id;
+            let forwarder = tokio::spawn(async move {
+                while let Some(evt) = claude_rx.recv().await {
+                    if let ClaudeStreamEvent::Delta(text) = evt {
+                        let _ = event_tx.send(EngineEvent::TaskOutputDelta {
+                            task_id: tid,
+                            delta: text,
+                        });
+                    }
+                }
+            });
+
+            let stream_result = self
+                .claude_client
+                .complete_stream_with_tools(
+                    api_key,
+                    &system_prompt,
+                    api_messages.clone(),
+                    tools.clone(),
+                    TASK_EXECUTION_MAX_TOKENS,
+                    claude_tx,
+                )
+                .await?;
+            let _ = forwarder.await;
+
+            total_input_tokens += stream_result.input_tokens;
+            total_output_tokens += stream_result.output_tokens;
+
+            if stream_result.stop_reason != "tool_use" || stream_result.tool_calls.is_empty() {
+                if notes.is_empty() && !stream_result.text.is_empty() {
+                    notes = stream_result.text.clone();
+                }
+                break;
+            }
+
+            let mut assistant_blocks: Vec<ContentBlock> = Vec::new();
+            if !stream_result.text.is_empty() {
+                assistant_blocks.push(ContentBlock::Text {
+                    text: stream_result.text.clone(),
+                });
+            }
+            for tc in &stream_result.tool_calls {
+                assistant_blocks.push(ContentBlock::ToolUse {
+                    id: tc.id.clone(),
+                    name: tc.name.clone(),
+                    input: tc.input.clone(),
+                });
+            }
+            api_messages.push(RichMessage::assistant_blocks(assistant_blocks));
+
+            let mut result_blocks: Vec<ContentBlock> = Vec::new();
+            for tc in &stream_result.tool_calls {
+                match tc.name.as_str() {
+                    "task_done" => {
+                        notes = tc.input.get("notes")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if let Some(arr) = tc.input.get("follow_ups").and_then(|v| v.as_array()) {
+                            for fu in arr {
+                                let title = fu.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let desc = fu.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                follow_ups.push(FollowUpSuggestion { title, description: desc });
+                            }
+                        }
+                        result_blocks.push(ContentBlock::ToolResult {
+                            tool_use_id: tc.id.clone(),
+                            content: r#"{"status":"completed"}"#.to_string(),
+                            is_error: None,
+                        });
+                        task_done_called = true;
+                    }
+                    "get_task_context" => {
+                        let ctx = build_agentic_task_context(&project, &spec, task, session);
+                        result_blocks.push(ContentBlock::ToolResult {
+                            tool_use_id: tc.id.clone(),
+                            content: ctx,
+                            is_error: None,
+                        });
+                    }
+                    _ => {
+                        track_file_op(&tc.name, &tc.input, &mut tracked_file_ops);
+                        let result = executor.execute(project_id, &tc.name, tc.input.clone()).await;
+                        let _ = self.event_tx.send(EngineEvent::TaskOutputDelta {
+                            task_id,
+                            delta: format!("\n[tool: {} -> {}]\n", tc.name,
+                                if result.is_error { "error" } else { "ok" }),
+                        });
+                        result_blocks.push(ContentBlock::ToolResult {
+                            tool_use_id: tc.id.clone(),
+                            content: result.content,
+                            is_error: if result.is_error { Some(true) } else { None },
+                        });
+                    }
+                }
+            }
+            api_messages.push(RichMessage::tool_results(result_blocks));
+
+            if task_done_called {
+                break;
+            }
+
+            if iteration + 1 >= MAX_AGENTIC_ITERATIONS {
+                warn!(
+                    task_id = %task_id,
+                    "agentic tool-use loop hit max iterations ({}), stopping",
+                    MAX_AGENTIC_ITERATIONS
+                );
+            }
+        }
+
+        if notes.is_empty() {
+            notes = "Task completed via agentic tool-use loop".to_string();
+        }
+
+        Ok(TaskExecution {
+            notes,
+            file_ops: tracked_file_ops,
+            follow_up_tasks: follow_ups,
+            input_tokens: total_input_tokens,
+            output_tokens: total_output_tokens,
+            parse_retries: 0,
+            files_already_applied: true,
+        })
+    }
+
+    #[allow(dead_code)]
+    async fn execute_task_single_shot(
         &self,
         project_id: &ProjectId,
         task: &Task,
@@ -2394,6 +2690,7 @@ fn raw_to_execution(raw: RawExecutionResponse) -> TaskExecution {
         input_tokens: 0,
         output_tokens: 0,
         parse_retries: 0,
+        files_already_applied: false,
     }
 }
 
