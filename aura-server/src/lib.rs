@@ -28,11 +28,31 @@ fn spawn_event_rebroadcast(
     mut rx: mpsc::UnboundedReceiver<EngineEvent>,
     broadcast_tx: broadcast::Sender<EngineEvent>,
     store: Arc<RocksStore>,
-    _task_output_buffers: TaskOutputBuffers,
+    task_output_buffers: TaskOutputBuffers,
 ) {
     tokio::spawn(async move {
         let mut write_count: u64 = 0;
         while let Some(event) = rx.recv().await {
+            match &event {
+                EngineEvent::TaskOutputDelta { task_id, delta } => {
+                    if let Ok(mut bufs) = task_output_buffers.lock() {
+                        bufs.entry(*task_id).or_default().push_str(delta);
+                    }
+                }
+                EngineEvent::TaskCompleted { task_id, .. }
+                | EngineEvent::TaskFailed { task_id, .. } => {
+                    if let Ok(mut bufs) = task_output_buffers.lock() {
+                        bufs.remove(task_id);
+                    }
+                }
+                EngineEvent::LoopStopped { .. } | EngineEvent::LoopFinished { .. } => {
+                    if let Ok(mut bufs) = task_output_buffers.lock() {
+                        bufs.clear();
+                    }
+                }
+                _ => {}
+            }
+
             if !matches!(event, EngineEvent::TaskOutputDelta { .. }) {
                 if let Ok(json_bytes) = serde_json::to_vec(&event) {
                     if let Err(e) = store.append_log_entry(&json_bytes) {
