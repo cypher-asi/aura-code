@@ -6,7 +6,7 @@ export function TaskbarRight() {
   return (
     <div className={`taskbar-section ${styles.container}`}>
       <CreditsBadge />
-      <Button variant="outline" size="sm" onClick={() => {/* TODO: open billing/purchase flow */}}>
+      <Button variant="secondary" size="sm" onClick={() => {/* TODO: open billing/purchase flow */}}>
         Buy Credits
       </Button>
     </div>

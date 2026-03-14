@@ -9,8 +9,8 @@ const POLL_TIMEOUT_MS = 5 * 60 * 1_000;
 export function useCheckoutPolling(orgId: string | undefined) {
   const [status, setStatus] = useState<CheckoutPollingStatus>("idle");
   const [currentBalance, setCurrentBalance] = useState<number | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const stopPolling = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);

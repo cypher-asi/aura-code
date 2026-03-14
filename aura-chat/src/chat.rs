@@ -199,6 +199,9 @@ impl ChatService {
             chat_session_id: ChatSessionId::new(),
             project_id: *project_id,
             title: title.to_string(),
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            model: None,
             created_at: now,
             updated_at: now,
         };

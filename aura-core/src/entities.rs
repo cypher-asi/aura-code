@@ -173,6 +173,12 @@ pub struct ChatSession {
     pub chat_session_id: ChatSessionId,
     pub project_id: ProjectId,
     pub title: String,
+    #[serde(default)]
+    pub total_input_tokens: u64,
+    #[serde(default)]
+    pub total_output_tokens: u64,
+    #[serde(default)]
+    pub model: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

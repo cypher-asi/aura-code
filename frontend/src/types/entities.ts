@@ -154,6 +154,9 @@ export interface ChatSession {
   chat_session_id: string;
   project_id: string;
   title: string;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  model?: string;
   created_at: string;
   updated_at: string;
 }

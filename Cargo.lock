@@ -347,6 +347,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "aura-billing"
+version = "0.1.0"
+dependencies = [
+ "aura-core",
+ "aura-store",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
 name = "aura-chat"
 version = "0.1.0"
 dependencies = [
@@ -418,10 +432,10 @@ name = "aura-engine"
 version = "0.1.0"
 dependencies = [
  "aura-agents",
+ "aura-billing",
  "aura-chat",
  "aura-claude",
  "aura-core",
- "aura-pricing",
  "aura-projects",
  "aura-sessions",
  "aura-settings",
@@ -466,15 +480,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aura-pricing"
-version = "0.1.0"
-dependencies = [
- "aura-core",
- "aura-store",
- "serde_json",
-]
-
-[[package]]
 name = "aura-projects"
 version = "0.1.0"
 dependencies = [
@@ -490,13 +495,13 @@ version = "0.1.0"
 dependencies = [
  "aura-agents",
  "aura-auth",
+ "aura-billing",
  "aura-chat",
  "aura-claude",
  "aura-core",
  "aura-engine",
  "aura-github",
  "aura-orgs",
- "aura-pricing",
  "aura-projects",
  "aura-sessions",
  "aura-settings",
@@ -529,12 +534,12 @@ version = "0.1.0"
 dependencies = [
  "aura-agents",
  "aura-auth",
+ "aura-billing",
  "aura-chat",
  "aura-claude",
  "aura-core",
  "aura-github",
  "aura-orgs",
- "aura-pricing",
  "aura-projects",
  "aura-sessions",
  "aura-settings",
@@ -611,9 +616,9 @@ dependencies = [
 name = "aura-tasks"
 version = "0.1.0"
 dependencies = [
+ "aura-billing",
  "aura-claude",
  "aura-core",
- "aura-pricing",
  "aura-settings",
  "aura-store",
  "chrono",
