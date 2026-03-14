@@ -158,8 +158,6 @@ async fn project_crud() {
 
     // Create a temp dir for the project linked folder
     let project_dir = tempfile::tempdir().unwrap();
-    let req_file = project_dir.path().join("requirements.md");
-    std::fs::write(&req_file, "# Test").unwrap();
 
     // Create
     let req = json_request(
@@ -168,8 +166,7 @@ async fn project_crud() {
         Some(serde_json::json!({
             "name": "Test Project",
             "description": "A test",
-            "linked_folder_path": project_dir.path().to_string_lossy(),
-            "requirements_doc_path": req_file.to_string_lossy()
+            "linked_folder_path": project_dir.path().to_string_lossy()
         })),
     );
     let resp = app.clone().oneshot(req).await.unwrap();
@@ -233,8 +230,7 @@ async fn project_create_invalid_name() {
         Some(serde_json::json!({
             "name": "",
             "description": "desc",
-            "linked_folder_path": ".",
-            "requirements_doc_path": "req.md"
+            "linked_folder_path": "."
         })),
     );
     let resp = app.clone().oneshot(req).await.unwrap();
@@ -252,8 +248,6 @@ async fn task_list_and_progress() {
     let (app, state, _db, _data) = build_test_app();
 
     let project_dir = tempfile::tempdir().unwrap();
-    let req_file = project_dir.path().join("req.md");
-    std::fs::write(&req_file, "# Test").unwrap();
 
     let now = chrono::Utc::now();
     let pid = ProjectId::new();
@@ -262,7 +256,7 @@ async fn task_list_and_progress() {
         name: "Test".into(),
         description: "d".into(),
         linked_folder_path: project_dir.path().to_string_lossy().to_string(),
-        requirements_doc_path: req_file.to_string_lossy().to_string(),
+        requirements_doc_path: None,
         current_status: ProjectStatus::Planning,
         created_at: now,
         updated_at: now,
@@ -332,7 +326,7 @@ async fn agent_list_empty() {
         name: "Test".into(),
         description: "d".into(),
         linked_folder_path: ".".into(),
-        requirements_doc_path: "req.md".into(),
+        requirements_doc_path: None,
         current_status: ProjectStatus::Planning,
         created_at: now,
         updated_at: now,

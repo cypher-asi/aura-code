@@ -129,6 +129,144 @@ impl DevLoopEngine {
         }
     }
 
+    /// Execute a single task by ID without starting the full loop.
+    /// Spawns execution as a background tokio task; progress is emitted
+    /// through the normal engine event channel.
+    pub async fn run_single_task(
+        self: Arc<Self>,
+        project_id: ProjectId,
+        task_id: TaskId,
+    ) -> Result<(), EngineError> {
+        let api_key = self.settings.get_decrypted_api_key()?;
+
+        let all_tasks = self.store.list_tasks_by_project(&project_id)?;
+        let mut task = all_tasks
+            .into_iter()
+            .find(|t| t.task_id == task_id)
+            .ok_or_else(|| EngineError::Parse(format!("task {task_id} not found")))?;
+
+        if task.status == TaskStatus::Failed {
+            task = self
+                .task_service
+                .retry_task(&project_id, &task.spec_id, &task.task_id)?;
+        }
+        if task.status != TaskStatus::Ready {
+            return Err(EngineError::Parse(format!(
+                "task must be in ready or failed state, currently: {:?}",
+                task.status
+            )));
+        }
+
+        let agent = self
+            .agent_service
+            .create_agent(&project_id, "dev-agent".into())?;
+        let session = self.session_service.create_session(
+            &agent.agent_id,
+            &project_id,
+            None,
+            String::new(),
+        )?;
+
+        self.task_service
+            .assign_task(&project_id, &task.spec_id, &task.task_id, &agent.agent_id, Some(session.session_id))?;
+        self.session_service
+            .record_task_worked(&project_id, &agent.agent_id, &session.session_id, task.task_id)?;
+        self.agent_service.start_working(
+            &project_id,
+            &agent.agent_id,
+            &task.task_id,
+            &session.session_id,
+        )?;
+        self.emit(EngineEvent::TaskStarted {
+            task_id: task.task_id,
+            task_title: task.title.clone(),
+            session_id: session.session_id,
+        });
+
+        let result = self
+            .execute_task(&project_id, &task, &session, &api_key)
+            .await;
+
+        match result {
+            Ok(execution) => {
+                let project = self.project_service.get_project(&project_id)?;
+                let base_path = Path::new(&project.linked_folder_path);
+
+                let file_changes = file_ops::compute_file_changes(base_path, &execution.file_ops);
+
+                if let Err(e) = file_ops::apply_file_ops(base_path, &execution.file_ops).await {
+                    let reason = format!("file operation failed: {e}");
+                    let _ = self.task_service.fail_task(
+                        &project_id, &task.spec_id, &task.task_id, &reason,
+                    );
+                    self.emit(EngineEvent::TaskFailed {
+                        task_id: task.task_id,
+                        reason: e.to_string(),
+                    });
+                } else {
+                    let files_written = execution.file_ops.iter().filter(|op| matches!(op, file_ops::FileOp::Create { .. } | file_ops::FileOp::Modify { .. })).count();
+                    let files_deleted = execution.file_ops.iter().filter(|op| matches!(op, file_ops::FileOp::Delete { .. })).count();
+                    let files: Vec<crate::events::FileOpSummary> = execution.file_ops.iter().map(|op| {
+                        let (op_name, path) = match op {
+                            file_ops::FileOp::Create { path, .. } => ("create", path.as_str()),
+                            file_ops::FileOp::Modify { path, .. } => ("modify", path.as_str()),
+                            file_ops::FileOp::Delete { path } => ("delete", path.as_str()),
+                        };
+                        crate::events::FileOpSummary { op: op_name.to_string(), path: path.to_string() }
+                    }).collect();
+                    self.emit(EngineEvent::FileOpsApplied {
+                        task_id: task.task_id,
+                        files_written,
+                        files_deleted,
+                        files,
+                    });
+                    let _ = self.task_service.complete_task(
+                        &project_id, &task.spec_id, &task.task_id,
+                        &execution.notes, file_changes,
+                    );
+                    self.emit(EngineEvent::TaskCompleted {
+                        task_id: task.task_id,
+                        execution_notes: execution.notes.clone(),
+                    });
+
+                    let newly_ready = self
+                        .task_service
+                        .resolve_dependencies_after_completion(&project_id, &task.task_id)
+                        .unwrap_or_default();
+                    for t in &newly_ready {
+                        self.emit(EngineEvent::TaskBecameReady { task_id: t.task_id });
+                    }
+
+                    for follow_up in &execution.follow_up_tasks {
+                        if let Ok(new_task) = self.task_service.create_follow_up_task(
+                            &task,
+                            follow_up.title.clone(),
+                            follow_up.description.clone(),
+                            vec![],
+                        ) {
+                            self.emit(EngineEvent::FollowUpTaskCreated {
+                                task_id: new_task.task_id,
+                            });
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                let reason = format!("execution error: {e}");
+                let _ = self.task_service.fail_task(
+                    &project_id, &task.spec_id, &task.task_id, &reason,
+                );
+                self.emit(EngineEvent::TaskFailed {
+                    task_id: task.task_id,
+                    reason: e.to_string(),
+                });
+            }
+        }
+
+        let _ = self.agent_service.finish_working(&project_id, &agent.agent_id);
+        Ok(())
+    }
+
     pub async fn start(self: Arc<Self>, project_id: ProjectId) -> Result<LoopHandle, EngineError> {
         let _project = self.project_service.get_project(&project_id)?;
 
