@@ -305,14 +305,15 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
             <Text size="sm">{effectiveStatus.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</Text>
             {effectiveStatus === "ready" && (
               <Button
-                variant="secondary"
+                variant="ghost"
                 size="sm"
+                iconOnly
                 icon={runningTask ? <Loader2 size={14} className={styles.spinner} /> : <Play size={14} />}
                 onClick={handleRunTask}
                 disabled={runningTask}
-              >
-                {runningTask ? "Running..." : "Run"}
-              </Button>
+                title={runningTask ? "Running..." : "Run task"}
+                className={styles.runBtn}
+              />
             )}
             {effectiveStatus === "failed" && (
               <Button
