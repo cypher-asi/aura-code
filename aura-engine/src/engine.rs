@@ -268,6 +268,13 @@ Rules:
 - For TypeScript: use forward slashes in import paths
 - If a build fails, read the errors carefully and fix them before calling task_done
 - Do NOT call task_done until the build passes
+
+SCOPE: Stay strictly on-task.
+- ONLY implement what the task description asks for. Do NOT fix pre-existing bugs, failing tests, or code issues that are unrelated to your task.
+- If `cargo test --workspace` or the test command shows failures in test files you did NOT modify, IGNORE them. Only fix tests that directly test the feature you are implementing.
+- Once your task-specific changes compile and any directly-related tests pass, call task_done immediately. Do NOT keep exploring or "improving" unrelated code.
+- When verifying, prefer scoped commands (e.g. `cargo test -p <crate> --lib <module>`) over workspace-wide commands to avoid noise from pre-existing failures.
+- NEVER output raw JSON with file_ops in your text response. Always use the provided tools (write_file, edit_file, task_done, etc.) to make changes and signal completion.
 "#
     )
 }
@@ -1560,16 +1567,11 @@ impl DevLoopEngine {
 
                 let api_key = self.settings.get_decrypted_api_key()?;
                 let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-                let event_tx = self.event_tx.clone();
-                let tid = task.task_id;
+                // Don't forward deltas from shell-fix calls: the response is
+                // structured JSON that shouldn't appear in user-facing output.
                 let forwarder = tokio::spawn(async move {
                     while let Some(evt) = stream_rx.recv().await {
-                        if let ClaudeStreamEvent::Delta(text) = evt {
-                            let _ = event_tx.send(EngineEvent::TaskOutputDelta {
-                                task_id: tid,
-                                delta: text,
-                            });
-                        }
+                        drop(evt);
                     }
                 });
 
@@ -1876,21 +1878,13 @@ impl DevLoopEngine {
                     ];
 
                     let (stream_tx2, mut stream_rx2) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-                    let event_tx2 = self.event_tx.clone();
-                    let tid2 = task_id;
                     let tc2 = token_counts.clone();
                     let forwarder2 = tokio::spawn(async move {
                         while let Some(evt) = stream_rx2.recv().await {
-                            match evt {
-                                ClaudeStreamEvent::Delta(text) => {
-                                    let _ = event_tx2.send(EngineEvent::TaskOutputDelta { task_id: tid2, delta: text });
-                                }
-                                ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } => {
-                                    let mut g = tc2.lock().await;
-                                    g.0 += input_tokens;
-                                    g.1 += output_tokens;
-                                }
-                                _ => {}
+                            if let ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } = evt {
+                                let mut g = tc2.lock().await;
+                                g.0 += input_tokens;
+                                g.1 += output_tokens;
                             }
                         }
                     });
@@ -1936,21 +1930,13 @@ impl DevLoopEngine {
                     ];
 
                     let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-                    let event_tx = self.event_tx.clone();
-                    let tid = task_id;
                     let tc = token_counts.clone();
                     let forwarder = tokio::spawn(async move {
                         while let Some(evt) = stream_rx.recv().await {
-                            match evt {
-                                ClaudeStreamEvent::Delta(text) => {
-                                    let _ = event_tx.send(EngineEvent::TaskOutputDelta { task_id: tid, delta: text });
-                                }
-                                ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } => {
-                                    let mut g = tc.lock().await;
-                                    g.0 += input_tokens;
-                                    g.1 += output_tokens;
-                                }
-                                _ => {}
+                            if let ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } = evt {
+                                let mut g = tc.lock().await;
+                                g.0 += input_tokens;
+                                g.1 += output_tokens;
                             }
                         }
                     });
@@ -2164,24 +2150,15 @@ impl DevLoopEngine {
 
             let fix_tc: Arc<Mutex<(u64, u64)>> = Arc::new(Mutex::new((0, 0)));
             let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-            let event_tx = self.event_tx.clone();
-            let tid = task.task_id;
             let fix_tc_clone = fix_tc.clone();
+            // Don't forward deltas from build-fix calls: the response is
+            // structured JSON that shouldn't appear in user-facing output.
             let forwarder = tokio::spawn(async move {
                 while let Some(evt) = stream_rx.recv().await {
-                    match evt {
-                        ClaudeStreamEvent::Delta(text) => {
-                            let _ = event_tx.send(EngineEvent::TaskOutputDelta {
-                                task_id: tid,
-                                delta: text,
-                            });
-                        }
-                        ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } => {
-                            let mut g = fix_tc_clone.lock().await;
-                            g.0 += input_tokens;
-                            g.1 += output_tokens;
-                        }
-                        _ => {}
+                    if let ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } = evt {
+                        let mut g = fix_tc_clone.lock().await;
+                        g.0 += input_tokens;
+                        g.1 += output_tokens;
                     }
                 }
             });
@@ -2382,24 +2359,15 @@ impl DevLoopEngine {
 
         let test_fix_tc: Arc<Mutex<(u64, u64)>> = Arc::new(Mutex::new((0, 0)));
         let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-        let event_tx = self.event_tx.clone();
-        let tid = task.task_id;
         let test_fix_tc_clone = test_fix_tc.clone();
+        // Don't forward deltas from test-fix calls: the response is
+        // structured JSON that shouldn't appear in user-facing output.
         let forwarder = tokio::spawn(async move {
             while let Some(evt) = stream_rx.recv().await {
-                match evt {
-                    ClaudeStreamEvent::Delta(text) => {
-                        let _ = event_tx.send(EngineEvent::TaskOutputDelta {
-                            task_id: tid,
-                            delta: text,
-                        });
-                    }
-                    ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } => {
-                        let mut g = test_fix_tc_clone.lock().await;
-                        g.0 += input_tokens;
-                        g.1 += output_tokens;
-                    }
-                    _ => {}
+                if let ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } = evt {
+                    let mut g = test_fix_tc_clone.lock().await;
+                    g.0 += input_tokens;
+                    g.1 += output_tokens;
                 }
             }
         });
