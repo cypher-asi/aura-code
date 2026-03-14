@@ -215,6 +215,8 @@ impl DevLoopEngine {
 
             self.task_service
                 .assign_task(&project_id, &task.spec_id, &task.task_id, &agent_id, Some(session.session_id))?;
+            self.session_service
+                .record_task_worked(&project_id, &agent_id, &session.session_id, task.task_id)?;
             self.agent_service.start_working(
                 &project_id,
                 &agent_id,
@@ -224,6 +226,7 @@ impl DevLoopEngine {
             self.emit(EngineEvent::TaskStarted {
                 task_id: task.task_id,
                 task_title: task.title.clone(),
+                session_id: session.session_id,
             });
 
             let result = self

@@ -17,6 +17,7 @@ pub enum EngineEvent {
     TaskStarted {
         task_id: TaskId,
         task_title: String,
+        session_id: SessionId,
     },
     TaskCompleted {
         task_id: TaskId,

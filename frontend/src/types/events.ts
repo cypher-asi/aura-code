@@ -23,6 +23,7 @@ export interface EngineEvent {
   type: EngineEventType;
   task_id?: string;
   task_title?: string;
+  session_id?: string;
   delta?: string;
   reason?: string;
   attempt?: number;
