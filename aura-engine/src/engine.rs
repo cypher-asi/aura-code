@@ -1086,6 +1086,10 @@ impl DevLoopEngine {
                             failure_reason: Some(reason.clone()),
                             phase_timings: vec![],
                         });
+                        let _ = self.session_service.update_context_usage(
+                            &project_id, &agent_id, &session.session_id,
+                            execution.input_tokens, execution.output_tokens,
+                        );
                         work_log.push(format!("Task (failed): {}\nReason: {}", task.title, reason));
                         Some(reason)
                     } else {
@@ -1149,6 +1153,10 @@ impl DevLoopEngine {
                                     PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
                                 ],
                             });
+                            let _ = self.session_service.update_context_usage(
+                                &project_id, &agent_id, &session.session_id,
+                                execution.input_tokens + fix_inp, execution.output_tokens + fix_out,
+                            );
                             work_log.push(format!("Task (failed): {}\nReason: {}", task.title, reason));
                             Some(reason)
                         } else {
