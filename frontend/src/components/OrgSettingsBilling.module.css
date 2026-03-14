@@ -92,3 +92,67 @@
   color: var(--color-error, #ef4444);
   border-color: var(--color-error, #ef4444);
 }
+
+/* Loading state */
+
+.loadingState {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+/* Error state */
+
+.errorState {
+  font-size: var(--text-sm);
+  color: var(--color-error, #ef4444);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-error, #ef4444) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error, #ef4444) 20%, transparent);
+}
+
+.retryButton {
+  background: none;
+  border: 1px solid var(--color-error, #ef4444);
+  color: var(--color-error, #ef4444);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.retryButton:hover {
+  background: color-mix(in srgb, var(--color-error, #ef4444) 10%, transparent);
+}
+
+.retryLink {
+  background: none;
+  border: none;
+  color: var(--color-error, #ef4444);
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.retryLink:hover {
+  opacity: 0.8;
+}
+
+/* Empty state */
+
+.emptyState {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}

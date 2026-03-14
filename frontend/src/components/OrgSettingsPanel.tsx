@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useOrg } from "../context/OrgContext";
 import { useAuth } from "../context/AuthContext";
-import { api } from "../api/client";
+import { api, ApiClientError } from "../api/client";
 import { Modal, Navigator } from "@cypher-asi/zui";
 import type { NavigatorItemProps } from "@cypher-asi/zui";
 import { Settings, Users, Mail, CreditCard, Plug } from "lucide-react";
@@ -54,6 +54,11 @@ export function OrgSettingsPanel({ isOpen, onClose, initialSection }: Props) {
   const [installLoading, setInstallLoading] = useState(false);
   const [creditTiers, setCreditTiers] = useState<CreditTier[]>([]);
   const [creditBalance, setCreditBalance] = useState<CreditBalance | null>(null);
+  const [tiersLoading, setTiersLoading] = useState(false);
+  const [tiersError, setTiersError] = useState<string | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const { status: pollingStatus, currentBalance: polledBalance, startPolling, reset: resetPolling } = useCheckoutPolling(activeOrg?.org_id);
 
   const orgId = activeOrg?.org_id;
@@ -112,12 +117,36 @@ export function OrgSettingsPanel({ isOpen, onClose, initialSection }: Props) {
 
   const loadCreditTiers = useCallback(async () => {
     if (!orgId) return;
-    try { setCreditTiers(await api.orgs.getCreditTiers(orgId)); } catch { /* ignore */ }
+    setTiersLoading(true);
+    setTiersError(null);
+    try {
+      setCreditTiers(await api.orgs.getCreditTiers(orgId));
+    } catch (err) {
+      setTiersError(
+        err instanceof ApiClientError
+          ? `Billing server error (${err.status})`
+          : "Unable to reach billing server"
+      );
+    } finally {
+      setTiersLoading(false);
+    }
   }, [orgId]);
 
   const loadCreditBalance = useCallback(async () => {
     if (!orgId) return;
-    try { setCreditBalance(await api.orgs.getCreditBalance(orgId)); } catch { /* ignore */ }
+    setBalanceLoading(true);
+    setBalanceError(null);
+    try {
+      setCreditBalance(await api.orgs.getCreditBalance(orgId));
+    } catch (err) {
+      setBalanceError(
+        err instanceof ApiClientError
+          ? `Billing server error (${err.status})`
+          : "Unable to reach billing server"
+      );
+    } finally {
+      setBalanceLoading(false);
+    }
   }, [orgId]);
 
   useEffect(() => {
@@ -186,24 +215,34 @@ export function OrgSettingsPanel({ isOpen, onClose, initialSection }: Props) {
 
   const handleBuyTier = async (tierId: string) => {
     if (!orgId) return;
+    setCheckoutError(null);
     try {
       const prevBalance = creditBalance?.total_credits ?? 0;
       const { checkout_url } = await api.orgs.createCreditCheckout(orgId, tierId);
       window.open(checkout_url, "_blank");
       startPolling(prevBalance);
     } catch (err) {
+      const msg = err instanceof ApiClientError
+        ? `Checkout failed (${err.status})`
+        : "Unable to start checkout";
+      setCheckoutError(msg);
       console.error("Failed to create checkout session", err);
     }
   };
 
   const handleBuyCustom = async (credits: number) => {
     if (!orgId) return;
+    setCheckoutError(null);
     try {
       const prevBalance = creditBalance?.total_credits ?? 0;
       const { checkout_url } = await api.orgs.createCreditCheckout(orgId, undefined, credits);
       window.open(checkout_url, "_blank");
       startPolling(prevBalance);
     } catch (err) {
+      const msg = err instanceof ApiClientError
+        ? `Checkout failed (${err.status})`
+        : "Unable to start checkout";
+      setCheckoutError(msg);
       console.error("Failed to create checkout session", err);
     }
   };
@@ -273,9 +312,16 @@ export function OrgSettingsPanel({ isOpen, onClose, initialSection }: Props) {
               onSave={handleSaveBilling}
               tiers={creditTiers}
               balance={creditBalance}
+              tiersLoading={tiersLoading}
+              tiersError={tiersError}
+              balanceLoading={balanceLoading}
+              balanceError={balanceError}
+              checkoutError={checkoutError}
               pollingStatus={pollingStatus}
               onBuyTier={handleBuyTier}
               onBuyCustom={handleBuyCustom}
+              onRetryTiers={loadCreditTiers}
+              onRetryBalance={loadCreditBalance}
             />
           )}
 

@@ -14,9 +14,16 @@ interface Props {
   onSave: () => void;
   tiers: CreditTier[];
   balance: CreditBalance | null;
+  tiersLoading: boolean;
+  tiersError: string | null;
+  balanceLoading: boolean;
+  balanceError: string | null;
+  checkoutError: string | null;
   pollingStatus: CheckoutPollingStatus;
   onBuyTier: (tierId: string) => void;
   onBuyCustom: (credits: number) => void;
+  onRetryTiers: () => void;
+  onRetryBalance: () => void;
 }
 
 function formatCreditsLong(n: number): string {
@@ -41,9 +48,16 @@ export function OrgSettingsBilling({
   onSave,
   tiers,
   balance,
+  tiersLoading,
+  tiersError,
+  balanceLoading,
+  balanceError,
+  checkoutError,
   pollingStatus,
   onBuyTier,
   onBuyCustom,
+  onRetryTiers,
+  onRetryBalance,
 }: Props) {
   const [customCredits, setCustomCredits] = useState("");
   const rate = bestRate(tiers);
@@ -112,39 +126,62 @@ export function OrgSettingsBilling({
           </div>
           <div className={styles.rowControl}>
             <span className={billingStyles.balanceValue}>
-              {balance ? formatCreditsLong(balance.total_credits) : "---"}
+              {balanceLoading && balance === null
+                ? "Loading..."
+                : balanceError && balance === null
+                  ? <span className={billingStyles.errorState}>
+                      {balanceError}{" "}
+                      <button className={billingStyles.retryLink} onClick={onRetryBalance}>Retry</button>
+                    </span>
+                  : balance !== null
+                    ? formatCreditsLong(balance.total_credits)
+                    : "---"}
             </span>
           </div>
         </div>
       </div>
 
       {/* Credit Tiers */}
-      {tiers.length > 0 && (
-        <>
-          <div className={styles.settingsGroupLabel}>Buy Credits</div>
-          <div className={billingStyles.tierGrid}>
-            {tiers.map((tier) => (
-              <div key={tier.id} className={billingStyles.tierCard}>
-                <div className={billingStyles.tierCredits}>
-                  {formatCreditsLong(tier.credits)}
-                </div>
-                <div className={billingStyles.tierLabel}>{tier.label}</div>
-                <div className={billingStyles.tierPrice}>
-                  {formatUsd(tier.price_usd_cents)}
-                </div>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => onBuyTier(tier.id)}
-                  disabled={isPolling}
-                  style={{ width: "100%", marginTop: "var(--space-2)" }}
-                >
-                  {isPolling ? "Processing..." : "Buy"}
-                </Button>
+      <div className={styles.settingsGroupLabel}>Buy Credits</div>
+      {tiersLoading && tiers.length === 0 ? (
+        <div className={billingStyles.loadingState}>Loading credit tiers...</div>
+      ) : tiersError && tiers.length === 0 ? (
+        <div className={billingStyles.errorState}>
+          {tiersError}
+          <button className={billingStyles.retryButton} onClick={onRetryTiers}>Retry</button>
+        </div>
+      ) : tiers.length === 0 ? (
+        <div className={billingStyles.emptyState}>No credit tiers available</div>
+      ) : (
+        <div className={billingStyles.tierGrid}>
+          {tiers.map((tier) => (
+            <div key={tier.id} className={billingStyles.tierCard}>
+              <div className={billingStyles.tierCredits}>
+                {formatCreditsLong(tier.credits)}
               </div>
-            ))}
-          </div>
-        </>
+              <div className={billingStyles.tierLabel}>{tier.label}</div>
+              <div className={billingStyles.tierPrice}>
+                {formatUsd(tier.price_usd_cents)}
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => onBuyTier(tier.id)}
+                disabled={isPolling}
+                style={{ width: "100%", marginTop: "var(--space-2)" }}
+              >
+                {isPolling ? "Processing..." : "Buy"}
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Checkout Error */}
+      {checkoutError && (
+        <div className={billingStyles.errorState} style={{ marginBottom: "var(--space-4)" }}>
+          {checkoutError}
+        </div>
       )}
 
       {/* Custom Credits */}
