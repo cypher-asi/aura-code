@@ -348,6 +348,14 @@ impl TaskService {
         description: String,
         dependency_ids: Vec<TaskId>,
     ) -> Result<Task, TaskError> {
+        let existing = self
+            .store
+            .list_tasks_by_spec(&originating_task.project_id, &originating_task.spec_id)?;
+        let norm_title = title.trim().to_lowercase();
+        if existing.iter().any(|t| t.title.trim().to_lowercase() == norm_title) {
+            return Err(TaskError::DuplicateFollowUp);
+        }
+
         let now = Utc::now();
         let task = Task {
             task_id: TaskId::new(),

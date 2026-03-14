@@ -99,6 +99,7 @@ const RETRY_CORRECTION_PROMPT: &str =
 
 const MAX_EXECUTION_RETRIES: u32 = 2;
 const MAX_BUILD_FIX_RETRIES: u32 = 3;
+const MAX_FOLLOW_UPS_PER_LOOP: usize = 20;
 const TASK_EXECUTION_MAX_TOKENS: u32 = 32_768;
 
 pub struct DevLoopEngine {
@@ -195,9 +196,12 @@ impl DevLoopEngine {
             session_id: session.session_id,
         });
 
-        let result = self
-            .execute_task(&project_id, &task, &session, &api_key)
-            .await;
+        let result = if let Some(cmd) = Self::extract_shell_command(&task) {
+            let project = self.project_service.get_project(&project_id)?;
+            self.execute_shell_task(&project, &task, &cmd).await
+        } else {
+            self.execute_task(&project_id, &task, &session, &api_key).await
+        };
 
         let end_status = match result {
             Ok(execution) => {
@@ -347,6 +351,7 @@ impl DevLoopEngine {
     ) -> Result<LoopOutcome, EngineError> {
         let api_key = self.settings.get_decrypted_api_key()?;
         let mut completed_count: usize = 0;
+        let mut follow_up_count: usize = 0;
         let mut work_log: Vec<String> = Vec::new();
 
         let orphaned = self.task_service.reset_in_progress_tasks(&project_id)?;
@@ -416,12 +421,17 @@ impl DevLoopEngine {
                 session_id: session.session_id,
             });
 
-            let result = tokio::select! {
-                res = self.execute_task(&project_id, &task, &session, &api_key) => {
-                    Some(res)
-                }
-                _ = stop_rx.changed() => {
-                    None
+            let result = if let Some(cmd) = Self::extract_shell_command(&task) {
+                let project = self.project_service.get_project(&project_id)?;
+                Some(self.execute_shell_task(&project, &task, &cmd).await)
+            } else {
+                tokio::select! {
+                    res = self.execute_task(&project_id, &task, &session, &api_key) => {
+                        Some(res)
+                    }
+                    _ = stop_rx.changed() => {
+                        None
+                    }
                 }
             };
 
@@ -520,15 +530,27 @@ impl DevLoopEngine {
                             }
 
                             for follow_up in &execution.follow_up_tasks {
-                                let new_task = self.task_service.create_follow_up_task(
+                                if follow_up_count >= MAX_FOLLOW_UPS_PER_LOOP {
+                                    warn!("follow-up task cap ({MAX_FOLLOW_UPS_PER_LOOP}) reached, skipping remaining");
+                                    break;
+                                }
+                                match self.task_service.create_follow_up_task(
                                     &task,
                                     follow_up.title.clone(),
                                     follow_up.description.clone(),
                                     vec![],
-                                )?;
-                                self.emit(EngineEvent::FollowUpTaskCreated {
-                                    task_id: new_task.task_id,
-                                });
+                                ) {
+                                    Ok(new_task) => {
+                                        follow_up_count += 1;
+                                        self.emit(EngineEvent::FollowUpTaskCreated {
+                                            task_id: new_task.task_id,
+                                        });
+                                    }
+                                    Err(aura_services::TaskError::DuplicateFollowUp) => {
+                                        info!(title = %follow_up.title, "skipping duplicate follow-up task");
+                                    }
+                                    Err(e) => return Err(EngineError::Parse(format!("follow-up creation failed: {e}"))),
+                                }
                             }
 
                             self.session_service.update_context_usage(
@@ -632,6 +654,117 @@ impl DevLoopEngine {
                 session = new_session;
                 work_log.clear();
             }
+        }
+    }
+
+    fn extract_shell_command(task: &Task) -> Option<String> {
+        let title = task.title.trim();
+        let desc = task.description.trim();
+
+        let prefixes = ["run ", "execute ", "run: "];
+        let shell_indicators = ["npm ", "npx ", "cargo ", "yarn ", "pnpm ", "pip ", "python ",
+            "node ", "sh ", "bash ", "powershell ", "cmd ", "make ", "gradle ", "mvn ",
+            "dotnet ", "go ", "rustup ", "apt ", "brew "];
+
+        let candidate = if prefixes.iter().any(|p| title.to_lowercase().starts_with(p)) {
+            let lower = title.to_lowercase();
+            let cmd_start = prefixes.iter()
+                .filter_map(|p| if lower.starts_with(p) { Some(p.len()) } else { None })
+                .next()
+                .unwrap_or(0);
+            title[cmd_start..].trim().to_string()
+        } else if shell_indicators.iter().any(|ind| title.to_lowercase().starts_with(ind)) {
+            title.to_string()
+        } else if !desc.is_empty() && desc.lines().count() <= 2 {
+            let first_line = desc.lines().next().unwrap_or("").trim();
+            if shell_indicators.iter().any(|ind| first_line.to_lowercase().starts_with(ind)) {
+                first_line.to_string()
+            } else {
+                return None;
+            }
+        } else {
+            return None;
+        };
+
+        if candidate.is_empty() { None } else { Some(candidate) }
+    }
+
+    async fn execute_shell_task(
+        &self,
+        project: &Project,
+        task: &Task,
+        command: &str,
+    ) -> Result<TaskExecution, EngineError> {
+        let base_path = Path::new(&project.linked_folder_path);
+
+        self.emit(EngineEvent::BuildVerificationStarted {
+            task_id: task.task_id,
+            command: command.to_string(),
+        });
+        self.persist_build_step(task, BuildStepRecord {
+            kind: "started".into(),
+            command: Some(command.to_string()),
+            stderr: None,
+            stdout: None,
+            attempt: Some(1),
+        });
+
+        let delta = format!("Running: {command}\n");
+        let _ = self.event_tx.send(EngineEvent::TaskOutputDelta {
+            task_id: task.task_id,
+            delta,
+        });
+
+        let result = build_verify::run_build_command(base_path, command).await?;
+
+        if result.success {
+            self.emit(EngineEvent::BuildVerificationPassed {
+                task_id: task.task_id,
+                command: command.to_string(),
+                stdout: result.stdout.clone(),
+            });
+            self.persist_build_step(task, BuildStepRecord {
+                kind: "passed".into(),
+                command: Some(command.to_string()),
+                stderr: None,
+                stdout: Some(result.stdout.clone()),
+                attempt: Some(1),
+            });
+
+            let notes = format!("Command `{command}` succeeded.\n{}", result.stdout);
+            let _ = self.event_tx.send(EngineEvent::TaskOutputDelta {
+                task_id: task.task_id,
+                delta: notes.clone(),
+            });
+
+            Ok(TaskExecution {
+                notes,
+                file_ops: vec![],
+                follow_up_tasks: vec![],
+                input_tokens: 0,
+                output_tokens: 0,
+            })
+        } else {
+            self.emit(EngineEvent::BuildVerificationFailed {
+                task_id: task.task_id,
+                command: command.to_string(),
+                stdout: result.stdout.clone(),
+                stderr: result.stderr.clone(),
+                attempt: 1,
+            });
+            self.persist_build_step(task, BuildStepRecord {
+                kind: "failed".into(),
+                command: Some(command.to_string()),
+                stderr: Some(result.stderr.clone()),
+                stdout: Some(result.stdout.clone()),
+                attempt: Some(1),
+            });
+
+            let detail = if !result.stderr.is_empty() { &result.stderr } else { &result.stdout };
+            Err(EngineError::Build(format!(
+                "command `{command}` failed (exit code {:?}):\n{detail}",
+                result.exit_code
+            )))
         }
     }
 

@@ -61,6 +61,8 @@ pub enum TaskError {
     Settings(#[from] SettingsError),
     #[error("task extraction parse error: {0}")]
     ParseError(String),
+    #[error("duplicate follow-up task")]
+    DuplicateFollowUp,
 }
 
 #[derive(Debug, thiserror::Error)]

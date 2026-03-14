@@ -24,6 +24,8 @@ pub enum EngineError {
     PathEscape(String),
     #[error("response parse error: {0}")]
     Parse(String),
+    #[error("build command failed: {0}")]
+    Build(String),
     #[error("join error: {0}")]
     Join(String),
     #[error("loop already running")]
