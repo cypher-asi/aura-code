@@ -17,7 +17,7 @@ fn make_project() -> Project {
         name: "Test Project".into(),
         description: "Integration test project".into(),
         linked_folder_path: "/tmp/code".into(),
-        requirements_doc_path: "/tmp/requirements.md".into(),
+        requirements_doc_path: None,
         current_status: ProjectStatus::Planning,
         github_integration_id: None,
         github_repo_full_name: None,

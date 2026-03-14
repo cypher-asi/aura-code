@@ -18,7 +18,7 @@ fn setup_project(store: &RocksStore) -> ProjectId {
         name: "Test Project".into(),
         description: "desc".into(),
         linked_folder_path: ".".into(),
-        requirements_doc_path: "req.md".into(),
+        requirements_doc_path: None,
         current_status: ProjectStatus::Planning,
         github_integration_id: None,
         github_repo_full_name: None,

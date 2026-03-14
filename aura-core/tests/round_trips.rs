@@ -114,7 +114,7 @@ fn sample_project() -> Project {
         name: "Test Project".into(),
         description: "A test project".into(),
         linked_folder_path: "/tmp/code".into(),
-        requirements_doc_path: "/tmp/requirements.md".into(),
+        requirements_doc_path: None,
         current_status: ProjectStatus::Planning,
         created_at: now,
         updated_at: now,

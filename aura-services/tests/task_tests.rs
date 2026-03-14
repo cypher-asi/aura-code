@@ -60,7 +60,7 @@ fn make_project() -> Project {
         name: "Test".into(),
         description: "Test".into(),
         linked_folder_path: "/tmp".into(),
-        requirements_doc_path: "/tmp/r.md".into(),
+        requirements_doc_path: None,
         current_status: ProjectStatus::Planning,
         github_integration_id: None,
         github_repo_full_name: None,
