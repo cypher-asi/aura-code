@@ -132,6 +132,11 @@ function formatResult(result: string): string {
 }
 
 export function MessageBubble({ message }: Props) {
+  const hasContent = message.content && message.content.trim().length > 0;
+  const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
+
+  if (!hasContent && !hasToolCalls) return null;
+
   return (
     <div
       className={`${styles.message} ${
@@ -147,19 +152,21 @@ export function MessageBubble({ message }: Props) {
           message.content
         ) : (
           <div className={styles.markdown}>
-            {message.toolCalls && message.toolCalls.length > 0 && (
+            {hasToolCalls && (
               <div className={toolStyles.toolCallsContainer}>
-                {message.toolCalls.map((tc) => (
+                {message.toolCalls!.map((tc) => (
                   <ToolCallBlock key={tc.id} entry={tc} />
                 ))}
               </div>
             )}
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeHighlight]}
-            >
-              {message.content}
-            </ReactMarkdown>
+            {hasContent && (
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeHighlight]}
+              >
+                {message.content}
+              </ReactMarkdown>
+            )}
           </div>
         )}
       </div>

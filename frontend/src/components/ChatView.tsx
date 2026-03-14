@@ -56,11 +56,13 @@ export function ChatView() {
       .getChatMessages(projectId, chatSessionId)
       .then((msgs) => {
         resetMessages(
-          msgs.map((m: ChatMessage) => ({
-            id: m.message_id,
-            role: m.role,
-            content: m.content,
-          })),
+          msgs
+            .filter((m: ChatMessage) => m.content && m.content.trim().length > 0)
+            .map((m: ChatMessage) => ({
+              id: m.message_id,
+              role: m.role,
+              content: m.content,
+            })),
         );
       })
       .catch(console.error);
