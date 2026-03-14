@@ -2,7 +2,7 @@ use std::env;
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::debug;
+use tracing::{debug, warn};
 
 use aura_core::{CheckoutSessionResponse, CreditBalance, CreditTier};
 
@@ -75,6 +75,7 @@ impl BillingClient {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
+            warn!(status = status.as_u16(), %body, "Billing server error fetching tiers");
             return Err(BillingError::ServerError {
                 status: status.as_u16(),
                 body,
@@ -86,12 +87,8 @@ impl BillingClient {
     pub async fn get_balance(
         &self,
         access_token: &str,
-        entity_id: &str,
     ) -> Result<CreditBalance, BillingError> {
-        let url = format!(
-            "{}/api/shanty/credits/balance?entityId={}",
-            self.base_url, entity_id
-        );
+        let url = format!("{}/api/shanty/credits/balance", self.base_url);
         debug!(%url, "Fetching credit balance");
 
         let resp = self
@@ -103,6 +100,7 @@ impl BillingClient {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
+            warn!(status = status.as_u16(), %body, "Billing server error fetching balance");
             return Err(BillingError::ServerError {
                 status: status.as_u16(),
                 body,
@@ -162,6 +160,7 @@ impl BillingClient {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
+            warn!(status = status.as_u16(), %body, "Billing server error creating checkout");
             return Err(BillingError::ServerError {
                 status: status.as_u16(),
                 body,
