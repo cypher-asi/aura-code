@@ -2,25 +2,59 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use tokio::sync::mpsc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use aura_core::*;
 use aura_settings::SettingsService;
 use aura_store::RocksStore;
 
-use crate::claude::{ClaudeClient, ClaudeStreamEvent};
+use crate::chat_tool_executor::ChatToolExecutor;
+use crate::chat_tools::agent_tool_definitions;
+use crate::claude::{
+    ClaudeClient, ClaudeStreamEvent, ContentBlock, RichMessage, ToolDefinition,
+};
 use crate::error::ChatError;
+use crate::project::ProjectService;
 use crate::spec_gen::{SpecGenerationService, SpecStreamEvent};
+use crate::task::TaskService;
 
 const CHAT_MAX_TOKENS: u32 = 16384;
 
-const CHAT_SYSTEM_PROMPT: &str = r#"You are Aura, an AI software engineering assistant. You help users plan, design, and build software projects.
+const CHAT_SYSTEM_PROMPT: &str = r#"You are Aura, an AI software engineering assistant embedded in a project management and code execution platform.
 
-You have context about the user's project and can answer questions about architecture, implementation, debugging, and best practices. Be concise and helpful. Use markdown formatting for code blocks and structured responses."#;
+You have access to tools that let you directly manage the user's project:
+- **Specs**: list, create, update, delete technical specifications
+- **Tasks**: list, create, update, delete, transition status, trigger execution
+- **Sprints**: list, create, update, delete sprint plans
+- **Project**: view and update project settings (name, description, build/test commands)
+- **Dev Loop**: start, pause, or stop the autonomous development loop
+- **Filesystem**: read, write, delete files and list directories in the project folder
+- **Progress**: view task completion metrics
+
+When the user asks you to create, modify, or manage project artifacts, USE YOUR TOOLS to do it directly rather than just describing what to do. Be proactive — if the user says "add a task for X", call create_task. If they say "show me the specs", call list_specs.
+
+For conversational questions about architecture, debugging, or best practices, respond with helpful text.
+
+Use markdown formatting for code blocks and structured responses. Be concise."#;
+
+// ---------------------------------------------------------------------------
+// Stream events sent to the SSE handler
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub enum ChatStreamEvent {
     Delta(String),
+    ToolCall {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    ToolResult {
+        id: String,
+        name: String,
+        result: String,
+        is_error: bool,
+    },
     SpecSaved(Spec),
     TaskSaved(Task),
     MessageSaved(ChatMessage),
@@ -29,11 +63,17 @@ pub enum ChatStreamEvent {
     Done,
 }
 
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+
 pub struct ChatService {
     store: Arc<RocksStore>,
     settings: Arc<SettingsService>,
     claude_client: Arc<ClaudeClient>,
     spec_gen: Arc<SpecGenerationService>,
+    project_service: Arc<ProjectService>,
+    task_service: Arc<TaskService>,
 }
 
 impl ChatService {
@@ -42,14 +82,20 @@ impl ChatService {
         settings: Arc<SettingsService>,
         claude_client: Arc<ClaudeClient>,
         spec_gen: Arc<SpecGenerationService>,
+        project_service: Arc<ProjectService>,
+        task_service: Arc<TaskService>,
     ) -> Self {
         Self {
             store,
             settings,
             claude_client,
             spec_gen,
+            project_service,
+            task_service,
         }
     }
+
+    // -- Session CRUD (unchanged) -------------------------------------------
 
     pub fn create_session(
         &self,
@@ -117,6 +163,8 @@ impl ChatService {
         Ok(messages)
     }
 
+    // -- Streaming message handler ------------------------------------------
+
     pub async fn send_message_streaming(
         &self,
         project_id: &ProjectId,
@@ -150,14 +198,19 @@ impl ChatService {
                     .await;
             }
             _ => {
-                self.handle_chat(project_id, chat_session_id, &tx).await;
+                self.handle_chat_with_tools(project_id, chat_session_id, &tx)
+                    .await;
             }
         }
 
         send(ChatStreamEvent::Done);
     }
 
-    async fn handle_chat(
+    // -----------------------------------------------------------------------
+    // Agentic chat with tool-use loop
+    // -----------------------------------------------------------------------
+
+    async fn handle_chat_with_tools(
         &self,
         project_id: &ProjectId,
         chat_session_id: &ChatSessionId,
@@ -175,7 +228,7 @@ impl ChatService {
             }
         };
 
-        let messages = match self.list_messages(project_id, chat_session_id) {
+        let stored_messages = match self.list_messages(project_id, chat_session_id) {
             Ok(m) => m,
             Err(e) => {
                 send(ChatStreamEvent::Error(format!("Failed to load messages: {e}")));
@@ -185,15 +238,22 @@ impl ChatService {
 
         let project_context = match self.store.get_project(project_id) {
             Ok(p) => format!(
-                "Project: {}\nDescription: {}\nFolder: {}",
-                p.name, p.description, p.linked_folder_path
+                "\n\nCurrent project context:\n- Name: {}\n- Description: {}\n- Folder: {}\n- Build command: {}\n- Test command: {}",
+                p.name,
+                p.description,
+                p.linked_folder_path,
+                p.build_command.as_deref().unwrap_or("(not set)"),
+                p.test_command.as_deref().unwrap_or("(not set)"),
             ),
             Err(_) => String::new(),
         };
 
-        let system = format!("{CHAT_SYSTEM_PROMPT}\n\n{project_context}");
+        let system = format!("{CHAT_SYSTEM_PROMPT}{project_context}");
 
-        let api_messages: Vec<(String, String)> = messages
+        // Build RichMessage history from stored chat messages.
+        // Stored messages only contain text (tool interactions aren't persisted
+        // in the DB), so we use simple text content for history replay.
+        let mut api_messages: Vec<RichMessage> = stored_messages
             .iter()
             .filter(|m| m.role == ChatRole::User || m.role == ChatRole::Assistant)
             .map(|m| {
@@ -202,67 +262,150 @@ impl ChatService {
                     ChatRole::Assistant => "assistant",
                     ChatRole::System => "user",
                 };
-                (role.to_string(), m.content.clone())
+                RichMessage {
+                    role: role.to_string(),
+                    content: crate::claude::MessageContent::Text(m.content.clone()),
+                }
             })
             .collect();
 
-        let (claude_tx, mut claude_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
+        let tools: Vec<ToolDefinition> = agent_tool_definitions();
+        let executor = ChatToolExecutor::new(
+            self.store.clone(),
+            self.project_service.clone(),
+            self.task_service.clone(),
+        );
 
-        let client = self.claude_client.clone();
-        let api_key_owned = api_key.clone();
-        let system_owned = system;
-        let stream_handle = tokio::spawn(async move {
-            client
-                .complete_stream_multi(
-                    &api_key_owned,
-                    &system_owned,
-                    api_messages,
-                    CHAT_MAX_TOKENS,
-                    claude_tx,
-                )
-                .await
-        });
+        let max_iters = ChatToolExecutor::max_iterations();
+        let mut total_text = String::new();
 
-        let mut accumulated = String::new();
+        for iteration in 0..max_iters {
+            // Each iteration: call Claude with tools, handle response
+            let (claude_tx, mut claude_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
 
-        while let Some(evt) = claude_rx.recv().await {
-            match evt {
-                ClaudeStreamEvent::Delta(text) => {
-                    accumulated.push_str(&text);
-                    let _ = tx.send(ChatStreamEvent::Delta(text));
+            let client = self.claude_client.clone();
+            let api_key_owned = api_key.clone();
+            let system_owned = system.clone();
+            let msgs_owned = api_messages.clone();
+            let tools_owned = tools.clone();
+
+            let stream_handle = tokio::spawn(async move {
+                client
+                    .complete_stream_with_tools(
+                        &api_key_owned,
+                        &system_owned,
+                        msgs_owned,
+                        tools_owned,
+                        CHAT_MAX_TOKENS,
+                        claude_tx,
+                    )
+                    .await
+            });
+
+            // Collect events from the stream
+            let mut iter_text = String::new();
+            let mut iter_tool_calls: Vec<crate::claude::ToolCall> = Vec::new();
+
+            while let Some(evt) = claude_rx.recv().await {
+                match evt {
+                    ClaudeStreamEvent::Delta(text) => {
+                        iter_text.push_str(&text);
+                        let _ = tx.send(ChatStreamEvent::Delta(text));
+                    }
+                    ClaudeStreamEvent::ToolUse { id, name, input } => {
+                        let _ = tx.send(ChatStreamEvent::ToolCall {
+                            id: id.clone(),
+                            name: name.clone(),
+                            input: input.clone(),
+                        });
+                        iter_tool_calls.push(crate::claude::ToolCall { id, name, input });
+                    }
+                    ClaudeStreamEvent::Done { stop_reason, .. } => {
+                        info!(iteration, stop_reason = %stop_reason, tool_calls = iter_tool_calls.len(), "Chat iteration done");
+                    }
+                    ClaudeStreamEvent::Error(msg) => {
+                        let _ = tx.send(ChatStreamEvent::Error(msg));
+                    }
                 }
-                ClaudeStreamEvent::Done { .. } => {}
-                ClaudeStreamEvent::Error(msg) => {
-                    let _ = tx.send(ChatStreamEvent::Error(msg));
+            }
+
+            let stream_result = match stream_handle.await {
+                Ok(Ok(r)) => r,
+                Ok(Err(e)) => {
+                    if iter_text.is_empty() && iter_tool_calls.is_empty() {
+                        send(ChatStreamEvent::Error(format!("Claude API error: {e}")));
+                    }
+                    total_text.push_str(&iter_text);
+                    break;
                 }
-                ClaudeStreamEvent::ToolUse { .. } => {}
+                Err(e) => {
+                    if iter_text.is_empty() && iter_tool_calls.is_empty() {
+                        send(ChatStreamEvent::Error(format!("Stream task error: {e}")));
+                    }
+                    total_text.push_str(&iter_text);
+                    break;
+                }
+            };
+
+            total_text.push_str(&iter_text);
+
+            // If Claude finished with end_turn (no tool calls), we're done
+            if stream_result.stop_reason != "tool_use" || iter_tool_calls.is_empty() {
+                break;
+            }
+
+            // Build the assistant message with both text and tool_use blocks
+            let mut assistant_blocks: Vec<ContentBlock> = Vec::new();
+            if !iter_text.is_empty() {
+                assistant_blocks.push(ContentBlock::Text {
+                    text: iter_text.clone(),
+                });
+            }
+            for tc in &iter_tool_calls {
+                assistant_blocks.push(ContentBlock::ToolUse {
+                    id: tc.id.clone(),
+                    name: tc.name.clone(),
+                    input: tc.input.clone(),
+                });
+            }
+            api_messages.push(RichMessage::assistant_blocks(assistant_blocks));
+
+            // Execute each tool call and build tool_result blocks
+            let mut result_blocks: Vec<ContentBlock> = Vec::new();
+            for tc in &iter_tool_calls {
+                let result = executor.execute(project_id, &tc.name, tc.input.clone()).await;
+                let _ = tx.send(ChatStreamEvent::ToolResult {
+                    id: tc.id.clone(),
+                    name: tc.name.clone(),
+                    result: result.content.clone(),
+                    is_error: result.is_error,
+                });
+                result_blocks.push(ContentBlock::ToolResult {
+                    tool_use_id: tc.id.clone(),
+                    content: result.content,
+                    is_error: if result.is_error { Some(true) } else { None },
+                });
+            }
+            api_messages.push(RichMessage::tool_results(result_blocks));
+
+            if iteration + 1 >= max_iters {
+                warn!(
+                    %project_id,
+                    max_iters,
+                    "Tool-use loop hit max iterations, stopping"
+                );
             }
         }
 
-        match stream_handle.await {
-            Ok(Ok(_)) => {}
-            Ok(Err(e)) => {
-                if accumulated.is_empty() {
-                    send(ChatStreamEvent::Error(format!("Claude API error: {e}")));
-                    return;
-                }
-            }
-            Err(e) => {
-                if accumulated.is_empty() {
-                    send(ChatStreamEvent::Error(format!("Stream task error: {e}")));
-                    return;
-                }
-            }
-        }
-
-        if !accumulated.is_empty() {
-            let assistant_reply = accumulated.clone();
+        // Save the final accumulated text as the assistant message
+        if !total_text.is_empty() {
+            let assistant_reply = total_text.clone();
             let assistant_msg = ChatMessage {
                 message_id: ChatMessageId::new(),
                 chat_session_id: *chat_session_id,
                 project_id: *project_id,
                 role: ChatRole::Assistant,
-                content: accumulated,
+                content: total_text,
                 created_at: Utc::now(),
             };
             if let Err(e) = self.store.put_chat_message(&assistant_msg) {
@@ -275,13 +418,17 @@ impl ChatService {
                 project_id,
                 chat_session_id,
                 &api_key,
-                &messages,
+                &stored_messages,
                 &assistant_reply,
                 tx,
             )
             .await;
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Title generation (unchanged)
+    // -----------------------------------------------------------------------
 
     async fn maybe_generate_title(
         &self,
@@ -334,6 +481,10 @@ impl ChatService {
             }
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Spec generation (unchanged)
+    // -----------------------------------------------------------------------
 
     async fn handle_generate_specs(
         &self,

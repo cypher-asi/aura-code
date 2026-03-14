@@ -114,6 +114,16 @@ pub async fn send_message_stream(
                 .event("delta")
                 .json_data(serde_json::json!({ "text": text }))
                 .unwrap(),
+            ChatStreamEvent::ToolCall { id, name, input } => Event::default()
+                .event("tool_call")
+                .json_data(serde_json::json!({ "id": id, "name": name, "input": input }))
+                .unwrap(),
+            ChatStreamEvent::ToolResult { id, name, result, is_error } => Event::default()
+                .event("tool_result")
+                .json_data(serde_json::json!({
+                    "id": id, "name": name, "result": result, "is_error": is_error
+                }))
+                .unwrap(),
             ChatStreamEvent::SpecSaved(spec) => Event::default()
                 .event("spec_saved")
                 .json_data(serde_json::json!({ "spec": spec }))

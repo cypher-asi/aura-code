@@ -44,6 +44,8 @@ fn build_test_app() -> (Router, AppState, tempfile::TempDir, tempfile::TempDir) 
         settings_service.clone(),
         claude_client.clone(),
         spec_gen_service.clone(),
+        project_service.clone(),
+        task_service.clone(),
     ));
 
     let (event_tx, _event_rx) = mpsc::unbounded_channel::<EngineEvent>();
