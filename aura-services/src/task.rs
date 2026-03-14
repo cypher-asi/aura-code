@@ -367,6 +367,7 @@ impl TaskService {
             execution_notes: String::new(),
             files_changed: vec![],
             live_output: String::new(),
+            build_steps: vec![],
             user_id: None,
             model: None,
             total_input_tokens: 0,

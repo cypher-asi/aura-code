@@ -66,6 +66,15 @@ pub struct FileChangeSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BuildStepRecord {
+    pub kind: String,
+    pub command: Option<String>,
+    pub stderr: Option<String>,
+    pub stdout: Option<String>,
+    pub attempt: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Task {
     pub task_id: TaskId,
     pub project_id: ProjectId,
@@ -83,6 +92,8 @@ pub struct Task {
     pub files_changed: Vec<FileChangeSummary>,
     #[serde(default)]
     pub live_output: String,
+    #[serde(default)]
+    pub build_steps: Vec<BuildStepRecord>,
     #[serde(default)]
     pub user_id: Option<String>,
     #[serde(default)]

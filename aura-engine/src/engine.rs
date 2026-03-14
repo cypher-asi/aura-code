@@ -774,6 +774,13 @@ impl DevLoopEngine {
     /// errors up to `MAX_BUILD_FIX_RETRIES` times. Returns the final
     /// `TaskExecution` (which may contain additional file ops from fix rounds)
     /// and whether the build ultimately passed.
+    fn persist_build_step(&self, task: &Task, step: BuildStepRecord) {
+        if let Ok(mut t) = self.store.get_task(&task.project_id, &task.spec_id, &task.task_id) {
+            t.build_steps.push(step);
+            let _ = self.store.put_task(&t);
+        }
+    }
+
     async fn verify_and_fix_build(
         &self,
         project: &Project,
@@ -784,7 +791,7 @@ impl DevLoopEngine {
     ) -> Result<(Vec<FileOp>, bool), EngineError> {
         let build_command = match &project.build_command {
             Some(cmd) if !cmd.trim().is_empty() => cmd.clone(),
-            _ => return Ok((vec![], true)), // no build command configured, treat as pass
+            _ => return Ok((vec![], true)),
         };
 
         let base_path = Path::new(&project.linked_folder_path);
@@ -795,6 +802,13 @@ impl DevLoopEngine {
                 task_id: task.task_id,
                 command: build_command.clone(),
             });
+            self.persist_build_step(task, BuildStepRecord {
+                kind: "started".into(),
+                command: Some(build_command.clone()),
+                stderr: None,
+                stdout: None,
+                attempt: Some(attempt),
+            });
 
             let build_result = build_verify::run_build_command(base_path, &build_command).await?;
 
@@ -803,6 +817,13 @@ impl DevLoopEngine {
                     task_id: task.task_id,
                     command: build_command.clone(),
                     stdout: build_result.stdout.clone(),
+                });
+                self.persist_build_step(task, BuildStepRecord {
+                    kind: "passed".into(),
+                    command: Some(build_command.clone()),
+                    stderr: None,
+                    stdout: Some(build_result.stdout),
+                    attempt: Some(attempt),
                 });
                 return Ok((all_fix_ops, true));
             }
@@ -814,6 +835,13 @@ impl DevLoopEngine {
                 stderr: build_result.stderr.clone(),
                 attempt,
             });
+            self.persist_build_step(task, BuildStepRecord {
+                kind: "failed".into(),
+                command: Some(build_command.clone()),
+                stderr: Some(build_result.stderr.clone()),
+                stdout: Some(build_result.stdout.clone()),
+                attempt: Some(attempt),
+            });
 
             if attempt == MAX_BUILD_FIX_RETRIES {
                 info!(task_id = %task.task_id, "build still failing after max retries");
@@ -823,6 +851,13 @@ impl DevLoopEngine {
             self.emit(EngineEvent::BuildFixAttempt {
                 task_id: task.task_id,
                 attempt,
+            });
+            self.persist_build_step(task, BuildStepRecord {
+                kind: "fix_attempt".into(),
+                command: None,
+                stderr: None,
+                stdout: None,
+                attempt: Some(attempt),
             });
 
             let spec = self.store.get_spec(&task.project_id, &task.spec_id)?;

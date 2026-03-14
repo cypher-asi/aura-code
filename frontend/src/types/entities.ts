@@ -43,6 +43,14 @@ export interface Spec {
   updated_at: string;
 }
 
+export interface BuildStepRecord {
+  kind: string;
+  command?: string;
+  stderr?: string;
+  stdout?: string;
+  attempt?: number;
+}
+
 export interface Task {
   task_id: TaskId;
   project_id: ProjectId;
@@ -57,6 +65,7 @@ export interface Task {
   execution_notes: string;
   files_changed: { op: string; path: string; lines_added?: number; lines_removed?: number }[];
   live_output: string;
+  build_steps?: BuildStepRecord[];
   user_id?: string;
   model?: string;
   total_input_tokens: number;

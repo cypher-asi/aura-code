@@ -28,7 +28,7 @@ interface EventContextValue {
   subscribe: (type: EngineEventType, callback: EventCallback) => () => void;
   getTaskOutput: (taskId: string) => TaskOutputEntry;
   subscribeTaskOutput: (taskId: string, listener: TaskOutputListener) => () => void;
-  seedTaskOutput: (taskId: string, text: string) => void;
+  seedTaskOutput: (taskId: string, text: string, buildSteps?: BuildStep[]) => void;
 }
 
 const EMPTY_OUTPUT: TaskOutputEntry = { text: "", fileOps: [], buildSteps: [] };
@@ -140,11 +140,16 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   );
 
   const seedTaskOutput = useCallback(
-    (taskId: string, text: string) => {
-      if (!text) return;
+    (taskId: string, text: string, buildSteps?: BuildStep[]) => {
+      if (!text && (!buildSteps || buildSteps.length === 0)) return;
       const existing = taskOutputRef.current.get(taskId);
       if (existing && existing.text) return;
-      taskOutputRef.current.set(taskId, { text, fileOps: existing?.fileOps ?? [], buildSteps: existing?.buildSteps ?? [] });
+      const seededBuildSteps = buildSteps?.map((s) => ({ ...s, timestamp: 0 })) ?? existing?.buildSteps ?? [];
+      taskOutputRef.current.set(taskId, {
+        text: text || existing?.text || "",
+        fileOps: existing?.fileOps ?? [],
+        buildSteps: existing?.buildSteps.length ? existing.buildSteps : seededBuildSteps,
+      });
       notifyTaskOutputListeners(taskId);
     },
     [notifyTaskOutputListeners],

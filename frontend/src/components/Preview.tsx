@@ -351,10 +351,19 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
     if (!projectId) return;
     if (streamBuf || hydratedRef.current === task.task_id) return;
 
+    const persistedBuildSteps = task.build_steps?.map((s) => ({
+      kind: s.kind as BuildStep["kind"],
+      command: s.command,
+      stderr: s.stderr,
+      stdout: s.stdout,
+      attempt: s.attempt,
+      timestamp: 0,
+    }));
+
     if (isTerminal) {
-      if (task.live_output) {
+      if (task.live_output || persistedBuildSteps?.length) {
         hydratedRef.current = task.task_id;
-        seedTaskOutput(task.task_id, task.live_output);
+        seedTaskOutput(task.task_id, task.live_output, persistedBuildSteps);
       }
       return;
     }
@@ -363,7 +372,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
     hydratedRef.current = task.task_id;
 
     if (task.live_output) {
-      seedTaskOutput(task.task_id, task.live_output);
+      seedTaskOutput(task.task_id, task.live_output, persistedBuildSteps);
       return;
     }
 
