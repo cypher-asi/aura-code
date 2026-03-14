@@ -375,6 +375,7 @@ function previewTitle(item: PreviewItem): string {
     case "sprint": return item.sprint.title;
     case "spec": return item.spec.title;
     case "task": return item.task.title;
+    case "session": return `Session`;
   }
 }
 
