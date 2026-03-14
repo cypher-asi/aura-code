@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { Sidebar, Button, Text, GroupCollapsible, Item } from "@cypher-asi/zui";
+import { Button, Text, GroupCollapsible, Item } from "@cypher-asi/zui";
 import { X, ArrowLeft, Sparkles, Loader2, FilePlus, FilePen, FileX, RotateCcw, Play, Check, XCircle, Wrench, MinusCircle, SkipForward } from "lucide-react";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
@@ -987,14 +987,41 @@ function previewTitle(item: PreviewItem): string {
   }
 }
 
-export function Preview() {
-  const { previewItem, closePreview, canGoBack, goBackPreview } = useSidekick();
+function useDisplayItem() {
+  const { previewItem } = useSidekick();
   const lastItem = useRef<PreviewItem | null>(null);
+  if (previewItem) lastItem.current = previewItem;
+  return previewItem ?? lastItem.current;
+}
+
+export function PreviewHeader() {
+  const { closePreview, canGoBack, goBackPreview } = useSidekick();
+  const displayItem = useDisplayItem();
+
+  if (!displayItem) return null;
+
+  return (
+    <div className={styles.previewHeader}>
+      {canGoBack && (
+        <Button variant="ghost" size="sm" iconOnly icon={<ArrowLeft size={14} />} onClick={goBackPreview} />
+      )}
+      {displayItem.kind === "sprint" ? (
+        <SprintHeaderTitle sprint={displayItem.sprint} />
+      ) : (
+        <Text size="sm" className={styles.previewTitle} style={{ fontWeight: 600 }}>
+          {previewTitle(displayItem)}
+        </Text>
+      )}
+      {displayItem.kind === "task" && <RunTaskButton task={displayItem.task} />}
+      <Button variant="ghost" size="sm" iconOnly icon={<X size={14} />} onClick={closePreview} />
+    </div>
+  );
+}
+
+export function PreviewContent() {
+  const displayItem = useDisplayItem();
   const bodyRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
-
-  if (previewItem) lastItem.current = previewItem;
-  const displayItem = previewItem ?? lastItem.current;
 
   const resetKey = displayItem
     ? displayItem.kind === "task" ? displayItem.task.task_id
@@ -1008,28 +1035,24 @@ export function Preview() {
     autoScrollRef.current = true;
   }, [resetKey]);
 
-  // Observe content mutations on previewBody but scroll the Sidebar's
-  // .content wrapper (the actual overflow container one level up).
   useEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
-    const scrollContainer = el.parentElement;
-    if (!scrollContainer) return;
 
     const scrollIfNeeded = () => {
       if (autoScrollRef.current) {
         requestAnimationFrame(() => {
-          scrollContainer.scrollTop = scrollContainer.scrollHeight;
+          el.scrollTop = el.scrollHeight;
         });
       }
     };
 
     const onScroll = () => {
-      const { scrollHeight, scrollTop, clientHeight } = scrollContainer;
+      const { scrollHeight, scrollTop, clientHeight } = el;
       autoScrollRef.current = scrollHeight - scrollTop - clientHeight < 40;
     };
 
-    scrollContainer.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("scroll", onScroll, { passive: true });
 
     const observer = new MutationObserver(scrollIfNeeded);
     observer.observe(el, { childList: true, subtree: true, characterData: true });
@@ -1038,45 +1061,16 @@ export function Preview() {
 
     return () => {
       observer.disconnect();
-      scrollContainer.removeEventListener("scroll", onScroll);
+      el.removeEventListener("scroll", onScroll);
     };
   }, [resetKey]);
 
   return (
-    <Sidebar
-      className={styles.previewPanel}
-      resizable
-      resizePosition="left"
-      defaultWidth={320}
-      minWidth={200}
-      maxWidth={600}
-      storageKey="aura-preview"
-      collapsed={!previewItem}
-      header={
-        displayItem ? (
-          <div className={styles.previewHeader}>
-            {canGoBack && (
-              <Button variant="ghost" size="sm" iconOnly icon={<ArrowLeft size={14} />} onClick={goBackPreview} />
-            )}
-            {displayItem.kind === "sprint" ? (
-              <SprintHeaderTitle sprint={displayItem.sprint} />
-            ) : (
-              <Text size="sm" className={styles.previewTitle} style={{ fontWeight: 600 }}>
-                {previewTitle(displayItem)}
-              </Text>
-            )}
-            {displayItem.kind === "task" && <RunTaskButton task={displayItem.task} />}
-            <Button variant="ghost" size="sm" iconOnly icon={<X size={14} />} onClick={closePreview} />
-          </div>
-        ) : undefined
-      }
-    >
-      <div ref={bodyRef} className={styles.previewBody}>
-        {displayItem?.kind === "sprint" && <SprintPreview sprint={displayItem.sprint} />}
-        {displayItem?.kind === "spec" && <SpecPreview spec={displayItem.spec} />}
-        {displayItem?.kind === "task" && <TaskPreview task={displayItem.task} />}
-        {displayItem?.kind === "session" && <SessionPreview session={displayItem.session} />}
-      </div>
-    </Sidebar>
+    <div ref={bodyRef} className={styles.previewBody}>
+      {displayItem?.kind === "sprint" && <SprintPreview sprint={displayItem.sprint} />}
+      {displayItem?.kind === "spec" && <SpecPreview spec={displayItem.spec} />}
+      {displayItem?.kind === "task" && <TaskPreview task={displayItem.task} />}
+      {displayItem?.kind === "session" && <SessionPreview session={displayItem.session} />}
+    </div>
   );
 }
