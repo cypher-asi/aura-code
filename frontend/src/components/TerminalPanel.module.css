@@ -12,6 +12,8 @@
 .collapsed {
   height: var(--control-height-md);
   max-height: var(--control-height-md);
+  border-left: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
 }
 
 .collapsed .terminalBody {
