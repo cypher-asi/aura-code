@@ -300,6 +300,23 @@
   text-align: right;
 }
 
+.taskSuffix {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.taskModel {
+  font-size: 10px;
+  opacity: 0.4;
+}
+
+.taskCost {
+  font-size: 10px;
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 900px) {
   .panels {
     flex-direction: column;

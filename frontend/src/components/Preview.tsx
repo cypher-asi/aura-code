@@ -9,7 +9,7 @@ import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
 import { useEventContext, useTaskOutput } from "../context/EventContext";
 import { TaskStatusIcon } from "./TaskStatusIcon";
-import { formatRelativeTime, toBullets } from "../utils/format";
+import { formatRelativeTime, toBullets, formatCost, formatTokens, formatModelName } from "../utils/format";
 import { parseTaskStream } from "../utils/parse-task-stream";
 import { deriveActivity } from "../utils/derive-activity";
 import type { PreviewItem } from "../context/SidekickContext";
@@ -431,6 +431,33 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
             </button>
           </div>
         )}
+        {task.user_id && (
+          <div className={styles.taskField}>
+            <span className={styles.fieldLabel}>User</span>
+            <Text size="sm">{task.user_id.slice(0, 8)}</Text>
+          </div>
+        )}
+        {task.model && (
+          <div className={styles.taskField}>
+            <span className={styles.fieldLabel}>Model</span>
+            <Text size="sm">{formatModelName(task.model)}</Text>
+          </div>
+        )}
+        {(task.total_input_tokens > 0 || task.total_output_tokens > 0) && (
+          <>
+            <div className={styles.taskField}>
+              <span className={styles.fieldLabel}>Tokens</span>
+              <Text size="sm">
+                {formatTokens(task.total_input_tokens + task.total_output_tokens)} total
+                <Text variant="muted" size="sm" as="span"> ({formatTokens(task.total_input_tokens)} in / {formatTokens(task.total_output_tokens)} out)</Text>
+              </Text>
+            </div>
+            <div className={styles.taskField}>
+              <span className={styles.fieldLabel}>Cost</span>
+              <Text size="sm">{formatCost(task.total_input_tokens, task.total_output_tokens)}</Text>
+            </div>
+          </>
+        )}
       </div>
 
       {fileOps.length > 0 && (
@@ -539,6 +566,22 @@ function SessionPreview({ session }: { session: Session }) {
           <Text variant="muted" size="sm">Status</Text>
           <StatusBadge status={session.status} />
         </div>
+        {session.user_id && (
+          <div className={styles.taskField}>
+            <Text variant="muted" size="sm">User</Text>
+            <Text size="sm">{session.user_id.slice(0, 8)}</Text>
+          </div>
+        )}
+        {session.model && (
+          <div className={styles.taskField}>
+            <Text variant="muted" size="sm">Model</Text>
+            <Text size="sm">{formatModelName(session.model)}</Text>
+          </div>
+        )}
+        <div className={styles.taskField}>
+          <Text variant="muted" size="sm">Cost</Text>
+          <Text size="sm">{formatCost(session.total_input_tokens, session.total_output_tokens)}</Text>
+        </div>
         <div className={styles.taskField}>
           <Text variant="muted" size="sm">Duration</Text>
           <Text size="sm">
@@ -553,8 +596,8 @@ function SessionPreview({ session }: { session: Session }) {
         <div className={styles.taskField}>
           <Text variant="muted" size="sm">Tokens Used</Text>
           <Text size="sm">
-            {(session.total_input_tokens + session.total_output_tokens).toLocaleString()} total
-            <Text variant="muted" size="sm" as="span"> ({session.total_input_tokens.toLocaleString()} in / {session.total_output_tokens.toLocaleString()} out)</Text>
+            {formatTokens(session.total_input_tokens + session.total_output_tokens)} total
+            <Text variant="muted" size="sm" as="span"> ({formatTokens(session.total_input_tokens)} in / {formatTokens(session.total_output_tokens)} out)</Text>
           </Text>
         </div>
         <div className={styles.taskField}>

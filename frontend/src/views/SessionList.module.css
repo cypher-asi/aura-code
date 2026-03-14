@@ -25,12 +25,23 @@
   white-space: nowrap;
 }
 
+.sessionUser {
+  font-size: 11px;
+  opacity: 0.4;
+}
+
+.sessionModel {
+  font-size: 11px;
+  opacity: 0.4;
+}
+
 .sessionDuration {
   font-size: 11px;
   opacity: 0.5;
 }
 
-.sessionTokens {
+.sessionCost {
   font-size: 11px;
-  opacity: 0.4;
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
 }

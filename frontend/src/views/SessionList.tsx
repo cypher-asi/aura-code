@@ -8,6 +8,7 @@ import { Explorer, PageEmptyState } from "@cypher-asi/zui";
 import type { ExplorerNode } from "@cypher-asi/zui";
 import { MonitorCog } from "lucide-react";
 import { StatusBadge } from "../components/StatusBadge";
+import { formatTokens, formatCost, formatModelName } from "../utils/format";
 import styles from "./SessionList.module.css";
 
 function formatDuration(startedAt: string, endedAt: string | null): string {
@@ -20,12 +21,6 @@ function formatDuration(startedAt: string, endedAt: string | null): string {
   if (min < 60) return `${min}m ${sec}s`;
   const hr = Math.floor(min / 60);
   return `${hr}h ${min % 60}m`;
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
-  if (n >= 10_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
-  return n.toLocaleString();
 }
 
 export function SessionList() {
@@ -66,12 +61,18 @@ export function SessionList() {
           icon: <StatusBadge status={session.status} />,
           suffix: (
             <span className={styles.sessionMeta}>
+              {session.user_id && (
+                <span className={styles.sessionUser}>{session.user_id.slice(0, 8)}</span>
+              )}
+              {session.model && (
+                <span className={styles.sessionModel}>{formatModelName(session.model)}</span>
+              )}
               <span className={styles.sessionDuration}>
                 {formatDuration(session.started_at, session.ended_at)}
               </span>
               {totalTokens > 0 && (
-                <span className={styles.sessionTokens}>
-                  {formatTokens(totalTokens)}
+                <span className={styles.sessionCost}>
+                  {formatCost(session.total_input_tokens, session.total_output_tokens)}
                 </span>
               )}
             </span>

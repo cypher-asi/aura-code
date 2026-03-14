@@ -7,6 +7,7 @@ import { useEventContext } from "../context/EventContext";
 import { useSidekick } from "../context/SidekickContext";
 import { useDelayedEmpty } from "../hooks/use-delayed-empty";
 import { mergeById } from "../utils/collections";
+import { formatCost, formatModelName } from "../utils/format";
 import { Explorer, PageEmptyState } from "@cypher-asi/zui";
 import styles from "./aura.module.css";
 import type { ExplorerNode } from "@cypher-asi/zui";
@@ -115,12 +116,25 @@ export function TaskList() {
       label: spec.title,
       children:
         specTasks.length > 0
-          ? specTasks.map((task) => ({
-              id: task.task_id,
-              label: task.title,
-              suffix: <TaskStatusIcon status={task.status} />,
-              metadata: { type: "task" },
-            }))
+          ? specTasks.map((task) => {
+              const hasTokens = task.total_input_tokens > 0 || task.total_output_tokens > 0;
+              return {
+                id: task.task_id,
+                label: task.title,
+                suffix: (
+                  <span className={styles.taskSuffix}>
+                    {task.model && <span className={styles.taskModel}>{formatModelName(task.model)}</span>}
+                    {hasTokens && (
+                      <span className={styles.taskCost}>
+                        {formatCost(task.total_input_tokens, task.total_output_tokens)}
+                      </span>
+                    )}
+                    <TaskStatusIcon status={task.status} />
+                  </span>
+                ),
+                metadata: { type: "task" },
+              };
+            })
           : [
               {
                 id: `${spec.spec_id}__empty`,
@@ -134,12 +148,25 @@ export function TaskList() {
       specNodes.push({
         id: "__other__",
         label: "Other",
-        children: ungrouped.map((task) => ({
-          id: task.task_id,
-          label: task.title,
-          suffix: <TaskStatusIcon status={task.status} />,
-          metadata: { type: "task" },
-        })),
+        children: ungrouped.map((task) => {
+          const hasTokens = task.total_input_tokens > 0 || task.total_output_tokens > 0;
+          return {
+            id: task.task_id,
+            label: task.title,
+            suffix: (
+              <span className={styles.taskSuffix}>
+                {task.model && <span className={styles.taskModel}>{formatModelName(task.model)}</span>}
+                {hasTokens && (
+                  <span className={styles.taskCost}>
+                    {formatCost(task.total_input_tokens, task.total_output_tokens)}
+                  </span>
+                )}
+                <TaskStatusIcon status={task.status} />
+              </span>
+            ),
+            metadata: { type: "task" },
+          };
+        }),
       });
     }
 
