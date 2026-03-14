@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -9,7 +10,7 @@ use tower::ServiceExt;
 
 use aura_core::*;
 use aura_engine::EngineEvent;
-use aura_server::state::AppState;
+use aura_server::state::{AppState, TaskOutputBuffers};
 use aura_services::*;
 use aura_settings::SettingsService;
 use aura_store::RocksStore;
@@ -21,6 +22,9 @@ fn build_test_app() -> (Router, AppState, tempfile::TempDir, tempfile::TempDir) 
     let store = Arc::new(RocksStore::open(db_dir.path()).unwrap());
     let settings_service = Arc::new(SettingsService::new(store.clone(), data_dir.path()).unwrap());
     let claude_client = Arc::new(ClaudeClient::new());
+    let org_service = Arc::new(OrgService::new(store.clone()));
+    let github_service = Arc::new(GitHubService::new(store.clone(), org_service.clone()));
+    let auth_service = Arc::new(AuthService::new(store.clone()));
     let project_service = Arc::new(ProjectService::new(store.clone()));
     let spec_gen_service = Arc::new(SpecGenerationService::new(
         store.clone(),
@@ -35,12 +39,23 @@ fn build_test_app() -> (Router, AppState, tempfile::TempDir, tempfile::TempDir) 
     let task_service = Arc::new(TaskService::new(store.clone()));
     let agent_service = Arc::new(AgentService::new(store.clone()));
     let session_service = Arc::new(SessionService::new(store.clone()));
+    let chat_service = Arc::new(ChatService::new(
+        store.clone(),
+        settings_service.clone(),
+        claude_client.clone(),
+        spec_gen_service.clone(),
+    ));
 
     let (event_tx, _event_rx) = mpsc::unbounded_channel::<EngineEvent>();
     let (event_broadcast, _) = broadcast::channel::<EngineEvent>(256);
+    let task_output_buffers: TaskOutputBuffers =
+        Arc::new(std::sync::Mutex::new(HashMap::new()));
 
     let state = AppState {
         store,
+        org_service,
+        github_service,
+        auth_service,
         settings_service,
         project_service,
         spec_gen_service,
@@ -48,11 +63,13 @@ fn build_test_app() -> (Router, AppState, tempfile::TempDir, tempfile::TempDir) 
         task_service,
         agent_service,
         session_service,
+        chat_service,
         claude_client,
         event_tx,
         event_broadcast,
         loop_handle: Arc::new(Mutex::new(None)),
         loop_project_id: Arc::new(Mutex::new(None)),
+        task_output_buffers,
     };
 
     let app = aura_server::create_router(state.clone());

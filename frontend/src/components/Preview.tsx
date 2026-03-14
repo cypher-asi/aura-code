@@ -320,17 +320,6 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
     }
   }, [projectId, task.task_id, retrying]);
 
-  const handleRunTask = useCallback(async () => {
-    if (!projectId || runningTask) return;
-    setRunningTask(true);
-    try {
-      await api.runTask(projectId, task.task_id);
-    } catch (err) {
-      console.error("Run task failed:", err);
-      setRunningTask(false);
-    }
-  }, [projectId, task.task_id, runningTask]);
-
   const handleViewSession = useCallback(async () => {
     if (!projectId || !effectiveSessionId || !task.assigned_agent_id) return;
     try {
@@ -649,6 +638,7 @@ export function Preview() {
                 {previewTitle(displayItem)}
               </Text>
             )}
+            {displayItem.kind === "task" && <RunTaskButton task={displayItem.task} />}
             <Button variant="ghost" size="sm" iconOnly icon={<X size={14} />} onClick={closePreview} />
           </div>
         ) : undefined
