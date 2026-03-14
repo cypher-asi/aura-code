@@ -238,6 +238,8 @@ impl DevLoopEngine {
                     let project = self.project_service.get_project(&project_id)?;
                     let base_path = Path::new(&project.linked_folder_path);
 
+                    let file_changes = file_ops::compute_file_changes(base_path, &execution.file_ops);
+
                     if let Err(e) = file_ops::apply_file_ops(base_path, &execution.file_ops).await {
                         let reason = format!("file operation failed: {e}");
                         self.task_service.fail_task(
@@ -269,15 +271,6 @@ impl DevLoopEngine {
                             files_deleted,
                             files,
                         });
-
-                        let file_changes: Vec<aura_core::FileChangeSummary> = execution.file_ops.iter().map(|op| {
-                            let (op_name, path) = match op {
-                                file_ops::FileOp::Create { path, .. } => ("create", path.as_str()),
-                                file_ops::FileOp::Modify { path, .. } => ("modify", path.as_str()),
-                                file_ops::FileOp::Delete { path } => ("delete", path.as_str()),
-                            };
-                            aura_core::FileChangeSummary { op: op_name.to_string(), path: path.to_string() }
-                        }).collect();
                         self.task_service.complete_task(
                             &project_id,
                             &task.spec_id,

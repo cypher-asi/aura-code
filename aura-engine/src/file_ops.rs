@@ -85,6 +85,46 @@ pub async fn apply_file_ops(base_path: &Path, ops: &[FileOp]) -> Result<(), Engi
     Ok(())
 }
 
+/// Compute line-level change stats for each file op before applying them.
+/// Must be called before `apply_file_ops` so old file contents are still on disk.
+pub fn compute_file_changes(
+    base_path: &Path,
+    ops: &[FileOp],
+) -> Vec<aura_core::FileChangeSummary> {
+    ops.iter()
+        .map(|op| match op {
+            FileOp::Create { path, content } => aura_core::FileChangeSummary {
+                op: "create".to_string(),
+                path: path.clone(),
+                lines_added: content.lines().count() as u32,
+                lines_removed: 0,
+            },
+            FileOp::Modify { path, content } => {
+                let old_lines = std::fs::read_to_string(base_path.join(path))
+                    .map(|s| s.lines().count() as u32)
+                    .unwrap_or(0);
+                aura_core::FileChangeSummary {
+                    op: "modify".to_string(),
+                    path: path.clone(),
+                    lines_added: content.lines().count() as u32,
+                    lines_removed: old_lines,
+                }
+            }
+            FileOp::Delete { path } => {
+                let old_lines = std::fs::read_to_string(base_path.join(path))
+                    .map(|s| s.lines().count() as u32)
+                    .unwrap_or(0);
+                aura_core::FileChangeSummary {
+                    op: "delete".to_string(),
+                    path: path.clone(),
+                    lines_added: 0,
+                    lines_removed: old_lines,
+                }
+            }
+        })
+        .collect()
+}
+
 const SKIP_DIRS: &[&str] = &[
     ".git",
     "target",

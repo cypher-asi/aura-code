@@ -56,6 +56,10 @@ pub struct Spec {
 pub struct FileChangeSummary {
     pub op: String,
     pub path: String,
+    #[serde(default)]
+    pub lines_added: u32,
+    #[serde(default)]
+    pub lines_removed: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

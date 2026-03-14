@@ -55,7 +55,7 @@ export interface Task {
   assigned_agent_id: AgentId | null;
   session_id: SessionId | null;
   execution_notes: string;
-  files_changed: { op: string; path: string }[];
+  files_changed: { op: string; path: string; lines_added?: number; lines_removed?: number }[];
   created_at: string;
   updated_at: string;
 }
