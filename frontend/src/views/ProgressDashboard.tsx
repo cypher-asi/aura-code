@@ -80,7 +80,7 @@ function StatCard({ value, label, color, fmt }: { value: number; label: string; 
   return (
     <Panel variant="solid" border="solid" style={{ padding: "var(--space-3)", textAlign: "center" }}>
       <div className={styles.statValue} style={{ color }}>{display}</div>
-      <Text variant="muted" size="xs">{label}</Text>
+      <Text variant="muted" size="xs" align="center">{label}</Text>
     </Panel>
   );
 }
