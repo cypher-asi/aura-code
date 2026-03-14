@@ -23,6 +23,13 @@
   gap: var(--space-1);
 }
 
+.connectionDot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+}
+
 .panelHeader {
   position: relative;
   display: flex;

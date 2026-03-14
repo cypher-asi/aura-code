@@ -378,6 +378,34 @@ function TestStepItem({ step, active }: { step: TestStep; active: boolean }) {
   );
 }
 
+function useElapsedTime(active: boolean) {
+  const startRef = useRef<number>(Date.now());
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setElapsed(0);
+      return;
+    }
+    startRef.current = Date.now();
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [active]);
+
+  return elapsed;
+}
+
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const min = Math.floor(seconds / 60);
+  const sec = seconds % 60;
+  if (min < 60) return `${min}m ${sec}s`;
+  const hr = Math.floor(min / 60);
+  return `${hr}h ${min % 60}m`;
+}
+
 function TaskPreview({ task }: { task: import("../types").Task }) {
   const { subscribe, seedTaskOutput } = useEventContext();
   const taskOutput = useTaskOutput(task.task_id);
@@ -398,6 +426,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
   const effectiveSessionId = liveSessionId ?? task.session_id;
   const isActive = effectiveStatus === "in_progress";
   const isTerminal = effectiveStatus === "done" || effectiveStatus === "failed";
+  const elapsed = useElapsedTime(isActive);
 
   useEffect(() => {
     setLiveStatus(null);
@@ -580,6 +609,9 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
           <span className={styles.statusRow}>
             <TaskStatusIcon status={effectiveStatus} />
             <Text size="sm">{effectiveStatus.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</Text>
+            {isActive && elapsed > 0 && (
+              <Text variant="muted" size="xs" as="span">({formatElapsed(elapsed)})</Text>
+            )}
             {effectiveStatus === "failed" && (
               <Button
                 className={styles.retryBtn}
@@ -740,6 +772,11 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
                 </div>
               ))}
             </div>
+            {isActive && streamBuf.length > 0 && (
+              <Text variant="muted" size="xs" className={styles.streamProgress}>
+                Streaming: {(streamBuf.length / 1024).toFixed(1)} KB received
+              </Text>
+            )}
           </div>
         </GroupCollapsible>
       )}

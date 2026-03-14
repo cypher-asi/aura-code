@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button, Text, ModalConfirm } from "@cypher-asi/zui";
-import { Play, Pause, Square } from "lucide-react";
+import { Play, Pause, Square, Wifi, WifiOff } from "lucide-react";
 import { api } from "../api/client";
 import { useEventContext } from "../context/EventContext";
 import { useSidekick } from "../context/SidekickContext";
@@ -14,8 +14,44 @@ interface AutomationBarProps {
   projectId: ProjectId;
 }
 
+function ConnectionDot({ connected, lastEventAt }: { connected: boolean; lastEventAt: number | null }) {
+  const [stale, setStale] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
+
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      if (connected && lastEventAt) {
+        setStale(Date.now() - lastEventAt > 10_000);
+      } else {
+        setStale(false);
+      }
+    }, 2_000);
+    return () => clearInterval(intervalRef.current);
+  }, [connected, lastEventAt]);
+
+  if (!connected) {
+    return (
+      <span className={styles.connectionDot} title="Disconnected — reconnecting...">
+        <WifiOff size={12} style={{ color: "var(--color-danger, #e55)" }} />
+      </span>
+    );
+  }
+  if (stale) {
+    return (
+      <span className={styles.connectionDot} title="Connected but no events received recently">
+        <Wifi size={12} style={{ color: "var(--color-warning, #ea0)" }} />
+      </span>
+    );
+  }
+  return (
+    <span className={styles.connectionDot} title="Connected — receiving events">
+      <Wifi size={12} style={{ color: "var(--color-success, #4c9)" }} />
+    </span>
+  );
+}
+
 export function AutomationBar({ projectId }: AutomationBarProps) {
-  const { subscribe } = useEventContext();
+  const { subscribe, connected, lastEventAt } = useEventContext();
   const { setActiveTab } = useSidekick();
   const [running, setRunning] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -95,6 +131,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
         <div className={styles.automationLabel}>
           <Text size="sm" style={{ fontWeight: 600 }}>Automation</Text>
           <StatusBadge status={status} />
+          <ConnectionDot connected={connected} lastEventAt={lastEventAt} />
         </div>
         <div className={styles.automationControls}>
           <Button

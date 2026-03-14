@@ -37,6 +37,7 @@ interface EventContextValue {
   connected: boolean;
   events: EngineEvent[];
   latestEvent: EngineEvent | null;
+  lastEventAt: number | null;
   subscribe: (type: EngineEventType, callback: EventCallback) => () => void;
   getTaskOutput: (taskId: string) => TaskOutputEntry;
   subscribeTaskOutput: (taskId: string, listener: TaskOutputListener) => () => void;
@@ -49,6 +50,7 @@ const EventContext = createContext<EventContextValue | null>(null);
 
 export function EventProvider({ children }: { children: React.ReactNode }) {
   const subscribersRef = useRef<Map<EngineEventType, Set<EventCallback>>>(new Map());
+  const lastEventAtRef = useRef<number | null>(null);
 
   const taskOutputRef = useRef<Map<string, TaskOutputEntry>>(new Map());
   const taskOutputListenersRef = useRef<Map<string, Set<TaskOutputListener>>>(new Map());
@@ -59,6 +61,8 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const dispatchEvent = useCallback((event: EngineEvent) => {
+    lastEventAtRef.current = Date.now();
+
     if (event.type === "task_output_delta" && event.task_id && event.delta) {
       const map = taskOutputRef.current;
       const existing = map.get(event.task_id) ?? { text: "", fileOps: [], buildSteps: [], testSteps: [] };
@@ -203,6 +207,7 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
         connected: stream.connected,
         events: stream.events,
         latestEvent: stream.latestEvent,
+        lastEventAt: lastEventAtRef.current,
         subscribe,
         getTaskOutput,
         subscribeTaskOutput,

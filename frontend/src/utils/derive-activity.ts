@@ -168,6 +168,10 @@ function opVerb(op: string): string {
 function formatContentProgress(charCount: number): string {
   if (charCount < 500) return "writing content...";
   const approxLines = Math.round(charCount / 45);
+  if (charCount >= 10_000) {
+    const kb = (charCount / 1024).toFixed(1);
+    return `writing content (~${approxLines} lines, ${kb} KB)...`;
+  }
   return `writing content (~${approxLines} lines)...`;
 }
 

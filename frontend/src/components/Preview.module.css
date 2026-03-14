@@ -312,6 +312,11 @@
   padding: 0 var(--space-3);
 }
 
+.streamProgress {
+  padding: var(--space-1) 0 var(--space-2);
+  opacity: 0.6;
+}
+
 .activityList {
   display: flex;
   flex-direction: column;
@@ -361,6 +366,15 @@
   background: var(--color-bg-tertiary, rgba(0,0,0,0.08));
   padding: 1px 4px;
   border-radius: 3px;
+}
+
+.activityItem[data-status="active"] .activityMessage {
+  animation: textPulse 2s ease-in-out infinite;
+}
+
+@keyframes textPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 .activityDetail {
