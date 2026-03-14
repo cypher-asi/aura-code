@@ -1,0 +1,21 @@
+.container {
+  padding: 0 var(--space-3);
+  gap: var(--space-3);
+  justify-content: flex-end;
+  overflow: hidden;
+}
+
+.credits {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.creditAmount {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
