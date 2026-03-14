@@ -4,7 +4,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 
-use aura_core::ProjectId;
+use aura_core::{ProjectId, TaskId};
 use aura_engine::DevLoopEngine;
 
 use crate::dto::LoopStatusResponse;
@@ -85,4 +85,38 @@ pub async fn stop_loop(
         }
         None => Err(ApiError::bad_request("no dev loop is running")),
     }
+}
+
+pub async fn run_single_task(
+    State(state): State<AppState>,
+    Path((project_id, task_id)): Path<(ProjectId, TaskId)>,
+) -> ApiResult<StatusCode> {
+    let handle_lock = state.loop_handle.lock().await;
+    if handle_lock.is_some() {
+        return Err(ApiError::conflict("cannot run a single task while the dev loop is active"));
+    }
+    drop(handle_lock);
+
+    let engine = Arc::new(DevLoopEngine::new(
+        state.store.clone(),
+        state.settings_service.clone(),
+        state.claude_client.clone(),
+        state.project_service.clone(),
+        state.task_service.clone(),
+        state.agent_service.clone(),
+        state.session_service.clone(),
+        state.event_tx.clone(),
+    ));
+
+    let event_tx = state.event_tx.clone();
+    tokio::spawn(async move {
+        if let Err(e) = engine.run_single_task(project_id, task_id).await {
+            let _ = event_tx.send(aura_engine::EngineEvent::TaskFailed {
+                task_id,
+                reason: e.to_string(),
+            });
+        }
+    });
+
+    Ok(StatusCode::ACCEPTED)
 }

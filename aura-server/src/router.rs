@@ -163,6 +163,10 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
             post(tasks::retry_task),
         )
         .route(
+            "/api/projects/:project_id/tasks/:task_id/run",
+            post(dev_loop::run_single_task),
+        )
+        .route(
             "/api/projects/:project_id/progress",
             get(tasks::get_progress),
         )
