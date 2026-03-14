@@ -14,45 +14,28 @@ pub enum FileOp {
 }
 
 pub fn validate_path(base: &Path, target: &Path) -> Result<(), EngineError> {
-    let canonical_base = base
-        .canonicalize()
-        .map_err(|_| EngineError::PathEscape(base.display().to_string()))?;
-    let canonical = target
-        .canonicalize()
-        .or_else(|_| resolve_via_ancestors(target))?;
+    let norm_base = lexical_normalize(base);
+    let norm_target = lexical_normalize(target);
 
-    if !canonical.starts_with(&canonical_base) {
+    if !norm_target.starts_with(&norm_base) {
         return Err(EngineError::PathEscape(target.display().to_string()));
     }
     Ok(())
 }
 
-fn resolve_via_ancestors(target: &Path) -> Result<std::path::PathBuf, EngineError> {
-    let mut current = target.to_path_buf();
-    let mut suffix_parts: Vec<std::ffi::OsString> = Vec::new();
-
-    loop {
-        if current.exists() {
-            let mut resolved = current
-                .canonicalize()
-                .map_err(|_| EngineError::PathEscape(target.display().to_string()))?;
-            for part in suffix_parts.into_iter().rev() {
-                resolved.push(part);
-            }
-            return Ok(resolved);
-        }
-
-        match current.file_name() {
-            Some(name) => {
-                suffix_parts.push(name.to_os_string());
-                current = current
-                    .parent()
-                    .ok_or_else(|| EngineError::PathEscape(target.display().to_string()))?
-                    .to_path_buf();
-            }
-            None => return Err(EngineError::PathEscape(target.display().to_string())),
+/// Resolve `.` and `..` components without hitting the filesystem, avoiding
+/// Windows `\\?\` extended-path issues that `canonicalize()` introduces.
+fn lexical_normalize(path: &Path) -> std::path::PathBuf {
+    use std::path::Component;
+    let mut out = std::path::PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            Component::ParentDir => { out.pop(); }
+            Component::CurDir => {}
+            other => out.push(other),
         }
     }
+    out
 }
 
 pub async fn apply_file_ops(base_path: &Path, ops: &[FileOp]) -> Result<(), EngineError> {
