@@ -177,6 +177,66 @@ Response schema:
 "#, hash = "#")
 }
 
+pub(crate) fn build_fix_system_prompt() -> String {
+    format!(r#"
+You are an expert software engineer fixing build/test errors in existing code.
+
+CRITICAL: You MUST respond with ONLY a valid JSON object. No explanation,
+reasoning, commentary, or markdown fences before or after the JSON. Your
+entire response must be parseable as a single JSON value.
+
+Rules:
+- "notes": brief summary of what you fixed
+- "file_ops": array of file operations
+- "follow_up_tasks": optional array of {{"title", "description"}}; omit or use []
+
+## File Operation Types
+
+You have FOUR operation types. **Prefer "search_replace" for fixes.**
+
+### search_replace (PREFERRED for fixes)
+Use when changing specific parts of an existing file. Each replacement has:
+- "search": the EXACT text to find (must be a verbatim substring of the current file).
+  Include enough surrounding context (3-5 lines) to ensure a unique match.
+- "replace": the text to substitute in place of "search".
+
+The "search" string MUST match exactly ONE location in the file. If it matches
+zero or more than one location, the operation fails. Include sufficient context
+lines to disambiguate.
+
+Example:
+{{"op":"search_replace","path":"src/foo.rs","replacements":[
+  {{"search":"fn old_name(x: i32) {{\n    x + 1\n}}","replace":"fn new_name(x: i32) {{\n    x + 2\n}}"}}
+]}}
+
+### modify (use sparingly)
+Use ONLY when rewriting more than ~50% of a file. Provides complete new file content.
+{{"op":"modify","path":"src/foo.rs","content":"...entire file..."}}
+
+### create
+Use for new files. {{"op":"create","path":"src/bar.rs","content":"...entire file..."}}
+
+### delete
+Use to remove files. {{"op":"delete","path":"src/old.rs"}}
+
+## Language-Specific Rules (MUST FOLLOW)
+
+### Rust (.rs files)
+- NEVER use non-ASCII characters (em dashes, smart quotes, ellipsis, etc.) anywhere in source code. Use ASCII equivalents only.
+- For test fixtures and multi-line strings: use Rust raw string literals (r followed by one or more {hash} then a quote).
+- For constructing JSON in tests: prefer serde_json::json!() macro over string literals.
+- Remember that \n inside a JSON string value (in your response) becomes a literal newline in the Rust source file. If you want the Rust string to contain a newline escape, you need \\n in your JSON.
+- Do NOT call methods that don't exist on a type. Check the codebase snapshot for actual APIs.
+
+### TypeScript/JavaScript (.ts/.tsx/.js/.jsx files)
+- Use forward slashes in import paths, never backslashes.
+- Ensure all imported modules exist or are declared as dependencies.
+
+Response schema:
+{{"notes":"...","file_ops":[{{"op":"search_replace","path":"src/foo.rs","replacements":[{{"search":"old code","replace":"new code"}}]}}],"follow_up_tasks":[]}}
+"#, hash = "#")
+}
+
 const RETRY_CORRECTION_PROMPT: &str =
     "Your previous response was not valid JSON. Respond with ONLY a valid JSON object matching the schema above. No prose, no markdown fences.";
 
@@ -984,7 +1044,8 @@ impl DevLoopEngine {
                                 .map(|op| match op {
                                     FileOp::Create { path, .. }
                                     | FileOp::Modify { path, .. }
-                                    | FileOp::Delete { path } => path.as_str(),
+                                    | FileOp::Delete { path }
+                                    | FileOp::SearchReplace { path, .. } => path.as_str(),
                                 })
                                 .collect();
                             work_log.push(format!(
@@ -1367,7 +1428,7 @@ impl DevLoopEngine {
 
                 let response = self.claude_client.complete_stream(
                     &api_key,
-                    &task_execution_system_prompt(),
+                    &build_fix_system_prompt(),
                     &fix_prompt,
                     TASK_EXECUTION_MAX_TOKENS,
                     stream_tx,
@@ -1382,6 +1443,7 @@ impl DevLoopEngine {
                                 FileOp::Create { path, .. } => ("create", path.as_str()),
                                 FileOp::Modify { path, .. } => ("modify", path.as_str()),
                                 FileOp::Delete { path } => ("delete", path.as_str()),
+                                FileOp::SearchReplace { path, .. } => ("search_replace", path.as_str()),
                             };
                             attempt_files.push(format!("{op_name} {path}"));
                         }
@@ -1778,7 +1840,7 @@ impl DevLoopEngine {
                 .claude_client
                 .complete_stream(
                     api_key,
-                    &task_execution_system_prompt(),
+                    &build_fix_system_prompt(),
                     &fix_prompt,
                     TASK_EXECUTION_MAX_TOKENS,
                     stream_tx,
@@ -1801,6 +1863,7 @@ impl DevLoopEngine {
                                 FileOp::Create { path, .. } => ("create", path.as_str()),
                                 FileOp::Modify { path, .. } => ("modify", path.as_str()),
                                 FileOp::Delete { path } => ("delete", path.as_str()),
+                                FileOp::SearchReplace { path, .. } => ("search_replace", path.as_str()),
                             };
                             attempt_files_changed.push(format!("{op_name} {path}"));
                             crate::events::FileOpSummary {
@@ -1816,7 +1879,7 @@ impl DevLoopEngine {
                             files_written: fix_execution
                                 .file_ops
                                 .iter()
-                                .filter(|op| matches!(op, FileOp::Create { .. } | FileOp::Modify { .. }))
+                                .filter(|op| matches!(op, FileOp::Create { .. } | FileOp::Modify { .. } | FileOp::SearchReplace { .. }))
                                 .count(),
                             files_deleted: fix_execution
                                 .file_ops
@@ -1979,7 +2042,7 @@ impl DevLoopEngine {
             .claude_client
             .complete_stream(
                 api_key,
-                &task_execution_system_prompt(),
+                &build_fix_system_prompt(),
                 &fix_prompt,
                 TASK_EXECUTION_MAX_TOKENS,
                 stream_tx,
@@ -2009,13 +2072,14 @@ impl DevLoopEngine {
     }
 
     fn emit_file_ops_applied(&self, task: &Task, ops: &[FileOp]) {
-        let files_written = ops.iter().filter(|op| matches!(op, FileOp::Create { .. } | FileOp::Modify { .. })).count();
+        let files_written = ops.iter().filter(|op| matches!(op, FileOp::Create { .. } | FileOp::Modify { .. } | FileOp::SearchReplace { .. })).count();
         let files_deleted = ops.iter().filter(|op| matches!(op, FileOp::Delete { .. })).count();
         let files: Vec<crate::events::FileOpSummary> = ops.iter().map(|op| {
             let (op_name, path) = match op {
                 FileOp::Create { path, .. } => ("create", path.as_str()),
                 FileOp::Modify { path, .. } => ("modify", path.as_str()),
                 FileOp::Delete { path } => ("delete", path.as_str()),
+                FileOp::SearchReplace { path, .. } => ("search_replace", path.as_str()),
             };
             crate::events::FileOpSummary { op: op_name.to_string(), path: path.to_string() }
         }).collect();
