@@ -108,6 +108,8 @@ export function ProjectList() {
 
   const { subscribe } = useEventContext();
   const [automatingProjectId, setAutomatingProjectId] = useState<string | null>(null);
+  const [automatingChatId, setAutomatingChatId] = useState<string | null>(null);
+  const chatSessionIdRef = useRef(chatSessionId);
 
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const [renameTarget, setRenameTarget] = useState<Project | null>(null);
@@ -184,14 +186,23 @@ export function ProjectList() {
     });
   }, [sidekick]);
 
+  chatSessionIdRef.current = chatSessionId;
+
   useEffect(() => {
+    const clearAutomation = () => {
+      setAutomatingProjectId(null);
+      setAutomatingChatId(null);
+    };
     const unsubs = [
       subscribe("loop_started", (e) => {
-        if (e.project_id) setAutomatingProjectId(e.project_id);
+        if (e.project_id) {
+          setAutomatingProjectId(e.project_id);
+          setAutomatingChatId(chatSessionIdRef.current ?? null);
+        }
       }),
-      subscribe("loop_paused", () => setAutomatingProjectId(null)),
-      subscribe("loop_stopped", () => setAutomatingProjectId(null)),
-      subscribe("loop_finished", () => setAutomatingProjectId(null)),
+      subscribe("loop_paused", clearAutomation),
+      subscribe("loop_stopped", clearAutomation),
+      subscribe("loop_finished", clearAutomation),
     ];
     return () => unsubs.forEach((u) => u());
   }, [subscribe]);
@@ -233,7 +244,7 @@ export function ProjectList() {
         children:
           sessionsByProject[p.project_id] !== undefined
             ? sessionsByProject[p.project_id].map((s) => {
-                const isAutomating = automatingProjectId === p.project_id && chatSessionId === s.chat_session_id;
+                const isAutomating = automatingProjectId === p.project_id && automatingChatId === s.chat_session_id;
                 return {
                   id: s.chat_session_id,
                   label: s.title,
@@ -247,7 +258,7 @@ export function ProjectList() {
               })
             : [{ id: `_load_${p.project_id}`, label: "Loading...", disabled: true }],
       })),
-    [projects, sessionsByProject, streamingSessionId, automatingProjectId, chatSessionId],
+    [projects, sessionsByProject, streamingSessionId, automatingProjectId, automatingChatId],
   );
 
   const defaultExpandedIds = useMemo(
