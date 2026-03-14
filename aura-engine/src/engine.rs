@@ -57,7 +57,7 @@ fn normalize_error_signature(stderr: &str) -> String {
             continue;
         }
         // Gutter lines: "52 |    code here"
-        if trimmed.chars().next().map_or(false, |c| c.is_ascii_digit()) && trimmed.contains('|') {
+        if trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) && trimmed.contains('|') {
             continue;
         }
         // Caret lines: "   ^^^^^"
@@ -143,7 +143,8 @@ impl LoopHandle {
     }
 }
 
-pub(crate) const TASK_EXECUTION_SYSTEM_PROMPT: &str = r#"
+pub(crate) fn task_execution_system_prompt() -> String {
+    format!(r#"
 You are an expert software engineer executing a single implementation task.
 
 CRITICAL: You MUST respond with ONLY a valid JSON object. No explanation,
@@ -153,13 +154,28 @@ entire response must be parseable as a single JSON value.
 Rules:
 - "notes": brief summary of what you did (or why you could not)
 - "file_ops": array of file operations. Each has "op" ("create", "modify", or "delete"), "path" (relative to project root), and "content" (full file content; omit for delete)
-- "follow_up_tasks": optional array of {"title", "description"} if you discover missing prerequisites; otherwise omit or use []
+- "follow_up_tasks": optional array of {{"title", "description"}} if you discover missing prerequisites; otherwise omit or use []
 - For "modify", always provide the complete new file content, not a diff
 - If you cannot complete the task, set notes to explain why and leave file_ops as []
 
+## Language-Specific Rules (MUST FOLLOW)
+
+### Rust (.rs files)
+- NEVER use non-ASCII characters (em dashes, smart quotes, ellipsis, etc.) anywhere in source code. Use ASCII equivalents only.
+- For test fixtures, multi-line strings, or any string containing quotes/backslashes/special characters: use Rust raw string literals (r followed by one or more {hash} then a quote to open, and a quote followed by the same number of {hash} to close).
+- For constructing JSON in tests: prefer serde_json::json!() macro over string literals.
+- Remember that \n inside a JSON string value (in your response) becomes a literal newline in the Rust source file. If you want the Rust string to contain a newline escape, you need \\n in your JSON.
+- If you declare `pub mod foo;` in mod.rs or lib.rs, the file foo.rs (or foo/mod.rs) MUST exist. Create it in the same response.
+- Do NOT call methods that don't exist on a type. Read the codebase snapshot to check actual APIs.
+
+### TypeScript/JavaScript (.ts/.tsx/.js/.jsx files)
+- Use forward slashes in import paths, never backslashes.
+- Ensure all imported modules exist or are declared as dependencies.
+
 Response schema:
-{"notes":"...","file_ops":[{"op":"create","path":"src/foo.rs","content":"..."}],"follow_up_tasks":[]}
-"#;
+{{"notes":"...","file_ops":[{{"op":"create","path":"src/foo.rs","content":"..."}}],"follow_up_tasks":[]}}
+"#, hash = "#")
+}
 
 const RETRY_CORRECTION_PROMPT: &str =
     "Your previous response was not valid JSON. Respond with ONLY a valid JSON object matching the schema above. No prose, no markdown fences.";
@@ -1273,17 +1289,18 @@ impl DevLoopEngine {
                 delta: format!("Command failed (attempt {attempt}):\n{detail}\n"),
             });
 
-            // Bail early on repeated identical errors
+            // Bail early on repeated identical error patterns (normalized to ignore line numbers)
+            let current_sig = normalize_error_signature(detail);
             let consecutive_dupes = prior_attempts_shell
                 .iter()
                 .rev()
-                .take_while(|a| a.stderr == *detail)
+                .take_while(|a| a.error_signature == current_sig)
                 .count();
             if consecutive_dupes >= 2 {
                 info!(
                     task_id = %task.task_id,
                     attempt,
-                    "same shell error repeated {} times, aborting fix loop",
+                    "same shell error pattern repeated {} times, aborting fix loop",
                     consecutive_dupes + 1
                 );
                 return Err(EngineError::Build(
@@ -1350,7 +1367,7 @@ impl DevLoopEngine {
 
                 let response = self.claude_client.complete_stream(
                     &api_key,
-                    TASK_EXECUTION_SYSTEM_PROMPT,
+                    &task_execution_system_prompt(),
                     &fix_prompt,
                     TASK_EXECUTION_MAX_TOKENS,
                     stream_tx,
@@ -1374,6 +1391,7 @@ impl DevLoopEngine {
                 }
                 prior_attempts_shell.push(BuildFixAttemptRecord {
                     stderr: detail.clone(),
+                    error_signature: normalize_error_signature(detail),
                     files_changed: attempt_files,
                 });
             }
@@ -1424,7 +1442,7 @@ impl DevLoopEngine {
                 .claude_client
                 .complete_stream(
                     api_key,
-                    TASK_EXECUTION_SYSTEM_PROMPT,
+                    &task_execution_system_prompt(),
                     &user_message,
                     TASK_EXECUTION_MAX_TOKENS,
                     stream_tx,
@@ -1440,7 +1458,69 @@ impl DevLoopEngine {
                 execution.input_tokens = inp;
                 execution.output_tokens = out;
                 execution.parse_retries = 0;
-                return Ok(execution);
+
+                // Pre-write validation: catch obvious content issues before a full build cycle
+                let validation_report = file_ops::validate_all_file_ops(&execution.file_ops);
+                if !validation_report.is_empty() {
+                    warn!(task_id = %task_id, "pre-write validation found issues, requesting correction");
+                    self.emit(EngineEvent::TaskRetrying {
+                        task_id,
+                        attempt: 1,
+                        reason: format!("pre-write validation: {}", &validation_report[..validation_report.len().min(200)]),
+                    });
+
+                    let correction_prompt = format!(
+                        "STOP: Your file_ops contain content that will cause build errors. \
+                         Fix these issues in your response:\n\n{}\n\n\
+                         Respond with the corrected JSON (same schema).",
+                        validation_report
+                    );
+                    let messages = vec![
+                        ("user".to_string(), user_message.clone()),
+                        ("assistant".to_string(), response.clone()),
+                        ("user".to_string(), correction_prompt),
+                    ];
+
+                    let (stream_tx2, mut stream_rx2) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
+                    let event_tx2 = self.event_tx.clone();
+                    let tid2 = task_id;
+                    let tc2 = token_counts.clone();
+                    let forwarder2 = tokio::spawn(async move {
+                        while let Some(evt) = stream_rx2.recv().await {
+                            match evt {
+                                ClaudeStreamEvent::Delta(text) => {
+                                    let _ = event_tx2.send(EngineEvent::TaskOutputDelta { task_id: tid2, delta: text });
+                                }
+                                ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } => {
+                                    *tc2.lock().await = (input_tokens, output_tokens);
+                                }
+                                _ => {}
+                            }
+                        }
+                    });
+
+                    let corrected = self
+                        .claude_client
+                        .complete_stream_multi(
+                            api_key,
+                            &task_execution_system_prompt(),
+                            messages,
+                            TASK_EXECUTION_MAX_TOKENS,
+                            stream_tx2,
+                        )
+                        .await?;
+                    let _ = forwarder2.await;
+
+                    if let Ok(mut corrected_exec) = parse_execution_response(&corrected) {
+                        let (inp, out) = *token_counts.lock().await;
+                        corrected_exec.input_tokens = inp;
+                        corrected_exec.output_tokens = out;
+                        corrected_exec.parse_retries = 1;
+                        return Ok(corrected_exec);
+                    }
+                }
+
+                Ok(execution)
             }
             Err(first_err) => {
                 warn!(task_id = %task_id, error = %first_err, "first execution parse failed, retrying");
@@ -1481,7 +1561,7 @@ impl DevLoopEngine {
                         .claude_client
                         .complete_stream_multi(
                             api_key,
-                            TASK_EXECUTION_SYSTEM_PROMPT,
+                            &task_execution_system_prompt(),
                             messages,
                             TASK_EXECUTION_MAX_TOKENS,
                             stream_tx,
@@ -1634,16 +1714,17 @@ impl DevLoopEngine {
                 return Ok((all_fix_ops, false, attempt, duplicate_bailouts));
             }
 
+            let current_signature = normalize_error_signature(&build_result.stderr);
             let consecutive_dupes = prior_attempts
                 .iter()
                 .rev()
-                .take_while(|a| a.stderr == build_result.stderr)
+                .take_while(|a| a.error_signature == current_signature)
                 .count();
-            if consecutive_dupes >= 4 {
+            if consecutive_dupes >= 2 {
                 info!(
                     task_id = %task.task_id,
                     attempt,
-                    "same build error repeated {} times, aborting fix loop",
+                    "same error pattern repeated {} times (after normalizing line numbers), aborting fix loop",
                     consecutive_dupes + 1
                 );
                 duplicate_bailouts += 1;
@@ -1697,7 +1778,7 @@ impl DevLoopEngine {
                 .claude_client
                 .complete_stream(
                     api_key,
-                    TASK_EXECUTION_SYSTEM_PROMPT,
+                    &task_execution_system_prompt(),
                     &fix_prompt,
                     TASK_EXECUTION_MAX_TOKENS,
                     stream_tx,
@@ -1761,8 +1842,10 @@ impl DevLoopEngine {
             };
 
             if fix_applied {
+                let sig = normalize_error_signature(&build_result.stderr);
                 prior_attempts.push(BuildFixAttemptRecord {
                     stderr: build_result.stderr,
+                    error_signature: sig,
                     files_changed: attempt_files_changed,
                 });
             }
@@ -1896,7 +1979,7 @@ impl DevLoopEngine {
             .claude_client
             .complete_stream(
                 api_key,
-                TASK_EXECUTION_SYSTEM_PROMPT,
+                &task_execution_system_prompt(),
                 &fix_prompt,
                 TASK_EXECUTION_MAX_TOKENS,
                 stream_tx,
@@ -2226,7 +2309,7 @@ fn extract_last_fenced_json(text: &str) -> Option<String> {
     None
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_arguments)]
 fn build_fix_prompt(
     project: &Project,
     spec: &Spec,
@@ -2318,45 +2401,60 @@ fn classify_build_errors(stderr: &str) -> Vec<ErrorCategory> {
 fn error_category_guidance(categories: &[ErrorCategory]) -> String {
     let mut guidance = String::new();
     for cat in categories {
-        let advice = match cat {
-            ErrorCategory::RustStringLiteral => "\
-DIAGNOSIS: Rust string literal / token errors detected.
-ROOT CAUSE: This almost always means JSON or text with special characters was placed directly in Rust source code without proper string escaping.
-MANDATORY FIX:
-- For test fixtures or multi-line strings containing JSON, quotes, backslashes, or special chars: use raw string literals r#\"...\"# (or r##\"...\"## if the content contains \"#).
-- For programmatic JSON construction: use serde_json::json!() macro instead of string literals.
-- NEVER put literal \\n (two characters) inside a Rust string to represent a newline; use actual newlines inside raw strings, or proper escape sequences inside regular strings.
-- NEVER use non-ASCII characters (em dashes, smart quotes, etc.) in Rust string literals; replace with ASCII equivalents.
-- Check ALL string literals in the file, not just the ones the compiler flagged — the same mistake is likely repeated.",
-
-            ErrorCategory::RustMissingModule => "\
-DIAGNOSIS: Missing Rust module file.
-FIX: If mod.rs or lib.rs declares `pub mod foo;`, the file `foo.rs` (or `foo/mod.rs`) MUST exist. Either create the file or remove the module declaration.",
-
-            ErrorCategory::RustMissingMethod => "\
-DIAGNOSIS: Method not found on type.
-FIX: Check the actual public API of the type (read its source file). Do not invent methods. If the method doesn't exist, either implement it or use an existing method that provides the same functionality.",
-
-            ErrorCategory::RustTypeError => "\
-DIAGNOSIS: Type mismatch or missing trait implementation.
-FIX: Read the function signatures carefully. Check generic type parameters. Provide explicit type annotations where the compiler asks for them. Do not use `[u8]` where `Vec<u8>` or `&[u8]` is needed.",
-
-            ErrorCategory::RustBorrowCheck => "\
-DIAGNOSIS: Borrow checker violation.
-FIX: Check ownership and lifetimes. Consider cloning, using references, or restructuring to avoid simultaneous mutable/immutable borrows.",
-
-            ErrorCategory::NpmDependency => "\
-DIAGNOSIS: Missing npm package or module.
-FIX: Ensure the dependency exists in package.json and has been installed. Check import paths for typos.",
-
-            ErrorCategory::NpmTypeScript => "\
-DIAGNOSIS: TypeScript type errors.
-FIX: Check that types align with the library's actual API. Read type definitions from node_modules/@types if needed.",
-
-            ErrorCategory::GenericSyntax => "\
-DIAGNOSIS: Syntax error.
-FIX: Look at the exact line/column the compiler indicates. Check for missing semicolons, unbalanced braces, or misplaced tokens.",
-
+        let advice: &str = match cat {
+            ErrorCategory::RustStringLiteral => concat!(
+                "DIAGNOSIS: Rust string literal / token errors detected.\n",
+                "ROOT CAUSE: This almost always means JSON or text with special characters ",
+                "was placed directly in Rust source code without proper string escaping.\n",
+                "MANDATORY FIX:\n",
+                "- For test fixtures or multi-line strings containing JSON, quotes, backslashes, ",
+                "or special chars: use Rust RAW STRING LITERALS (r followed by # then quote to open, ",
+                "quote then # to close; add more # symbols if the content itself contains that pattern).\n",
+                "- For programmatic JSON construction: use serde_json::json!() macro instead of string literals.\n",
+                "- NEVER put literal backslash-n (two characters) inside a Rust string to represent a newline; ",
+                "use actual newlines inside raw strings, or proper escape sequences inside regular strings.\n",
+                "- NEVER use non-ASCII characters (em dashes, smart quotes, etc.) in Rust string literals; ",
+                "replace with ASCII equivalents.\n",
+                "- Check ALL string literals in the file, not just the ones the compiler flagged -- ",
+                "the same mistake is likely repeated.",
+            ),
+            ErrorCategory::RustMissingModule => concat!(
+                "DIAGNOSIS: Missing Rust module file.\n",
+                "FIX: If mod.rs or lib.rs declares `pub mod foo;`, the file `foo.rs` ",
+                "(or `foo/mod.rs`) MUST exist. Either create the file or remove the module declaration.",
+            ),
+            ErrorCategory::RustMissingMethod => concat!(
+                "DIAGNOSIS: Method not found on type.\n",
+                "FIX: Check the actual public API of the type (read its source file). ",
+                "Do not invent methods. If the method does not exist, either implement it ",
+                "or use an existing method that provides the same functionality.",
+            ),
+            ErrorCategory::RustTypeError => concat!(
+                "DIAGNOSIS: Type mismatch or missing trait implementation.\n",
+                "FIX: Read the function signatures carefully. Check generic type parameters. ",
+                "Provide explicit type annotations where the compiler asks for them. ",
+                "Do not use `[u8]` where `Vec<u8>` or `&[u8]` is needed.",
+            ),
+            ErrorCategory::RustBorrowCheck => concat!(
+                "DIAGNOSIS: Borrow checker violation.\n",
+                "FIX: Check ownership and lifetimes. Consider cloning, using references, ",
+                "or restructuring to avoid simultaneous mutable/immutable borrows.",
+            ),
+            ErrorCategory::NpmDependency => concat!(
+                "DIAGNOSIS: Missing npm package or module.\n",
+                "FIX: Ensure the dependency exists in package.json and has been installed. ",
+                "Check import paths for typos.",
+            ),
+            ErrorCategory::NpmTypeScript => concat!(
+                "DIAGNOSIS: TypeScript type errors.\n",
+                "FIX: Check that types align with the library's actual API. ",
+                "Read type definitions if needed.",
+            ),
+            ErrorCategory::GenericSyntax => concat!(
+                "DIAGNOSIS: Syntax error.\n",
+                "FIX: Look at the exact line/column the compiler indicates. ",
+                "Check for missing semicolons, unbalanced braces, or misplaced tokens.",
+            ),
             ErrorCategory::Unknown => "",
         };
         if !advice.is_empty() {
@@ -2367,6 +2465,7 @@ FIX: Look at the exact line/column the compiler indicates. Check for missing sem
     guidance
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_fix_prompt_with_history(
     project: &Project,
     spec: &Spec,
