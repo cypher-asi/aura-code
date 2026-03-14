@@ -128,12 +128,27 @@ impl TaskExtractionService {
                 if let Some(&dep_id) = title_to_id.get(title) {
                     resolved_deps.push(dep_id);
                 }
-                // Unresolvable references are silently dropped
             }
             tasks[i].dependency_ids = resolved_deps;
         }
 
-        // Set initial statuses
+        // Auto-chain tasks within each spec: if task[i] has no dependencies
+        // and the previous task in the same spec exists, make it depend on
+        // that predecessor. This ensures sequential execution within a spec
+        // when the LLM omits depends_on.
+        {
+            let mut last_in_spec: HashMap<SpecId, TaskId> = HashMap::new();
+            for task in &mut tasks {
+                if let Some(&prev_id) = last_in_spec.get(&task.spec_id) {
+                    if task.dependency_ids.is_empty() {
+                        task.dependency_ids.push(prev_id);
+                    }
+                }
+                last_in_spec.insert(task.spec_id, task.task_id);
+            }
+        }
+
+        // Set initial statuses: only tasks with no dependencies start as Ready
         for task in &mut tasks {
             if task.dependency_ids.is_empty() {
                 task.status = TaskStatus::Ready;
