@@ -197,7 +197,7 @@ impl DevLoopEngine {
             .execute_task(&project_id, &task, &session, &api_key)
             .await;
 
-        match result {
+        let end_status = match result {
             Ok(execution) => {
                 let project = self.project_service.get_project(&project_id)?;
                 let base_path = Path::new(&project.linked_folder_path);
@@ -218,6 +218,7 @@ impl DevLoopEngine {
                         task_id: task.task_id,
                         reason: e.to_string(),
                     });
+                    SessionStatus::Failed
                 } else {
                     let files_written = execution.file_ops.iter().filter(|op| matches!(op, file_ops::FileOp::Create { .. } | file_ops::FileOp::Modify { .. })).count();
                     let files_deleted = execution.file_ops.iter().filter(|op| matches!(op, file_ops::FileOp::Delete { .. })).count();
@@ -264,6 +265,7 @@ impl DevLoopEngine {
                             });
                         }
                     }
+                    SessionStatus::Completed
                 }
             }
             Err(e) => {
@@ -275,9 +277,13 @@ impl DevLoopEngine {
                     task_id: task.task_id,
                     reason: e.to_string(),
                 });
+                SessionStatus::Failed
             }
-        }
+        };
 
+        let _ = self.session_service.end_session(
+            &project_id, &agent.agent_id, &session.session_id, end_status,
+        );
         let _ = self.agent_service.finish_working(&project_id, &agent.agent_id);
         Ok(())
     }
