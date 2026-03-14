@@ -90,6 +90,8 @@ export interface LoopStatusResponse {
   running: boolean;
   paused: boolean;
   project_id: ProjectId | null;
+  agent_id?: string | null;
+  active_agents?: string[];
 }
 
 export const api = {
@@ -360,17 +362,25 @@ export const api = {
     }),
 
   // Loop
-  startLoop: (projectId: ProjectId) =>
-    apiFetch<LoopStatusResponse>(
-      `/api/projects/${projectId}/loop/start`,
+  startLoop: (projectId: ProjectId, agentName?: string) => {
+    const params = agentName ? `?agent_name=${encodeURIComponent(agentName)}` : "";
+    return apiFetch<LoopStatusResponse>(
+      `/api/projects/${projectId}/loop/start${params}`,
       { method: "POST" },
-    ),
-  pauseLoop: (projectId: ProjectId) =>
-    apiFetch<void>(`/api/projects/${projectId}/loop/pause`, {
+    );
+  },
+  pauseLoop: (projectId: ProjectId, agentId?: string) => {
+    const params = agentId ? `?agent_id=${agentId}` : "";
+    return apiFetch<void>(`/api/projects/${projectId}/loop/pause${params}`, {
       method: "POST",
-    }),
-  stopLoop: (projectId: ProjectId) =>
-    apiFetch<void>(`/api/projects/${projectId}/loop/stop`, {
+    });
+  },
+  stopLoop: (projectId: ProjectId, agentId?: string) => {
+    const params = agentId ? `?agent_id=${agentId}` : "";
+    return apiFetch<void>(`/api/projects/${projectId}/loop/stop${params}`, {
       method: "POST",
-    }),
+    });
+  },
+  getLoopStatus: (projectId: ProjectId) =>
+    apiFetch<LoopStatusResponse>(`/api/projects/${projectId}/loop/status`),
 };

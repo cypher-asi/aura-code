@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button, Text, ModalConfirm } from "@cypher-asi/zui";
 import { Play, Pause, Square, Wifi, WifiOff } from "lucide-react";
 import { api } from "../api/client";
@@ -53,46 +53,82 @@ function ConnectionDot({ connected, lastEventAt }: { connected: boolean; lastEve
 export function AutomationBar({ projectId }: AutomationBarProps) {
   const { subscribe, connected, lastEventAt } = useEventContext();
   const { setActiveTab } = useSidekick();
-  const [running, setRunning] = useState(false);
+  const [activeAgents, setActiveAgents] = useState<string[]>([]);
   const [paused, setPaused] = useState(false);
   const [starting, setStarting] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
 
+  const isForProject = useCallback(
+    (event: { project_id?: string }) => event.project_id === projectId,
+    [projectId],
+  );
+
+  useEffect(() => {
+    api.getLoopStatus(projectId)
+      .then((res) => {
+        if (res.active_agents && res.active_agents.length > 0) {
+          setActiveAgents(res.active_agents);
+        }
+      })
+      .catch(() => {});
+  }, [projectId]);
+
   useEffect(() => {
     const unsubs = [
-      subscribe("loop_started", () => {
-        setRunning(true);
+      subscribe("loop_started", (e) => {
+        if (!isForProject(e)) return;
+        const agentId = e.agent_id;
+        if (agentId) {
+          setActiveAgents((prev) => prev.includes(agentId) ? prev : [...prev, agentId]);
+        }
         setPaused(false);
         setStarting(false);
       }),
-      subscribe("loop_paused", () => {
+      subscribe("loop_paused", (e) => {
+        if (!isForProject(e)) return;
         setPaused(true);
       }),
-      subscribe("loop_stopped", () => {
-        setRunning(false);
+      subscribe("loop_stopped", (e) => {
+        if (!isForProject(e)) return;
+        const agentId = e.agent_id;
+        if (agentId) {
+          setActiveAgents((prev) => prev.filter((id) => id !== agentId));
+        } else {
+          setActiveAgents([]);
+        }
         setPaused(false);
         setStarting(false);
       }),
-      subscribe("loop_finished", () => {
-        setRunning(false);
+      subscribe("loop_finished", (e) => {
+        if (!isForProject(e)) return;
+        const agentId = e.agent_id;
+        if (agentId) {
+          setActiveAgents((prev) => prev.filter((id) => id !== agentId));
+        } else {
+          setActiveAgents([]);
+        }
         setPaused(false);
         setStarting(false);
       }),
     ];
     return () => unsubs.forEach((u) => u());
-  }, [subscribe]);
+  }, [subscribe, isForProject]);
+
+  const running = activeAgents.length > 0;
 
   let status: AutomationStatus = "idle";
   if (starting) status = "starting";
   else if (paused) status = "paused";
   else if (running) status = "active";
 
+  const agentCount = activeAgents.length;
+
   const handleStart = async () => {
     try {
       setStarting(true);
       setActiveTab("tasks");
-      await api.startLoop(projectId);
-      setRunning(true);
+      const res = await api.startLoop(projectId);
+      if (res.active_agents) setActiveAgents(res.active_agents);
       setPaused(false);
     } catch (err) {
       setStarting(false);
@@ -131,6 +167,9 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
         <div className={styles.automationLabel}>
           <Text size="sm" style={{ fontWeight: 600 }}>Automation</Text>
           <StatusBadge status={status} />
+          {agentCount > 1 && (
+            <Text size="xs" style={{ opacity: 0.7 }}>{agentCount} agents</Text>
+          )}
           <ConnectionDot connected={connected} lastEventAt={lastEventAt} />
         </div>
         <div className={styles.automationControls}>

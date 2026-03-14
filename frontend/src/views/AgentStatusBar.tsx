@@ -16,13 +16,16 @@ interface AgentStatusBarProps {
 export function AgentStatusBar({ projectId }: AgentStatusBarProps) {
   const { connected, subscribe } = useEventContext();
   const sidekick = useSidekick();
-  const [agent, setAgent] = useState<Agent | null>(null);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [currentTaskTitle, setCurrentTaskTitle] = useState<string | null>(null);
+  const [currentTaskTitles, setCurrentTaskTitles] = useState<Record<string, string | null>>({});
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useClickOutside(dropdownRef, () => setDropdownOpen(false), dropdownOpen);
+
+  const selectedAgent = agents.find((a) => a.agent_id === selectedAgentId) ?? agents[0] ?? null;
 
   const fetchSessions = useCallback((agentId: string) => {
     api
@@ -34,40 +37,87 @@ export function AgentStatusBar({ projectId }: AgentStatusBarProps) {
   useEffect(() => {
     api
       .listAgents(projectId)
-      .then((agents) => {
-        if (agents.length > 0) {
-          setAgent(agents[0]);
-          fetchSessions(agents[0].agent_id);
+      .then((list) => {
+        setAgents(list);
+        if (list.length > 0 && !selectedAgentId) {
+          setSelectedAgentId(list[0].agent_id);
+          fetchSessions(list[0].agent_id);
         }
       })
       .catch(console.error);
-  }, [projectId, fetchSessions]);
+  }, [projectId, fetchSessions, selectedAgentId]);
+
+  useEffect(() => {
+    if (selectedAgent) {
+      fetchSessions(selectedAgent.agent_id);
+    }
+  }, [selectedAgent?.agent_id, fetchSessions]);
+
+  const isForProject = useCallback(
+    (event: { project_id?: string }) => event.project_id === projectId,
+    [projectId],
+  );
 
   useEffect(() => {
     const unsubs = [
+      subscribe("loop_started", (e) => {
+        if (!isForProject(e)) return;
+        api.listAgents(projectId).then(setAgents).catch(console.error);
+      }),
       subscribe("task_started", (e) => {
-        setCurrentTaskTitle(e.task_title || null);
+        if (!isForProject(e)) return;
+        const agentId = e.agent_id;
+        if (agentId && e.task_title) {
+          setCurrentTaskTitles((prev) => ({ ...prev, [agentId]: e.task_title ?? null }));
+        }
       }),
-      subscribe("task_completed", () => {
-        setCurrentTaskTitle(null);
+      subscribe("task_completed", (e) => {
+        if (!isForProject(e)) return;
+        const agentId = e.agent_id;
+        if (agentId) {
+          setCurrentTaskTitles((prev) => ({ ...prev, [agentId]: null }));
+        }
       }),
-      subscribe("task_failed", () => {
-        setCurrentTaskTitle(null);
+      subscribe("task_failed", (e) => {
+        if (!isForProject(e)) return;
+        const agentId = e.agent_id;
+        if (agentId) {
+          setCurrentTaskTitles((prev) => ({ ...prev, [agentId]: null }));
+        }
       }),
-      subscribe("session_rolled_over", () => {
-        if (agent) fetchSessions(agent.agent_id);
+      subscribe("session_rolled_over", (e) => {
+        if (!isForProject(e)) return;
+        if (selectedAgent) fetchSessions(selectedAgent.agent_id);
       }),
-      subscribe("loop_paused", () => {
-        setCurrentTaskTitle(null);
+      subscribe("loop_paused", (e) => {
+        if (!isForProject(e)) return;
+        const agentId = e.agent_id;
+        if (agentId) {
+          setCurrentTaskTitles((prev) => ({ ...prev, [agentId]: null }));
+        }
       }),
-      subscribe("loop_stopped", () => {
-        setCurrentTaskTitle(null);
+      subscribe("loop_stopped", (e) => {
+        if (!isForProject(e)) return;
+        const agentId = e.agent_id;
+        if (agentId) {
+          setCurrentTaskTitles((prev) => ({ ...prev, [agentId]: null }));
+        }
+      }),
+      subscribe("loop_finished", (e) => {
+        if (!isForProject(e)) return;
+        const agentId = e.agent_id;
+        if (agentId) {
+          setCurrentTaskTitles((prev) => ({ ...prev, [agentId]: null }));
+        }
       }),
     ];
     return () => unsubs.forEach((u) => u());
-  }, [subscribe, agent, fetchSessions]);
+  }, [subscribe, selectedAgent, fetchSessions, isForProject, projectId]);
 
   const sessionCount = sessions.length;
+  const currentTaskTitle = selectedAgent
+    ? currentTaskTitles[selectedAgent.agent_id] ?? null
+    : null;
 
   const handleSessionClick = (session: Session) => {
     setDropdownOpen(false);
@@ -84,8 +134,36 @@ export function AgentStatusBar({ projectId }: AgentStatusBarProps) {
 
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
         <Text variant="muted" size="sm" as="span">Agent:</Text>
-        <Text size="sm" as="span" weight="medium">{agent?.name || "—"}</Text>
-        {agent && <StatusBadge status={agent.status} />}
+        {agents.length <= 1 ? (
+          <>
+            <Text size="sm" as="span" weight="medium">{selectedAgent?.name || "—"}</Text>
+            {selectedAgent && <StatusBadge status={selectedAgent.status} />}
+          </>
+        ) : (
+          <select
+            value={selectedAgent?.agent_id ?? ""}
+            onChange={(e) => setSelectedAgentId(e.target.value)}
+            style={{
+              background: "var(--color-bg-tertiary, #2a2a2a)",
+              border: "1px solid var(--color-border)",
+              borderRadius: 4,
+              color: "inherit",
+              fontSize: 13,
+              padding: "2px 6px",
+            }}
+          >
+            {agents.map((a) => (
+              <option key={a.agent_id} value={a.agent_id}>
+                {a.name} ({a.status})
+              </option>
+            ))}
+          </select>
+        )}
+        {agents.length > 1 && (
+          <Text variant="muted" size="xs" as="span">
+            {agents.filter((a) => a.status === "working").length}/{agents.length} active
+          </Text>
+        )}
       </div>
 
       <div ref={dropdownRef} style={{ position: "relative", display: "flex", alignItems: "center", gap: "var(--space-2)" }}>

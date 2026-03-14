@@ -103,10 +103,19 @@
   z-index: 9999;
 }
 
+.sessionIndicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  flex-shrink: 0;
+  width: var(--control-height-sm);
+  height: var(--control-height-sm);
+}
+
 .automationSpinner {
   animation: spin 1s linear infinite;
   color: var(--color-text-muted);
-  margin-left: auto;
 }
 
 @keyframes spin {
@@ -120,7 +129,6 @@
   height: 6px;
   border-radius: 50%;
   background: var(--color-accent);
-  margin-left: auto;
   animation: pulse 1.2s ease-in-out infinite;
 }
 

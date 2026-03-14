@@ -258,9 +258,9 @@ export function ProjectList() {
                   id: s.chat_session_id,
                   label: s.title,
                   suffix: isAutomating
-                    ? <Loader2 size={10} className={styles.automationSpinner} />
+                    ? <span className={styles.sessionIndicator}><Loader2 size={10} className={styles.automationSpinner} /></span>
                     : streamingSessionId === s.chat_session_id
-                      ? <span className={styles.streamingDot} />
+                      ? <span className={styles.sessionIndicator}><span className={styles.streamingDot} /></span>
                       : undefined,
                   metadata: { type: "session", projectId: p.project_id },
                 };
