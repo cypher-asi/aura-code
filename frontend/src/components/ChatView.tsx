@@ -4,9 +4,11 @@ import { Text, Button } from "@cypher-asi/zui";
 import { MessageSquare } from "lucide-react";
 import { api } from "../api/client";
 import { useChatStream } from "../hooks/use-chat-stream";
+import { useProjectContext } from "../context/ProjectContext";
 import { setLastChat } from "../utils/storage";
 import { MessageBubble, StreamingBubble } from "./MessageBubble";
 import { ChatInputBar } from "./ChatInputBar";
+import { TerminalPanel } from "./TerminalPanel";
 import type { ChatInputBarHandle } from "./ChatInputBar";
 import type { ChatMessage } from "../types";
 import styles from "./ChatView.module.css";
@@ -17,6 +19,7 @@ export function ChatView() {
     chatSessionId: string;
   }>();
   const navigate = useNavigate();
+  const ctx = useProjectContext();
 
   const {
     messages,
@@ -95,28 +98,31 @@ export function ChatView() {
   if (!chatSessionId) {
     return (
       <div className={styles.container}>
-        <div className={styles.emptyState}>
-          <MessageSquare size={40} className={styles.emptyIcon} />
-          <Text variant="muted" size="sm">
-            Select a chat session or create a new one
-          </Text>
-          {projectId && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={async () => {
-                try {
-                  const session = await api.createChatSession(projectId, "New Chat");
-                  navigate(`/projects/${projectId}/chat/${session.chat_session_id}`);
-                } catch (err) {
-                  console.error("Failed to create session", err);
-                }
-              }}
-            >
-              Start a new chat
-            </Button>
-          )}
+        <div className={styles.chatArea}>
+          <div className={styles.emptyState}>
+            <MessageSquare size={40} className={styles.emptyIcon} />
+            <Text variant="muted" size="sm">
+              Select a chat session or create a new one
+            </Text>
+            {projectId && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const session = await api.createChatSession(projectId, "New Chat");
+                    navigate(`/projects/${projectId}/chat/${session.chat_session_id}`);
+                  } catch (err) {
+                    console.error("Failed to create session", err);
+                  }
+                }}
+              >
+                Start a new chat
+              </Button>
+            )}
+          </div>
         </div>
+        <TerminalPanel cwd={ctx?.project.linked_folder_path} />
       </div>
     );
   }
@@ -125,38 +131,42 @@ export function ChatView() {
 
   return (
     <div className={styles.container}>
-      <div
-        className={styles.messageArea}
-        ref={messageAreaRef}
-        onScroll={handleScroll}
-      >
-        {!hasMessages ? (
-          <div className={styles.emptyState}>
-            <MessageSquare size={40} className={styles.emptyIcon} />
-            <Text variant="muted" size="sm">
-              Send a message or use a quick action to get started
-            </Text>
-          </div>
-        ) : (
-          <>
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))}
-            {streamingText && <StreamingBubble text={streamingText} />}
-          </>
-        )}
+      <div className={styles.chatArea}>
+        <div
+          className={styles.messageArea}
+          ref={messageAreaRef}
+          onScroll={handleScroll}
+        >
+          {!hasMessages ? (
+            <div className={styles.emptyState}>
+              <MessageSquare size={40} className={styles.emptyIcon} />
+              <Text variant="muted" size="sm">
+                Send a message or use a quick action to get started
+              </Text>
+            </div>
+          ) : (
+            <>
+              {messages.map((msg) => (
+                <MessageBubble key={msg.id} message={msg} />
+              ))}
+              {streamingText && <StreamingBubble text={streamingText} />}
+            </>
+          )}
+        </div>
+
+        <ChatInputBar
+          ref={inputBarRef}
+          input={input}
+          onInputChange={setInput}
+          onSend={handleSend}
+          onStop={stopStreaming}
+          isStreaming={isStreaming}
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
+        />
       </div>
 
-      <ChatInputBar
-        ref={inputBarRef}
-        input={input}
-        onInputChange={setInput}
-        onSend={handleSend}
-        onStop={stopStreaming}
-        isStreaming={isStreaming}
-        selectedModel={selectedModel}
-        onModelChange={setSelectedModel}
-      />
+      <TerminalPanel cwd={ctx?.project.linked_folder_path} />
     </div>
   );
 }
