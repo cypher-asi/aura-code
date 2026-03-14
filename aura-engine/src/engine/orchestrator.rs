@@ -132,6 +132,18 @@ impl DevLoopEngine {
                 .await;
             if let Err(ref e) = result {
                 error!(error = %e, "run_loop exited with error, emitting LoopFinished");
+
+                // Reset any tasks stuck in InProgress so the UI doesn't show stale spinners
+                if let Ok(orphaned) = engine.task_service.reset_in_progress_tasks(&project_id) {
+                    for t in &orphaned {
+                        engine.emit(EngineEvent::TaskBecameReady {
+                            project_id,
+                            agent_id: aid,
+                            task_id: t.task_id,
+                        });
+                    }
+                }
+
                 engine.emit(EngineEvent::LoopFinished {
                     project_id,
                     agent_id: aid,

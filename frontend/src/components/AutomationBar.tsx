@@ -63,15 +63,34 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
     [projectId],
   );
 
-  useEffect(() => {
+  const fetchLoopStatus = useCallback(() => {
     api.getLoopStatus(projectId)
       .then((res) => {
         if (res.active_agents && res.active_agents.length > 0) {
           setActiveAgents(res.active_agents);
+          setPaused(res.paused);
+          setStarting(false);
+        } else {
+          setActiveAgents([]);
+          setPaused(false);
+          setStarting(false);
         }
       })
       .catch(() => {});
   }, [projectId]);
+
+  useEffect(() => {
+    fetchLoopStatus();
+  }, [fetchLoopStatus]);
+
+  // Re-sync status when WebSocket reconnects (covers missed events)
+  const prevConnectedRef = useRef(connected);
+  useEffect(() => {
+    if (connected && !prevConnectedRef.current) {
+      fetchLoopStatus();
+    }
+    prevConnectedRef.current = connected;
+  }, [connected, fetchLoopStatus]);
 
   useEffect(() => {
     const unsubs = [

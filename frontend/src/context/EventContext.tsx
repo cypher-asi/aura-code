@@ -64,6 +64,16 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   const dispatchEvent = useCallback((event: EngineEvent) => {
     lastEventAtRef.current = Date.now();
 
+    // Clear stale output when a task is (re-)started so the UI doesn't mix old and new data
+    if (event.type === "task_started" && event.task_id) {
+      const map = taskOutputRef.current;
+      const existing = map.get(event.task_id);
+      if (existing && existing.text) {
+        map.set(event.task_id, { text: "", fileOps: [], buildSteps: [], testSteps: [] });
+        notifyTaskOutputListeners(event.task_id);
+      }
+    }
+
     if (event.type === "task_output_delta" && event.task_id && event.delta) {
       const map = taskOutputRef.current;
       const existing = map.get(event.task_id) ?? { text: "", fileOps: [], buildSteps: [], testSteps: [] };
