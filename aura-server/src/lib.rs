@@ -12,6 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::time::{interval, Duration};
 use tracing::{debug, info, warn};
 
 use crate::state::TaskOutputBuffers;
@@ -26,6 +27,7 @@ use aura_settings::SettingsService;
 use aura_store::RocksStore;
 
 const LIVE_OUTPUT_FLUSH_INTERVAL: u64 = 50;
+const DELTA_BROADCAST_INTERVAL_MS: u64 = 100;
 
 fn spawn_event_rebroadcast(
     mut rx: mpsc::UnboundedReceiver<EngineEvent>,
@@ -36,45 +38,70 @@ fn spawn_event_rebroadcast(
     tokio::spawn(async move {
         let mut write_count: u64 = 0;
         let mut delta_count: u64 = 0;
-        while let Some(event) = rx.recv().await {
-            match &event {
-                EngineEvent::TaskOutputDelta { task_id, delta } => {
-                    if let Ok(mut bufs) = task_output_buffers.lock() {
-                        bufs.entry(*task_id).or_default().push_str(delta);
-                    }
-                    delta_count += 1;
-                    if delta_count % LIVE_OUTPUT_FLUSH_INTERVAL == 0 {
-                        flush_live_output(&store, &task_output_buffers);
-                    }
-                }
-                EngineEvent::TaskCompleted { task_id, .. }
-                | EngineEvent::TaskFailed { task_id, .. } => {
-                    finalize_live_output(&store, &task_output_buffers, task_id);
-                }
-                EngineEvent::LoopStopped { .. } | EngineEvent::LoopFinished { .. } => {
-                    finalize_all_live_output(&store, &task_output_buffers);
-                }
-                _ => {}
-            }
+        let mut delta_broadcast_buf: HashMap<aura_core::TaskId, String> = HashMap::new();
+        let mut flush_interval = interval(Duration::from_millis(DELTA_BROADCAST_INTERVAL_MS));
+        flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-            if !matches!(event, EngineEvent::TaskOutputDelta { .. }) {
-                if let Ok(json_bytes) = serde_json::to_vec(&event) {
-                    if let Err(e) = store.append_log_entry(&json_bytes) {
-                        warn!("Failed to persist log entry: {e}");
-                    } else {
-                        write_count += 1;
-                        if write_count % 500 == 0 {
-                            if let Err(e) = store.prune_log_entries_if_needed() {
-                                warn!("Failed to prune log entries: {e}");
+        loop {
+            tokio::select! {
+                maybe_event = rx.recv() => {
+                    let Some(event) = maybe_event else { break };
+                    match &event {
+                        EngineEvent::TaskOutputDelta { task_id, delta } => {
+                            if let Ok(mut bufs) = task_output_buffers.lock() {
+                                bufs.entry(*task_id).or_default().push_str(delta);
+                            }
+                            delta_count += 1;
+                            if delta_count % LIVE_OUTPUT_FLUSH_INTERVAL == 0 {
+                                flush_live_output(&store, &task_output_buffers);
+                            }
+                            delta_broadcast_buf.entry(*task_id).or_default().push_str(delta);
+                        }
+                        EngineEvent::TaskCompleted { task_id, .. }
+                        | EngineEvent::TaskFailed { task_id, .. } => {
+                            finalize_live_output(&store, &task_output_buffers, task_id);
+                        }
+                        EngineEvent::LoopStopped { .. } | EngineEvent::LoopFinished { .. } => {
+                            finalize_all_live_output(&store, &task_output_buffers);
+                        }
+                        _ => {}
+                    }
+
+                    if matches!(event, EngineEvent::TaskOutputDelta { .. }) {
+                        continue;
+                    }
+
+                    if let Ok(json_bytes) = serde_json::to_vec(&event) {
+                        if let Err(e) = store.append_log_entry(&json_bytes) {
+                            warn!("Failed to persist log entry: {e}");
+                        } else {
+                            write_count += 1;
+                            if write_count % 500 == 0 {
+                                if let Err(e) = store.prune_log_entries_if_needed() {
+                                    warn!("Failed to prune log entries: {e}");
+                                }
                             }
                         }
                     }
-                }
-            }
 
-            debug!(?event, "Broadcasting engine event");
-            if broadcast_tx.send(event).is_err() {
-                warn!("No WebSocket subscribers for engine event");
+                    // Flush any buffered deltas before broadcasting a non-delta event,
+                    // so the WS client always sees deltas before the event that follows them.
+                    for (task_id, text) in delta_broadcast_buf.drain() {
+                        let coalesced = EngineEvent::TaskOutputDelta { task_id, delta: text };
+                        let _ = broadcast_tx.send(coalesced);
+                    }
+
+                    debug!(?event, "Broadcasting engine event");
+                    if broadcast_tx.send(event).is_err() {
+                        warn!("No WebSocket subscribers for engine event");
+                    }
+                }
+                _ = flush_interval.tick() => {
+                    for (task_id, text) in delta_broadcast_buf.drain() {
+                        debug!(%task_id, len = text.len(), "Flushing coalesced delta");
+                        let _ = broadcast_tx.send(EngineEvent::TaskOutputDelta { task_id, delta: text });
+                    }
+                }
             }
         }
     });
@@ -182,7 +209,7 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
     }
 
     let (event_tx, event_rx) = mpsc::unbounded_channel::<EngineEvent>();
-    let (event_broadcast, _) = broadcast::channel::<EngineEvent>(256);
+    let (event_broadcast, _) = broadcast::channel::<EngineEvent>(4096);
     let task_output_buffers: TaskOutputBuffers =
         Arc::new(std::sync::Mutex::new(HashMap::new()));
 
