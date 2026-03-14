@@ -73,7 +73,7 @@
 .tabContent {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow-y: overlay;
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
 }
