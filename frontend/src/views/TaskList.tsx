@@ -110,12 +110,21 @@ export function TaskList() {
     const specNodes: ExplorerNode[] = groupedTasks.map(({ spec, tasks: specTasks }) => ({
       id: spec.spec_id,
       label: spec.title,
-      children: specTasks.map((task) => ({
-        id: task.task_id,
-        label: task.title,
-        suffix: <TaskStatusIcon status={task.status} />,
-        metadata: { type: "task" },
-      })),
+      children:
+        specTasks.length > 0
+          ? specTasks.map((task) => ({
+              id: task.task_id,
+              label: task.title,
+              suffix: <TaskStatusIcon status={task.status} />,
+              metadata: { type: "task" },
+            }))
+          : [
+              {
+                id: `${spec.spec_id}__empty`,
+                label: "No tasks yet",
+                metadata: { type: "empty" },
+              },
+            ],
     }));
 
     if (ungrouped.length > 0) {

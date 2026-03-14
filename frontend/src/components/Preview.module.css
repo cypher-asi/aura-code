@@ -204,6 +204,10 @@
   font-size: 13px;
   line-height: 1.65;
 }
+
+.specMarkdown {
+  padding: 0 var(--space-3, 12px);
+}
 .markdown h1 { font-size: 18px; margin: 16px 0 8px; font-weight: 600; }
 .markdown h2 { font-size: 15px; margin: 14px 0 6px; font-weight: 600; }
 .markdown h3 { font-size: 13.5px; margin: 10px 0 4px; font-weight: 600; }

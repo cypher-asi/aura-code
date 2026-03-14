@@ -150,7 +150,7 @@ function SprintPreview({ sprint }: { sprint: Sprint }) {
 
 function SpecPreview({ spec }: { spec: import("../types").Spec }) {
   return (
-    <div className={styles.markdown}>
+    <div className={`${styles.markdown} ${styles.specMarkdown}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
         {spec.markdown_contents}
       </ReactMarkdown>
