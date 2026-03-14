@@ -10,11 +10,15 @@ interface XTerminalProps {
   visible: boolean;
 }
 
+function getThemeBg(): string {
+  return getComputedStyle(document.documentElement).getPropertyValue("--color-bg").trim() || "#111";
+}
+
 const THEME = {
-  background: "#0d0d0d",
+  background: getThemeBg(),
   foreground: "#d4d4d4",
   cursor: "#d4d4d4",
-  cursorAccent: "#0d0d0d",
+  cursorAccent: getThemeBg(),
   selectionBackground: "rgba(255, 255, 255, 0.15)",
   black: "#1e1e1e",
   red: "#f44747",
