@@ -4,6 +4,7 @@ import {
   useState,
   useCallback,
   useEffect,
+  useMemo,
   type ReactNode,
 } from "react";
 import type { Org, OrgMember } from "../types";
@@ -108,10 +109,13 @@ export function OrgProvider({ children }: { children: ReactNode }) {
     [activeOrg],
   );
 
+  const value = useMemo(
+    () => ({ orgs, activeOrg, members, isLoading, switchOrg, refreshOrgs, refreshMembers, createOrg, renameOrg }),
+    [orgs, activeOrg, members, isLoading, switchOrg, refreshOrgs, refreshMembers, createOrg, renameOrg],
+  );
+
   return (
-    <OrgContext.Provider
-      value={{ orgs, activeOrg, members, isLoading, switchOrg, refreshOrgs, refreshMembers, createOrg, renameOrg }}
-    >
+    <OrgContext.Provider value={value}>
       {children}
     </OrgContext.Provider>
   );
