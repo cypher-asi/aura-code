@@ -6,11 +6,21 @@ use tracing::{info, error};
 use crate::error::EngineError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Replacement {
+    pub search: String,
+    pub replace: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum FileOp {
     Create { path: String, content: String },
     Modify { path: String, content: String },
     Delete { path: String },
+    SearchReplace {
+        path: String,
+        replacements: Vec<Replacement>,
+    },
 }
 
 pub fn validate_path(base: &Path, target: &Path) -> Result<(), EngineError> {
