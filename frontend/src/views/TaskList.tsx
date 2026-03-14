@@ -50,11 +50,17 @@ export function TaskList() {
         if (e.task_id) {
           updateTaskStatus(e.task_id, "done", {
             execution_notes: e.execution_notes,
+            ...(e.files ? { files_changed: e.files } : {}),
           });
         }
       }),
       subscribe("task_failed", (e) => {
         if (e.task_id) updateTaskStatus(e.task_id, "failed");
+      }),
+      subscribe("file_ops_applied", (e) => {
+        if (e.task_id && e.files) {
+          updateTaskStatus(e.task_id, "in_progress", { files_changed: e.files });
+        }
       }),
       subscribe("task_became_ready", (e) => {
         if (e.task_id) updateTaskStatus(e.task_id, "ready");

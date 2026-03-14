@@ -317,6 +317,11 @@ export const api = {
     apiFetch<string | null>("/api/pick-folder", { method: "POST" }),
   pickFile: () =>
     apiFetch<string | null>("/api/pick-file", { method: "POST" }),
+  openPath: (path: string) =>
+    apiFetch<{ ok: boolean; error?: string }>("/api/open-path", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    }),
 
   // Loop
   startLoop: (projectId: ProjectId) =>

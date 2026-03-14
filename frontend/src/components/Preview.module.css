@@ -167,6 +167,14 @@
   flex-direction: column;
 }
 
+.fileOpItem {
+  cursor: pointer;
+}
+
+.fileOpItem:hover {
+  background: var(--color-bg-hover, rgba(255,255,255,0.06));
+}
+
 .opCreate {
   color: var(--color-success, #22c55e);
 }

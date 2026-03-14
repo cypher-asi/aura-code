@@ -290,12 +290,23 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
       {fileOps.length > 0 && (
         <GroupCollapsible label="Files Changed" count={fileOps.length} defaultOpen={isActive}>
           <div className={styles.fileOpsList}>
-            {fileOps.map((f) => (
-              <Item key={f.path}>
-                <Item.Icon><FileOpIcon op={f.op} /></Item.Icon>
-                <Item.Label>{f.path}</Item.Label>
-              </Item>
-            ))}
+            {fileOps.map((f) => {
+              const fullPath = ctx?.project.linked_folder_path
+                ? `${ctx.project.linked_folder_path}/${f.path}`.replace(/\//g, "\\")
+                : f.path;
+              return (
+                <Item
+                  key={f.path}
+                  onClick={() => {
+                    api.openPath(fullPath).catch(console.error);
+                  }}
+                  className={styles.fileOpItem}
+                >
+                  <Item.Icon><FileOpIcon op={f.op} /></Item.Icon>
+                  <Item.Label>{f.path}</Item.Label>
+                </Item>
+              );
+            })}
           </div>
         </GroupCollapsible>
       )}

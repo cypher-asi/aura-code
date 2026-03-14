@@ -89,6 +89,29 @@ async fn pick_file() -> Json<serde_json::Value> {
     Json(serde_json::json!(path))
 }
 
+#[derive(serde::Deserialize)]
+struct OpenPathRequest {
+    path: String,
+}
+
+async fn open_path(Json(req): Json<OpenPathRequest>) -> Json<serde_json::Value> {
+    let target = std::path::Path::new(&req.path);
+    if !target.exists() {
+        warn!(path = %req.path, "open_path: path does not exist");
+        return Json(serde_json::json!({ "ok": false, "error": "path not found" }));
+    }
+    match open::that(&req.path) {
+        Ok(_) => {
+            debug!(path = %req.path, "opened path in OS");
+            Json(serde_json::json!({ "ok": true }))
+        }
+        Err(e) => {
+            warn!(path = %req.path, error = %e, "failed to open path");
+            Json(serde_json::json!({ "ok": false, "error": e.to_string() }))
+        }
+    }
+}
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -131,7 +154,8 @@ fn main() {
             let state = aura_server::build_app_state(&db_path, &data_dir);
             let app = aura_server::create_router_with_frontend(state, frontend_dir)
                 .route("/api/pick-folder", axum_post(pick_folder))
-                .route("/api/pick-file", axum_post(pick_file));
+                .route("/api/pick-file", axum_post(pick_file))
+                .route("/api/open-path", axum_post(open_path));
             let listener = TcpListener::from_std(std_listener).expect("failed to create listener");
 
             let _ = ready_tx.send(());
