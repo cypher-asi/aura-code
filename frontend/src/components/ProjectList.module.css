@@ -92,7 +92,7 @@
 
 .automationSpinner {
   animation: spin 1s linear infinite;
-  color: var(--color-accent);
+  color: var(--color-text-muted);
   flex-shrink: 0;
 }
 

@@ -237,7 +237,7 @@ export function ProjectList() {
                 return {
                   id: s.chat_session_id,
                   label: s.title,
-                  icon: isAutomating ? <Loader2 size={12} className={styles.automationSpinner} /> : undefined,
+                  icon: isAutomating ? <Loader2 size={10} className={styles.automationSpinner} /> : undefined,
                   suffix:
                     streamingSessionId === s.chat_session_id ? (
                       <span className={styles.streamingDot} />
