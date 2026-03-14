@@ -1,5 +1,3 @@
-import { Button } from "@cypher-asi/zui";
-import { Settings } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { OrgSelector } from "./OrgSelector";
 import styles from "./TaskbarLeft.module.css";
@@ -14,19 +12,13 @@ export function TaskbarLeft({ onOpenSettings, onOpenOrgSettings }: Props) {
 
   return (
     <div className={`taskbar-section ${styles.container}`}>
-      <span className={styles.name}>{user?.display_name || "User"}</span>
-      <span className={styles.separator}>/</span>
+      <button className={styles.nameBtn} onClick={onOpenSettings}>
+        {user?.display_name || "User"}
+      </button>
+      <div className={styles.divider} />
       <div className={styles.orgWrap}>
         <OrgSelector onOpenSettings={onOpenOrgSettings} />
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        icon={<Settings size={14} />}
-        iconOnly
-        aria-label="Settings"
-        onClick={onOpenSettings}
-      />
     </div>
   );
 }
