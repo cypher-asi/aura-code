@@ -203,6 +203,10 @@
   min-height: 26px;
 }
 
+.section {
+  margin-bottom: var(--space-3, 12px);
+}
+
 .section > div:nth-child(2) > div {
   padding-left: 0;
   padding-right: 0;

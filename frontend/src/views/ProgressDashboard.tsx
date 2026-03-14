@@ -38,7 +38,7 @@ export function ProgressDashboard() {
   return (
     <div style={{ padding: "var(--space-4)" }}>
       <div style={{ textAlign: "center", marginBottom: "var(--space-5)" }}>
-        <div style={{ fontSize: 56, fontWeight: 800, color: "var(--color-accent)" }}>
+        <div style={{ fontSize: 36, fontWeight: 700, color: "var(--color-text-secondary)" }}>
           {pct}%
         </div>
         <div className={styles.progressBarContainer}>
