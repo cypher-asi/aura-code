@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::Json;
 
-use aura_core::{Agent, AgentId, ProjectId, Session};
+use aura_core::{Agent, AgentId, ProjectId, Session, SessionId, Task};
 
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
@@ -40,4 +40,43 @@ pub async fn list_sessions(
         .list_sessions(&project_id, &agent_id)
         .map_err(|e| ApiError::internal(e.to_string()))?;
     Ok(Json(sessions))
+}
+
+pub async fn get_session(
+    State(state): State<AppState>,
+    Path((project_id, agent_id, session_id)): Path<(ProjectId, AgentId, SessionId)>,
+) -> ApiResult<Json<Session>> {
+    let session = state
+        .session_service
+        .get_session(&project_id, &agent_id, &session_id)
+        .map_err(|e| match &e {
+            aura_services::SessionError::NotFound => ApiError::not_found("session not found"),
+            _ => ApiError::internal(e.to_string()),
+        })?;
+    Ok(Json(session))
+}
+
+pub async fn list_session_tasks(
+    State(state): State<AppState>,
+    Path((project_id, agent_id, session_id)): Path<(ProjectId, AgentId, SessionId)>,
+) -> ApiResult<Json<Vec<Task>>> {
+    let session = state
+        .session_service
+        .get_session(&project_id, &agent_id, &session_id)
+        .map_err(|e| match &e {
+            aura_services::SessionError::NotFound => ApiError::not_found("session not found"),
+            _ => ApiError::internal(e.to_string()),
+        })?;
+
+    let all_tasks = state
+        .store
+        .list_tasks_by_project(&project_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+
+    let session_tasks: Vec<Task> = all_tasks
+        .into_iter()
+        .filter(|t| session.tasks_worked.contains(&t.task_id))
+        .collect();
+
+    Ok(Json(session_tasks))
 }

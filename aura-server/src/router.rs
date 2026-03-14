@@ -176,6 +176,14 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
             "/api/projects/:project_id/agents/:agent_id/sessions",
             get(agents::list_sessions),
         )
+        .route(
+            "/api/projects/:project_id/agents/:agent_id/sessions/:session_id",
+            get(agents::get_session),
+        )
+        .route(
+            "/api/projects/:project_id/agents/:agent_id/sessions/:session_id/tasks",
+            get(agents::list_session_tasks),
+        )
         // Chat Sessions
         .route(
             "/api/projects/:project_id/chat-sessions",
