@@ -14,6 +14,37 @@ pub fn compute_cost(input_tokens: u64, output_tokens: u64) -> f64 {
     input_tokens as f64 * COST_PER_INPUT_TOKEN + output_tokens as f64 * COST_PER_OUTPUT_TOKEN
 }
 
+/// Approximate token count for a text string.
+/// Uses a simple heuristic: ~4 characters per token on average for English text
+/// and code. This is intentionally conservative (overestimates slightly).
+pub fn estimate_tokens(text: &str) -> u64 {
+    (text.len() as u64 + 3) / 4
+}
+
+/// Estimate token count for a RichMessage (handles both text and block content).
+pub fn estimate_message_tokens(msg: &RichMessage) -> u64 {
+    match &msg.content {
+        MessageContent::Text(t) => estimate_tokens(t) + 4,
+        MessageContent::Blocks(blocks) => {
+            let mut total: u64 = 4;
+            for block in blocks {
+                total += match block {
+                    ContentBlock::Text { text } => estimate_tokens(text),
+                    ContentBlock::ToolUse { name, input, .. } => {
+                        estimate_tokens(name)
+                            + estimate_tokens(&input.to_string())
+                            + 10
+                    }
+                    ContentBlock::ToolResult { content, .. } => {
+                        estimate_tokens(content) + 10
+                    }
+                };
+            }
+            total
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public types for tool use
 // ---------------------------------------------------------------------------

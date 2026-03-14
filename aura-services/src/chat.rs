@@ -384,6 +384,11 @@ impl ChatService {
             })
             .collect();
 
+        // Context window management: summarize old messages if too long
+        api_messages = self
+            .manage_context_window(&api_key, &system, api_messages)
+            .await;
+
         let tools: Vec<ToolDefinition> = agent_tool_definitions();
         let executor = ChatToolExecutor::new(
             self.store.clone(),
@@ -587,6 +592,90 @@ impl ChatService {
                 tx,
             )
             .await;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Context window management
+    // -----------------------------------------------------------------------
+
+    const MAX_CONTEXT_TOKENS: u64 = 150_000;
+    const KEEP_RECENT_MESSAGES: usize = 10;
+
+    async fn manage_context_window(
+        &self,
+        api_key: &str,
+        system_prompt: &str,
+        messages: Vec<RichMessage>,
+    ) -> Vec<RichMessage> {
+        use crate::claude::estimate_message_tokens;
+
+        let system_tokens = crate::claude::estimate_tokens(system_prompt);
+        let total_msg_tokens: u64 = messages.iter().map(|m| estimate_message_tokens(m)).sum();
+        let total = system_tokens + total_msg_tokens;
+
+        if total <= Self::MAX_CONTEXT_TOKENS || messages.len() <= Self::KEEP_RECENT_MESSAGES {
+            return messages;
+        }
+
+        info!(
+            total_tokens = total,
+            message_count = messages.len(),
+            "Context window approaching limit, summarizing older messages"
+        );
+
+        let split_at = messages.len().saturating_sub(Self::KEEP_RECENT_MESSAGES);
+        let (old_messages, recent_messages) = messages.split_at(split_at);
+
+        let mut summary_input = String::from(
+            "Summarize the following conversation concisely, preserving key decisions, \
+             tool calls made, and their outcomes. Focus on what was discussed, what was decided, \
+             and what actions were taken. Keep it under 500 words.\n\n"
+        );
+        for msg in old_messages {
+            let role = &msg.role;
+            let text = match &msg.content {
+                crate::claude::MessageContent::Text(t) => t.clone(),
+                crate::claude::MessageContent::Blocks(blocks) => {
+                    blocks.iter().map(|b| match b {
+                        ContentBlock::Text { text } => text.clone(),
+                        ContentBlock::ToolUse { name, .. } => format!("[Tool call: {name}]"),
+                        ContentBlock::ToolResult { content, .. } => {
+                            let preview: String = content.chars().take(100).collect();
+                            format!("[Tool result: {preview}...]")
+                        }
+                    }).collect::<Vec<_>>().join(" ")
+                }
+            };
+            if !text.is_empty() {
+                summary_input.push_str(&format!("{role}: {}\n", text.chars().take(500).collect::<String>()));
+            }
+        }
+
+        match self
+            .claude_client
+            .complete(api_key, "You summarize conversations concisely.", &summary_input, 1024)
+            .await
+        {
+            Ok(summary) => {
+                let mut result = vec![RichMessage::user(&format!(
+                    "Previous conversation summary:\n{summary}"
+                ))];
+                result.push(RichMessage::assistant_text(
+                    "Understood. I have the context from our previous conversation. How can I help?"
+                ));
+                result.extend(recent_messages.to_vec());
+                info!(
+                    original_count = old_messages.len() + recent_messages.len(),
+                    new_count = result.len(),
+                    "Context window compressed via summarization"
+                );
+                result
+            }
+            Err(e) => {
+                warn!(error = %e, "Failed to summarize context, truncating instead");
+                recent_messages.to_vec()
+            }
         }
     }
 
