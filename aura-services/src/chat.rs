@@ -20,7 +20,7 @@ use crate::task::TaskService;
 
 const CHAT_MAX_TOKENS: u32 = 16384;
 
-const CHAT_SYSTEM_PROMPT: &str = r#"You are Aura, an AI software engineering assistant embedded in a project management and code execution platform.
+const CHAT_SYSTEM_PROMPT_BASE: &str = r#"You are Aura, an AI software engineering assistant embedded in a project management and code execution platform.
 
 You have access to tools that let you directly manage the user's project:
 - **Specs**: list, create, update, delete technical specifications
@@ -28,14 +28,109 @@ You have access to tools that let you directly manage the user's project:
 - **Sprints**: list, create, update, delete sprint plans
 - **Project**: view and update project settings (name, description, build/test commands)
 - **Dev Loop**: start, pause, or stop the autonomous development loop
-- **Filesystem**: read, write, delete files and list directories in the project folder
+- **Filesystem**: read, write, edit, delete files and list directories in the project folder
+- **Search**: search_code for regex pattern search, find_files for glob matching
+- **Shell**: run_command to execute build, test, git, or other commands
 - **Progress**: view task completion metrics
 
-When the user asks you to create, modify, or manage project artifacts, USE YOUR TOOLS to do it directly rather than just describing what to do. Be proactive — if the user says "add a task for X", call create_task. If they say "show me the specs", call list_specs.
+When the user asks you to create, modify, or manage project artifacts, USE YOUR TOOLS to do it directly rather than just describing what to do. Be proactive -- if the user says "add a task for X", call create_task. If they say "show me the specs", call list_specs.
 
 For conversational questions about architecture, debugging, or best practices, respond with helpful text.
 
 Use markdown formatting for code blocks and structured responses. Be concise."#;
+
+fn build_chat_system_prompt(project: &aura_core::Project) -> String {
+    let mut prompt = CHAT_SYSTEM_PROMPT_BASE.to_string();
+
+    prompt.push_str(&format!(
+        "\n\n## Current Project\n- **Name**: {}\n- **Description**: {}\n- **Folder**: {}\n- **Build**: {}\n- **Test**: {}\n",
+        project.name,
+        project.description,
+        project.linked_folder_path,
+        project.build_command.as_deref().unwrap_or("(not set)"),
+        project.test_command.as_deref().unwrap_or("(not set)"),
+    ));
+
+    let folder = std::path::Path::new(&project.linked_folder_path);
+    if folder.is_dir() {
+        // Detect tech stack from marker files
+        let mut stack: Vec<&str> = Vec::new();
+        let markers: &[(&str, &str)] = &[
+            ("Cargo.toml", "Rust"),
+            ("package.json", "Node.js/TypeScript"),
+            ("pyproject.toml", "Python"),
+            ("requirements.txt", "Python"),
+            ("go.mod", "Go"),
+            ("pom.xml", "Java/Maven"),
+            ("build.gradle", "Java/Gradle"),
+            ("Gemfile", "Ruby"),
+            ("composer.json", "PHP"),
+            ("mix.exs", "Elixir"),
+        ];
+        for (file, tech) in markers {
+            if folder.join(file).exists() && !stack.contains(tech) {
+                stack.push(tech);
+            }
+        }
+        if !stack.is_empty() {
+            prompt.push_str(&format!("- **Tech Stack**: {}\n", stack.join(", ")));
+        }
+
+        // Top-level directory listing (1 level deep)
+        if let Ok(entries) = std::fs::read_dir(folder) {
+            let mut items: Vec<String> = Vec::new();
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with('.') || name == "node_modules" || name == "target"
+                    || name == "__pycache__" || name == "dist" || name == "build"
+                {
+                    continue;
+                }
+                let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+                items.push(if is_dir {
+                    format!("{name}/")
+                } else {
+                    name
+                });
+            }
+            items.sort();
+            if !items.is_empty() {
+                let listing = items.iter().take(30).cloned().collect::<Vec<_>>().join(", ");
+                prompt.push_str(&format!("\n### Project Structure\n{listing}\n"));
+            }
+        }
+
+        // Key config file previews (first 30 lines, max ~2000 chars total)
+        let config_files: &[&str] = &[
+            "Cargo.toml", "package.json", "tsconfig.json", "pyproject.toml",
+        ];
+        let mut config_budget: usize = 2000;
+        let mut config_sections: Vec<String> = Vec::new();
+        for &cf in config_files {
+            if config_budget == 0 {
+                break;
+            }
+            let path = folder.join(cf);
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                let preview: String = content.lines().take(30).collect::<Vec<_>>().join("\n");
+                let preview = if preview.len() > config_budget {
+                    preview[..config_budget].to_string()
+                } else {
+                    preview
+                };
+                config_budget = config_budget.saturating_sub(preview.len());
+                config_sections.push(format!("**{cf}**:\n```\n{preview}\n```"));
+            }
+        }
+        if !config_sections.is_empty() {
+            prompt.push_str("\n### Key Config Files\n");
+            prompt.push_str(&config_sections.join("\n"));
+            prompt.push('\n');
+        }
+    }
+
+    prompt
+}
 
 // ---------------------------------------------------------------------------
 // Stream events sent to the SSE handler
@@ -237,19 +332,10 @@ impl ChatService {
             }
         };
 
-        let project_context = match self.store.get_project(project_id) {
-            Ok(p) => format!(
-                "\n\nCurrent project context:\n- Name: {}\n- Description: {}\n- Folder: {}\n- Build command: {}\n- Test command: {}",
-                p.name,
-                p.description,
-                p.linked_folder_path,
-                p.build_command.as_deref().unwrap_or("(not set)"),
-                p.test_command.as_deref().unwrap_or("(not set)"),
-            ),
-            Err(_) => String::new(),
+        let system = match self.store.get_project(project_id) {
+            Ok(p) => build_chat_system_prompt(&p),
+            Err(_) => CHAT_SYSTEM_PROMPT_BASE.to_string(),
         };
-
-        let system = format!("{CHAT_SYSTEM_PROMPT}{project_context}");
 
         let mut api_messages: Vec<RichMessage> = stored_messages
             .iter()
