@@ -7,6 +7,7 @@ pub mod claude;
 pub mod error;
 pub mod github;
 pub mod org;
+pub mod pricing;
 pub mod project;
 pub mod session;
 pub mod spec_gen;
@@ -28,6 +29,7 @@ pub use error::{
 };
 pub use github::GitHubService;
 pub use org::OrgService;
+pub use pricing::PricingService;
 pub use project::{CreateProjectInput, ProjectService, UpdateProjectInput};
 pub use session::SessionService;
 pub use spec_gen::{ProgressTx, SpecGenerationService, SpecStreamEvent};
