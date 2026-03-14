@@ -113,17 +113,42 @@ export function TaskList() {
   );
 
   const explorerData: ExplorerNode[] = useMemo(() => {
+    function buildTaskTree(taskList: Task[]): ExplorerNode[] {
+      const childrenByParent = new Map<string, Task[]>();
+      const rootTasks: Task[] = [];
+
+      for (const task of taskList) {
+        if (task.parent_task_id && taskList.some((t) => t.task_id === task.parent_task_id)) {
+          const siblings = childrenByParent.get(task.parent_task_id) ?? [];
+          siblings.push(task);
+          childrenByParent.set(task.parent_task_id, siblings);
+        } else {
+          rootTasks.push(task);
+        }
+      }
+
+      function toNode(task: Task): ExplorerNode {
+        const subtasks = childrenByParent.get(task.task_id);
+        return {
+          id: task.task_id,
+          label: task.title,
+          suffix: <TaskStatusIcon status={task.status} />,
+          metadata: { type: "task" },
+          ...(subtasks && subtasks.length > 0
+            ? { children: subtasks.map(toNode) }
+            : {}),
+        };
+      }
+
+      return rootTasks.map(toNode);
+    }
+
     const specNodes: ExplorerNode[] = groupedTasks.map(({ spec, tasks: specTasks }) => ({
       id: spec.spec_id,
       label: spec.title,
       children:
         specTasks.length > 0
-          ? specTasks.map((task) => ({
-                id: task.task_id,
-                label: task.title,
-                suffix: <TaskStatusIcon status={task.status} />,
-                metadata: { type: "task" },
-              }))
+          ? buildTaskTree(specTasks)
           : [
               {
                 id: `${spec.spec_id}__empty`,
@@ -137,12 +162,7 @@ export function TaskList() {
       specNodes.push({
         id: "__other__",
         label: "Other",
-        children: ungrouped.map((task) => ({
-            id: task.task_id,
-            label: task.title,
-            suffix: <TaskStatusIcon status={task.status} />,
-            metadata: { type: "task" },
-          })),
+        children: buildTaskTree(ungrouped),
       });
     }
 

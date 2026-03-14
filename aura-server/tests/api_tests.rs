@@ -309,6 +309,7 @@ async fn task_list_and_progress() {
         status: TaskStatus::Ready,
         order_index: 0,
         dependency_ids: vec![],
+        parent_task_id: None,
         assigned_agent_id: None,
         session_id: None,
         execution_notes: String::new(),

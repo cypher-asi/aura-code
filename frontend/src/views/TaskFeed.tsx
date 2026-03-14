@@ -102,9 +102,10 @@ export function TaskFeed({ projectId }: TaskFeedProps) {
           <Item
             key={task.task_id}
             selected={task.task_id === activeTaskId}
+            style={task.parent_task_id ? { paddingLeft: "var(--space-6)" } : undefined}
           >
             <Item.Icon><TaskStatusIcon status={task.status} /></Item.Icon>
-            <Item.Label>{task.title}</Item.Label>
+            <Item.Label>{task.parent_task_id ? `↳ ${task.title}` : task.title}</Item.Label>
           </Item>
         ))}
         {tasks.length === 0 && (

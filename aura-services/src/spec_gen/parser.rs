@@ -220,6 +220,7 @@ pub(crate) fn parse_tasks_from_markdown(
                 status: TaskStatus::Ready,
                 order_index,
                 dependency_ids: vec![],
+                parent_task_id: None,
                 assigned_agent_id: None,
                 session_id: None,
                 execution_notes: String::new(),

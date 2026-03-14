@@ -233,20 +233,20 @@ function RunTaskButton({ task }: { task: import("../types").Task }) {
   );
 }
 
-function BuildStepIcon({ kind }: { kind: BuildStep["kind"] }) {
+function BuildStepIcon({ kind, active }: { kind: BuildStep["kind"]; active: boolean }) {
   switch (kind) {
     case "started":
-      return <Loader2 size={12} className={styles.spinner} />;
+      return active ? <Loader2 size={12} className={styles.spinner} /> : <Check size={12} />;
     case "passed":
       return <Check size={12} />;
     case "failed":
       return <XCircle size={12} />;
     case "fix_attempt":
-      return <Wrench size={12} />;
+      return active ? <Wrench size={12} className={styles.spinner} /> : <Wrench size={12} />;
   }
 }
 
-function BuildStepItem({ step }: { step: BuildStep }) {
+function BuildStepItem({ step, active }: { step: BuildStep; active: boolean }) {
   const [expanded, setExpanded] = useState(step.kind === "failed");
 
   const statusClass =
@@ -258,7 +258,7 @@ function BuildStepItem({ step }: { step: BuildStep }) {
   let label: string;
   switch (step.kind) {
     case "started":
-      label = `Running \`${step.command}\`...`;
+      label = active ? `Running \`${step.command}\`...` : `Running \`${step.command}\``;
       break;
     case "passed":
       label = "Build passed";
@@ -267,14 +267,16 @@ function BuildStepItem({ step }: { step: BuildStep }) {
       label = `Build failed${step.attempt ? ` (attempt ${step.attempt})` : ""}`;
       break;
     case "fix_attempt":
-      label = `Attempting auto-fix${step.attempt ? ` (attempt ${step.attempt})` : ""}...`;
+      label = active
+        ? `Attempting auto-fix${step.attempt ? ` (attempt ${step.attempt})` : ""}...`
+        : `Attempting auto-fix${step.attempt ? ` (attempt ${step.attempt})` : ""}`;
       break;
   }
 
   return (
     <div className={`${styles.activityItem} ${statusClass}`}>
       <span className={styles.activityIcon}>
-        <BuildStepIcon kind={step.kind} />
+        <BuildStepIcon kind={step.kind} active={active} />
       </span>
       <span className={styles.activityBody}>
         <span className={styles.activityMessage}>{label}</span>
@@ -310,7 +312,7 @@ function TestResultIcon({ status }: { status: string }) {
   }
 }
 
-function TestStepItem({ step }: { step: TestStep }) {
+function TestStepItem({ step, active }: { step: TestStep; active: boolean }) {
   const [expanded, setExpanded] = useState(step.kind === "failed");
 
   const statusClass =
@@ -322,7 +324,7 @@ function TestStepItem({ step }: { step: TestStep }) {
   let label: string;
   switch (step.kind) {
     case "started":
-      label = `Running tests \`${step.command}\`...`;
+      label = active ? `Running tests \`${step.command}\`...` : `Running tests \`${step.command}\``;
       break;
     case "passed":
       label = step.summary ? `Tests passed (${step.summary})` : "Tests passed";
@@ -331,14 +333,16 @@ function TestStepItem({ step }: { step: TestStep }) {
       label = `Tests failed${step.attempt ? ` (attempt ${step.attempt})` : ""}${step.summary ? ` — ${step.summary}` : ""}`;
       break;
     case "fix_attempt":
-      label = `Attempting auto-fix${step.attempt ? ` (attempt ${step.attempt})` : ""}...`;
+      label = active
+        ? `Attempting auto-fix${step.attempt ? ` (attempt ${step.attempt})` : ""}...`
+        : `Attempting auto-fix${step.attempt ? ` (attempt ${step.attempt})` : ""}`;
       break;
   }
 
   return (
     <div className={`${styles.activityItem} ${statusClass}`}>
       <span className={styles.activityIcon}>
-        <BuildStepIcon kind={step.kind} />
+        <BuildStepIcon kind={step.kind} active={active} />
       </span>
       <span className={styles.activityBody}>
         <span className={styles.activityMessage}>{label}</span>
@@ -497,9 +501,46 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
   const activity = useMemo(() => {
     if (!hasOutput || (!isActive && !streamBuf)) return [];
     const items = deriveActivity(streamBuf);
+
     if (isTerminal) return items.map((item) => ({ ...item, status: "done" as const }));
+
+    const buildSteps = taskOutput.buildSteps;
+    const testSteps = taskOutput.testSteps;
+    const allStreamDone = items.length > 0 && items.every((i) => i.status === "done");
+
+    if (allStreamDone && (buildSteps.length > 0 || testSteps.length > 0)) {
+      const lastBuild = buildSteps[buildSteps.length - 1];
+      const lastTest = testSteps[testSteps.length - 1];
+
+      if (lastBuild && lastBuild.kind !== "passed") {
+        const label =
+          lastBuild.kind === "failed"
+            ? `Build failed (attempt ${lastBuild.attempt ?? "?"}), retrying...`
+            : lastBuild.kind === "fix_attempt"
+              ? `Applying auto-fix (attempt ${lastBuild.attempt ?? "?"})...`
+              : "Running build verification...";
+        items.push({ id: "build-verify", message: label, status: "active" });
+      } else if (lastBuild?.kind === "passed") {
+        items.push({ id: "build-verify", message: "Build verified", status: "done" });
+      }
+
+      if (lastTest && lastTest.kind !== "passed") {
+        const label =
+          lastTest.kind === "failed"
+            ? `Tests failed (attempt ${lastTest.attempt ?? "?"}), retrying...`
+            : lastTest.kind === "fix_attempt"
+              ? `Applying test fix (attempt ${lastTest.attempt ?? "?"})...`
+              : "Running tests...";
+        items.push({ id: "test-verify", message: label, status: "active" });
+      } else if (lastTest?.kind === "passed") {
+        items.push({ id: "test-verify", message: "Tests passed", status: "done" });
+      }
+    } else if (allStreamDone && isActive) {
+      items.push({ id: "build-verify", message: "Running build verification...", status: "active" });
+    }
+
     return items;
-  }, [hasOutput, isActive, isTerminal, streamBuf]);
+  }, [hasOutput, isActive, isTerminal, streamBuf, taskOutput.buildSteps, taskOutput.testSteps]);
   const showOutput = activity.length > 0;
 
   const handleRetry = useCallback(async () => {
@@ -662,7 +703,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
           <div className={styles.liveOutputSection}>
             <div className={styles.activityList}>
               {taskOutput.buildSteps.map((step, i) => (
-                <BuildStepItem key={i} step={step} />
+                <BuildStepItem key={i} step={step} active={i === taskOutput.buildSteps.length - 1} />
               ))}
             </div>
           </div>
@@ -674,7 +715,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
           <div className={styles.liveOutputSection}>
             <div className={styles.activityList}>
               {taskOutput.testSteps.map((step, i) => (
-                <TestStepItem key={i} step={step} />
+                <TestStepItem key={i} step={step} active={i === taskOutput.testSteps.length - 1} />
               ))}
             </div>
           </div>

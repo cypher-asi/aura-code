@@ -30,6 +30,12 @@ pub struct FollowUpSuggestion {
     pub description: String,
 }
 
+/// Tracks a single build-fix attempt for the retry history prompt.
+struct BuildFixAttemptRecord {
+    stderr: String,
+    files_changed: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopCommand {
     Continue,
@@ -98,7 +104,7 @@ const RETRY_CORRECTION_PROMPT: &str =
     "Your previous response was not valid JSON. Respond with ONLY a valid JSON object matching the schema above. No prose, no markdown fences.";
 
 const MAX_EXECUTION_RETRIES: u32 = 2;
-const MAX_BUILD_FIX_RETRIES: u32 = 20;
+const MAX_BUILD_FIX_RETRIES: u32 = 5;
 const MAX_SHELL_TASK_RETRIES: u32 = 20;
 const MAX_LOOP_TASK_RETRIES: u32 = 5;
 const MAX_FOLLOW_UPS_PER_LOOP: usize = 20;
@@ -731,7 +737,7 @@ impl DevLoopEngine {
     ) -> Result<TaskExecution, EngineError> {
         let base_path = Path::new(&project.linked_folder_path);
         let max_attempts: u32 = MAX_SHELL_TASK_RETRIES;
-        let mut prior_errors: Vec<String> = Vec::new();
+        let mut prior_attempts_shell: Vec<BuildFixAttemptRecord> = Vec::new();
 
         for attempt in 1..=max_attempts {
             self.emit(EngineEvent::BuildVerificationStarted {
@@ -841,11 +847,28 @@ impl DevLoopEngine {
             });
 
             let detail = if !result.stderr.is_empty() { &result.stderr } else { &result.stdout };
-            prior_errors.push(detail.clone());
             let _ = self.event_tx.send(EngineEvent::TaskOutputDelta {
                 task_id: task.task_id,
                 delta: format!("Command failed (attempt {attempt}):\n{detail}\n"),
             });
+
+            // Bail early on repeated identical errors
+            let consecutive_dupes = prior_attempts_shell
+                .iter()
+                .rev()
+                .take_while(|a| a.stderr == *detail)
+                .count();
+            if consecutive_dupes >= 2 {
+                info!(
+                    task_id = %task.task_id,
+                    attempt,
+                    "same shell error repeated {} times, aborting fix loop",
+                    consecutive_dupes + 1
+                );
+                return Err(EngineError::Build(
+                    format!("command `{command}` keeps failing with the same error after {} attempts", consecutive_dupes + 1),
+                ));
+            }
 
             if attempt < max_attempts {
                 self.emit(EngineEvent::BuildFixAttempt {
@@ -886,7 +909,7 @@ impl DevLoopEngine {
                     &result.stderr,
                     &result.stdout,
                     &format!("Shell command task: {command}"),
-                    &prior_errors[..prior_errors.len().saturating_sub(1)],
+                    &prior_attempts_shell,
                 );
 
                 let api_key = self.settings.get_decrypted_api_key()?;
@@ -913,12 +936,25 @@ impl DevLoopEngine {
                 ).await?;
                 let _ = forwarder.await;
 
+                let mut attempt_files: Vec<String> = Vec::new();
                 if let Ok(fix_execution) = parse_execution_response(&response) {
                     if !fix_execution.file_ops.is_empty() {
+                        for op in &fix_execution.file_ops {
+                            let (op_name, path) = match op {
+                                FileOp::Create { path, .. } => ("create", path.as_str()),
+                                FileOp::Modify { path, .. } => ("modify", path.as_str()),
+                                FileOp::Delete { path } => ("delete", path.as_str()),
+                            };
+                            attempt_files.push(format!("{op_name} {path}"));
+                        }
                         let _ = file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await;
                         self.emit_file_ops_applied(task, &fix_execution.file_ops);
                     }
                 }
+                prior_attempts_shell.push(BuildFixAttemptRecord {
+                    stderr: detail.clone(),
+                    files_changed: attempt_files,
+                });
             }
         }
 
@@ -1088,7 +1124,7 @@ impl DevLoopEngine {
 
         let base_path = Path::new(&project.linked_folder_path);
         let mut all_fix_ops: Vec<FileOp> = Vec::new();
-        let mut prior_errors: Vec<String> = Vec::new();
+        let mut prior_attempts: Vec<BuildFixAttemptRecord> = Vec::new();
 
         for attempt in 1..=MAX_BUILD_FIX_RETRIES {
             self.emit(EngineEvent::BuildVerificationStarted {
@@ -1133,7 +1169,6 @@ impl DevLoopEngine {
                 if test_passed {
                     return Ok((all_fix_ops, true));
                 }
-                // If tests failed, continue the loop to rebuild + retest
                 continue;
             }
 
@@ -1157,6 +1192,22 @@ impl DevLoopEngine {
                 return Ok((all_fix_ops, false));
             }
 
+            // Bail early if the same error keeps repeating (stuck in a loop)
+            let consecutive_dupes = prior_attempts
+                .iter()
+                .rev()
+                .take_while(|a| a.stderr == build_result.stderr)
+                .count();
+            if consecutive_dupes >= 2 {
+                info!(
+                    task_id = %task.task_id,
+                    attempt,
+                    "same build error repeated {} times, aborting fix loop",
+                    consecutive_dupes + 1
+                );
+                return Ok((all_fix_ops, false));
+            }
+
             self.emit(EngineEvent::BuildFixAttempt {
                 task_id: task.task_id,
                 attempt,
@@ -1168,8 +1219,6 @@ impl DevLoopEngine {
                 stdout: None,
                 attempt: Some(attempt),
             });
-
-            prior_errors.push(build_result.stderr.clone());
 
             let spec = self.store.get_spec(&task.project_id, &task.spec_id)?;
             let codebase_snapshot =
@@ -1185,7 +1234,7 @@ impl DevLoopEngine {
                 &build_result.stderr,
                 &build_result.stdout,
                 &initial_execution.notes,
-                &prior_errors[..prior_errors.len().saturating_sub(1)],
+                &prior_attempts,
             );
 
             let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
@@ -1214,6 +1263,9 @@ impl DevLoopEngine {
                 .await?;
             let _ = forwarder.await;
 
+            // Summarize what files this attempt changed for the history
+            let mut attempt_files_changed: Vec<String> = Vec::new();
+
             match parse_execution_response(&response) {
                 Ok(fix_execution) => {
                     file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await?;
@@ -1227,6 +1279,7 @@ impl DevLoopEngine {
                                 FileOp::Modify { path, .. } => ("modify", path.as_str()),
                                 FileOp::Delete { path } => ("delete", path.as_str()),
                             };
+                            attempt_files_changed.push(format!("{op_name} {path}"));
                             crate::events::FileOpSummary {
                                 op: op_name.to_string(),
                                 path: path.to_string(),
@@ -1262,6 +1315,11 @@ impl DevLoopEngine {
                     );
                 }
             }
+
+            prior_attempts.push(BuildFixAttemptRecord {
+                stderr: build_result.stderr,
+                files_changed: attempt_files_changed,
+            });
         }
 
         Ok((all_fix_ops, false))
@@ -1729,9 +1787,10 @@ fn build_fix_prompt(
     stdout: &str,
     prior_notes: &str,
 ) -> String {
+    let empty: Vec<BuildFixAttemptRecord> = vec![];
     build_fix_prompt_with_history(
         project, spec, task, session, codebase_snapshot,
-        build_command, stderr, stdout, prior_notes, &[],
+        build_command, stderr, stdout, prior_notes, &empty,
     )
 }
 
@@ -1745,7 +1804,7 @@ fn build_fix_prompt_with_history(
     stderr: &str,
     stdout: &str,
     prior_notes: &str,
-    prior_attempts: &[String],
+    prior_attempts: &[BuildFixAttemptRecord],
 ) -> String {
     let mut prompt = String::new();
 
@@ -1774,9 +1833,16 @@ fn build_fix_prompt_with_history(
     }
 
     if !prior_attempts.is_empty() {
-        prompt.push_str("# Previous Fix Attempts (all failed)\nThe following fixes were already attempted and did NOT solve the problem. Do NOT repeat the same approach.\n\n");
-        for (i, attempt_err) in prior_attempts.iter().enumerate() {
-            prompt.push_str(&format!("## Attempt {}\n```\n{}\n```\n\n", i + 1, attempt_err));
+        prompt.push_str("# Previous Fix Attempts (all failed)\nThe following fixes were already attempted and did NOT solve the problem. You MUST try a fundamentally different approach.\n\n");
+        for (i, attempt) in prior_attempts.iter().enumerate() {
+            prompt.push_str(&format!("## Attempt {}\n", i + 1));
+            if !attempt.files_changed.is_empty() {
+                prompt.push_str("Files changed:\n");
+                for f in &attempt.files_changed {
+                    prompt.push_str(&format!("- {f}\n"));
+                }
+            }
+            prompt.push_str(&format!("Error:\n```\n{}\n```\n\n", attempt.stderr));
         }
     }
 

@@ -8,6 +8,53 @@ use aura_store::RocksStore;
 
 use crate::error::ProjectError;
 
+/// Strip trailing natural language that LLMs sometimes append to shell commands.
+/// e.g. "cargo build --workspace to confirm compilation" → "cargo build --workspace"
+fn sanitize_shell_command(cmd: &str) -> String {
+    let trimmed = cmd.trim();
+    if trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+
+    let trailing_phrases: &[&str] = &[
+        " in order to ", " so that ", " which will ", " that will ",
+        " to confirm ", " to verify ", " to check ", " to ensure ",
+        " to validate ", " to test ", " to see ", " to make sure ",
+        " to run ", " to build ", " to compile ",
+        " for confirming ", " for verifying ", " for checking ",
+    ];
+
+    let lower = trimmed.to_lowercase();
+    for phrase in trailing_phrases {
+        if let Some(idx) = lower.find(phrase) {
+            return trimmed[..idx].trim_end().to_string();
+        }
+    }
+
+    // Catch generic " to <verb>" at end: "cargo build --workspace to confirm compilation"
+    if let Some(idx) = lower.rfind(" to ") {
+        let after = &lower[idx + 4..];
+        let first_word = after.split_whitespace().next().unwrap_or("");
+        let non_command_verbs = [
+            "confirm", "verify", "check", "ensure", "validate", "test",
+            "see", "make", "run", "build", "compile", "show", "prove",
+            "demonstrate", "try", "attempt",
+        ];
+        if non_command_verbs.iter().any(|v| first_word == *v) {
+            return trimmed[..idx].trim_end().to_string();
+        }
+    }
+
+    trimmed.to_string()
+}
+
+fn sanitize_command_option(cmd: Option<String>) -> Option<String> {
+    cmd.map(|c| {
+        let sanitized = sanitize_shell_command(&c);
+        if sanitized.is_empty() { c } else { sanitized }
+    })
+}
+
 #[derive(Debug, Clone)]
 pub struct CreateProjectInput {
     pub org_id: OrgId,
@@ -66,8 +113,8 @@ impl ProjectService {
             current_status: ProjectStatus::Planning,
             github_integration_id: input.github_integration_id,
             github_repo_full_name: input.github_repo_full_name,
-            build_command: input.build_command,
-            test_command: input.test_command,
+            build_command: sanitize_command_option(input.build_command),
+            test_command: sanitize_command_option(input.test_command),
             created_at: now,
             updated_at: now,
         };
@@ -132,10 +179,10 @@ impl ProjectService {
             project.github_repo_full_name = input.github_repo_full_name;
         }
         if input.build_command.is_some() {
-            project.build_command = input.build_command;
+            project.build_command = sanitize_command_option(input.build_command);
         }
         if input.test_command.is_some() {
-            project.test_command = input.test_command;
+            project.test_command = sanitize_command_option(input.test_command);
         }
 
         project.updated_at = Utc::now();

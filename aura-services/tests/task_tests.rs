@@ -29,6 +29,7 @@ fn make_task_with(
         status,
         order_index: order,
         dependency_ids: deps,
+        parent_task_id: None,
         assigned_agent_id: None,
         session_id: None,
         execution_notes: String::new(),

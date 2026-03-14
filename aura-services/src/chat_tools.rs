@@ -213,8 +213,14 @@ pub fn agent_tool_definitions() -> Vec<ToolDefinition> {
                 "properties": {
                     "name": { "type": "string" },
                     "description": { "type": "string" },
-                    "build_command": { "type": "string" },
-                    "test_command": { "type": "string" }
+                    "build_command": {
+                        "type": "string",
+                        "description": "The exact shell command to run for build verification, e.g. \"cargo build --workspace\" or \"npm run build\". Must be a valid shell command with NO extra text or explanation — only the command itself."
+                    },
+                    "test_command": {
+                        "type": "string",
+                        "description": "The exact shell command to run tests, e.g. \"cargo test\" or \"npm test\". Must be a valid shell command with NO extra text or explanation — only the command itself."
+                    }
                 },
                 "required": []
             }),

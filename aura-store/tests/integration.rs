@@ -52,6 +52,7 @@ fn make_task(project_id: ProjectId, spec_id: SpecId) -> Task {
         status: TaskStatus::Pending,
         order_index: 1,
         dependency_ids: vec![],
+        parent_task_id: None,
         assigned_agent_id: None,
         session_id: None,
         execution_notes: String::new(),

@@ -273,6 +273,12 @@
   color: #ffffff;
 }
 
+.taskExplorer div:has(> div > [aria-level="3"]) {
+  margin-left: 20px;
+  padding-left: 8px;
+  border-left: 1px solid var(--color-border);
+}
+
 .progressSection {
   display: flex;
   align-items: center;

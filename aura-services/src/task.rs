@@ -392,6 +392,7 @@ impl TaskService {
             },
             order_index: originating_task.order_index + 1,
             dependency_ids,
+            parent_task_id: Some(originating_task.task_id),
             assigned_agent_id: None,
             session_id: None,
             execution_notes: String::new(),

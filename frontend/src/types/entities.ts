@@ -78,6 +78,7 @@ export interface Task {
   status: TaskStatus;
   order_index: number;
   dependency_ids: TaskId[];
+  parent_task_id: TaskId | null;
   assigned_agent_id: AgentId | null;
   session_id: SessionId | null;
   execution_notes: string;

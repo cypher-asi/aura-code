@@ -107,6 +107,8 @@ pub struct Task {
     pub status: TaskStatus,
     pub order_index: u32,
     pub dependency_ids: Vec<TaskId>,
+    #[serde(default)]
+    pub parent_task_id: Option<TaskId>,
     pub assigned_agent_id: Option<AgentId>,
     #[serde(default)]
     pub session_id: Option<SessionId>,
