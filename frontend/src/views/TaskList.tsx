@@ -145,6 +145,7 @@ export function TaskList() {
       data={explorerData}
       searchable
       searchPlaceholder="Search"
+      expandOnSelect
       enableDragDrop={false}
       enableMultiSelect={false}
       defaultExpandedIds={defaultExpandedIds}
