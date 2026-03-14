@@ -8,7 +8,8 @@ use aura_engine::{EngineEvent, LoopHandle};
 use aura_terminal::TerminalManager;
 use aura_services::{
     AgentService, AuthService, ChatService, ClaudeClient, GitHubService, OrgService,
-    ProjectService, SessionService, SpecGenerationService, TaskExtractionService, TaskService,
+    PricingService, ProjectService, SessionService, SpecGenerationService,
+    TaskExtractionService, TaskService,
 };
 use aura_settings::SettingsService;
 use aura_store::RocksStore;
@@ -22,6 +23,7 @@ pub struct AppState {
     pub github_service: Arc<GitHubService>,
     pub auth_service: Arc<AuthService>,
     pub settings_service: Arc<SettingsService>,
+    pub pricing_service: Arc<PricingService>,
     pub project_service: Arc<ProjectService>,
     pub spec_gen_service: Arc<SpecGenerationService>,
     pub task_extraction_service: Arc<TaskExtractionService>,

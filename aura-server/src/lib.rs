@@ -21,7 +21,8 @@ use aura_engine::EngineEvent;
 use aura_terminal::TerminalManager;
 use aura_services::{
     AgentService, AuthService, ChatService, ClaudeClient, GitHubService, OrgService,
-    ProjectService, SessionService, SpecGenerationService, TaskExtractionService, TaskService,
+    PricingService, ProjectService, SessionService, SpecGenerationService,
+    TaskExtractionService, TaskService,
 };
 use aura_settings::SettingsService;
 use aura_store::RocksStore;
@@ -163,6 +164,7 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
     let auth_service = Arc::new(auth_service);
     let settings_service =
         Arc::new(SettingsService::new(store.clone(), data_dir).expect("failed to init settings"));
+    let pricing_service = Arc::new(PricingService::new(store.clone()));
     let claude_client = Arc::new(ClaudeClient::new());
     let project_service = Arc::new(ProjectService::new(store.clone()));
     let spec_gen_service = Arc::new(SpecGenerationService::new(
@@ -228,6 +230,7 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
         github_service,
         auth_service,
         settings_service,
+        pricing_service,
         project_service,
         spec_gen_service,
         task_extraction_service,

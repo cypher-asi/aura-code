@@ -5,6 +5,7 @@ pub mod dev_loop;
 pub mod github;
 pub mod log;
 pub mod orgs;
+pub mod pricing;
 pub mod projects;
 pub mod settings;
 pub mod specs;

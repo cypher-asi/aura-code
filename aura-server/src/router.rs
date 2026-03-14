@@ -6,7 +6,7 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
-use crate::handlers::{agents, auth, chat, dev_loop, github, log, orgs, projects, settings, specs, sprints, tasks, terminal, ws};
+use crate::handlers::{agents, auth, chat, dev_loop, github, log, orgs, pricing, projects, settings, specs, sprints, tasks, terminal, ws};
 use crate::state::AppState;
 
 pub fn create_router(state: AppState) -> Router {
@@ -87,6 +87,10 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
             post(settings::set_api_key)
                 .get(settings::get_api_key_info)
                 .delete(settings::delete_api_key),
+        )
+        .route(
+            "/api/settings/fee-schedule",
+            get(pricing::get_fee_schedule).put(pricing::set_fee_schedule),
         )
         .route(
             "/api/settings/:key",
