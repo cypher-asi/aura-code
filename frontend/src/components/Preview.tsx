@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Sidebar, Button, Text, GroupCollapsible, Item } from "@cypher-asi/zui";
-import { X, Sparkles, Loader2, FilePlus, FilePen, FileX, RotateCcw, Play, Check, Activity } from "lucide-react";
+import { X, ArrowLeft, Sparkles, Loader2, FilePlus, FilePen, FileX, RotateCcw, Play, Check } from "lucide-react";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
@@ -285,7 +285,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
     if (!projectId || !task.session_id || !task.assigned_agent_id) return;
     try {
       const session = await api.getSession(projectId, task.assigned_agent_id, task.session_id);
-      sidekick.viewSession(session);
+      sidekick.pushPreview({ kind: "session", session });
     } catch (err) {
       console.error("Failed to load session:", err);
     }
@@ -325,7 +325,15 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
         </div>
         <div className={styles.taskField}>
           <span className={styles.fieldLabel}>Description</span>
-          <Text size="sm">{task.description || "—"}</Text>
+          {task.description ? (
+            <div className={styles.markdown}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                {task.description}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <Text size="sm">—</Text>
+          )}
         </div>
         {task.session_id && (
           <div className={styles.taskField}>
@@ -337,7 +345,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
                 border: "none",
                 padding: 0,
                 cursor: "pointer",
-                color: "var(--color-accent, #3b82f6)",
+                color: "var(--color-text, #fff)",
                 fontSize: 13,
                 textAlign: "left",
                 textDecoration: "underline",
@@ -387,29 +395,27 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
       )}
 
       {showLiveOutput && (
-        <div className={styles.liveOutputSection}>
-          <Text variant="muted" size="sm" className={styles.liveOutputHeader}>
-            <Activity size={12} />
-            Live Output
-          </Text>
-          <div ref={streamRef} className={styles.activityList} onScroll={handleStreamScroll}>
-            {activity.map((item) => (
-              <div key={item.id} className={styles.activityItem} data-status={item.status}>
-                <span className={styles.activityIcon} data-status={item.status}>
-                  {item.status === "active"
-                    ? <Loader2 size={12} className={styles.spinner} />
-                    : <Check size={12} />}
-                </span>
-                <span className={styles.activityBody}>
-                  <span className={styles.activityMessage}>{item.message}</span>
-                  {item.detail && (
-                    <span className={styles.activityDetail}> {item.detail}</span>
-                  )}
-                </span>
-              </div>
-            ))}
+        <GroupCollapsible label="Live Output" defaultOpen className={styles.section}>
+          <div className={styles.liveOutputSection}>
+            <div ref={streamRef} className={styles.activityList} onScroll={handleStreamScroll}>
+              {activity.map((item) => (
+                <div key={item.id} className={styles.activityItem} data-status={item.status}>
+                  <span className={styles.activityIcon} data-status={item.status}>
+                    {item.status === "active"
+                      ? <Loader2 size={12} className={styles.spinner} />
+                      : <Check size={12} />}
+                  </span>
+                  <span className={styles.activityBody}>
+                    <span className={styles.activityMessage}>{item.message}</span>
+                    {item.detail && (
+                      <span className={styles.activityDetail}> {item.detail}</span>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        </GroupCollapsible>
       )}
     </>
   );
@@ -514,7 +520,7 @@ function SessionPreview({ session }: { session: Session }) {
           {tasks.map((task) => (
             <Item
               key={task.task_id}
-              onClick={() => sidekick.viewTask(task)}
+              onClick={() => sidekick.pushPreview({ kind: "task", task })}
               className={styles.fileOpItem}
             >
               <Item.Icon><TaskStatusIcon status={task.status} /></Item.Icon>
@@ -575,7 +581,7 @@ function previewTitle(item: PreviewItem): string {
 }
 
 export function Preview() {
-  const { previewItem, closePreview } = useSidekick();
+  const { previewItem, closePreview, canGoBack, goBackPreview } = useSidekick();
   const lastItem = useRef<PreviewItem | null>(null);
 
   if (previewItem) lastItem.current = previewItem;
@@ -594,6 +600,9 @@ export function Preview() {
       header={
         displayItem ? (
           <div className={styles.previewHeader}>
+            {canGoBack && (
+              <Button variant="ghost" size="sm" iconOnly icon={<ArrowLeft size={14} />} onClick={goBackPreview} />
+            )}
             {displayItem.kind === "sprint" ? (
               <SprintHeaderTitle sprint={displayItem.sprint} />
             ) : (

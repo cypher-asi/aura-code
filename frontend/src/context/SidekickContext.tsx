@@ -12,6 +12,7 @@ export type PreviewItem =
 interface PanelState {
   activeTab: SidekickTab;
   previewItem: PreviewItem | null;
+  previewHistory: PreviewItem[];
   infoContent: ReactNode;
   showInfo: boolean;
   specs: Spec[];
@@ -28,6 +29,9 @@ interface PanelActions {
   viewSpec: (spec: Spec) => void;
   viewTask: (task: Task) => void;
   viewSession: (session: Session) => void;
+  pushPreview: (item: PreviewItem) => void;
+  goBackPreview: () => void;
+  canGoBack: boolean;
   closePreview: () => void;
   toggleInfo: (title: string, content: ReactNode) => void;
   pushSpec: (spec: Spec) => void;
@@ -47,6 +51,7 @@ type SidekickContextValue = PanelState & PanelActions;
 const INITIAL_PANEL: PanelState = {
   activeTab: "sprint",
   previewItem: null,
+  previewHistory: [],
   infoContent: null,
   showInfo: false,
   specs: [],
@@ -66,23 +71,40 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const viewSprint = useCallback((sprint: Sprint) => {
-    setPanel((prev) => ({ ...prev, previewItem: { kind: "sprint", sprint } }));
+    setPanel((prev) => ({ ...prev, previewItem: { kind: "sprint", sprint }, previewHistory: [] }));
   }, []);
 
   const viewSpec = useCallback((spec: Spec) => {
-    setPanel((prev) => ({ ...prev, previewItem: { kind: "spec", spec } }));
+    setPanel((prev) => ({ ...prev, previewItem: { kind: "spec", spec }, previewHistory: [] }));
   }, []);
 
   const viewTask = useCallback((task: Task) => {
-    setPanel((prev) => ({ ...prev, previewItem: { kind: "task", task } }));
+    setPanel((prev) => ({ ...prev, previewItem: { kind: "task", task }, previewHistory: [] }));
   }, []);
 
   const viewSession = useCallback((session: Session) => {
-    setPanel((prev) => ({ ...prev, previewItem: { kind: "session", session } }));
+    setPanel((prev) => ({ ...prev, previewItem: { kind: "session", session }, previewHistory: [] }));
+  }, []);
+
+  const pushPreview = useCallback((item: PreviewItem) => {
+    setPanel((prev) => ({
+      ...prev,
+      previewHistory: prev.previewItem ? [...prev.previewHistory, prev.previewItem] : prev.previewHistory,
+      previewItem: item,
+    }));
+  }, []);
+
+  const goBackPreview = useCallback(() => {
+    setPanel((prev) => {
+      if (prev.previewHistory.length === 0) return prev;
+      const history = [...prev.previewHistory];
+      const previousItem = history.pop()!;
+      return { ...prev, previewItem: previousItem, previewHistory: history };
+    });
   }, []);
 
   const closePreview = useCallback(() => {
-    setPanel((prev) => ({ ...prev, previewItem: null }));
+    setPanel((prev) => ({ ...prev, previewItem: null, previewHistory: [] }));
   }, []);
 
   const toggleInfo = useCallback((_title: string, content: ReactNode) => {
@@ -176,11 +198,14 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
     <SidekickContext.Provider
       value={{
         ...panel,
+        canGoBack: panel.previewHistory.length > 0,
         setActiveTab,
         viewSprint,
         viewSpec,
         viewTask,
         viewSession,
+        pushPreview,
+        goBackPreview,
         closePreview,
         toggleInfo,
         pushSpec,
