@@ -720,7 +720,7 @@ impl DevLoopEngine {
             return None;
         };
 
-        if candidate.is_empty() { None } else { Some(candidate) }
+        if candidate.is_empty() { None } else { Some(trim_prose_suffix(&candidate)) }
     }
 
     async fn execute_shell_task(
@@ -1465,6 +1465,63 @@ impl DevLoopEngine {
     fn emit(&self, event: EngineEvent) {
         let _ = self.event_tx.send(event);
     }
+}
+
+/// Remove trailing natural-language prose from an extracted shell command.
+/// e.g. "cargo build --workspace to confirm compilation" → "cargo build --workspace"
+fn trim_prose_suffix(cmd: &str) -> String {
+    let lower = cmd.to_lowercase();
+    // Boundaries where a shell command ends and prose begins.
+    // Ordered longest-first so we match the most specific boundary.
+    let boundaries = [
+        " in order to ",
+        " and verify ",
+        " and confirm ",
+        " and check ",
+        " so that ",
+        " to confirm ",
+        " to verify ",
+        " to check ",
+        " to ensure ",
+        " to produce ",
+        " to install ",
+        " to run ",
+        " to test ",
+        " to build ",
+        " to see ",
+        " to make ",
+        " for verification",
+        " for testing",
+        " in a shell",
+        " in the shell",
+        " in the project",
+        " in order ",
+        " to ",
+        " which ",
+        " that ",
+        " after ",
+        " before ",
+        " since ",
+        " because ",
+        " if ",
+    ];
+
+    let mut best_cut = cmd.len();
+    for boundary in &boundaries {
+        if let Some(pos) = lower.find(boundary) {
+            if pos > 0 && pos < best_cut {
+                // Make sure the text before the boundary looks like a command
+                // (has at least one flag or known program name)
+                let before = cmd[..pos].trim();
+                if !before.is_empty() {
+                    best_cut = pos;
+                    break; // boundaries are priority-ordered; first match wins
+                }
+            }
+        }
+    }
+
+    cmd[..best_cut].trim().to_string()
 }
 
 /// Extract a shell command from backtick-delimited text in the description.
