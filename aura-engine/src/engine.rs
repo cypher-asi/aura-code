@@ -719,6 +719,7 @@ impl DevLoopEngine {
     ) -> Result<TaskExecution, EngineError> {
         let base_path = Path::new(&project.linked_folder_path);
         let max_attempts: u32 = MAX_SHELL_TASK_RETRIES;
+        let mut prior_errors: Vec<String> = Vec::new();
 
         for attempt in 1..=max_attempts {
             self.emit(EngineEvent::BuildVerificationStarted {
@@ -828,6 +829,7 @@ impl DevLoopEngine {
             });
 
             let detail = if !result.stderr.is_empty() { &result.stderr } else { &result.stdout };
+            prior_errors.push(detail.clone());
             let _ = self.event_tx.send(EngineEvent::TaskOutputDelta {
                 task_id: task.task_id,
                 delta: format!("Command failed (attempt {attempt}):\n{detail}\n"),
@@ -849,7 +851,7 @@ impl DevLoopEngine {
                 let spec = self.store.get_spec(&task.project_id, &task.spec_id)?;
                 let codebase_snapshot =
                     file_ops::read_relevant_files(&project.linked_folder_path, 50_000)?;
-                let fix_prompt = build_fix_prompt(
+                let fix_prompt = build_fix_prompt_with_history(
                     project, &spec, task,
                     &Session {
                         session_id: aura_core::SessionId::new(),
@@ -872,6 +874,7 @@ impl DevLoopEngine {
                     &result.stderr,
                     &result.stdout,
                     &format!("Shell command task: {command}"),
+                    &prior_errors[..prior_errors.len().saturating_sub(1)],
                 );
 
                 let api_key = self.settings.get_decrypted_api_key()?;
@@ -1157,7 +1160,7 @@ impl DevLoopEngine {
             let codebase_snapshot =
                 file_ops::read_relevant_files(&project.linked_folder_path, 50_000)?;
 
-            let fix_prompt = build_fix_prompt(
+            let fix_prompt = build_fix_prompt_with_history(
                 project,
                 &spec,
                 task,
@@ -1167,6 +1170,7 @@ impl DevLoopEngine {
                 &build_result.stderr,
                 &build_result.stdout,
                 &initial_execution.notes,
+                &prior_errors[..prior_errors.len().saturating_sub(1)],
             );
 
             let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
@@ -1338,7 +1342,7 @@ impl DevLoopEngine {
         let codebase_snapshot =
             file_ops::read_relevant_files(&project.linked_folder_path, 50_000)?;
 
-        let fix_prompt = build_fix_prompt(
+        let fix_prompt = build_fix_prompt_with_history(
             project,
             &spec,
             task,
@@ -1348,6 +1352,7 @@ impl DevLoopEngine {
             &test_result.stderr,
             &test_result.stdout,
             &initial_execution.notes,
+            &[],
         );
 
         let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
@@ -1578,6 +1583,7 @@ fn extract_last_fenced_json(text: &str) -> Option<String> {
     None
 }
 
+#[allow(dead_code)]
 fn build_fix_prompt(
     project: &Project,
     spec: &Spec,
@@ -1588,6 +1594,24 @@ fn build_fix_prompt(
     stderr: &str,
     stdout: &str,
     prior_notes: &str,
+) -> String {
+    build_fix_prompt_with_history(
+        project, spec, task, session, codebase_snapshot,
+        build_command, stderr, stdout, prior_notes, &[],
+    )
+}
+
+fn build_fix_prompt_with_history(
+    project: &Project,
+    spec: &Spec,
+    task: &Task,
+    session: &Session,
+    codebase_snapshot: &str,
+    build_command: &str,
+    stderr: &str,
+    stdout: &str,
+    prior_notes: &str,
+    prior_attempts: &[String],
 ) -> String {
     let mut prompt = String::new();
 
@@ -1615,10 +1639,17 @@ fn build_fix_prompt(
         ));
     }
 
+    if !prior_attempts.is_empty() {
+        prompt.push_str("# Previous Fix Attempts (all failed)\nThe following fixes were already attempted and did NOT solve the problem. Do NOT repeat the same approach.\n\n");
+        for (i, attempt_err) in prior_attempts.iter().enumerate() {
+            prompt.push_str(&format!("## Attempt {}\n```\n{}\n```\n\n", i + 1, attempt_err));
+        }
+    }
+
     prompt.push_str(&format!(
-        "# Build Verification FAILED\n\
-         The build command `{}` failed after the previous file operations were applied.\n\
-         You MUST fix ALL compilation/build errors below.\n\n\
+        "# Build/Test Verification FAILED\n\
+         The command `{}` failed after the previous file operations were applied.\n\
+         You MUST fix ALL errors below.\n\n\
          ## stderr\n```\n{}\n```\n\n",
         build_command, stderr
     ));
