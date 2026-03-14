@@ -4,6 +4,7 @@ use std::process::Stdio;
 use tokio::process::Command;
 use tracing::{info, warn};
 
+use aura_core::IndividualTestResult;
 use crate::error::EngineError;
 
 #[derive(Debug, Clone)]
@@ -109,4 +110,102 @@ pub async fn run_build_command(
     }
 
     Ok(result)
+}
+
+/// Parse test runner output into individual test results and a summary line.
+///
+/// Supports cargo test and Jest/npm test formats. Falls back to a single
+/// aggregate result derived from the exit code when the format is unrecognised.
+pub fn parse_test_output(stdout: &str, stderr: &str, success: bool) -> (Vec<IndividualTestResult>, String) {
+    let combined = format!("{stdout}\n{stderr}");
+
+    // Try cargo test format: `test module::name ... ok/FAILED/ignored`
+    let cargo_results = parse_cargo_test(&combined);
+    if !cargo_results.is_empty() {
+        let passed = cargo_results.iter().filter(|r| r.status == "passed").count();
+        let failed = cargo_results.iter().filter(|r| r.status == "failed").count();
+        let ignored = cargo_results.iter().filter(|r| r.status == "skipped").count();
+        let summary = format!("{passed} passed, {failed} failed, {ignored} ignored");
+        return (cargo_results, summary);
+    }
+
+    // Try Jest format: `PASS src/foo.test.ts` / `FAIL src/bar.test.ts`
+    let jest_results = parse_jest_output(&combined);
+    if !jest_results.is_empty() {
+        let passed = jest_results.iter().filter(|r| r.status == "passed").count();
+        let failed = jest_results.iter().filter(|r| r.status == "failed").count();
+        let summary = format!("{passed} passed, {failed} failed");
+        return (jest_results, summary);
+    }
+
+    // Fallback: single aggregate result
+    let status = if success { "passed" } else { "failed" };
+    let summary = if success { "all tests passed".to_string() } else { "tests failed".to_string() };
+    let result = IndividualTestResult {
+        name: "(aggregate)".to_string(),
+        status: status.to_string(),
+        message: if !success {
+            Some(truncate_output(&combined, 2000))
+        } else {
+            None
+        },
+    };
+    (vec![result], summary)
+}
+
+fn parse_cargo_test(output: &str) -> Vec<IndividualTestResult> {
+    let mut results = Vec::new();
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("test ") {
+            continue;
+        }
+        let rest = &trimmed[5..];
+        if let Some(idx) = rest.find(" ... ") {
+            let name = rest[..idx].trim().to_string();
+            let outcome = rest[idx + 5..].trim();
+            let status = match outcome {
+                "ok" => "passed",
+                "FAILED" => "failed",
+                s if s.starts_with("ignored") => "skipped",
+                _ => continue,
+            };
+            let message = if status == "failed" { Some(outcome.to_string()) } else { None };
+            results.push(IndividualTestResult { name, status: status.to_string(), message });
+        }
+    }
+    results
+}
+
+fn parse_jest_output(output: &str) -> Vec<IndividualTestResult> {
+    let mut results = Vec::new();
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("PASS ") {
+            results.push(IndividualTestResult {
+                name: trimmed[5..].trim().to_string(),
+                status: "passed".to_string(),
+                message: None,
+            });
+        } else if trimmed.starts_with("FAIL ") {
+            results.push(IndividualTestResult {
+                name: trimmed[5..].trim().to_string(),
+                status: "failed".to_string(),
+                message: None,
+            });
+        } else if trimmed.starts_with("\u{2713} ") || trimmed.starts_with("✓ ") {
+            results.push(IndividualTestResult {
+                name: trimmed[2..].trim().to_string(),
+                status: "passed".to_string(),
+                message: None,
+            });
+        } else if trimmed.starts_with("\u{2717} ") || trimmed.starts_with("✕ ") || trimmed.starts_with("✗ ") {
+            results.push(IndividualTestResult {
+                name: trimmed[3..].trim().to_string(),
+                status: "failed".to_string(),
+                message: None,
+            });
+        }
+    }
+    results
 }

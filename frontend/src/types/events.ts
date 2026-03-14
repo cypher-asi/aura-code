@@ -21,7 +21,11 @@ export type EngineEventType =
   | "build_verification_started"
   | "build_verification_passed"
   | "build_verification_failed"
-  | "build_fix_attempt";
+  | "build_fix_attempt"
+  | "test_verification_started"
+  | "test_verification_passed"
+  | "test_verification_failed"
+  | "test_fix_attempt";
 
 export interface EngineEvent {
   type: EngineEventType;
@@ -48,4 +52,6 @@ export interface EngineEvent {
   command?: string;
   stderr?: string;
   stdout?: string;
+  tests?: { name: string; status: string; message?: string }[];
+  summary?: string;
 }

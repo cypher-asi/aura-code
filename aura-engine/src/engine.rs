@@ -754,6 +754,49 @@ impl DevLoopEngine {
                     attempt: Some(attempt),
                 });
 
+                // Run test_command if configured
+                if let Some(ref test_cmd) = project.test_command {
+                    if !test_cmd.trim().is_empty() {
+                        let dummy_session = Session {
+                            session_id: SessionId::new(),
+                            agent_id: AgentId::new(),
+                            project_id: project.project_id,
+                            active_task_id: None,
+                            tasks_worked: vec![],
+                            context_usage_estimate: 0.0,
+                            total_input_tokens: 0,
+                            total_output_tokens: 0,
+                            summary_of_previous_context: String::new(),
+                            status: SessionStatus::Active,
+                            user_id: None,
+                            model: None,
+                            started_at: chrono::Utc::now(),
+                            ended_at: None,
+                        };
+                        let dummy_exec = TaskExecution {
+                            notes: format!("Shell command: {command}"),
+                            file_ops: vec![],
+                            follow_up_tasks: vec![],
+                            input_tokens: 0,
+                            output_tokens: 0,
+                        };
+                        let mut test_fix_ops = Vec::new();
+                        let test_passed = self.run_and_handle_tests(
+                            project, task, &dummy_session,
+                            &self.settings.get_decrypted_api_key().unwrap_or_default(),
+                            &dummy_exec, test_cmd, base_path, attempt, &mut test_fix_ops,
+                        ).await?;
+                        if !test_passed {
+                            if attempt < max_attempts {
+                                continue;
+                            }
+                            return Err(EngineError::Build(
+                                format!("test command `{test_cmd}` failed after {max_attempts} attempts"),
+                            ));
+                        }
+                    }
+                }
+
                 let notes = format!("Command `{command}` succeeded on attempt {attempt}.\n{}", result.stdout);
                 let _ = self.event_tx.send(EngineEvent::TaskOutputDelta {
                     task_id: task.task_id,
@@ -1004,6 +1047,13 @@ impl DevLoopEngine {
         }
     }
 
+    fn persist_test_step(&self, task: &Task, step: TestStepRecord) {
+        if let Ok(mut t) = self.store.get_task(&task.project_id, &task.spec_id, &task.task_id) {
+            t.test_steps.push(step);
+            let _ = self.store.put_task(&t);
+        }
+    }
+
     async fn verify_and_fix_build(
         &self,
         project: &Project,
@@ -1016,6 +1066,10 @@ impl DevLoopEngine {
             Some(cmd) if !cmd.trim().is_empty() => cmd.clone(),
             _ => return Ok((vec![], true)),
         };
+
+        let test_command = project.test_command.as_ref()
+            .filter(|cmd| !cmd.trim().is_empty())
+            .cloned();
 
         let base_path = Path::new(&project.linked_folder_path);
         let mut all_fix_ops: Vec<FileOp> = Vec::new();
@@ -1048,7 +1102,23 @@ impl DevLoopEngine {
                     stdout: Some(build_result.stdout),
                     attempt: Some(attempt),
                 });
-                return Ok((all_fix_ops, true));
+
+                // Run test command if configured
+                let test_passed = if let Some(ref test_cmd) = test_command {
+                    let test_result = self.run_and_handle_tests(
+                        project, task, session, api_key, initial_execution,
+                        test_cmd, base_path, attempt, &mut all_fix_ops,
+                    ).await?;
+                    test_result
+                } else {
+                    true
+                };
+
+                if test_passed {
+                    return Ok((all_fix_ops, true));
+                }
+                // If tests failed, continue the loop to rebuild + retest
+                continue;
             }
 
             self.emit(EngineEvent::BuildVerificationFailed {
@@ -1176,6 +1246,155 @@ impl DevLoopEngine {
         }
 
         Ok((all_fix_ops, false))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn run_and_handle_tests(
+        &self,
+        project: &Project,
+        task: &Task,
+        session: &Session,
+        api_key: &str,
+        initial_execution: &TaskExecution,
+        test_command: &str,
+        base_path: &Path,
+        attempt: u32,
+        all_fix_ops: &mut Vec<FileOp>,
+    ) -> Result<bool, EngineError> {
+        self.emit(EngineEvent::TestVerificationStarted {
+            task_id: task.task_id,
+            command: test_command.to_string(),
+        });
+        self.persist_test_step(task, TestStepRecord {
+            kind: "started".into(),
+            command: Some(test_command.to_string()),
+            stderr: None,
+            stdout: None,
+            attempt: Some(attempt),
+            tests: vec![],
+            summary: None,
+        });
+
+        let test_result = build_verify::run_build_command(base_path, test_command).await?;
+        let (tests, summary) = build_verify::parse_test_output(
+            &test_result.stdout, &test_result.stderr, test_result.success,
+        );
+
+        if test_result.success {
+            self.emit(EngineEvent::TestVerificationPassed {
+                task_id: task.task_id,
+                command: test_command.to_string(),
+                stdout: test_result.stdout.clone(),
+                tests: tests.clone(),
+                summary: summary.clone(),
+            });
+            self.persist_test_step(task, TestStepRecord {
+                kind: "passed".into(),
+                command: Some(test_command.to_string()),
+                stderr: None,
+                stdout: Some(test_result.stdout),
+                attempt: Some(attempt),
+                tests,
+                summary: Some(summary),
+            });
+            return Ok(true);
+        }
+
+        self.emit(EngineEvent::TestVerificationFailed {
+            task_id: task.task_id,
+            command: test_command.to_string(),
+            stdout: test_result.stdout.clone(),
+            stderr: test_result.stderr.clone(),
+            attempt,
+            tests: tests.clone(),
+            summary: summary.clone(),
+        });
+        self.persist_test_step(task, TestStepRecord {
+            kind: "failed".into(),
+            command: Some(test_command.to_string()),
+            stderr: Some(test_result.stderr.clone()),
+            stdout: Some(test_result.stdout.clone()),
+            attempt: Some(attempt),
+            tests,
+            summary: Some(summary),
+        });
+
+        // Ask Claude to fix the test failures
+        self.emit(EngineEvent::TestFixAttempt {
+            task_id: task.task_id,
+            attempt,
+        });
+        self.persist_test_step(task, TestStepRecord {
+            kind: "fix_attempt".into(),
+            command: None,
+            stderr: None,
+            stdout: None,
+            attempt: Some(attempt),
+            tests: vec![],
+            summary: None,
+        });
+
+        let spec = self.store.get_spec(&task.project_id, &task.spec_id)?;
+        let codebase_snapshot =
+            file_ops::read_relevant_files(&project.linked_folder_path, 50_000)?;
+
+        let fix_prompt = build_fix_prompt(
+            project,
+            &spec,
+            task,
+            session,
+            &codebase_snapshot,
+            test_command,
+            &test_result.stderr,
+            &test_result.stdout,
+            &initial_execution.notes,
+        );
+
+        let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
+        let event_tx = self.event_tx.clone();
+        let tid = task.task_id;
+        let forwarder = tokio::spawn(async move {
+            while let Some(evt) = stream_rx.recv().await {
+                if let ClaudeStreamEvent::Delta(text) = evt {
+                    let _ = event_tx.send(EngineEvent::TaskOutputDelta {
+                        task_id: tid,
+                        delta: text,
+                    });
+                }
+            }
+        });
+
+        let response = self
+            .claude_client
+            .complete_stream(
+                api_key,
+                TASK_EXECUTION_SYSTEM_PROMPT,
+                &fix_prompt,
+                TASK_EXECUTION_MAX_TOKENS,
+                stream_tx,
+            )
+            .await?;
+        let _ = forwarder.await;
+
+        match parse_execution_response(&response) {
+            Ok(fix_execution) => {
+                file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await?;
+                if !fix_execution.file_ops.is_empty() {
+                    self.emit_file_ops_applied(task, &fix_execution.file_ops);
+                }
+                all_fix_ops.extend(fix_execution.file_ops);
+            }
+            Err(e) => {
+                warn!(
+                    task_id = %task.task_id,
+                    attempt,
+                    error = %e,
+                    "failed to parse test-fix response"
+                );
+            }
+        }
+
+        Ok(false)
     }
 
     fn emit_file_ops_applied(&self, task: &Task, ops: &[FileOp]) {

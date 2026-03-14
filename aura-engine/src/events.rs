@@ -105,4 +105,29 @@ pub enum EngineEvent {
         task_id: TaskId,
         attempt: u32,
     },
+
+    TestVerificationStarted {
+        task_id: TaskId,
+        command: String,
+    },
+    TestVerificationPassed {
+        task_id: TaskId,
+        command: String,
+        stdout: String,
+        tests: Vec<IndividualTestResult>,
+        summary: String,
+    },
+    TestVerificationFailed {
+        task_id: TaskId,
+        command: String,
+        stdout: String,
+        stderr: String,
+        attempt: u32,
+        tests: Vec<IndividualTestResult>,
+        summary: String,
+    },
+    TestFixAttempt {
+        task_id: TaskId,
+        attempt: u32,
+    },
 }
