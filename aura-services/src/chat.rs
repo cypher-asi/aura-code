@@ -441,6 +441,7 @@ impl ChatService {
                         });
                         iter_tool_calls.push(crate::claude::ToolCall { id, name, input });
                     }
+                    ClaudeStreamEvent::ThinkingDelta(_) => {}
                     ClaudeStreamEvent::Done { stop_reason, .. } => {
                         info!(iteration, stop_reason = %stop_reason, tool_calls = iter_tool_calls.len(), "Chat iteration done");
                     }

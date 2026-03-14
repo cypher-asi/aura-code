@@ -142,6 +142,7 @@ impl RichMessage {
 #[derive(Debug, Clone)]
 pub enum ClaudeStreamEvent {
     Delta(String),
+    ThinkingDelta(String),
     ToolUse {
         id: String,
         name: String,
@@ -175,6 +176,22 @@ struct SimpleMessagesRequest {
     stream: Option<bool>,
 }
 
+#[derive(Serialize, Clone)]
+pub struct ThinkingConfig {
+    #[serde(rename = "type")]
+    pub thinking_type: String,
+    pub budget_tokens: u32,
+}
+
+impl ThinkingConfig {
+    pub fn enabled(budget_tokens: u32) -> Self {
+        Self {
+            thinking_type: "enabled".to_string(),
+            budget_tokens,
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct ToolMessagesRequest {
     model: String,
@@ -185,6 +202,8 @@ struct ToolMessagesRequest {
     stream: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<ToolDefinition>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<ThinkingConfig>,
 }
 
 #[derive(Deserialize)]
@@ -413,6 +432,37 @@ impl ClaudeClient {
         max_tokens: u32,
         event_tx: mpsc::UnboundedSender<ClaudeStreamEvent>,
     ) -> Result<ToolStreamResponse, ClaudeClientError> {
+        self.complete_stream_with_tools_inner(
+            api_key, system_prompt, messages, tools, max_tokens, None, event_tx,
+        ).await
+    }
+
+    /// Multi-turn streaming with tool definitions and optional extended thinking.
+    pub async fn complete_stream_with_tools_thinking(
+        &self,
+        api_key: &str,
+        system_prompt: &str,
+        messages: Vec<RichMessage>,
+        tools: Vec<ToolDefinition>,
+        max_tokens: u32,
+        thinking: ThinkingConfig,
+        event_tx: mpsc::UnboundedSender<ClaudeStreamEvent>,
+    ) -> Result<ToolStreamResponse, ClaudeClientError> {
+        self.complete_stream_with_tools_inner(
+            api_key, system_prompt, messages, tools, max_tokens, Some(thinking), event_tx,
+        ).await
+    }
+
+    async fn complete_stream_with_tools_inner(
+        &self,
+        api_key: &str,
+        system_prompt: &str,
+        messages: Vec<RichMessage>,
+        tools: Vec<ToolDefinition>,
+        max_tokens: u32,
+        thinking: Option<ThinkingConfig>,
+        event_tx: mpsc::UnboundedSender<ClaudeStreamEvent>,
+    ) -> Result<ToolStreamResponse, ClaudeClientError> {
         let msg_count = messages.len();
         let tool_count = tools.len();
         let request = ToolMessagesRequest {
@@ -422,6 +472,7 @@ impl ClaudeClient {
             messages,
             stream: Some(true),
             tools: if tools.is_empty() { None } else { Some(tools) },
+            thinking,
         };
 
         let url = format!("{}/v1/messages", self.base_url);
@@ -499,12 +550,13 @@ impl ClaudeClient {
         let mut output_tokens: u64 = 0;
         let mut stop_reason = String::from("end_turn");
 
-        // Tool-use block tracking
+        // Block tracking
         let mut tool_calls: Vec<ToolCall> = Vec::new();
         let mut current_tool_id = String::new();
         let mut current_tool_name = String::new();
         let mut current_tool_json = String::new();
         let mut in_tool_block = false;
+        let mut in_thinking_block = false;
 
         while let Some(chunk_result) = byte_stream.next().await {
             let chunk = chunk_result.map_err(|e| {
@@ -547,11 +599,22 @@ impl ClaudeClient {
                         if let Ok(data) = serde_json::from_str::<serde_json::Value>(&data_str) {
                             if let Some(cb) = data.get("content_block") {
                                 let block_type = cb.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                                if block_type == "tool_use" {
-                                    in_tool_block = true;
-                                    current_tool_id = cb.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    current_tool_name = cb.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    current_tool_json.clear();
+                                match block_type {
+                                    "tool_use" => {
+                                        in_tool_block = true;
+                                        in_thinking_block = false;
+                                        current_tool_id = cb.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                        current_tool_name = cb.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                        current_tool_json.clear();
+                                    }
+                                    "thinking" => {
+                                        in_thinking_block = true;
+                                        in_tool_block = false;
+                                    }
+                                    _ => {
+                                        in_tool_block = false;
+                                        in_thinking_block = false;
+                                    }
                                 }
                             }
                         }
@@ -567,6 +630,11 @@ impl ClaudeClient {
                                             let _ = event_tx.send(ClaudeStreamEvent::Delta(text.to_string()));
                                         }
                                     }
+                                    "thinking_delta" => {
+                                        if let Some(text) = delta.get("thinking").and_then(|t| t.as_str()) {
+                                            let _ = event_tx.send(ClaudeStreamEvent::ThinkingDelta(text.to_string()));
+                                        }
+                                    }
                                     "input_json_delta" => {
                                         if let Some(json) = delta.get("partial_json").and_then(|t| t.as_str()) {
                                             current_tool_json.push_str(json);
@@ -578,6 +646,9 @@ impl ClaudeClient {
                         }
                     }
                     "content_block_stop" => {
+                        if in_thinking_block {
+                            in_thinking_block = false;
+                        }
                         if in_tool_block {
                             let input: serde_json::Value = serde_json::from_str(&current_tool_json)
                                 .unwrap_or(serde_json::Value::Object(Default::default()));

@@ -19,8 +19,8 @@ pub use auth::AuthService;
 pub use chat::{ChatService, ChatStreamEvent};
 pub use chat_tool_executor::{ChatToolExecutor, ToolExecResult};
 pub use claude::{
-    ClaudeClient, ClaudeStreamEvent, ContentBlock, MessageContent, RichMessage, ToolCall,
-    ToolDefinition, ToolStreamResponse, estimate_tokens, estimate_message_tokens,
+    ClaudeClient, ClaudeStreamEvent, ContentBlock, MessageContent, RichMessage, ThinkingConfig,
+    ToolCall, ToolDefinition, ToolStreamResponse, estimate_tokens, estimate_message_tokens,
 };
 pub use error::{
     AgentError, AuthError, ChatError, ClaudeClientError, GitHubError, OrgError, ProjectError,

@@ -8,7 +8,7 @@ use tracing::{info, warn};
 use aura_core::*;
 use aura_services::{
     AgentService, ChatToolExecutor, ClaudeClient, ClaudeStreamEvent,
-    ProjectService, SessionService, TaskService, engine_tool_definitions,
+    ProjectService, SessionService, TaskService, ThinkingConfig, engine_tool_definitions,
 };
 use aura_services::claude::{ContentBlock, RichMessage, DEFAULT_MODEL};
 use aura_settings::SettingsService;
@@ -1655,14 +1655,16 @@ impl DevLoopEngine {
                 }
             });
 
+            let thinking = ThinkingConfig::enabled(10_000);
             let stream_result = self
                 .claude_client
-                .complete_stream_with_tools(
+                .complete_stream_with_tools_thinking(
                     api_key,
                     &system_prompt,
                     api_messages.clone(),
                     tools.clone(),
                     TASK_EXECUTION_MAX_TOKENS,
+                    thinking,
                     claude_tx,
                 )
                 .await?;

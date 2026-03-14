@@ -94,6 +94,7 @@ impl SpecGenerationService {
                     let _ = tx.send(SpecStreamEvent::Error(msg));
                 }
                 ClaudeStreamEvent::ToolUse { .. } => {}
+                ClaudeStreamEvent::ThinkingDelta(_) => {}
             }
         }
 
