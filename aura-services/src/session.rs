@@ -141,6 +141,21 @@ impl SessionService {
         Ok(self.store.list_sessions_by_agent(project_id, agent_id)?)
     }
 
+    pub fn record_task_worked(
+        &self,
+        project_id: &ProjectId,
+        agent_id: &AgentId,
+        session_id: &SessionId,
+        task_id: TaskId,
+    ) -> Result<Session, SessionError> {
+        let mut session = self.get_session(project_id, agent_id, session_id)?;
+        if !session.tasks_worked.contains(&task_id) {
+            session.tasks_worked.push(task_id);
+            self.store.put_session(&session)?;
+        }
+        Ok(session)
+    }
+
     pub fn session_count(
         &self,
         project_id: &ProjectId,

@@ -244,7 +244,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
     <>
       <div className={styles.taskMeta}>
         <div className={styles.taskField}>
-          <Text variant="muted" size="sm">Status</Text>
+          <span className={styles.fieldLabel}>Status</span>
           <span className={styles.statusRow}>
             <TaskStatusIcon status={task.status} />
             <Text size="sm">{task.status.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</Text>
@@ -262,7 +262,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
           </span>
         </div>
         <div className={styles.taskField}>
-          <Text variant="muted" size="sm">Description</Text>
+          <span className={styles.fieldLabel}>Description</span>
           <Text size="sm">{task.description || "—"}</Text>
         </div>
       </div>

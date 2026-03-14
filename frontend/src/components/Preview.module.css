@@ -63,6 +63,17 @@
   gap: var(--space-1);
 }
 
+.taskField span,
+.taskField p {
+  font-weight: 400;
+}
+
+.fieldLabel {
+  color: var(--color-text-muted, #9ca3af);
+  font-weight: 400 !important;
+  font-size: 13px;
+}
+
 .taskStream {
   flex: 1;
   min-height: 0;
@@ -177,6 +188,13 @@
 .section > div:nth-child(2) > div {
   padding-left: 0;
   padding-right: 0;
+}
+
+/* Normalize GroupCollapsible labels: same muted gray, no bold */
+.section [class*="label"],
+.section [class*="header"] span {
+  font-weight: 400 !important;
+  color: var(--color-text-muted, #9ca3af);
 }
 
 .fileOpItem:hover {
