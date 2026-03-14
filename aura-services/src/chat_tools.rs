@@ -299,6 +299,20 @@ pub fn agent_tool_definitions() -> Vec<ToolDefinition> {
                 "required": []
             }),
         ),
+        // ── Shell ──────────────────────────────────────────────────────
+        tool(
+            "run_command",
+            "Execute a shell command in the project directory and return stdout/stderr. Use for build, test, git, package manager commands, etc. Commands time out after 60 seconds by default.",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string", "description": "The shell command to execute" },
+                    "working_dir": { "type": "string", "description": "Optional relative working directory within the project (default: project root)" },
+                    "timeout_secs": { "type": "integer", "description": "Timeout in seconds (default: 60, max: 300)" }
+                },
+                "required": ["command"]
+            }),
+        ),
         // ── Search ─────────────────────────────────────────────────────
         tool(
             "search_code",

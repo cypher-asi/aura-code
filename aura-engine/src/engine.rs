@@ -1287,7 +1287,7 @@ impl DevLoopEngine {
                             parse_retries: 0,
                         };
                         let mut test_fix_ops = Vec::new();
-                        let test_passed = self.run_and_handle_tests(
+                        let (test_passed, _test_inp, _test_out) = self.run_and_handle_tests(
                             project, task, &dummy_session,
                             &self.settings.get_decrypted_api_key().unwrap_or_default(),
                             &dummy_exec, test_cmd, base_path, attempt, &mut test_fix_ops,
@@ -1940,7 +1940,7 @@ impl DevLoopEngine {
             }
         }
 
-        Ok((all_fix_ops, false, MAX_BUILD_FIX_RETRIES, duplicate_bailouts))
+        Ok((all_fix_ops, false, MAX_BUILD_FIX_RETRIES, duplicate_bailouts, fix_input_tokens, fix_output_tokens))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1955,7 +1955,7 @@ impl DevLoopEngine {
         base_path: &Path,
         attempt: u32,
         all_fix_ops: &mut Vec<FileOp>,
-    ) -> Result<bool, EngineError> {
+    ) -> Result<(bool, u64, u64), EngineError> {
         self.emit(EngineEvent::TestVerificationStarted {
             task_id: task.task_id,
             command: test_command.to_string(),
@@ -1995,7 +1995,7 @@ impl DevLoopEngine {
                 tests,
                 summary: Some(summary),
             });
-            return Ok(true);
+            return Ok((true, 0, 0));
         }
 
         self.emit(EngineEvent::TestVerificationFailed {
@@ -2050,16 +2050,26 @@ impl DevLoopEngine {
             &[],
         );
 
+        let test_fix_tc: Arc<Mutex<(u64, u64)>> = Arc::new(Mutex::new((0, 0)));
         let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
         let event_tx = self.event_tx.clone();
         let tid = task.task_id;
+        let test_fix_tc_clone = test_fix_tc.clone();
         let forwarder = tokio::spawn(async move {
             while let Some(evt) = stream_rx.recv().await {
-                if let ClaudeStreamEvent::Delta(text) = evt {
-                    let _ = event_tx.send(EngineEvent::TaskOutputDelta {
-                        task_id: tid,
-                        delta: text,
-                    });
+                match evt {
+                    ClaudeStreamEvent::Delta(text) => {
+                        let _ = event_tx.send(EngineEvent::TaskOutputDelta {
+                            task_id: tid,
+                            delta: text,
+                        });
+                    }
+                    ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } => {
+                        let mut g = test_fix_tc_clone.lock().await;
+                        g.0 += input_tokens;
+                        g.1 += output_tokens;
+                    }
+                    _ => {}
                 }
             }
         });
@@ -2075,6 +2085,8 @@ impl DevLoopEngine {
             )
             .await?;
         let _ = forwarder.await;
+
+        let (test_fix_inp, test_fix_out) = *test_fix_tc.lock().await;
 
         match parse_execution_response(&response) {
             Ok(fix_execution) => {
@@ -2094,7 +2106,7 @@ impl DevLoopEngine {
             }
         }
 
-        Ok(false)
+        Ok((false, test_fix_inp, test_fix_out))
     }
 
     fn emit_file_ops_applied(&self, task: &Task, ops: &[FileOp]) {

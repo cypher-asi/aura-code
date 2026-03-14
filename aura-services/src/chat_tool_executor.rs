@@ -97,6 +97,8 @@ impl ChatToolExecutor {
             "write_file" => self.write_file(project_id, &input),
             "delete_file" => self.delete_file(project_id, &input),
             "list_files" => self.list_files(project_id, &input),
+            // ── Shell ──────────────────────────────────────────────
+            "run_command" => self.run_command(project_id, &input).await,
             // ── Search ─────────────────────────────────────────────
             "search_code" => self.search_code(project_id, &input),
             "find_files" => self.find_files(project_id, &input),
@@ -550,6 +552,75 @@ impl ChatToolExecutor {
     }
 
     // -----------------------------------------------------------------------
+    // Shell operations
+    // -----------------------------------------------------------------------
+
+    async fn run_command(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
+        let command = match str_field(input, "command") {
+            Some(c) if !c.trim().is_empty() => c,
+            _ => return ToolExecResult::err("Missing required field: command"),
+        };
+
+        let working_dir_rel = str_field(input, "working_dir").unwrap_or_else(|| ".".to_string());
+        let abs_dir = match self.resolve_project_path(project_id, &working_dir_rel) {
+            Ok(p) => p,
+            Err(e) => return e,
+        };
+
+        let timeout_secs = input
+            .get("timeout_secs")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(60)
+            .min(300);
+
+        info!(command = %command, cwd = %abs_dir.display(), timeout_secs, "Running shell command");
+
+        let (shell, flag) = if cfg!(windows) {
+            ("cmd", "/C")
+        } else {
+            ("sh", "-c")
+        };
+
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(timeout_secs),
+            tokio::process::Command::new(shell)
+                .arg(flag)
+                .arg(&command)
+                .current_dir(&abs_dir)
+                .output(),
+        )
+        .await;
+
+        match result {
+            Ok(Ok(output)) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let exit_code = output.status.code().unwrap_or(-1);
+
+                let truncated_stdout = truncate_output(&stdout, 8000);
+                let truncated_stderr = truncate_output(&stderr, 4000);
+
+                let is_error = !output.status.success();
+                let result = ToolExecResult {
+                    content: serde_json::to_string_pretty(&json!({
+                        "exit_code": exit_code,
+                        "stdout": truncated_stdout,
+                        "stderr": truncated_stderr,
+                        "command": command,
+                    }))
+                    .unwrap_or_default(),
+                    is_error,
+                };
+                result
+            }
+            Ok(Err(e)) => ToolExecResult::err(format!("Failed to execute command: {e}")),
+            Err(_) => ToolExecResult::err(format!(
+                "Command timed out after {timeout_secs} seconds"
+            )),
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Search operations
     // -----------------------------------------------------------------------
 
@@ -668,6 +739,17 @@ fn lexical_normalize(path: &Path) -> std::path::PathBuf {
         }
     }
     out
+}
+
+fn truncate_output(s: &str, max_chars: usize) -> String {
+    if s.len() <= max_chars {
+        s.to_string()
+    } else {
+        let half = max_chars / 2;
+        let start: String = s.chars().take(half).collect();
+        let end: String = s.chars().rev().take(half).collect::<String>().chars().rev().collect();
+        format!("{start}\n\n... [truncated {len} chars] ...\n\n{end}", len = s.len() - max_chars)
+    }
 }
 
 const SKIP_DIRS: &[&str] = &[
