@@ -381,7 +381,6 @@ export function ProjectList() {
         onCreated={(project) => {
           setShowNewProject(false);
           setProjects((prev) => [...prev, project]);
-          fetchProjects();
           navigate(`/projects/${project.project_id}`);
         }}
       />
