@@ -81,7 +81,7 @@ function summarise(e: EngineEvent): string {
 export { EVENT_LABELS };
 
 export function useLogStream() {
-  const { subscribe } = useEventContext();
+  const { subscribe, connected } = useEventContext();
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const contentRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
@@ -140,5 +140,5 @@ export function useLogStream() {
     autoScrollRef.current = atBottom;
   }, []);
 
-  return { entries, contentRef, handleScroll };
+  return { entries, contentRef, handleScroll, connected };
 }

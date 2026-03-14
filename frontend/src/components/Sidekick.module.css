@@ -128,8 +128,21 @@
 
 .logHeader {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--space-1);
   padding: var(--space-1) var(--space-2);
+}
+
+.logStatusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+}
+
+.logStatusDot[data-connected="true"] {
+  background: rgb(34, 197, 94);
 }
 
 .logContent {

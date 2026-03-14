@@ -94,19 +94,28 @@ function LogRow({
 }
 
 export function SidekickLog() {
-  const { entries, contentRef, handleScroll } = useLogStream();
+  const { entries, contentRef, handleScroll, connected } = useLogStream();
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
   return (
     <div className={styles.logWrap}>
-      <div className={styles.logHeader} />
+      <div className={styles.logHeader}>
+        <span className={styles.logStatusDot} data-connected={connected} />
+        <Text variant="muted" size="xs">
+          {connected ? "Connected" : "Disconnected"}
+        </Text>
+      </div>
       <div
         ref={contentRef}
         className={styles.logContent}
         onScroll={handleScroll}
       >
         {entries.length === 0 ? (
-          <Text variant="muted" size="sm">Waiting for events...</Text>
+          <Text variant="muted" size="sm">
+            {connected
+              ? "Listening — events will appear when automation runs or specs are generated."
+              : "Connecting to event stream..."}
+          </Text>
         ) : (
           entries.map((entry, i) => (
             <LogRow
