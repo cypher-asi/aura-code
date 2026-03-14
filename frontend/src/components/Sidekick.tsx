@@ -78,12 +78,11 @@ export function Sidekick() {
     );
   }
 
-  const tabContent = {
+  const tabContent: Record<string, React.ReactNode> = {
     sprint: <SprintList />,
     specs: <SpecList />,
     tasks: <TaskList />,
     progress: <ProgressDashboard />,
-    log: <SidekickLog />,
   };
 
   return (
@@ -151,8 +150,13 @@ export function Sidekick() {
       }
     >
       <div className={styles.sidekickBody}>
-        <div className={styles.tabContent}>
-          {tabContent[activeTab]}
+        {activeTab !== "log" && (
+          <div className={styles.tabContent}>
+            {tabContent[activeTab]}
+          </div>
+        )}
+        <div className={styles.tabContent} style={activeTab === "log" ? undefined : { display: "none" }}>
+          <SidekickLog />
         </div>
       </div>
     </Sidebar>
