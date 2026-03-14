@@ -310,10 +310,12 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
 
   const showNotes = hasOutput ? (parsed?.notes != null || !!task.execution_notes) : !!task.execution_notes;
 
-  const activity = useMemo(
-    () => (hasOutput ? deriveActivity(streamBuf) : []),
-    [hasOutput, streamBuf],
-  );
+  const activity = useMemo(() => {
+    if (!hasOutput || (!isActive && !streamBuf)) return [];
+    const items = deriveActivity(streamBuf);
+    if (isTerminal) return items.map((item) => ({ ...item, status: "done" as const }));
+    return items;
+  }, [hasOutput, isActive, isTerminal, streamBuf]);
   const showOutput = activity.length > 0;
 
   const handleRetry = useCallback(async () => {
