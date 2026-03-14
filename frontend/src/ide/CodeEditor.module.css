@@ -2,8 +2,7 @@
   display: flex;
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   background: var(--color-bg, #0d1117);
   font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace;
   font-size: 13px;
@@ -19,6 +18,7 @@
   background: var(--color-surface, #161b22);
   border-right: 1px solid var(--color-border, #30363d);
   min-width: 48px;
+  overflow: hidden;
 }
 
 .gutterLine {
@@ -28,30 +28,28 @@
 
 .codeArea {
   flex: 1;
-  overflow-x: auto;
+  overflow: auto;
   padding: 12px 16px;
   margin: 0;
   white-space: pre;
-  tab-size: 4;
-}
-
-/* Override highlight.js background so it inherits from our container */
-.codeArea :global(.hljs) {
+  tab-size: 2;
   background: transparent;
-  padding: 0;
+  color: var(--color-text-primary, #e6edf3);
+  border: none;
+  outline: none;
+  resize: none;
+  font: inherit;
+  line-height: inherit;
 }
 
-.header {
+.headerActions {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 4px;
 }
 
-.headerPath {
-  opacity: 0.5;
-  font-size: 12px;
-  font-family: "SF Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace;
+.saveError {
+  color: var(--color-danger, #f85149);
 }
 
 .loading {

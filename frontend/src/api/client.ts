@@ -349,6 +349,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ path }),
     }),
+  writeFile: (path: string, content: string) =>
+    apiFetch<{ ok: boolean; path?: string; error?: string }>("/api/write-file", {
+      method: "POST",
+      body: JSON.stringify({ path, content }),
+    }),
 
   // Loop
   startLoop: (projectId: ProjectId) =>

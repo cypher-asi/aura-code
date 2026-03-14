@@ -197,8 +197,8 @@
 
 .fileOpItem {
   cursor: pointer;
-  font-family: var(--font-mono, 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace);
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.5;
   height: 26px;
   min-height: 26px;
 }

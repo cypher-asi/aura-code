@@ -117,6 +117,32 @@ async fn read_file(Json(req): Json<ReadFileRequest>) -> Json<serde_json::Value> 
 }
 
 #[derive(serde::Deserialize)]
+struct WriteFileRequest {
+    path: String,
+    content: String,
+}
+
+async fn write_file(Json(req): Json<WriteFileRequest>) -> Json<serde_json::Value> {
+    let target = std::path::Path::new(&req.path);
+    if let Some(parent) = target.parent() {
+        if !parent.exists() {
+            warn!(path = %req.path, "write_file: parent directory does not exist");
+            return Json(serde_json::json!({ "ok": false, "error": "parent directory not found" }));
+        }
+    }
+    match std::fs::write(&req.path, &req.content) {
+        Ok(_) => {
+            debug!(path = %req.path, bytes = req.content.len(), "wrote file");
+            Json(serde_json::json!({ "ok": true, "path": req.path }))
+        }
+        Err(e) => {
+            warn!(path = %req.path, error = %e, "failed to write file");
+            Json(serde_json::json!({ "ok": false, "error": e.to_string() }))
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
 struct OpenPathRequest {
     path: String,
 }
@@ -183,7 +209,8 @@ fn main() {
                 .route("/api/pick-folder", axum_post(pick_folder))
                 .route("/api/pick-file", axum_post(pick_file))
                 .route("/api/open-path", axum_post(open_path))
-                .route("/api/read-file", axum_post(read_file));
+                .route("/api/read-file", axum_post(read_file))
+                .route("/api/write-file", axum_post(write_file));
             let listener = TcpListener::from_std(std_listener).expect("failed to create listener");
 
             let _ = ready_tx.send(());
