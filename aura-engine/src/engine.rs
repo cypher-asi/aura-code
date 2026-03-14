@@ -338,7 +338,7 @@ impl DevLoopEngine {
         project_id: ProjectId,
         agent_id: AgentId,
         mut session: Session,
-        stop_rx: watch::Receiver<LoopCommand>,
+        mut stop_rx: watch::Receiver<LoopCommand>,
     ) -> Result<LoopOutcome, EngineError> {
         let api_key = self.settings.get_decrypted_api_key()?;
         let mut completed_count: usize = 0;
