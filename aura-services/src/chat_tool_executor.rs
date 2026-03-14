@@ -97,6 +97,8 @@ impl ChatToolExecutor {
             "write_file" => self.write_file(project_id, &input),
             "delete_file" => self.delete_file(project_id, &input),
             "list_files" => self.list_files(project_id, &input),
+            // ── Targeted editing ───────────────────────────────────
+            "edit_file" => self.edit_file(project_id, &input),
             // ── Shell ──────────────────────────────────────────────
             "run_command" => self.run_command(project_id, &input).await,
             // ── Search ─────────────────────────────────────────────
@@ -549,6 +551,67 @@ impl ChatToolExecutor {
             })
         });
         ToolExecResult::ok(json!({ "path": rel, "entries": items }))
+    }
+
+    // -----------------------------------------------------------------------
+    // Targeted editing
+    // -----------------------------------------------------------------------
+
+    fn edit_file(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
+        let rel = str_field(input, "path").unwrap_or_default();
+        let old_text = str_field(input, "old_text").unwrap_or_default();
+        let new_text = str_field(input, "new_text").unwrap_or_default();
+        let replace_all = input
+            .get("replace_all")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        if rel.is_empty() {
+            return ToolExecResult::err("Missing required field: path");
+        }
+        if old_text.is_empty() {
+            return ToolExecResult::err("Missing required field: old_text");
+        }
+
+        let abs = match self.resolve_project_path(project_id, &rel) {
+            Ok(p) => p,
+            Err(e) => return e,
+        };
+
+        let content = match std::fs::read_to_string(&abs) {
+            Ok(c) => c,
+            Err(e) => return ToolExecResult::err(format!("Failed to read {rel}: {e}")),
+        };
+
+        let occurrence_count = content.matches(&old_text).count();
+        if occurrence_count == 0 {
+            return ToolExecResult::err(format!(
+                "old_text not found in {rel}. Make sure it matches the file content exactly, including whitespace."
+            ));
+        }
+
+        if !replace_all && occurrence_count > 1 {
+            return ToolExecResult::err(format!(
+                "old_text matches {occurrence_count} locations in {rel}. \
+                 Provide more surrounding context to make the match unique, \
+                 or set replace_all to true."
+            ));
+        }
+
+        let new_content = if replace_all {
+            content.replace(&old_text, &new_text)
+        } else {
+            content.replacen(&old_text, &new_text, 1)
+        };
+
+        match std::fs::write(&abs, &new_content) {
+            Ok(()) => ToolExecResult::ok(json!({
+                "path": rel,
+                "replacements": if replace_all { occurrence_count } else { 1 },
+                "new_size": new_content.len()
+            })),
+            Err(e) => ToolExecResult::err(format!("Failed to write {rel}: {e}")),
+        }
     }
 
     // -----------------------------------------------------------------------

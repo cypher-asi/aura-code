@@ -299,6 +299,21 @@ pub fn agent_tool_definitions() -> Vec<ToolDefinition> {
                 "required": []
             }),
         ),
+        // ── Targeted editing ──────────────────────────────────────────
+        tool(
+            "edit_file",
+            "Make targeted edits to a file by replacing specific text. More efficient than write_file for small changes in large files. The old_text must be an exact match of existing content.",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Relative path from project root" },
+                    "old_text": { "type": "string", "description": "Exact text to find and replace (must be unique in the file)" },
+                    "new_text": { "type": "string", "description": "Replacement text" },
+                    "replace_all": { "type": "boolean", "description": "If true, replace all occurrences (default: false, first only)" }
+                },
+                "required": ["path", "old_text", "new_text"]
+            }),
+        ),
         // ── Shell ──────────────────────────────────────────────────────
         tool(
             "run_command",

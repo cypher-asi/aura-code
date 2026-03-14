@@ -420,13 +420,20 @@ impl DevLoopEngine {
                     ).unwrap_or_else(|_| session.clone());
 
                     let build_start = Instant::now();
-                    let (_, build_passed, build_attempts, _dup_bailouts) = self
+                    let (_, build_passed, build_attempts, _dup_bailouts, fix_inp, fix_out) = self
                         .verify_and_fix_build(
                             &project, &task, &session_ref, &api_key, &execution,
                         )
                         .await?;
                     let build_verify_duration_ms = build_start.elapsed().as_millis() as u64;
                     let task_duration_ms = task_start.elapsed().as_millis() as u64;
+
+                    let total_input = execution.input_tokens + fix_inp;
+                    let total_output = execution.output_tokens + fix_out;
+
+                    self.update_task_tracking(
+                        &project_id, &task, &user_id, &model, fix_inp, fix_out,
+                    );
 
                     if build_passed {
                         let _ = self.task_service.complete_task(
@@ -437,8 +444,8 @@ impl DevLoopEngine {
                             task_id: task.task_id,
                             execution_notes: execution.notes.clone(),
                             duration_ms: Some(task_duration_ms),
-                            input_tokens: Some(execution.input_tokens),
-                            output_tokens: Some(execution.output_tokens),
+                            input_tokens: Some(total_input),
+                            output_tokens: Some(total_output),
                             llm_duration_ms: Some(llm_duration_ms),
                             build_verify_duration_ms: Some(build_verify_duration_ms),
                             files_changed_count: Some(execution.file_ops.len() as u32),
@@ -458,8 +465,8 @@ impl DevLoopEngine {
                                     llm_duration_ms: Some(llm_duration_ms),
                                     build_verify_duration_ms: Some(build_verify_duration_ms),
                                     file_ops_duration_ms: Some(file_ops_duration_ms),
-                                    input_tokens: execution.input_tokens,
-                                    output_tokens: execution.output_tokens,
+                                    input_tokens: total_input,
+                                    output_tokens: total_output,
                                     files_changed: execution.file_ops.len() as u32,
                                     parse_retries: execution.parse_retries,
                                     build_fix_attempts: build_attempts,
@@ -520,8 +527,8 @@ impl DevLoopEngine {
                                     llm_duration_ms: Some(llm_duration_ms),
                                     build_verify_duration_ms: Some(build_verify_duration_ms),
                                     file_ops_duration_ms: Some(file_ops_duration_ms),
-                                    input_tokens: execution.input_tokens,
-                                    output_tokens: execution.output_tokens,
+                                    input_tokens: total_input,
+                                    output_tokens: total_output,
                                     files_changed: execution.file_ops.len() as u32,
                                     parse_retries: execution.parse_retries,
                                     build_fix_attempts: build_attempts,
@@ -894,7 +901,7 @@ impl DevLoopEngine {
                         self.emit_file_ops_applied(&task, &execution.file_ops);
 
                         let build_start = Instant::now();
-                        let (_, build_passed, build_attempts, dup_bailouts) = self
+                        let (_, build_passed, build_attempts, dup_bailouts, fix_inp, fix_out) = self
                             .verify_and_fix_build(
                                 &project, &task, &session, &api_key, &execution,
                             )
@@ -904,6 +911,8 @@ impl DevLoopEngine {
 
                         total_build_fix_attempts += build_attempts;
                         duplicate_error_bailouts += dup_bailouts;
+                        total_input_tokens += fix_inp;
+                        total_output_tokens += fix_out;
 
                         if !build_passed {
                             let reason = "build verification failed after all fix attempts".to_string();
