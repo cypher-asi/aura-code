@@ -277,6 +277,17 @@ pub struct GitHubRepo {
     pub updated_at: DateTime<Utc>,
 }
 
+/// A single row in the fee schedule: per-model token pricing effective from a given date.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeeScheduleEntry {
+    pub model: String,
+    pub input_cost_per_million: f64,
+    pub output_cost_per_million: f64,
+    /// ISO 8601 date (e.g. "2026-02-01"). The rate applies from this date onward
+    /// until superseded by a later entry for the same model.
+    pub effective_date: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ZeroAuthSession {
     pub user_id: String,
