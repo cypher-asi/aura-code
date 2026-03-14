@@ -7,7 +7,7 @@ import { X, ArrowLeft, Sparkles, Loader2, FilePlus, FilePen, FileX, RotateCcw, P
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
-import { useEventContext } from "../context/EventContext";
+import { useEventContext, useTaskOutput } from "../context/EventContext";
 import { TaskStatusIcon } from "./TaskStatusIcon";
 import { formatRelativeTime } from "../utils/format";
 import { parseTaskStream } from "../utils/parse-task-stream";
@@ -166,19 +166,78 @@ function FileOpIcon({ op }: { op: string }) {
   return <FilePen size={12} />;
 }
 
-function TaskPreview({ task }: { task: import("../types").Task }) {
+function RunTaskButton({ task }: { task: import("../types").Task }) {
   const { subscribe } = useEventContext();
+  const ctx = useProjectContext();
+  const projectId = ctx?.project.project_id;
+  const [running, setRunning] = useState(false);
+  const [status, setStatus] = useState(task.status);
+
+  useEffect(() => {
+    setStatus(task.status);
+    setRunning(false);
+  }, [task.task_id, task.status]);
+
+  useEffect(() => {
+    const unsubs = [
+      subscribe("task_started", (e) => {
+        if (e.task_id !== task.task_id) return;
+        setStatus("in_progress");
+        setRunning(false);
+      }),
+      subscribe("task_completed", (e) => {
+        if (e.task_id !== task.task_id) return;
+        setStatus("done");
+      }),
+      subscribe("task_failed", (e) => {
+        if (e.task_id !== task.task_id) return;
+        setStatus("failed");
+      }),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [task.task_id, subscribe]);
+
+  const handleRun = useCallback(async () => {
+    if (!projectId || running) return;
+    setRunning(true);
+    try {
+      await api.runTask(projectId, task.task_id);
+    } catch (err) {
+      console.error("Run task failed:", err);
+      setRunning(false);
+    }
+  }, [projectId, task.task_id, running]);
+
+  if (status !== "ready") return null;
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      iconOnly
+      icon={running ? <Loader2 size={14} className={styles.spinner} /> : <Play size={14} />}
+      onClick={handleRun}
+      disabled={running}
+      title={running ? "Running..." : "Run task"}
+    />
+  );
+}
+
+function TaskPreview({ task }: { task: import("../types").Task }) {
+  const { subscribe, seedTaskOutput } = useEventContext();
+  const taskOutput = useTaskOutput(task.task_id);
   const ctx = useProjectContext();
   const sidekick = useSidekick();
   const projectId = ctx?.project.project_id;
-  const [streamBuf, setStreamBuf] = useState("");
-  const [liveFileOps, setLiveFileOps] = useState<{ op: string; path: string }[]>([]);
   const [retrying, setRetrying] = useState(false);
-  const [runningTask, setRunningTask] = useState(false);
   const [liveStatus, setLiveStatus] = useState<string | null>(null);
   const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
   const streamRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+  const hydratedRef = useRef<string | null>(null);
+
+  const streamBuf = taskOutput.text;
+  const liveFileOps = taskOutput.fileOps;
 
   const effectiveStatus = liveStatus ?? task.status;
   const effectiveSessionId = liveSessionId ?? task.session_id;
@@ -187,7 +246,6 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
   useEffect(() => {
     setLiveStatus(null);
     setLiveSessionId(null);
-    setRunningTask(false);
   }, [task.task_id]);
 
   useEffect(() => {
@@ -210,27 +268,15 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
     return () => unsubs.forEach((u) => u());
   }, [task.task_id, subscribe]);
 
+  // Hydrate from server if the global buffer is empty (e.g. after page refresh)
   useEffect(() => {
-    setStreamBuf("");
-    setLiveFileOps([]);
-  }, [task.task_id]);
-
-  useEffect(() => {
-    if (!isActive) return;
-    setStreamBuf("");
-    setLiveFileOps([]);
-    const unsubs = [
-      subscribe("task_output_delta", (e) => {
-        if (e.task_id !== task.task_id) return;
-        setStreamBuf((prev) => prev + (e.delta ?? ""));
-      }),
-      subscribe("file_ops_applied", (e) => {
-        if (e.task_id !== task.task_id || !e.files) return;
-        setLiveFileOps(e.files);
-      }),
-    ];
-    return () => unsubs.forEach((u) => u());
-  }, [task.task_id, isActive, subscribe]);
+    if (!isActive || !projectId) return;
+    if (streamBuf || hydratedRef.current === task.task_id) return;
+    hydratedRef.current = task.task_id;
+    api.getTaskOutput(projectId, task.task_id).then((res) => {
+      if (res.output) seedTaskOutput(task.task_id, res.output);
+    }).catch(() => {});
+  }, [isActive, projectId, task.task_id, streamBuf, seedTaskOutput]);
 
   useEffect(() => {
     if (autoScrollRef.current && streamRef.current) {
@@ -303,18 +349,6 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
           <span className={styles.statusRow}>
             <TaskStatusIcon status={effectiveStatus} />
             <Text size="sm">{effectiveStatus.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}</Text>
-            {effectiveStatus === "ready" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                iconOnly
-                icon={runningTask ? <Loader2 size={14} className={styles.spinner} /> : <Play size={14} />}
-                onClick={handleRunTask}
-                disabled={runningTask}
-                title={runningTask ? "Running..." : "Run task"}
-                className={styles.runBtn}
-              />
-            )}
             {effectiveStatus === "failed" && (
               <Button
                 variant="secondary"
