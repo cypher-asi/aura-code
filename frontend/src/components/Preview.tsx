@@ -261,6 +261,30 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
         </div>
       </div>
 
+      {fileOps.length > 0 && (
+        <GroupCollapsible label="Files Changed" count={fileOps.length} defaultOpen={isActive}>
+          <div className={styles.fileOpsList}>
+            {fileOps.map((f) => {
+              const fullPath = ctx?.project.linked_folder_path
+                ? `${ctx.project.linked_folder_path}/${f.path}`.replace(/\//g, "\\")
+                : f.path;
+              return (
+                <Item
+                  key={f.path}
+                  onClick={() => {
+                    api.openPath(fullPath).catch(console.error);
+                  }}
+                  className={styles.fileOpItem}
+                >
+                  <Item.Icon><FileOpIcon op={f.op} /></Item.Icon>
+                  <Item.Label>{f.path}</Item.Label>
+                </Item>
+              );
+            })}
+          </div>
+        </GroupCollapsible>
+      )}
+
       {showRawFallback && (
         <div className={styles.taskStreamWrapper}>
           <Text variant="muted" size="sm">
@@ -283,30 +307,6 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
                 {notes || ""}
               </ReactMarkdown>
             </div>
-          </div>
-        </GroupCollapsible>
-      )}
-
-      {fileOps.length > 0 && (
-        <GroupCollapsible label="Files Changed" count={fileOps.length} defaultOpen={isActive}>
-          <div className={styles.fileOpsList}>
-            {fileOps.map((f) => {
-              const fullPath = ctx?.project.linked_folder_path
-                ? `${ctx.project.linked_folder_path}/${f.path}`.replace(/\//g, "\\")
-                : f.path;
-              return (
-                <Item
-                  key={f.path}
-                  onClick={() => {
-                    api.openPath(fullPath).catch(console.error);
-                  }}
-                  className={styles.fileOpItem}
-                >
-                  <Item.Icon><FileOpIcon op={f.op} /></Item.Icon>
-                  <Item.Label>{f.path}</Item.Label>
-                </Item>
-              );
-            })}
           </div>
         </GroupCollapsible>
       )}
