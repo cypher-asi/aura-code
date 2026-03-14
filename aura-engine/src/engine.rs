@@ -214,7 +214,7 @@ impl DevLoopEngine {
             };
 
             self.task_service
-                .assign_task(&project_id, &task.spec_id, &task.task_id, &agent_id)?;
+                .assign_task(&project_id, &task.spec_id, &task.task_id, &agent_id, Some(session.session_id))?;
             self.agent_service.start_working(
                 &project_id,
                 &agent_id,

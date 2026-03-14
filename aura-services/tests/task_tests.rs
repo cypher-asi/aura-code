@@ -142,7 +142,7 @@ fn assign_task_transitions_ready_to_in_progress() {
 
     let agent_id = AgentId::new();
     let assigned = svc
-        .assign_task(&project.project_id, &spec.spec_id, &task.task_id, &agent_id)
+        .assign_task(&project.project_id, &spec.spec_id, &task.task_id, &agent_id, None)
         .unwrap();
 
     assert_eq!(assigned.status, TaskStatus::InProgress);

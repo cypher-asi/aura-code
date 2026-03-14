@@ -96,6 +96,7 @@ impl TaskService {
         spec_id: &SpecId,
         task_id: &TaskId,
         agent_id: &AgentId,
+        session_id: Option<SessionId>,
     ) -> Result<Task, TaskError> {
         let mut task = self
             .store
@@ -107,6 +108,7 @@ impl TaskService {
         Self::validate_transition(task.status, TaskStatus::InProgress)?;
         task.status = TaskStatus::InProgress;
         task.assigned_agent_id = Some(*agent_id);
+        task.session_id = session_id;
         task.updated_at = Utc::now();
         self.store.put_task(&task)?;
         Ok(task)

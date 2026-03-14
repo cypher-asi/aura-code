@@ -159,10 +159,10 @@ function SpecPreview({ spec }: { spec: import("../types").Spec }) {
 }
 
 function FileOpIcon({ op }: { op: string }) {
-  if (op === "create") return <FilePlus size={14} className={styles.opCreate} />;
-  if (op === "modify") return <FilePen size={14} className={styles.opModify} />;
-  if (op === "delete") return <FileX size={14} className={styles.opDelete} />;
-  return <FilePen size={14} />;
+  if (op === "create") return <FilePlus size={12} className={styles.opCreate} />;
+  if (op === "modify") return <FilePen size={12} className={styles.opModify} />;
+  if (op === "delete") return <FileX size={12} className={styles.opDelete} />;
+  return <FilePen size={12} />;
 }
 
 function TaskPreview({ task }: { task: import("../types").Task }) {
@@ -268,7 +268,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
       </div>
 
       {fileOps.length > 0 && (
-        <GroupCollapsible label="Files Changed" count={fileOps.length} defaultOpen={isActive} className={styles.section}>
+        <GroupCollapsible label="Files Changed" count={fileOps.length} defaultOpen className={styles.section}>
           <div className={styles.fileOpsList}>
             {fileOps.map((f) => {
               const fullPath = ctx?.project.linked_folder_path
