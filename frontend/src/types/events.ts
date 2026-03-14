@@ -12,6 +12,7 @@ export type EngineEventType =
   | "loop_paused"
   | "loop_stopped"
   | "loop_finished"
+  | "loop_iteration_summary"
   | "log_line"
   | "spec_gen_started"
   | "spec_gen_progress"
@@ -26,6 +27,11 @@ export type EngineEventType =
   | "test_verification_passed"
   | "test_verification_failed"
   | "test_fix_attempt";
+
+export interface PhaseTimingEntry {
+  phase: string;
+  duration_ms: number;
+}
 
 export interface EngineEvent {
   type: EngineEventType;
@@ -54,4 +60,43 @@ export interface EngineEvent {
   stdout?: string;
   tests?: { name: string; status: string; message?: string }[];
   summary?: string;
+
+  // Observability: timing
+  duration_ms?: number;
+  llm_duration_ms?: number;
+  build_verify_duration_ms?: number;
+  summary_duration_ms?: number;
+  total_duration_ms?: number;
+
+  // Observability: token counts
+  input_tokens?: number;
+  output_tokens?: number;
+  prompt_tokens_estimate?: number;
+  total_input_tokens?: number;
+  total_output_tokens?: number;
+
+  // Observability: codebase snapshot
+  codebase_snapshot_bytes?: number;
+  codebase_file_count?: number;
+
+  // Observability: quality signals
+  files_changed_count?: number;
+  parse_retries?: number;
+  build_fix_attempts?: number;
+  model?: string;
+  phase?: string;
+  error_hash?: string;
+  context_usage_pct?: number;
+
+  // Observability: loop-level metrics
+  tasks_completed?: number;
+  tasks_failed?: number;
+  tasks_retried?: number;
+  sessions_used?: number;
+  total_parse_retries?: number;
+  total_build_fix_attempts?: number;
+  duplicate_error_bailouts?: number;
+
+  // Observability: iteration summary
+  phase_timings?: PhaseTimingEntry[];
 }
