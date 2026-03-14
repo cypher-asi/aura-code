@@ -1,5 +1,6 @@
 use aura_core::*;
 use aura_engine::*;
+use aura_engine::file_ops::Replacement;
 
 // ---------------------------------------------------------------------------
 // Path validation tests
@@ -198,6 +199,163 @@ async fn apply_file_ops_delete_nonexistent_is_ok() {
     }];
 
     file_ops::apply_file_ops(&base, &ops).await.unwrap();
+}
+
+// ---------------------------------------------------------------------------
+// SearchReplace file operations tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn apply_search_replace_single_replacement() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().canonicalize().unwrap();
+    std::fs::write(base.join("lib.rs"), "fn old_name() {\n    42\n}\n").unwrap();
+
+    let ops = vec![FileOp::SearchReplace {
+        path: "lib.rs".into(),
+        replacements: vec![Replacement {
+            search: "fn old_name()".into(),
+            replace: "fn new_name()".into(),
+        }],
+    }];
+
+    file_ops::apply_file_ops(&base, &ops).await.unwrap();
+    let content = std::fs::read_to_string(base.join("lib.rs")).unwrap();
+    assert!(content.contains("fn new_name()"));
+    assert!(!content.contains("fn old_name()"));
+    assert!(content.contains("42"), "untouched code should be preserved");
+}
+
+#[tokio::test]
+async fn apply_search_replace_multiple_replacements() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().canonicalize().unwrap();
+    std::fs::write(
+        base.join("main.rs"),
+        "fn alpha() { 1 }\nfn beta() { 2 }\nfn gamma() { 3 }\n",
+    )
+    .unwrap();
+
+    let ops = vec![FileOp::SearchReplace {
+        path: "main.rs".into(),
+        replacements: vec![
+            Replacement {
+                search: "fn alpha() { 1 }".into(),
+                replace: "fn alpha() { 10 }".into(),
+            },
+            Replacement {
+                search: "fn gamma() { 3 }".into(),
+                replace: "fn gamma() { 30 }".into(),
+            },
+        ],
+    }];
+
+    file_ops::apply_file_ops(&base, &ops).await.unwrap();
+    let content = std::fs::read_to_string(base.join("main.rs")).unwrap();
+    assert!(content.contains("fn alpha() { 10 }"));
+    assert!(content.contains("fn beta() { 2 }"), "beta should be untouched");
+    assert!(content.contains("fn gamma() { 30 }"));
+}
+
+#[tokio::test]
+async fn apply_search_replace_fails_when_not_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().canonicalize().unwrap();
+    std::fs::write(base.join("lib.rs"), "fn existing() {}\n").unwrap();
+
+    let ops = vec![FileOp::SearchReplace {
+        path: "lib.rs".into(),
+        replacements: vec![Replacement {
+            search: "fn nonexistent()".into(),
+            replace: "fn replaced()".into(),
+        }],
+    }];
+
+    let err = file_ops::apply_file_ops(&base, &ops).await.unwrap_err();
+    match err {
+        EngineError::Parse(msg) => {
+            assert!(msg.contains("not found"), "error should mention not found: {msg}");
+        }
+        other => panic!("Expected Parse error, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn apply_search_replace_fails_on_duplicate_match() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().canonicalize().unwrap();
+    std::fs::write(
+        base.join("lib.rs"),
+        "fn foo() { 1 }\nfn foo() { 2 }\n",
+    )
+    .unwrap();
+
+    let ops = vec![FileOp::SearchReplace {
+        path: "lib.rs".into(),
+        replacements: vec![Replacement {
+            search: "fn foo()".into(),
+            replace: "fn bar()".into(),
+        }],
+    }];
+
+    let err = file_ops::apply_file_ops(&base, &ops).await.unwrap_err();
+    match err {
+        EngineError::Parse(msg) => {
+            assert!(msg.contains("matched 2 times"), "error should mention duplicate: {msg}");
+        }
+        other => panic!("Expected Parse error, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn apply_search_replace_file_not_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = dir.path().canonicalize().unwrap();
+
+    let ops = vec![FileOp::SearchReplace {
+        path: "missing.rs".into(),
+        replacements: vec![Replacement {
+            search: "x".into(),
+            replace: "y".into(),
+        }],
+    }];
+
+    let err = file_ops::apply_file_ops(&base, &ops).await.unwrap_err();
+    match err {
+        EngineError::Io(msg) => {
+            assert!(msg.contains("missing.rs"), "error should mention the file: {msg}");
+        }
+        other => panic!("Expected Io error, got: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_response_with_search_replace_op() {
+    let json = r#"{
+        "notes": "Fixed the bug",
+        "file_ops": [
+            {
+                "op": "search_replace",
+                "path": "src/lib.rs",
+                "replacements": [
+                    { "search": "old_code()", "replace": "new_code()" }
+                ]
+            }
+        ]
+    }"#;
+
+    let result = parse_execution_response(json).unwrap();
+    assert_eq!(result.notes, "Fixed the bug");
+    assert_eq!(result.file_ops.len(), 1);
+    match &result.file_ops[0] {
+        FileOp::SearchReplace { path, replacements } => {
+            assert_eq!(path, "src/lib.rs");
+            assert_eq!(replacements.len(), 1);
+            assert_eq!(replacements[0].search, "old_code()");
+            assert_eq!(replacements[0].replace, "new_code()");
+        }
+        other => panic!("Expected SearchReplace, got: {other:?}"),
+    }
 }
 
 // ---------------------------------------------------------------------------
