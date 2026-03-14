@@ -244,6 +244,14 @@ impl DevLoopEngine {
                         work_log.push(format!("Task (failed): {}\nReason: {}", task.title, reason));
                         Some(reason)
                     } else {
+                        let files_written = execution.file_ops.iter().filter(|op| matches!(op, file_ops::FileOp::Create { .. } | file_ops::FileOp::Modify { .. })).count();
+                        let files_deleted = execution.file_ops.iter().filter(|op| matches!(op, file_ops::FileOp::Delete { .. })).count();
+                        self.emit(EngineEvent::FileOpsApplied {
+                            task_id: task.task_id,
+                            files_written,
+                            files_deleted,
+                        });
+
                         self.task_service.complete_task(
                             &project_id,
                             &task.spec_id,

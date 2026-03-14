@@ -47,6 +47,11 @@ pub enum EngineEvent {
         task_id: TaskId,
         delta: String,
     },
+    FileOpsApplied {
+        task_id: TaskId,
+        files_written: usize,
+        files_deleted: usize,
+    },
     LogLine {
         message: String,
     },
