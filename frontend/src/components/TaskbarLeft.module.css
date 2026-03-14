@@ -5,18 +5,20 @@
 }
 
 .nameBtn {
+  flex: 1;
+  min-width: 0;
   font-size: var(--font-size-xs);
   font-weight: 500;
   color: var(--color-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex-shrink: 0;
   background: none;
   border: none;
   cursor: pointer;
   padding: 0 var(--space-3);
   height: 100%;
+  text-align: left;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
