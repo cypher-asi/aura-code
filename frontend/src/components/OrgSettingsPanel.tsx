@@ -7,6 +7,7 @@ import type { NavigatorItemProps } from "@cypher-asi/zui";
 import { Settings, Users, Mail, CreditCard, Plug } from "lucide-react";
 import type { OrgInvite, OrgGithub, OrgBilling, OrgRole, GitHubIntegration, CreditTier, CreditBalance } from "../types";
 import { useCheckoutPolling } from "../hooks/use-checkout-polling";
+import { CREDITS_UPDATED_EVENT } from "./CreditsBadge";
 import { OrgSettingsGeneral } from "./OrgSettingsGeneral";
 import { OrgSettingsMembers } from "./OrgSettingsMembers";
 import { OrgSettingsInvites } from "./OrgSettingsInvites";
@@ -252,6 +253,7 @@ export function OrgSettingsPanel({ isOpen, onClose, initialSection }: Props) {
     if (!creditBalance || creditBalance.total_credits !== polledBalance) {
       loadCreditBalance();
       resetPolling();
+      window.dispatchEvent(new Event(CREDITS_UPDATED_EVENT));
     }
   }
 

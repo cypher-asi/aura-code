@@ -20,11 +20,11 @@ export function AppNavRail({ onOpenSettings }: Props) {
           variant="ghost"
           size="sm"
           iconOnly
+          selected={activeApp.id === app.id}
           icon={<app.icon size={28} />}
           title={app.label}
           aria-label={app.label}
-          className={activeApp.id === app.id ? styles.active : styles.btn}
-          style={activeApp.id === app.id ? { color: "#ffffff" } : undefined}
+          className={styles.btn}
           onClick={() => navigate(app.basePath)}
         />
       ))}

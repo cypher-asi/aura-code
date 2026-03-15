@@ -10,25 +10,23 @@
   background: var(--color-bg);
 }
 
-.btn,
-.active,
-.profileBtn {
+.btn {
   width: 40px;
   height: 40px;
   border-radius: var(--radius-md);
 }
 
-.btn:hover,
-.active:hover,
-.profileBtn:hover {
-  background: transparent !important;
-  color: inherit !important;
+.rail button:hover {
+  background-color: transparent !important;
 }
 
-.active:hover {
+.rail button[class*="selected"],
+.rail button[class*="selected"] svg {
   color: #ffffff !important;
+  text-shadow: none;
 }
 
 .profileBtn {
+  composes: btn;
   margin-top: auto;
 }
