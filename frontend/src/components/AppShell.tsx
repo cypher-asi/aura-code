@@ -184,9 +184,7 @@ export function AppShell() {
           <ProjectsProvider>
             <AgentAppProvider>
               <FeedProvider>
-                <LeaderboardProvider>
-                  <AppContent />
-                </LeaderboardProvider>
+                <AppContent />
               </FeedProvider>
             </AgentAppProvider>
           </ProjectsProvider>
