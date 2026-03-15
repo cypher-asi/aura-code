@@ -96,6 +96,11 @@ export function SpecList() {
   const handleSelect = (ids: string[]) => {
     const id = ids[0];
     if (!id) return;
+    if (id === "__specs_root__") {
+      setSelectedId(id);
+      sidekick.pushPreview({ kind: "specs_overview", specs: mergedSpecs });
+      return;
+    }
     const spec = specById.get(id);
     if (spec) {
       setSelectedId(id);
@@ -125,7 +130,7 @@ export function SpecList() {
       enableDragDrop={false}
       enableMultiSelect={false}
       defaultExpandedIds={["__specs_root__"]}
-      defaultSelectedIds={selectedId ? [selectedId] : undefined}
+      defaultSelectedIds={selectedId ? [selectedId] : ["__specs_root__"]}
       onSelect={handleSelect}
     />
   );
