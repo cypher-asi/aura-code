@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import { ChevronDown, ChevronRight, Loader2, Wrench, CheckCircle2, XCircle, Sparkles, FileText } from "lucide-react";
 import type { ToolCallEntry } from "../hooks/use-chat-stream";
@@ -287,7 +288,7 @@ export function MessageBubble({ message }: Props) {
             )}
             {hasContent && (
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[remarkGfm, remarkBreaks]}
                 rehypePlugins={[rehypeHighlight]}
               >
                 {message.content}
@@ -359,7 +360,7 @@ export function StreamingBubble({ text, toolCalls, thinkingText, thinkingDuratio
           )}
           {text && (
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkBreaks]}
               rehypePlugins={[rehypeHighlight]}
             >
               {text}
