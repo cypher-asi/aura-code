@@ -560,12 +560,8 @@
 }
 
 .stopButton {
-  width: 44px;
-  height: 36px;
-  border-radius: 20px;
   background: #2f2f2f !important;
   opacity: 1 !important;
-  color: #fff !important;
 }
 
 .stopIcon {
