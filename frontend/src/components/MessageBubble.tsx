@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { ChevronDown, ChevronRight, Loader2, Wrench, CheckCircle2, XCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Wrench, CheckCircle2, XCircle, Sparkles } from "lucide-react";
 import type { ToolCallEntry } from "../hooks/use-chat-stream";
 import styles from "./ChatView.module.css";
 import toolStyles from "./ToolCallBlock.module.css";
@@ -134,6 +134,70 @@ function formatResult(result: string): string {
   }
 }
 
+function formatDuration(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}m ${secs}s`;
+}
+
+interface ThinkingBlockProps {
+  text: string;
+  isStreaming: boolean;
+  durationMs?: number | null;
+}
+
+function ThinkingBlock({ text, isStreaming, durationMs }: ThinkingBlockProps) {
+  const [expanded, setExpanded] = useState(isStreaming);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const prevStreamingRef = useRef(isStreaming);
+
+  useEffect(() => {
+    if (prevStreamingRef.current && !isStreaming) {
+      setExpanded(false);
+    }
+    prevStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
+  useEffect(() => {
+    if (expanded && isStreaming && contentRef.current) {
+      contentRef.current.scrollTop = contentRef.current.scrollHeight;
+    }
+  }, [text, expanded, isStreaming]);
+
+  const durationLabel = isStreaming
+    ? "Thinking..."
+    : durationMs != null
+      ? `Thought for ${formatDuration(durationMs)}`
+      : "Thought";
+
+  return (
+    <div className={styles.thinkingBlock}>
+      <button
+        className={`${styles.thinkingHeader} ${isStreaming ? styles.thinkingHeaderActive : ""}`}
+        onClick={() => setExpanded(!expanded)}
+        type="button"
+      >
+        <Sparkles size={14} className={`${styles.thinkingIcon} ${isStreaming ? styles.thinkingIconActive : ""}`} />
+        <span className={`${styles.thinkingLabel} ${isStreaming ? styles.thinkingLabelShimmer : ""}`}>
+          {durationLabel}
+        </span>
+        <span className={styles.thinkingChevron}>
+          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </span>
+      </button>
+      <div
+        className={`${styles.thinkingContentWrap} ${expanded ? styles.thinkingContentExpanded : ""}`}
+      >
+        <div ref={contentRef} className={styles.thinkingContent}>
+          {text}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function MessageBubble({ message }: Props) {
   const hasContent = message.content && message.content.trim().length > 0;
   const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
@@ -203,13 +267,23 @@ export function MessageBubble({ message }: Props) {
 interface StreamingBubbleProps {
   text: string;
   toolCalls?: ToolCallEntry[];
+  thinkingText?: string;
+  thinkingDurationMs?: number | null;
 }
 
-export function StreamingBubble({ text, toolCalls }: StreamingBubbleProps) {
+export function StreamingBubble({ text, toolCalls, thinkingText, thinkingDurationMs }: StreamingBubbleProps) {
+  const isThinking = Boolean(thinkingText) && !text;
   return (
     <div className={`${styles.message} ${styles.messageAssistant}`}>
       <div className={`${styles.bubble} ${styles.bubbleAssistant}`}>
         <div className={styles.markdown}>
+          {thinkingText && (
+            <ThinkingBlock
+              text={thinkingText}
+              isStreaming={isThinking}
+              durationMs={thinkingDurationMs}
+            />
+          )}
           {toolCalls && toolCalls.length > 0 && (
             <div className={toolStyles.toolCallsContainer}>
               {toolCalls.map((tc) => (
