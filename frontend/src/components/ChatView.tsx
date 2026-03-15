@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Text, Button } from "@cypher-asi/zui";
+import { Text } from "@cypher-asi/zui";
 import { MessageSquare } from "lucide-react";
 import { api } from "../api/client";
 import { useChatStream } from "../hooks/use-chat-stream";
@@ -38,6 +38,7 @@ export function ChatView() {
 
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const inputBarRef = useRef<ChatInputBarHandle>(null);
+  const autoCreateRef = useRef(false);
   const { handleScroll } = useAutoScroll(messageAreaRef, chatSessionId);
 
   useEffect(() => {
@@ -100,35 +101,22 @@ export function ChatView() {
     [sendMessage, selectedModel, attachments],
   );
 
+  useEffect(() => {
+    if (chatSessionId || !projectId || autoCreateRef.current) return;
+    autoCreateRef.current = true;
+    api
+      .createChatSession(projectId, "New Chat")
+      .then((session) => {
+        navigate(`/projects/${projectId}/chat/${session.chat_session_id}`, { replace: true });
+      })
+      .catch((err) => {
+        console.error("Failed to auto-create chat session", err);
+        autoCreateRef.current = false;
+      });
+  }, [chatSessionId, projectId, navigate]);
+
   if (!chatSessionId) {
-    return (
-      <div className={styles.container}>
-        <div className={styles.chatArea}>
-          <div className={styles.emptyState}>
-            <MessageSquare size={40} className={styles.emptyIcon} />
-            <Text variant="muted" size="sm">
-              Select a chat session or create a new one
-            </Text>
-            {projectId && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={async () => {
-                  try {
-                    const session = await api.createChatSession(projectId, "New Chat");
-                    navigate(`/projects/${projectId}/chat/${session.chat_session_id}`);
-                  } catch (err) {
-                    console.error("Failed to create session", err);
-                  }
-                }}
-              >
-                Start a new chat
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const hasMessages = messages.length > 0 || streamingText || thinkingText;
