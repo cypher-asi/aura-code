@@ -224,21 +224,47 @@
   font-size: 12.5px;
 }
 
-/* Streaming cursor */
-.streamingCursor {
+/* Streaming cursor — smooth glow for writing phase */
+.streamingCursorGlow {
   display: inline-block;
   width: 2px;
   height: 1em;
   background: var(--color-accent);
   margin-left: 2px;
   vertical-align: text-bottom;
-  animation: blink 0.8s step-end infinite;
+  border-radius: 1px;
+  animation: cursorGlow 1.2s ease-in-out infinite;
 }
 
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+@keyframes cursorGlow {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px 1px var(--color-accent); }
+  50% { opacity: 0.3; box-shadow: none; }
 }
+
+/* Shimmer placeholder — waiting phase before any content arrives */
+.shimmerPlaceholder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.shimmerBar {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.08) 40%,
+    rgba(255, 255, 255, 0.03) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+.shimmerBar:nth-child(1) { width: 80%; }
+.shimmerBar:nth-child(2) { width: 55%; animation-delay: 0.15s; }
+.shimmerBar:nth-child(3) { width: 35%; animation-delay: 0.3s; }
 
 /* Thinking block */
 .thinkingBlock {
