@@ -348,6 +348,13 @@ pub struct CheckoutSessionResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DebitResponse {
+    pub success: bool,
+    pub balance: u64,
+    pub transaction_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ZeroAuthSession {
     pub user_id: String,
     pub display_name: String,

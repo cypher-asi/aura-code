@@ -13,4 +13,7 @@ pub enum BillingError {
 
     #[error("Deserialization error: {0}")]
     Deserialize(String),
+
+    #[error("Insufficient credits: have {available}, need {required}")]
+    InsufficientCredits { available: u64, required: u64 },
 }

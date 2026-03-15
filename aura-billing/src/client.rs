@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
-use aura_core::{CheckoutSessionResponse, CreditBalance, CreditTier};
+use aura_core::{CheckoutSessionResponse, CreditBalance, CreditTier, DebitResponse};
 
 use crate::error::BillingError;
 
@@ -41,6 +41,36 @@ struct ZpsTier {
     #[serde(alias = "priceUsdCents")]
     price_usd_cents: u64,
     label: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DebitRequest {
+    amount: u64,
+    reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reference_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ZpsDebitResponse {
+    success: bool,
+    balance: u64,
+    #[serde(alias = "transactionId")]
+    transaction_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ZpsDebitErrorBody {
+    #[serde(default)]
+    error: String,
+    #[serde(default)]
+    available: Option<u64>,
+    #[serde(default)]
+    required: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -205,6 +235,62 @@ impl BillingClient {
         Ok(CheckoutSessionResponse {
             checkout_url: zps.checkout_url,
             session_id: zps.session_id,
+        })
+    }
+
+    pub async fn debit_credits(
+        &self,
+        access_token: &str,
+        amount: u64,
+        reason: &str,
+        reference_id: Option<String>,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<DebitResponse, BillingError> {
+        let url = format!("{}/api/credits/debit", self.base_url);
+        debug!(%url, amount, reason, "Debiting credits");
+
+        let body = DebitRequest {
+            amount,
+            reason: reason.to_string(),
+            reference_id,
+            metadata,
+        };
+
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(access_token)
+            .json(&body)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let raw = resp.text().await.unwrap_or_default();
+            if status.as_u16() == 400 {
+                if let Ok(err_body) = serde_json::from_str::<ZpsDebitErrorBody>(&raw) {
+                    if err_body.error == "INSUFFICIENT_CREDITS" {
+                        return Err(BillingError::InsufficientCredits {
+                            available: err_body.available.unwrap_or(0),
+                            required: err_body.required.unwrap_or(amount),
+                        });
+                    }
+                }
+            }
+            warn!(status = status.as_u16(), %raw, "Billing server error debiting credits");
+            return Err(BillingError::ServerError {
+                status: status.as_u16(),
+                body: raw,
+            });
+        }
+        let zps: ZpsDebitResponse = resp
+            .json()
+            .await
+            .map_err(|e| BillingError::Deserialize(e.to_string()))?;
+
+        Ok(DebitResponse {
+            success: zps.success,
+            balance: zps.balance,
+            transaction_id: zps.transaction_id,
         })
     }
 
