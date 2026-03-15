@@ -89,6 +89,11 @@ impl SpecGenerationService {
                 None => return,
             };
 
+        if let Err(e) = self.clear_project_specs(project_id) {
+            send(SpecStreamEvent::Error(format!("Failed to clear existing specs: {e}")));
+            return;
+        }
+
         send(SpecStreamEvent::Progress("Generating spec title".into()));
         match self
             .claude_client
@@ -111,11 +116,6 @@ impl SpecGenerationService {
         }
 
         send(SpecStreamEvent::Progress("Calling Claude to generate specs".into()));
-
-        if let Err(e) = self.clear_project_specs(project_id) {
-            send(SpecStreamEvent::Error(format!("Failed to clear existing specs: {e}")));
-            return;
-        }
 
         let (claude_tx, mut claude_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
 
