@@ -116,11 +116,9 @@ export function TerminalPanelBody() {
     cwd,
   } = useTerminalPanel();
 
-  if (collapsed) return null;
-
   return (
     <div
-      className={styles.terminalBodyPanel}
+      className={cn(styles.terminalBodyPanel, collapsed && styles.terminalBodyPanelCollapsed)}
       style={{ height: panelHeight }}
     >
       <div
