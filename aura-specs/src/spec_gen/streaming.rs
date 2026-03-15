@@ -270,8 +270,10 @@ impl SpecGenerationService {
     pub async fn generate_specs_summary(&self, project_id: &ProjectId) -> Result<Option<String>, SpecGenError> {
         let specs = self.list_specs(project_id)?;
         if specs.is_empty() {
+            info!(%project_id, "No specs found, skipping summary generation");
             return Ok(None);
         }
+        info!(%project_id, count = specs.len(), "Generating summary for existing specs");
         let api_key = self.settings.get_decrypted_api_key()?;
         let mut lines: Vec<String> = Vec::new();
         for (i, spec) in specs.iter().enumerate() {
