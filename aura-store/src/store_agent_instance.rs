@@ -49,4 +49,12 @@ impl RocksStore {
         let prefix = format!("{project_id}:");
         self.scan_cf::<AgentInstance>(&self.cf_agent_instances(), Some(&prefix))
     }
+
+    pub fn list_agent_instances_by_agent_id(
+        &self,
+        agent_id: &AgentId,
+    ) -> StoreResult<Vec<AgentInstance>> {
+        let all: Vec<AgentInstance> = self.scan_cf(&self.cf_agent_instances(), None)?;
+        Ok(all.into_iter().filter(|i| i.agent_id == *agent_id).collect())
+    }
 }
