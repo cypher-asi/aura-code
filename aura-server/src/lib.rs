@@ -244,6 +244,7 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
         store.clone(),
         settings_service.clone(),
         claude_client.clone(),
+        billing_client.clone(),
         spec_gen_service.clone(),
         project_service.clone(),
         task_service.clone(),
