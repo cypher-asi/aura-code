@@ -9,22 +9,11 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-top: calc(var(--control-height-sm, 28px) + 6px);
 }
 
 .explorerWrap [class*="itemContent"]:focus-visible,
 .explorerWrap [class*="item"]:focus-visible {
   outline: none;
-}
-
-.addButton {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  height: var(--control-height-sm);
 }
 
 /* Align search icon with topbar title and tree chevrons */
@@ -41,7 +30,7 @@
   color: #ffffff;
 }
 
-/* Tighten suffix so the per-project + aligns with the search + */
+/* Tighten suffix so the per-project + stays flush right */
 .explorerWrap [class*="suffix"] {
   padding-right: 0;
 }

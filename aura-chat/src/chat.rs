@@ -395,7 +395,7 @@ impl ChatService {
         agent: &Agent,
         projects: &[Project],
         content: &str,
-        action: Option<&str>,
+        _action: Option<&str>,
         attachments: &[ChatAttachment],
         tx: mpsc::UnboundedSender<ChatStreamEvent>,
     ) {

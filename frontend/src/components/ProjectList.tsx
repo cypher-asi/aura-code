@@ -133,7 +133,7 @@ export function ProjectList() {
   const sidekick = useSidekick();
   const { activeOrg } = useOrg();
 
-  const { query: searchQuery } = useSidebarSearch();
+  const { query: searchQuery, setAction } = useSidebarSearch();
   const { subscribe } = useEventContext();
   const [automatingProjectId, setAutomatingProjectId] = useState<string | null>(null);
   const [automatingAgentInstanceId, setAutomatingAgentInstanceId] = useState<string | null>(null);
@@ -164,6 +164,13 @@ export function ProjectList() {
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
+
+  useEffect(() => {
+    setAction(
+      <ButtonPlus onClick={() => setShowNewProject(true)} size="sm" title="New Project" />,
+    );
+    return () => setAction(null);
+  }, [setAction]);
 
   const prevProjectIdRef = useRef(projectId);
   useEffect(() => {
@@ -273,7 +280,7 @@ export function ProjectList() {
 
   const explorerData: ExplorerNode[] = useMemo(
     () =>
-      projects.map((p) => ({
+      projects.filter((p) => p.name.trim()).map((p) => ({
         id: p.project_id,
         label: p.name,
         suffix: (
@@ -511,9 +518,6 @@ export function ProjectList() {
   return (
     <div className={styles.root}>
       <div className={styles.explorerWrap} onContextMenu={handleContextMenu} onKeyDown={handleKeyDown}>
-        <div className={styles.addButton}>
-          <ButtonPlus onClick={() => setShowNewProject(true)} size="sm" title="New Project" />
-        </div>
         <Explorer
           data={filteredExplorerData}
           expandOnSelect

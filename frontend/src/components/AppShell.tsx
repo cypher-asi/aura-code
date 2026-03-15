@@ -60,7 +60,7 @@ function PreviewLane() {
 }
 
 function SidebarSearchInput() {
-  const { query, setQuery } = useSidebarSearch();
+  const { query, setQuery, action } = useSidebarSearch();
 
   return (
     <div style={{ position: "relative", padding: "var(--space-2)" }}>
@@ -77,11 +77,26 @@ function SidebarSearchInput() {
       />
       <Input
         size="sm"
-        placeholder="Search Agents..."
+        placeholder="Search..."
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        style={{ paddingLeft: "calc(var(--space-3, 12px) + 14px + var(--space-2, 8px))" }}
+        style={{
+          paddingLeft: "calc(var(--space-3, 12px) + 14px + var(--space-2, 8px))",
+          paddingRight: action ? "calc(var(--control-height-sm, 28px) + 2px)" : undefined,
+        }}
       />
+      {action && (
+        <div style={{
+          position: "absolute",
+          right: "calc(var(--space-2) + 2px)",
+          top: "50%",
+          transform: "translateY(-50%)",
+          display: "flex",
+          alignItems: "center",
+        }}>
+          {action}
+        </div>
+      )}
     </div>
   );
 }

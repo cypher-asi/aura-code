@@ -226,6 +226,7 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
     let billing_client = Arc::new(BillingClient::new());
     let claude_client = Arc::new(ClaudeClient::new());
     let project_service = Arc::new(ProjectService::new(store.clone()));
+    project_service.cleanup_empty_projects();
     let spec_gen_service = Arc::new(SpecGenerationService::new(
         store.clone(),
         settings_service.clone(),

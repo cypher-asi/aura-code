@@ -206,6 +206,16 @@ impl ProjectService {
         Ok(())
     }
 
+    pub fn cleanup_empty_projects(&self) {
+        if let Ok(all) = self.store.list_projects() {
+            for p in all {
+                if p.name.trim().is_empty() {
+                    let _ = self.store.delete_project(&p.project_id);
+                }
+            }
+        }
+    }
+
     pub fn archive_project(&self, id: &ProjectId) -> Result<Project, ProjectError> {
         let mut project = self.get_project(id)?;
         project.current_status = ProjectStatus::Archived;

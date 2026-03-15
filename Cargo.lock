@@ -364,6 +364,7 @@ dependencies = [
 name = "aura-chat"
 version = "0.1.0"
 dependencies = [
+ "aura-billing",
  "aura-claude",
  "aura-core",
  "aura-projects",

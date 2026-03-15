@@ -1,19 +1,44 @@
-import { useState, useCallback } from "react";
-import { Text, Badge, Button, Input } from "@cypher-asi/zui";
-import { Bot, Pencil, Save, X, Loader2 } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Text, Badge, Button, Input, Modal } from "@cypher-asi/zui";
+import { Bot, Pencil, Save, X, Loader2, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import { useAgentApp } from "./AgentAppProvider";
 import styles from "./AgentInfoPanel.module.css";
 
 export function AgentInfoPanel() {
   const { selectedAgent, selectAgent, refresh } = useAgentApp();
+  const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [personality, setPersonality] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [iconFailed, setIconFailed] = useState(false);
+
+  useEffect(() => {
+    setIconFailed(false);
+  }, [selectedAgent?.agent_id]);
+
+  const handleDelete = useCallback(async () => {
+    if (!selectedAgent) return;
+    setDeleting(true);
+    try {
+      await api.agents.delete(selectedAgent.agent_id);
+      setShowDeleteConfirm(false);
+      selectAgent(null);
+      refresh();
+      navigate("/agents");
+    } catch (err) {
+      console.error("Failed to delete agent", err);
+    } finally {
+      setDeleting(false);
+    }
+  }, [selectedAgent, selectAgent, refresh, navigate]);
 
   const startEditing = useCallback(() => {
     if (!selectedAgent) return;
@@ -61,15 +86,39 @@ export function AgentInfoPanel() {
       <div className={styles.panelHeader}>
         <div style={{ flex: 1 }} />
         {!editing && (
-          <button className={styles.editButton} onClick={startEditing} title="Edit agent">
-            <Pencil size={14} />
-          </button>
+          <div style={{ display: "flex", gap: "var(--space-1)" }}>
+            <button className={styles.editButton} onClick={startEditing} title="Edit agent">
+              <Pencil size={14} />
+            </button>
+            <button className={styles.editButton} onClick={() => setShowDeleteConfirm(true)} title="Delete agent">
+              <Trash2 size={14} />
+            </button>
+          </div>
         )}
       </div>
 
+      <Modal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        title="Delete Agent"
+        size="sm"
+        footer={
+          <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+            <Button variant="ghost" onClick={() => setShowDeleteConfirm(false)} disabled={deleting}>Cancel</Button>
+            <Button variant="danger" onClick={handleDelete} disabled={deleting}>
+              {deleting ? <><Loader2 size={14} className={styles.spin} /> Deleting...</> : "Delete"}
+            </Button>
+          </div>
+        }
+      >
+        <Text size="sm">
+          Are you sure you want to delete <strong>{a.name}</strong>? This cannot be undone.
+        </Text>
+      </Modal>
+
       <div className={styles.avatarLarge}>
-        {a.icon ? (
-          <img src={a.icon} alt="" className={styles.avatarImg} />
+        {a.icon && !iconFailed ? (
+          <img src={a.icon} alt="" className={styles.avatarImg} onError={() => setIconFailed(true)} />
         ) : (
           <Bot size={48} />
         )}
