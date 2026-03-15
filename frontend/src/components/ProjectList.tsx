@@ -429,17 +429,28 @@ export function ProjectList() {
 
   const handleDeleteSession = async () => {
     if (!deleteSessionTarget) return;
+    const { project_id: pid, chat_session_id: sid } = deleteSessionTarget;
     setDeleteSessionLoading(true);
+
+    const prevSessions = sessionsByProject[pid];
+    setSessionsByProject((prev) => ({
+      ...prev,
+      [pid]: (prev[pid] ?? []).filter((s) => s.chat_session_id !== sid),
+    }));
+
     try {
-      await api.deleteChatSession(deleteSessionTarget.project_id, deleteSessionTarget.chat_session_id);
-      clearLastChatIf({ chatSessionId: deleteSessionTarget.chat_session_id });
-      if (chatSessionId === deleteSessionTarget.chat_session_id) {
-        navigate(`/projects/${deleteSessionTarget.project_id}/chat`);
+      await api.deleteChatSession(pid, sid);
+      clearLastChatIf({ chatSessionId: sid });
+      if (chatSessionId === sid) {
+        navigate(`/projects/${pid}/chat`);
       }
-      fetchSessions(deleteSessionTarget.project_id);
       setDeleteSessionTarget(null);
+      fetchSessions(pid);
     } catch (err) {
       console.error("Failed to delete session", err);
+      if (prevSessions) {
+        setSessionsByProject((prev) => ({ ...prev, [pid]: prevSessions }));
+      }
     } finally {
       setDeleteSessionLoading(false);
     }
