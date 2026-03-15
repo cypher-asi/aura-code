@@ -227,6 +227,15 @@ export function ProjectList() {
     return () => unsubs.forEach((u) => u());
   }, [subscribe]);
 
+  useEffect(() => {
+    if (projectId && !agentInstanceId) {
+      const agents = agentsByProject[projectId];
+      if (agents && agents.length > 0) {
+        navigate(`/projects/${projectId}/agents/${agents[0].agent_instance_id}`, { replace: true });
+      }
+    }
+  }, [projectId, agentInstanceId, agentsByProject, navigate]);
+
   const projectMap = useMemo(
     () => new Map(projects.map((p) => [p.project_id, p])),
     [projects],
@@ -298,14 +307,19 @@ export function ProjectList() {
       if (!id) return;
       if (projectMap.has(id)) {
         if (id !== projectId) sidekick.closePreview();
-        navigate(`/projects/${id}`);
+        const agents = agentsByProject[id];
+        if (agents && agents.length > 0) {
+          navigate(`/projects/${id}/agents/${agents[0].agent_instance_id}`);
+        } else {
+          navigate(`/projects/${id}`);
+        }
       } else if (agentMeta.has(id)) {
         const { projectId: pid } = agentMeta.get(id)!;
         if (pid !== projectId) sidekick.closePreview();
         navigate(`/projects/${pid}/agents/${id}`);
       }
     },
-    [projectMap, agentMeta, navigate, projectId, sidekick],
+    [projectMap, agentMeta, agentsByProject, navigate, projectId, sidekick],
   );
 
   const handleExpand = useCallback(
