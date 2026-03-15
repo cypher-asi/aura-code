@@ -34,6 +34,7 @@ import {
   generateSprintStream,
   generateSpecsStream,
   sendMessageStream,
+  sendAgentMessageStream,
 } from "./streams";
 
 export type {
@@ -315,6 +316,9 @@ export const api = {
     update: (agentId: AgentId, data: { name?: string; role?: string; personality?: string; system_prompt?: string; skills?: string[]; icon?: string | null }) =>
       apiFetch<Agent>(`/api/agents/${agentId}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (agentId: AgentId) => apiFetch<void>(`/api/agents/${agentId}`, { method: "DELETE" }),
+    listMessages: (agentId: AgentId) =>
+      apiFetch<Message[]>(`/api/agents/${agentId}/messages`),
+    sendMessageStream: sendAgentMessageStream,
   },
 
   // Agent Instances (project-level working copies)

@@ -130,6 +130,91 @@ export function generateSpecsStream(
   );
 }
 
+export function sendAgentMessageStream(
+  agentId: string,
+  content: string,
+  action: string | null,
+  model: string,
+  attachments: ChatAttachment[] | undefined,
+  cb: ChatStreamCallbacks,
+  signal?: AbortSignal,
+) {
+  const body: Record<string, unknown> = { content, action, model };
+  if (attachments && attachments.length > 0) {
+    body.attachments = attachments;
+  }
+  return streamSSE<"delta" | "thinking_delta" | "tool_call" | "tool_result" | "spec_saved" | "specs_title" | "specs_summary" | "task_saved" | "message_saved" | "agent_instance_updated" | "token_usage" | "error" | "done">(
+    `${BASE_URL}/api/agents/${agentId}/messages/stream`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    {
+      onEvent(eventType, data) {
+        const d = data as Record<string, unknown>;
+        switch (eventType) {
+          case "delta":
+            cb.onDelta(d.text as string);
+            break;
+          case "thinking_delta":
+            cb.onThinkingDelta?.(d.text as string);
+            break;
+          case "tool_call":
+            cb.onToolCall?.({
+              id: d.id as string,
+              name: d.name as string,
+              input: d.input as Record<string, unknown>,
+            });
+            break;
+          case "tool_result":
+            cb.onToolResult?.({
+              id: d.id as string,
+              name: d.name as string,
+              result: d.result as string,
+              is_error: d.is_error as boolean,
+            });
+            break;
+          case "spec_saved":
+            cb.onSpecSaved?.(d.spec as Spec);
+            break;
+          case "specs_title":
+            cb.onSpecsTitle?.(d.title as string);
+            break;
+          case "specs_summary":
+            cb.onSpecsSummary?.(d.summary as string);
+            break;
+          case "task_saved":
+            cb.onTaskSaved?.(d.task as Task);
+            break;
+          case "message_saved":
+            cb.onMessageSaved?.(d.message as Message);
+            break;
+          case "agent_instance_updated":
+            cb.onAgentInstanceUpdated?.(d.agent_instance as AgentInstance);
+            break;
+          case "token_usage":
+            cb.onTokenUsage?.(d.input_tokens as number, d.output_tokens as number);
+            break;
+          case "error":
+            cb.onError(d.message as string);
+            break;
+          case "done":
+            cb.onDone?.();
+            break;
+        }
+      },
+      onError(err) {
+        cb.onError(err.message);
+      },
+      onDone() {
+        cb.onDone?.();
+      },
+    },
+    signal,
+  );
+}
+
 export function sendMessageStream(
   projectId: ProjectId,
   agentInstanceId: string,
