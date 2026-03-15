@@ -11,6 +11,11 @@
   overflow-y: auto;
 }
 
+.explorerWrap [class*="itemContent"]:focus-visible,
+.explorerWrap [class*="item"]:focus-visible {
+  outline: none;
+}
+
 .addButton {
   position: absolute;
   top: 6px;
