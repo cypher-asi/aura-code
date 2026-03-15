@@ -13,6 +13,10 @@ macro_rules! define_id {
                 Self(Uuid::new_v4())
             }
 
+            pub fn nil() -> Self {
+                Self(Uuid::nil())
+            }
+
             pub fn from_uuid(uuid: Uuid) -> Self {
                 Self(uuid)
             }

@@ -60,6 +60,15 @@ impl ToolExecResult {
             saved_task: None,
         }
     }
+
+    pub fn err_static(msg: &str) -> Self {
+        Self {
+            content: json!({ "error": msg }).to_string(),
+            is_error: true,
+            saved_spec: None,
+            saved_task: None,
+        }
+    }
 }
 
 impl ChatToolExecutor {
