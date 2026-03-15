@@ -1,10 +1,14 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Coins } from "lucide-react";
 import { useOrg } from "../context/OrgContext";
+import { useEventContext } from "../context/EventContext";
 import { api } from "../api/client";
 import styles from "./CreditsBadge.module.css";
 
 export const CREDITS_UPDATED_EVENT = "credits-updated";
+
+const POLL_INTERVAL_MS = 60_000;
+const DEBOUNCE_MS = 2_000;
 
 function formatCredits(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
@@ -18,7 +22,9 @@ interface Props {
 
 export function CreditsBadge({ onClick }: Props) {
   const { activeOrg } = useOrg();
+  const { subscribe } = useEventContext();
   const [credits, setCredits] = useState<number | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const fetchBalance = useCallback(() => {
     if (!activeOrg) {
@@ -31,15 +37,40 @@ export function CreditsBadge({ onClick }: Props) {
       .catch(() => {});
   }, [activeOrg?.org_id]);
 
+  const debouncedFetch = useCallback(() => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(fetchBalance, DEBOUNCE_MS);
+  }, [fetchBalance]);
+
+  // Fetch on mount / org change
   useEffect(() => {
     fetchBalance();
   }, [fetchBalance]);
 
+  // Periodic polling
+  useEffect(() => {
+    const id = setInterval(fetchBalance, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [fetchBalance]);
+
+  // Refresh when credits are purchased
   useEffect(() => {
     const handler = () => fetchBalance();
     window.addEventListener(CREDITS_UPDATED_EVENT, handler);
     return () => window.removeEventListener(CREDITS_UPDATED_EVENT, handler);
   }, [fetchBalance]);
+
+  // Refresh when tokens are consumed by AI tasks
+  useEffect(() => {
+    const unsubs = [
+      subscribe("task_completed", debouncedFetch),
+      subscribe("loop_finished", debouncedFetch),
+    ];
+    return () => {
+      unsubs.forEach((fn) => fn());
+      clearTimeout(debounceRef.current);
+    };
+  }, [subscribe, debouncedFetch]);
 
   const displayCredits = credits !== null ? formatCredits(credits) : "---";
   return (
