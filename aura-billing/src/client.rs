@@ -43,7 +43,6 @@ struct ZpsTier {
     label: String,
 }
 
-#[derive(Debug, Deserialize)]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DebitRequest {
