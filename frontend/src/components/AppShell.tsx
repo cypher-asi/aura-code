@@ -109,8 +109,8 @@ function AppLayout() {
             defaultWidth={320}
             maxWidth={1200}
             storageKey="aura-sidekick"
-            header={<SidekickHeader />}
-            taskbar={<SidekickTaskbar />}
+            header={<SidekickTaskbar />}
+            taskbar={<SidekickHeader />}
             style={{ boxShadow: "-1px 0 0 0 var(--color-border)" }}
           >
             <SidekickContent />
