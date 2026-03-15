@@ -50,7 +50,7 @@ function AppLayout() {
             resizable
             resizePosition="right"
             defaultWidth={200}
-            maxWidth={300}
+            maxWidth={600}
             storageKey="aura-sidebar"
             taskbar={
               <TaskbarLeft
@@ -65,7 +65,7 @@ function AppLayout() {
           {/* Lane 2: AgentChat */}
           <Lane
             flex
-            style={{ borderLeft: "1px solid var(--color-border)", borderRight: "1px solid var(--color-border)" }}
+            style={{ borderLeft: "1px solid var(--color-border)" }}
             taskbar={<TaskbarMiddle />}
           >
             <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "auto" }}>
@@ -83,6 +83,7 @@ function AppLayout() {
             storageKey="aura-sidekick"
             header={<SidekickHeader />}
             taskbar={<TaskbarRight onBuyCredits={openOrgBilling} />}
+            style={{ boxShadow: "-1px 0 0 0 var(--color-border)" }}
           >
             <SidekickContent />
           </Lane>
