@@ -118,6 +118,9 @@ pub async fn send_message_stream(
             .await;
     });
 
+    let event_tx = state.event_tx.clone();
+    let mut spec_count: usize = 0;
+
     let stream = UnboundedReceiverStream::new(rx).map(move |evt| {
         let sse_event = match &evt {
             ChatStreamEvent::Delta(text) => Event::default()
@@ -138,10 +141,17 @@ pub async fn send_message_stream(
                     "id": id, "name": name, "result": result, "is_error": is_error
                 }))
                 .unwrap(),
-            ChatStreamEvent::SpecSaved(spec) => Event::default()
-                .event("spec_saved")
-                .json_data(serde_json::json!({ "spec": spec }))
-                .unwrap(),
+            ChatStreamEvent::SpecSaved(spec) => {
+                spec_count += 1;
+                let _ = event_tx.send(EngineEvent::SpecSaved {
+                    project_id,
+                    spec: spec.clone(),
+                });
+                Event::default()
+                    .event("spec_saved")
+                    .json_data(serde_json::json!({ "spec": spec }))
+                    .unwrap()
+            }
             ChatStreamEvent::TaskSaved(task) => Event::default()
                 .event("task_saved")
                 .json_data(serde_json::json!({ "task": task }))
@@ -158,10 +168,18 @@ pub async fn send_message_stream(
                 .event("error")
                 .json_data(serde_json::json!({ "message": msg }))
                 .unwrap(),
-            ChatStreamEvent::Done => Event::default()
-                .event("done")
-                .json_data(serde_json::json!({}))
-                .unwrap(),
+            ChatStreamEvent::Done => {
+                if is_generate_specs {
+                    let _ = event_tx.send(EngineEvent::SpecGenCompleted {
+                        project_id,
+                        spec_count,
+                    });
+                }
+                Event::default()
+                    .event("done")
+                    .json_data(serde_json::json!({}))
+                    .unwrap()
+            }
         };
         Ok(sse_event)
     });
