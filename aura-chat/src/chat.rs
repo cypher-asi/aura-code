@@ -146,6 +146,28 @@ fn build_chat_system_prompt(project: &Project, custom_system_prompt: &str) -> St
     prompt
 }
 
+fn extract_user_text(messages: &[Message]) -> String {
+    messages
+        .iter()
+        .filter(|m| m.role == ChatRole::User)
+        .map(|m| {
+            let block_text = m.content_blocks.as_ref().and_then(|blocks| {
+                let texts: Vec<&str> = blocks
+                    .iter()
+                    .filter_map(|b| match b {
+                        ChatContentBlock::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                if texts.is_empty() { None } else { Some(texts.join("\n\n")) }
+            });
+            block_text.unwrap_or_else(|| m.content.clone())
+        })
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 // ---------------------------------------------------------------------------
 // Attachment (from API request)
 // ---------------------------------------------------------------------------
@@ -436,7 +458,7 @@ impl ChatService {
         let mut total_text = String::new();
         let mut accumulated_input_tokens: u64 = 0;
         let mut accumulated_output_tokens: u64 = 0;
-        let mut specs_created_count: u32 = 0;
+        let mut title_generated = false;
 
         for iteration in 0..max_iters {
             let (claude_tx, mut claude_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
@@ -566,6 +588,36 @@ impl ChatService {
                 error!(%project_id, error = %e, "Failed to persist assistant tool-use message");
             }
 
+            if !title_generated && iter_tool_calls.iter().any(|tc| tc.name == "create_spec") {
+                title_generated = true;
+                let requirements_content = extract_user_text(&stored_messages);
+                if requirements_content.is_empty() {
+                    error!(%project_id, "No user message text found for overview generation");
+                    let _ = tx.send(ChatStreamEvent::Error(
+                        "Cannot generate project overview: no requirements text found in chat messages".to_string(),
+                    ));
+                } else {
+                    info!(%project_id, len = requirements_content.len(), "Generating project overview before spec creation");
+                    match self
+                        .spec_gen
+                        .generate_project_overview(project_id, &requirements_content)
+                        .await
+                    {
+                        Ok((title, summary)) => {
+                            info!(%project_id, %title, "Project overview generated");
+                            let _ = tx.send(ChatStreamEvent::SpecsTitle(title));
+                            let _ = tx.send(ChatStreamEvent::SpecsSummary(summary));
+                        }
+                        Err(e) => {
+                            error!(%project_id, error = %e, "Failed to generate project overview");
+                            let _ = tx.send(ChatStreamEvent::Error(
+                                format!("Failed to generate project overview: {e}"),
+                            ));
+                        }
+                    }
+                }
+            }
+
             let tool_futures: Vec<_> = iter_tool_calls.iter().map(|tc| {
                 executor.execute(project_id, &tc.name, tc.input.clone())
             }).collect();
@@ -575,7 +627,6 @@ impl ChatService {
             let mut result_persist_blocks: Vec<ChatContentBlock> = Vec::new();
             for (tc, result) in iter_tool_calls.iter().zip(tool_results) {
                 if let Some(spec) = result.saved_spec {
-                    specs_created_count += 1;
                     let _ = tx.send(ChatStreamEvent::SpecSaved(spec));
                 }
                 if let Some(task) = result.saved_task {
@@ -619,55 +670,6 @@ impl ChatService {
                     max_iters,
                     "Tool-use loop hit max iterations, stopping"
                 );
-            }
-        }
-
-        if specs_created_count > 0 {
-            info!(%project_id, specs_created_count, "Specs created via tool calls, generating project overview");
-            let requirements_content: String = stored_messages
-                .iter()
-                .filter(|m| m.role == ChatRole::User)
-                .map(|m| {
-                    let block_text = m.content_blocks.as_ref().and_then(|blocks| {
-                        let texts: Vec<&str> = blocks
-                            .iter()
-                            .filter_map(|b| match b {
-                                ChatContentBlock::Text { text } => Some(text.as_str()),
-                                _ => None,
-                            })
-                            .collect();
-                        if texts.is_empty() { None } else { Some(texts.join("\n\n")) }
-                    });
-                    block_text.unwrap_or_else(|| m.content.clone())
-                })
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>()
-                .join("\n\n");
-
-            if requirements_content.is_empty() {
-                error!(%project_id, "No user message text found for overview generation");
-                let _ = tx.send(ChatStreamEvent::Error(
-                    "Cannot generate project overview: no requirements text found in chat messages".to_string(),
-                ));
-            } else {
-                info!(%project_id, len = requirements_content.len(), "Generating project overview from user messages");
-                match self
-                    .spec_gen
-                    .generate_project_overview(project_id, &requirements_content)
-                    .await
-                {
-                    Ok((title, summary)) => {
-                        info!(%project_id, %title, "Project overview generated");
-                        let _ = tx.send(ChatStreamEvent::SpecsTitle(title));
-                        let _ = tx.send(ChatStreamEvent::SpecsSummary(summary));
-                    }
-                    Err(e) => {
-                        error!(%project_id, error = %e, "Failed to generate project overview");
-                        let _ = tx.send(ChatStreamEvent::Error(
-                            format!("Failed to generate project overview: {e}"),
-                        ));
-                    }
-                }
             }
         }
 
