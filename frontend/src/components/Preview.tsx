@@ -52,33 +52,10 @@ function SpecsOverviewPreview({ specs }: { specs: Spec[] }) {
   const sidekick = useSidekick();
   const ctx = useProjectContext();
   const project = ctx?.project;
-  const [generating, setGenerating] = useState(false);
 
   const summaryText = project?.specs_summary ?? (specs.length > 0
     ? `This project has ${specs.length} spec${specs.length !== 1 ? "s" : ""}, ordered by dependency (most fundamental first).`
     : null);
-
-  const canGenerateSummary = specs.length > 0 && project?.project_id;
-  const hasSummary = !!project?.specs_summary;
-
-  const handleGenerateSummary = useCallback(async () => {
-    if (!canGenerateSummary || generating || !ctx) return;
-    setGenerating(true);
-    try {
-      const updated = await api.generateSpecsSummary(project!.project_id);
-      ctx.setProject(updated);
-    } catch (err) {
-      console.error("Failed to generate specs summary:", err);
-    } finally {
-      setGenerating(false);
-    }
-  }, [canGenerateSummary, generating, ctx, project]);
-
-  useEffect(() => {
-    if (canGenerateSummary && !hasSummary && !generating) {
-      handleGenerateSummary();
-    }
-  }, [canGenerateSummary, hasSummary, generating, handleGenerateSummary]);
 
   const firstCreated = specs.length > 0
     ? specs.reduce((a, s) => (s.created_at < a ? s.created_at : a), specs[0].created_at)

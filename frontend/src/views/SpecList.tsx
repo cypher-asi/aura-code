@@ -21,7 +21,10 @@ export function SpecList() {
   const sidekick = useSidekick();
   const sidekickRef = useRef(sidekick);
   sidekickRef.current = sidekick;
+  const ctxRef = useRef(ctx);
+  ctxRef.current = ctx;
   const generatingRef = useRef(false);
+  const triedSummaryRef = useRef(false);
 
   const mergedSpecs = useMemo(
     () => mergeById(localSpecs, sidekick.specs, "spec_id"),
@@ -94,22 +97,28 @@ export function SpecList() {
     return () => unsubs.forEach((fn) => fn());
   }, [projectId, subscribe, fetchSpecs]);
 
-  // Generate specs title/summary for existing specs when missing (project-level label)
+  const specsTitle = ctx?.project?.specs_title;
+
+  useEffect(() => {
+    triedSummaryRef.current = false;
+  }, [mergedSpecs.length]);
+
   useEffect(() => {
     if (
       !projectId ||
       mergedSpecs.length === 0 ||
-      !ctx?.project ||
-      ctx.project.specs_title ||
-      generatingRef.current
+      specsTitle ||
+      generatingRef.current ||
+      triedSummaryRef.current
     ) {
       return;
     }
     generatingRef.current = true;
+    triedSummaryRef.current = true;
     api
       .generateSpecsSummary(projectId)
       .then((updated) => {
-        ctx?.setProject(updated);
+        ctxRef.current?.setProject(updated);
       })
       .catch((err) => {
         console.error("Failed to generate specs title:", err);
@@ -117,7 +126,7 @@ export function SpecList() {
       .finally(() => {
         generatingRef.current = false;
       });
-  }, [projectId, mergedSpecs.length, ctx?.project?.specs_title, ctx]);
+  }, [projectId, mergedSpecs.length, specsTitle]);
 
   const specById = useMemo(
     () => new Map(mergedSpecs.map((s) => [s.spec_id, s])),
