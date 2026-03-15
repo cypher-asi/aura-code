@@ -9,6 +9,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding-top: calc(var(--control-height-sm, 28px) + 6px);
 }
 
 .explorerWrap [class*="itemContent"]:focus-visible,

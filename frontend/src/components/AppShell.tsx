@@ -97,7 +97,7 @@ function AppContent() {
     setOrgSettingsOpen(true);
   }, []);
 
-  const { LeftPanel, MainPanel } = activeApp;
+  const { MainPanel } = activeApp;
 
   return (
     <>
@@ -128,7 +128,14 @@ function AppContent() {
                 storageKey="aura-sidebar"
                 header={<SidebarSearchInput />}
               >
-                <LeftPanel />
+                {apps.map((app) => (
+                  <div
+                    key={app.id}
+                    style={{ display: app.id === activeApp.id ? "contents" : "none" }}
+                  >
+                    <app.LeftPanel />
+                  </div>
+                ))}
               </Lane>
             </div>
             <BottomTaskbar

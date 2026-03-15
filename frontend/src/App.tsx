@@ -10,7 +10,7 @@ import { SettingsView } from "./views/SettingsView";
 import { ExecutionView } from "./views/ExecutionView";
 import { LoginView } from "./views/LoginView";
 import { InviteAcceptView } from "./views/InviteAcceptView";
-import { AgentDetailView } from "./apps/agents/AgentDetailView";
+import { AgentChatView } from "./apps/agents/AgentChatView";
 
 export default function App() {
   return (
@@ -35,7 +35,7 @@ export default function App() {
 
                 {/* Agents app routes */}
                 <Route path="agents" element={null} />
-                <Route path="agents/:agentId" element={<AgentDetailView />} />
+                <Route path="agents/:agentId" element={<AgentChatView />} />
               </Route>
             </Route>
           </Routes>
