@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { api } from "../api/client";
 import type { Spec } from "../types";
 import type { EngineEvent } from "../types/events";
@@ -19,6 +19,9 @@ export function SpecList() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { subscribe } = useEventContext();
   const sidekick = useSidekick();
+  const sidekickRef = useRef(sidekick);
+  sidekickRef.current = sidekick;
+  const generatingRef = useRef(false);
 
   const mergedSpecs = useMemo(
     () => mergeById(localSpecs, sidekick.specs, "spec_id"),
@@ -35,25 +38,36 @@ export function SpecList() {
           setLocalSpecs(sorted);
           if (autoSelect && sorted.length > 0) {
             setSelectedId(sorted[0].spec_id);
-            sidekick.viewSpec(sorted[0]);
+            sidekickRef.current.viewSpec(sorted[0]);
           }
         })
         .catch(console.error)
         .finally(() => setLoading(false));
     },
-    [projectId, sidekick],
+    [projectId],
   );
 
   useEffect(() => {
+    if (!projectId) return;
     fetchSpecs();
-  }, [fetchSpecs]);
+  }, [projectId, fetchSpecs]);
 
   useEffect(() => {
     if (!loading && mergedSpecs.length > 0 && selectedId === null) {
       setSelectedId("__specs_root__");
-      sidekick.pushPreview({ kind: "specs_overview", specs: mergedSpecs });
+      sidekickRef.current.pushPreview({ kind: "specs_overview", specs: mergedSpecs });
     }
-  }, [loading, mergedSpecs, selectedId, sidekick]);
+  }, [loading, mergedSpecs.length, selectedId]);
+
+  const prevSpecIdsRef = useRef<string>("");
+  const specIds = useMemo(() => mergedSpecs.map((s) => s.spec_id).join(","), [mergedSpecs]);
+  useEffect(() => {
+    const sk = sidekickRef.current;
+    if (sk.previewItem?.kind !== "specs_overview") return;
+    if (specIds === prevSpecIdsRef.current) return;
+    prevSpecIdsRef.current = specIds;
+    sk.updatePreviewSpecs(mergedSpecs);
+  }, [specIds, mergedSpecs]);
 
   useEffect(() => {
     const unsubs = [
@@ -80,6 +94,31 @@ export function SpecList() {
     return () => unsubs.forEach((fn) => fn());
   }, [projectId, subscribe, fetchSpecs]);
 
+  // Generate specs title/summary for existing specs when missing (project-level label)
+  useEffect(() => {
+    if (
+      !projectId ||
+      mergedSpecs.length === 0 ||
+      !ctx?.project ||
+      ctx.project.specs_title ||
+      generatingRef.current
+    ) {
+      return;
+    }
+    generatingRef.current = true;
+    api
+      .generateSpecsSummary(projectId)
+      .then((updated) => {
+        ctx?.setProject(updated);
+      })
+      .catch((err) => {
+        console.error("Failed to generate specs title:", err);
+      })
+      .finally(() => {
+        generatingRef.current = false;
+      });
+  }, [projectId, mergedSpecs.length, ctx?.project?.specs_title, ctx]);
+
   const specById = useMemo(
     () => new Map(mergedSpecs.map((s) => [s.spec_id, s])),
     [mergedSpecs],
@@ -89,7 +128,7 @@ export function SpecList() {
     () => [
       {
         id: "__specs_root__",
-        label: "Specs",
+        label: ctx?.project?.specs_title ?? "Specs",
         children: mergedSpecs.map((spec) => ({
           id: spec.spec_id,
           label: spec.title,
@@ -97,7 +136,15 @@ export function SpecList() {
         })),
       },
     ],
-    [mergedSpecs],
+    [mergedSpecs, ctx?.project?.specs_title],
+  );
+
+  /* Stable ref - SpecList has single root, avoids ExplorerContext re-merge on sidekick updates */
+  const defaultExpandedIds = useMemo(() => ["__specs_root__"], []);
+
+  const defaultSelectedIds = useMemo(
+    () => (selectedId ? [selectedId] : ["__specs_root__"]),
+    [selectedId],
   );
 
   const handleSelect = (ids: string[]) => {
@@ -134,10 +181,11 @@ export function SpecList() {
       data={explorerData}
       searchable
       searchPlaceholder="Search"
+      expandOnSelect
       enableDragDrop={false}
       enableMultiSelect={false}
-      defaultExpandedIds={["__specs_root__"]}
-      defaultSelectedIds={selectedId ? [selectedId] : ["__specs_root__"]}
+      defaultExpandedIds={defaultExpandedIds}
+      defaultSelectedIds={defaultSelectedIds}
       onSelect={handleSelect}
     />
   );

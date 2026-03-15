@@ -24,6 +24,22 @@ function extractPurpose(markdown: string): string {
   return match ? match[1].trim().slice(0, 200) : "";
 }
 
+/** Derives a short, descriptive label for a spec (max ~38 chars) for list display. */
+function getShortSpecLabel(spec: Spec): string {
+  const purpose = extractPurpose(spec.markdown_contents);
+  if (purpose) {
+    const words = purpose.split(/\s+/).filter(Boolean);
+    let phrase = "";
+    for (const w of words) {
+      if (phrase.length + w.length + 1 <= 38) phrase = phrase ? `${phrase} ${w}` : w;
+      else break;
+    }
+    if (phrase) return phrase;
+  }
+  const title = spec.title.replace(/^Phase \d+\s*[—\-:]\s*/i, "").replace(/^P\d+:\s*/i, "").trim();
+  return title.length <= 40 ? title : `${title.slice(0, 37)}…`;
+}
+
 function extractErrorMessage(raw: string): string {
   const jsonMatch = raw.match(/"message"\s*:\s*"([^"]+)"/);
   if (jsonMatch) return jsonMatch[1];
@@ -34,6 +50,35 @@ function extractErrorMessage(raw: string): string {
 
 function SpecsOverviewPreview({ specs }: { specs: Spec[] }) {
   const sidekick = useSidekick();
+  const ctx = useProjectContext();
+  const project = ctx?.project;
+  const [generating, setGenerating] = useState(false);
+
+  const summaryText = project?.specs_summary ?? (specs.length > 0
+    ? `This project has ${specs.length} spec${specs.length !== 1 ? "s" : ""}, ordered by dependency (most fundamental first).`
+    : null);
+
+  const canGenerateSummary = specs.length > 0 && project?.project_id;
+  const hasSummary = !!project?.specs_summary;
+
+  const handleGenerateSummary = useCallback(async () => {
+    if (!canGenerateSummary || generating || !ctx) return;
+    setGenerating(true);
+    try {
+      const updated = await api.generateSpecsSummary(project!.project_id);
+      ctx.setProject(updated);
+    } catch (err) {
+      console.error("Failed to generate specs summary:", err);
+    } finally {
+      setGenerating(false);
+    }
+  }, [canGenerateSummary, generating, ctx, project]);
+
+  useEffect(() => {
+    if (canGenerateSummary && !hasSummary && !generating) {
+      handleGenerateSummary();
+    }
+  }, [canGenerateSummary, hasSummary, generating, handleGenerateSummary]);
 
   const firstCreated = specs.length > 0
     ? specs.reduce((a, s) => (s.created_at < a ? s.created_at : a), specs[0].created_at)
@@ -47,27 +92,34 @@ function SpecsOverviewPreview({ specs }: { specs: Spec[] }) {
       <div className={styles.taskMeta}>
         <div className={styles.taskField}>
           <span className={styles.fieldLabel}>Summary</span>
-          <Text size="sm">
-            This project has {specs.length} spec{specs.length !== 1 ? "s" : ""}, ordered by dependency
-            (most fundamental first).
-          </Text>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-2)" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {summaryText ? (
+                <Text variant="secondary" size="sm" style={{ whiteSpace: "pre-wrap" }} className={styles.specSummaryParagraph}>
+                  {summaryText}
+                </Text>
+              ) : (
+                <Text variant="secondary" size="sm">No specs yet.</Text>
+              )}
+            </div>
+          </div>
         </div>
         {firstCreated && (
           <div className={styles.taskField}>
             <span className={styles.fieldLabel}>First created</span>
-            <Text size="sm">{formatRelativeTime(firstCreated)}</Text>
+            <Text variant="secondary" size="sm">{formatRelativeTime(firstCreated)}</Text>
           </div>
         )}
         {lastUpdated && (
           <div className={styles.taskField}>
             <span className={styles.fieldLabel}>Last updated</span>
-            <Text size="sm">{formatRelativeTime(lastUpdated)}</Text>
+            <Text variant="secondary" size="sm">{formatRelativeTime(lastUpdated)}</Text>
           </div>
         )}
       </div>
 
       <GroupCollapsible
-        label="Specs"
+        label="Specifications"
         count={specs.length}
         defaultOpen
         className={styles.section}
@@ -83,15 +135,12 @@ function SpecsOverviewPreview({ specs }: { specs: Spec[] }) {
               >
                 <Item.Icon><FileText size={14} /></Item.Icon>
                 <div className={styles.specOverviewRow}>
-                  <Item.Label>{spec.title}</Item.Label>
+                  <Item.Label title={spec.title}>{getShortSpecLabel(spec)}</Item.Label>
                   {purpose && (
                     <Text variant="muted" size="xs" className={styles.specOverviewPurpose}>
                       {purpose}{purpose.length >= 200 ? "..." : ""}
                     </Text>
                   )}
-                  <Text variant="muted" size="xs">
-                    Created {formatRelativeTime(spec.created_at)}
-                  </Text>
                 </div>
               </Item>
             );
@@ -329,7 +378,7 @@ function TestStepItem({ step, active }: { step: TestStep; active: boolean }) {
 }
 
 function useElapsedTime(active: boolean) {
-  const startRef = useRef<number>(Date.now());
+  const startRef = useRef(Date.now());
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -367,7 +416,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
   const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
   const [failReason, setFailReason] = useState<string | null>(null);
   const [editorPath, setEditorPath] = useState<string | null>(null);
-  const hydratedRef = useRef<string | null>(null);
+  const hydratedRef = useRef< string | null >(null);
 
   const streamBuf = taskOutput.text;
   const liveFileOps = taskOutput.fileOps;
@@ -894,7 +943,7 @@ function previewTitle(item: PreviewItem): string {
 
 function useDisplayItem() {
   const { previewItem } = useSidekick();
-  const lastItem = useRef<PreviewItem | null>(null);
+  const lastItem = useRef< PreviewItem | null >(null);
   if (previewItem) lastItem.current = previewItem;
   return previewItem ?? lastItem.current;
 }
@@ -902,16 +951,22 @@ function useDisplayItem() {
 export function PreviewHeader() {
   const { closePreview, canGoBack, goBackPreview } = useSidekick();
   const displayItem = useDisplayItem();
+  const ctx = useProjectContext();
 
   if (!displayItem) return null;
 
+  const title =
+    displayItem.kind === "specs_overview"
+      ? (ctx?.project?.specs_title ?? "Specs")
+      : previewTitle(displayItem);
+
   return (
     <div className={styles.previewHeader}>
-      {canGoBack && (
+      {canGoBack && displayItem.kind !== "specs_overview" && (
         <Button variant="ghost" size="sm" iconOnly icon={<ArrowLeft size={14} />} onClick={goBackPreview} />
       )}
       <Text size="sm" className={styles.previewTitle} style={{ fontWeight: 600 }}>
-        {previewTitle(displayItem)}
+        {title}
       </Text>
       {displayItem.kind === "task" && <RunTaskButton task={displayItem.task} />}
       <Button variant="ghost" size="sm" iconOnly icon={<X size={14} />} onClick={closePreview} />
@@ -921,7 +976,7 @@ export function PreviewHeader() {
 
 export function PreviewContent() {
   const displayItem = useDisplayItem();
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
   const autoScrollRef = useRef(true);
 
   const resetKey = displayItem
