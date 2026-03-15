@@ -430,7 +430,6 @@ impl ChatService {
 
         let max_iters = ChatToolExecutor::max_iterations();
         let mut total_text = String::new();
-        let mut final_text = String::new();
         let mut accumulated_input_tokens: u64 = 0;
         let mut accumulated_output_tokens: u64 = 0;
         let mut specs_created_count: u32 = 0;
@@ -493,12 +492,18 @@ impl ChatService {
                     if iter_text.is_empty() && iter_tool_calls.is_empty() {
                         send(ChatStreamEvent::Error(format!("Claude API error: {e}")));
                     }
+                    if !total_text.is_empty() && !iter_text.is_empty() {
+                        total_text.push_str("\n\n");
+                    }
                     total_text.push_str(&iter_text);
                     break;
                 }
                 Err(e) => {
                     if iter_text.is_empty() && iter_tool_calls.is_empty() {
                         send(ChatStreamEvent::Error(format!("Stream task error: {e}")));
+                    }
+                    if !total_text.is_empty() && !iter_text.is_empty() {
+                        total_text.push_str("\n\n");
                     }
                     total_text.push_str(&iter_text);
                     break;
@@ -507,10 +512,12 @@ impl ChatService {
 
             accumulated_input_tokens += stream_result.input_tokens;
             accumulated_output_tokens += stream_result.output_tokens;
+            if !total_text.is_empty() && !iter_text.is_empty() {
+                total_text.push_str("\n\n");
+            }
             total_text.push_str(&iter_text);
 
             if stream_result.stop_reason != "tool_use" || iter_tool_calls.is_empty() {
-                final_text = iter_text;
                 break;
             }
 
@@ -543,7 +550,7 @@ impl ChatService {
                 agent_instance_id: *agent_instance_id,
                 project_id: *project_id,
                 role: ChatRole::Assistant,
-                content: iter_text.clone(),
+                content: String::new(),
                 content_blocks: Some(assistant_persist_blocks),
                 created_at: Utc::now(),
             };
@@ -669,14 +676,14 @@ impl ChatService {
             }
         }
 
-        if !final_text.is_empty() {
-            let assistant_reply = final_text.clone();
+        if !total_text.is_empty() {
+            let assistant_reply = total_text.clone();
             let assistant_msg = Message {
                 message_id: MessageId::new(),
                 agent_instance_id: *agent_instance_id,
                 project_id: *project_id,
                 role: ChatRole::Assistant,
-                content: final_text,
+                content: total_text,
                 content_blocks: None,
                 created_at: Utc::now(),
             };

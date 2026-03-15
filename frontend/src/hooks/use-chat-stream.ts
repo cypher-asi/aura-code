@@ -70,6 +70,7 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
   const thinkingRafRef = useRef<number | null>(null);
   const thinkingStartRef = useRef<number | null>(null);
   const toolCallsRef = useRef<ToolCallEntry[]>([]);
+  const needsSeparatorRef = useRef(false);
   const pendingSpecIdsRef = useRef<string[]>([]);
 
   const resetMessages = useCallback((msgs: DisplayMessage[]) => {
@@ -128,6 +129,7 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
       setThinkingDurationMs(null);
       toolCallsRef.current = [];
       setActiveToolCalls([]);
+      needsSeparatorRef.current = false;
       pendingSpecIdsRef.current = [];
 
       if (action === "generate_specs") {
@@ -161,6 +163,10 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
           onDelta(text) {
             if (thinkingStartRef.current !== null && thinkingDurationMs === null) {
               setThinkingDurationMs(Date.now() - thinkingStartRef.current);
+            }
+            if (needsSeparatorRef.current && streamBufferRef.current.length > 0) {
+              streamBufferRef.current += "\n\n";
+              needsSeparatorRef.current = false;
             }
             streamBufferRef.current += text;
             if (rafRef.current === null) {
@@ -202,6 +208,7 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
                 : tc,
             );
             setActiveToolCalls([...toolCallsRef.current]);
+            needsSeparatorRef.current = true;
 
             if (info.name === "create_spec" && info.is_error) {
               const pendingId = `pending-${info.id}`;
