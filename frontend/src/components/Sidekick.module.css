@@ -2,8 +2,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  height: var(--control-height-sm, 32px);
+  min-height: var(--control-height-sm, 32px);
+  padding: 0 var(--space-2) 0 var(--space-3);
   border-bottom: 1px solid var(--color-border);
+  box-sizing: border-box;
 }
 
 .automationLabel {
@@ -45,7 +48,7 @@
 
 .sidekickTabBar button[aria-pressed="true"] {
   background: var(--color-bg-hover, rgba(255, 255, 255, 0.08));
-  color: var(--color-text);
+  color: #ffffff;
 }
 
 .moreButtonWrap {
