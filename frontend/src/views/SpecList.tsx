@@ -54,13 +54,6 @@ export function SpecList() {
     fetchSpecs();
   }, [projectId, fetchSpecs]);
 
-  useEffect(() => {
-    if (!loading && mergedSpecs.length > 0 && selectedId === null) {
-      setSelectedId("__specs_root__");
-      sidekickRef.current.pushPreview({ kind: "specs_overview", specs: mergedSpecs });
-    }
-  }, [loading, mergedSpecs.length, selectedId]);
-
   const prevSpecIdsRef = useRef<string>("");
   const specIds = useMemo(() => mergedSpecs.map((s) => s.spec_id).join(","), [mergedSpecs]);
   useEffect(() => {
@@ -149,7 +142,7 @@ export function SpecList() {
   const defaultExpandedIds = useMemo(() => ["__specs_root__"], []);
 
   const defaultSelectedIds = useMemo(
-    () => (selectedId ? [selectedId] : ["__specs_root__"]),
+    () => (selectedId ? [selectedId] : []),
     [selectedId],
   );
 
