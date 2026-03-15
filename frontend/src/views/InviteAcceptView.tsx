@@ -15,7 +15,7 @@ export function InviteAcceptView() {
       .acceptInvite(token)
       .then(() => {
         setStatus("success");
-        setTimeout(() => navigate("/"), 2000);
+        setTimeout(() => navigate("/projects"), 2000);
       })
       .catch((err) => {
         setStatus("error");

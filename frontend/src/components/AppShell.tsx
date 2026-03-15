@@ -1,67 +1,72 @@
 import { useState, useCallback } from "react";
-import { Link, Outlet } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Topbar, ButtonWindow } from "@cypher-asi/zui";
 import { Lane } from "./Lane";
-import { ProjectList } from "./ProjectList";
-import { SidekickHeader, SidekickContent, SidekickTaskbar } from "./Sidekick";
-import { PreviewHeader, PreviewContent } from "./Preview";
-import { TaskbarLeft } from "./TaskbarLeft";
-import { ConnectionDot } from "./ConnectionDot";
-import { TerminalPanelHeader, TerminalPanelBody } from "./TerminalPanel";
-import { TerminalPanelProvider } from "../context/TerminalPanelContext";
-import { useProjectContext } from "../context/ProjectContext";
+import { AppNavRail } from "./AppNavRail";
+import { BottomTaskbar } from "./BottomTaskbar";
 import { SettingsModal } from "./SettingsModal";
 import { OrgSettingsPanel } from "./OrgSettingsPanel";
-import { SidekickProvider, useSidekick } from "../context/SidekickContext";
-import { ProjectContextProvider } from "../context/ProjectContext";
 import { OrgProvider } from "../context/OrgContext";
+import { AppProvider, useAppContext } from "../context/AppContext";
+import { useSidekick } from "../context/SidekickContext";
+import { apps } from "../apps/registry";
 import { windowCommand } from "../lib/windowCommand";
 
-function AgentChatLane() {
-  const ctx = useProjectContext();
-  const cwd = ctx?.project?.linked_folder_path;
+function SidekickLane() {
+  const { activeApp } = useAppContext();
+  const { SidekickPanel, SidekickTaskbar, SidekickHeader: SidekickHeaderComp } = activeApp;
+  if (!SidekickPanel) return null;
 
   return (
-    <TerminalPanelProvider cwd={cwd}>
-      <Lane
-        flex
-        style={{ borderLeft: "1px solid var(--color-border)" }}
-        taskbar={
-          <div style={{ display: "flex", flex: 1, minWidth: 0, alignItems: "stretch" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                paddingLeft: "var(--space-3)",
-                paddingRight: "var(--space-2)",
-                flexShrink: 0,
-              }}
-            >
-              <ConnectionDot />
-            </div>
-            <TerminalPanelHeader />
-          </div>
-        }
-        footer={<TerminalPanelBody />}
-      >
-        <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "auto" }}>
-          <Outlet />
-        </main>
-      </Lane>
-    </TerminalPanelProvider>
+    <Lane
+      resizable
+      resizePosition="left"
+      defaultWidth={320}
+      maxWidth={1200}
+      storageKey="aura-sidekick"
+      header={SidekickTaskbar && <SidekickTaskbar />}
+      taskbar={SidekickHeaderComp && <SidekickHeaderComp />}
+      style={{ boxShadow: "-1px 0 0 0 var(--color-border)" }}
+    >
+      <SidekickPanel />
+    </Lane>
   );
 }
 
-function AppLayout() {
+function PreviewLane() {
+  const { activeApp } = useAppContext();
+  const { PreviewPanel, PreviewHeader: PreviewHeaderComp } = activeApp;
+  const { previewItem } = useSidekick();
+
+  return (
+    <Lane
+      resizable
+      resizePosition="left"
+      defaultWidth={320}
+      maxWidth={1200}
+      storageKey="aura-preview"
+      collapsible
+      collapsed={!previewItem}
+      header={PreviewHeaderComp && <PreviewHeaderComp />}
+      style={{ boxShadow: "-1px 0 0 0 var(--color-border)" }}
+    >
+      {PreviewPanel && <PreviewPanel />}
+    </Lane>
+  );
+}
+
+function AppContent() {
+  const { activeApp } = useAppContext();
   const [orgSettingsOpen, setOrgSettingsOpen] = useState(false);
   const [orgInitialSection, setOrgInitialSection] = useState<"billing" | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { previewItem } = useSidekick();
 
   const openOrgBilling = useCallback(() => {
     setOrgInitialSection("billing");
     setOrgSettingsOpen(true);
   }, []);
+
+  const { LeftPanel, MainPanel } = activeApp;
 
   return (
     <>
@@ -70,7 +75,7 @@ function AppLayout() {
           className="titlebar-drag"
           onDoubleClick={() => windowCommand("maximize")}
           icon={<img src="/aura-icon.png" alt="" className="titlebar-icon" />}
-          title={<span className="titlebar-center"><Link to="/" style={{ color: "inherit", textDecoration: "none" }}>AURA</Link></span>}
+          title={<span className="titlebar-center"><Link to="/projects" style={{ color: "inherit", textDecoration: "none" }}>AURA</Link></span>}
           actions={
             <div className="titlebar-no-drag" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
               <ButtonWindow action="minimize" size="sm" onClick={() => windowCommand("minimize")} />
@@ -79,60 +84,32 @@ function AppLayout() {
             </div>
           }
         />
-        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-          {/* Lane 1: AgentsList */}
+        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+          <AppNavRail />
+
           <Lane
             resizable
             resizePosition="right"
             defaultWidth={200}
             maxWidth={600}
             storageKey="aura-sidebar"
-            taskbar={
-              <TaskbarLeft
-                onOpenSettings={() => setSettingsOpen(true)}
-                onOpenOrgSettings={() => setOrgSettingsOpen(true)}
-                onBuyCredits={openOrgBilling}
-              />
-            }
           >
-            <ProjectList />
+            <LeftPanel />
           </Lane>
 
-          {/* Lane 2: AgentChat */}
-          <AgentChatLane />
-
-          {/* Lane 3: Sidekick */}
-          <Lane
-            resizable
-            resizePosition="left"
-            defaultWidth={320}
-            maxWidth={1200}
-            storageKey="aura-sidekick"
-            header={<SidekickTaskbar />}
-            taskbar={<SidekickHeader />}
-            style={{ boxShadow: "-1px 0 0 0 var(--color-border)" }}
-          >
-            <SidekickContent />
-          </Lane>
-
-          {/* Lane 4: Preview */}
-          <Lane
-            resizable
-            resizePosition="left"
-            defaultWidth={320}
-            maxWidth={1200}
-            storageKey="aura-preview"
-            collapsible
-            collapsed={!previewItem}
-            header={<PreviewHeader />}
-            style={{ boxShadow: "-1px 0 0 0 var(--color-border)" }}
-          >
-            <PreviewContent />
-          </Lane>
-
+          <MainPanel />
+          <SidekickLane />
+          {activeApp.PreviewPanel && <PreviewLane />}
         </div>
+
+        <BottomTaskbar
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenOrgSettings={() => setOrgSettingsOpen(true)}
+          onBuyCredits={openOrgBilling}
+        />
       </div>
+
       <OrgSettingsPanel
         isOpen={orgSettingsOpen}
         onClose={() => { setOrgSettingsOpen(false); setOrgInitialSection(undefined); }}
@@ -143,14 +120,23 @@ function AppLayout() {
   );
 }
 
+function AppLayout() {
+  const { activeApp } = useAppContext();
+  const Provider = activeApp.Provider;
+
+  return Provider ? (
+    <Provider><AppContent /></Provider>
+  ) : (
+    <AppContent />
+  );
+}
+
 export function AppShell() {
   return (
-    <SidekickProvider>
     <OrgProvider>
-    <ProjectContextProvider>
-      <AppLayout />
-    </ProjectContextProvider>
+      <AppProvider apps={apps}>
+        <AppLayout />
+      </AppProvider>
     </OrgProvider>
-    </SidekickProvider>
   );
 }

@@ -63,7 +63,7 @@ export function ProjectLayout() {
     const handleArchive = async () => {
       try {
         await api.archiveProject(project.project_id);
-        navigate("/");
+        navigate("/projects");
       } catch (err) {
         setMessage(err instanceof Error ? err.message : "Failed to archive");
       }

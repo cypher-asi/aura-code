@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { EventProvider } from "./context/EventContext";
 import { RequireAuth } from "./components/RequireAuth";
@@ -10,6 +10,7 @@ import { SettingsView } from "./views/SettingsView";
 import { ExecutionView } from "./views/ExecutionView";
 import { LoginView } from "./views/LoginView";
 import { InviteAcceptView } from "./views/InviteAcceptView";
+import { AgentDetailView } from "./apps/agents/AgentDetailView";
 
 export default function App() {
   return (
@@ -21,12 +22,20 @@ export default function App() {
             <Route element={<RequireAuth />}>
               <Route path="invite/:token" element={<InviteAcceptView />} />
               <Route element={<AppShell />}>
-                <Route index element={<HomeView />} />
-                <Route path="settings" element={<SettingsView />} />
+                {/* Redirect root to /projects */}
+                <Route index element={<Navigate to="/projects" replace />} />
+
+                {/* Projects app routes */}
+                <Route path="projects" element={<HomeView />} />
+                <Route path="projects/settings" element={<SettingsView />} />
                 <Route path="projects/:projectId" element={<ProjectLayout />}>
                   <Route path="agents/:agentInstanceId" element={<ChatView />} />
                   <Route path="execution" element={<ExecutionView />} />
                 </Route>
+
+                {/* Agents app routes */}
+                <Route path="agents" element={null} />
+                <Route path="agents/:agentId" element={<AgentDetailView />} />
               </Route>
             </Route>
           </Routes>

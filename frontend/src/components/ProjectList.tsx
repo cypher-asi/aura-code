@@ -441,7 +441,7 @@ export function ProjectList() {
       await api.deleteProject(deleteTarget.project_id);
       clearLastAgentIf({ projectId: deleteTarget.project_id });
       if (projectId === deleteTarget.project_id) {
-        navigate("/");
+        navigate("/projects");
       }
       setDeleteTarget(null);
       fetchProjects();
