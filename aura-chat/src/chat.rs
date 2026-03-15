@@ -14,6 +14,9 @@ use aura_claude::{
     ClaudeClient, ClaudeStreamEvent, ContentBlock, ImageSource, MessageContent, RichMessage,
     ToolDefinition,
 };
+use base64::engine::general_purpose::STANDARD as B64;
+use base64::Engine;
+
 use crate::error::ChatError;
 use aura_projects::ProjectService;
 use aura_specs::{SpecGenerationService, SpecStreamEvent};
@@ -290,7 +293,7 @@ impl ChatService {
 
         let now = Utc::now();
 
-        // Build content_blocks when we have image attachments
+        // Build content_blocks from attachments (images and text files)
         let content_blocks = if attachments.is_empty() {
             None
         } else {
@@ -300,11 +303,27 @@ impl ChatService {
                     text: content.to_string(),
                 });
             }
-            for att in attachments.iter().filter(|a| a.type_ == "image") {
-                blocks.push(ChatContentBlock::Image {
-                    media_type: att.media_type.clone(),
-                    data: att.data.clone(),
-                });
+            for att in attachments.iter() {
+                if att.type_ == "image" {
+                    blocks.push(ChatContentBlock::Image {
+                        media_type: att.media_type.clone(),
+                        data: att.data.clone(),
+                    });
+                } else if att.type_ == "text" {
+                    // Decode base64 text and add as a Text block
+                    let text = match B64.decode(&att.data) {
+                        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                        Err(_) => continue,
+                    };
+                    let header = att
+                        .name
+                        .as_deref()
+                        .map(|n| format!("[File: {}]\n\n", n))
+                        .unwrap_or_default();
+                    blocks.push(ChatContentBlock::Text {
+                        text: format!("{}{}", header, text),
+                    });
+                }
             }
             if blocks.is_empty() {
                 None
@@ -574,6 +593,12 @@ impl ChatService {
             let mut result_blocks: Vec<ContentBlock> = Vec::new();
             let mut result_persist_blocks: Vec<ChatContentBlock> = Vec::new();
             for (tc, result) in iter_tool_calls.iter().zip(tool_results) {
+                if let Some(spec) = result.saved_spec {
+                    let _ = tx.send(ChatStreamEvent::SpecSaved(spec));
+                }
+                if let Some(task) = result.saved_task {
+                    let _ = tx.send(ChatStreamEvent::TaskSaved(task));
+                }
                 let _ = tx.send(ChatStreamEvent::ToolResult {
                     id: tc.id.clone(),
                     name: tc.name.clone(),

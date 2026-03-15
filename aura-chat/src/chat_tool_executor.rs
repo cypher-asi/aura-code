@@ -23,6 +23,8 @@ pub struct ChatToolExecutor {
 pub struct ToolExecResult {
     pub content: String,
     pub is_error: bool,
+    pub saved_spec: Option<Spec>,
+    pub saved_task: Option<Box<Task>>,
 }
 
 impl ToolExecResult {
@@ -30,12 +32,32 @@ impl ToolExecResult {
         Self {
             content: serde_json::to_string_pretty(&v).unwrap_or_default(),
             is_error: false,
+            saved_spec: None,
+            saved_task: None,
+        }
+    }
+    fn ok_with_spec(v: Value, spec: Spec) -> Self {
+        Self {
+            content: serde_json::to_string_pretty(&v).unwrap_or_default(),
+            is_error: false,
+            saved_spec: Some(spec),
+            saved_task: None,
+        }
+    }
+    fn ok_with_task(v: Value, task: Task) -> Self {
+        Self {
+            content: serde_json::to_string_pretty(&v).unwrap_or_default(),
+            is_error: false,
+            saved_spec: None,
+            saved_task: Some(Box::new(task)),
         }
     }
     fn err(msg: impl std::fmt::Display) -> Self {
         Self {
             content: json!({ "error": msg.to_string() }).to_string(),
             is_error: true,
+            saved_spec: None,
+            saved_task: None,
         }
     }
 }
@@ -166,7 +188,7 @@ impl ChatToolExecutor {
             updated_at: now,
         };
         match self.store.put_spec(&spec) {
-            Ok(()) => ToolExecResult::ok(json!(spec)),
+            Ok(()) => ToolExecResult::ok_with_spec(json!(spec), spec),
             Err(e) => ToolExecResult::err(e),
         }
     }
@@ -188,7 +210,7 @@ impl ChatToolExecutor {
         }
         spec.updated_at = Utc::now();
         match self.store.put_spec(&spec) {
-            Ok(()) => ToolExecResult::ok(json!(spec)),
+            Ok(()) => ToolExecResult::ok_with_spec(json!(spec), spec),
             Err(e) => ToolExecResult::err(e),
         }
     }
@@ -280,7 +302,7 @@ impl ChatToolExecutor {
             updated_at: now,
         };
         match self.store.put_task(&task) {
-            Ok(()) => ToolExecResult::ok(json!(task)),
+            Ok(()) => ToolExecResult::ok_with_task(json!(task), task),
             Err(e) => ToolExecResult::err(e),
         }
     }
@@ -308,7 +330,7 @@ impl ChatToolExecutor {
         }
         task.updated_at = Utc::now();
         match self.store.put_task(&task) {
-            Ok(()) => ToolExecResult::ok(json!(task)),
+            Ok(()) => ToolExecResult::ok_with_task(json!(task), task),
             Err(e) => ToolExecResult::err(e),
         }
     }
@@ -661,7 +683,7 @@ impl ChatToolExecutor {
                 let truncated_stderr = truncate_output(&stderr, 4000);
 
                 let is_error = !output.status.success();
-                let result = ToolExecResult {
+                ToolExecResult {
                     content: serde_json::to_string_pretty(&json!({
                         "exit_code": exit_code,
                         "stdout": truncated_stdout,
@@ -670,8 +692,9 @@ impl ChatToolExecutor {
                     }))
                     .unwrap_or_default(),
                     is_error,
-                };
-                result
+                    saved_spec: None,
+                    saved_task: None,
+                }
             }
             Ok(Err(e)) => ToolExecResult::err(format!("Failed to execute command: {e}")),
             Err(_) => ToolExecResult::err(format!(
