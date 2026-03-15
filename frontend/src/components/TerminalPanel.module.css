@@ -16,6 +16,12 @@
   border-bottom: none;
 }
 
+.terminalPanel.collapsed {
+  height: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+  border-top: none;
+}
+
 .noTransition {
   transition: none;
 }

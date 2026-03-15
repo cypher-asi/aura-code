@@ -98,10 +98,10 @@
   border-top: 1px solid var(--color-border);
   background: var(--color-bg);
   display: flex;
+  flex-direction: column;
   align-items: stretch;
   flex-shrink: 0;
   box-sizing: border-box;
-  min-height: var(--control-height-sm, 28px);
-  overflow: hidden;
+  min-height: var(--control-height-sm, 32px);
   min-width: 0;
 }
