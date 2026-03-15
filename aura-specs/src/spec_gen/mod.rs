@@ -48,8 +48,9 @@ Each spec must include a Tasks section with numbered tasks using the format
 Task 0 for each spec should be the setup/scaffolding task.
 
 Respond with a JSON array. Each element has:
-- "title": short title for the spec section, prefixed with zero-padded spec number + colon
-  (e.g. "01: Core Domain Types", "02: Persistence Layer", "10: Frontend Shell")
+- "title": short title for the spec section. MUST be formatted as two-digit zero-padded number + colon + space + short name.
+  Examples: "01: Core Domain Types", "02: Persistence Layer", "10: Frontend Shell".
+  NEVER use em dashes (—). ALWAYS zero-pad single-digit numbers (01, not 1).
 - "purpose": one detailed paragraph explaining what this section covers and why it matters
 - "markdown": full, thorough markdown body including ALL of the following:
   - Major concepts (with detailed explanations, not just bullet lists)

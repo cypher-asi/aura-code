@@ -197,7 +197,7 @@ fn chat_management_tools() -> Vec<ToolDefinition> {
             serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "title": { "type": "string" },
+                    "title": { "type": "string", "description": "Short spec title prefixed with zero-padded two-digit number + colon + space, e.g. '01: Core Domain Types'. No em dashes." },
                     "markdown_contents": { "type": "string", "description": "Full markdown body of the spec" },
                     "sprint_id": { "type": "string", "description": "Optional sprint to attach this spec to" }
                 },
