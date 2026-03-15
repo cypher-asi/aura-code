@@ -12,7 +12,7 @@ use crate::chat_tool_executor::ChatToolExecutor;
 use aura_tools::agent_tool_definitions;
 use aura_claude::{
     ClaudeClient, ClaudeStreamEvent, ContentBlock, ImageSource, MessageContent, RichMessage,
-    ToolDefinition,
+    ThinkingConfig, ToolDefinition,
 };
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -22,7 +22,8 @@ use aura_projects::ProjectService;
 use aura_specs::{SpecGenerationService, SpecStreamEvent};
 use aura_tasks::TaskService;
 
-const CHAT_MAX_TOKENS: u32 = 16384;
+const CHAT_MAX_TOKENS: u32 = 24_576;
+const THINKING_BUDGET: u32 = 10_000;
 
 const CHAT_SYSTEM_PROMPT_BASE: &str = r#"You are Aura, an AI software engineering assistant embedded in a project management and code execution platform.
 
@@ -484,12 +485,13 @@ impl ChatService {
 
             let stream_handle = tokio::spawn(async move {
                 client
-                    .complete_stream_with_tools(
+                    .complete_stream_with_tools_thinking(
                         &api_key_owned,
                         &system_owned,
                         msgs_owned,
                         tools_owned,
                         CHAT_MAX_TOKENS,
+                        ThinkingConfig::enabled(THINKING_BUDGET),
                         claude_tx,
                     )
                     .await
