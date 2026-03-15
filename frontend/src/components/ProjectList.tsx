@@ -400,6 +400,7 @@ export function ProjectList() {
   const handleNewProjectCreated = useCallback(
     async (project: Project) => {
       setShowNewProject(false);
+      sidekick.closePreview();
       setProjects((prev) => [...prev, project]);
       try {
         const session = await api.createChatSession(project.project_id, "New Chat");
@@ -408,7 +409,7 @@ export function ProjectList() {
         navigate(`/projects/${project.project_id}`);
       }
     },
-    [navigate],
+    [navigate, sidekick],
   );
 
   const handleDelete = async () => {
