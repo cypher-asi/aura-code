@@ -11,6 +11,7 @@ use tracing::info;
 
 use aura_core::{ChatMessage, ChatSession, ChatSessionId, ProjectId};
 use aura_chat::{ChatAttachment, ChatStreamEvent};
+use aura_engine::EngineEvent;
 
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
@@ -103,8 +104,14 @@ pub async fn send_message_stream(
     let pid = project_id;
     let sid = chat_session_id;
     let content = body.content;
-    let action = body.action;
+    let action = body.action.clone();
     let attachments = body.attachments.unwrap_or_default();
+
+    let is_generate_specs = body.action.as_deref() == Some("generate_specs");
+    if is_generate_specs {
+        let _ = state.event_tx.send(EngineEvent::SpecGenStarted { project_id });
+    }
+
     tokio::spawn(async move {
         chat_service
             .send_message_streaming(&pid, &sid, &content, action.as_deref(), &attachments, tx)
