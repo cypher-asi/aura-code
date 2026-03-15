@@ -78,7 +78,7 @@ impl SpecGenerationService {
         &self,
         project_id: &ProjectId,
         requirements_content: &str,
-    ) -> Result<(Option<String>, String), SpecGenError> {
+    ) -> Result<(String, String), SpecGenError> {
         let api_key = self.settings.get_decrypted_api_key()?;
         let raw_overview = self
             .claude_client
@@ -90,16 +90,23 @@ impl SpecGenerationService {
             )
             .await?;
         let (title_opt, summary) = parse_title_and_summary(&raw_overview, SPEC_SUMMARY_MAX_WORDS);
-        if let Ok(mut project) = self.store.get_project(project_id) {
-            if let Some(ref title) = title_opt {
-                project.specs_title = Some(title.clone());
-            }
-            if !summary.is_empty() {
-                project.specs_summary = Some(summary.clone());
-            }
-            let _ = self.store.put_project(&project);
+        let title = title_opt.ok_or_else(|| {
+            SpecGenError::ParseError(format!(
+                "LLM did not produce a TITLE line. Raw response: {}",
+                raw_overview.chars().take(200).collect::<String>()
+            ))
+        })?;
+        if summary.is_empty() {
+            return Err(SpecGenError::ParseError(format!(
+                "LLM produced empty summary. Raw response: {}",
+                raw_overview.chars().take(200).collect::<String>()
+            )));
         }
-        Ok((title_opt, summary))
+        let mut project = self.store.get_project(project_id).map_err(SpecGenError::Store)?;
+        project.specs_title = Some(title.clone());
+        project.specs_summary = Some(summary.clone());
+        self.store.put_project(&project).map_err(SpecGenError::Store)?;
+        Ok((title, summary))
     }
 
     pub async fn generate_specs_streaming(
@@ -124,16 +131,13 @@ impl SpecGenerationService {
 
         send(SpecStreamEvent::Progress("Generating spec overview".into()));
         match self.generate_project_overview(project_id, &requirements_content).await {
-            Ok((title_opt, summary)) => {
-                if let Some(title) = title_opt {
-                    send(SpecStreamEvent::SpecsTitle(title));
-                }
-                if !summary.is_empty() {
-                    send(SpecStreamEvent::SpecsSummary(summary));
-                }
+            Ok((title, summary)) => {
+                send(SpecStreamEvent::SpecsTitle(title));
+                send(SpecStreamEvent::SpecsSummary(summary));
             }
             Err(e) => {
-                error!(%project_id, error = %e, "Failed to generate spec overview (continuing)");
+                send(SpecStreamEvent::Error(format!("Failed to generate spec overview: {e}")));
+                return;
             }
         }
 
@@ -237,25 +241,13 @@ impl SpecGenerationService {
         send(SpecStreamEvent::Complete(saved_specs));
     }
 
-    /// Generate and persist a specs summary for a project that already has specs.
-    /// Returns the generated summary, or None if no specs or generation failed.
-    /// Generate and persist a specs summary for a project that already has specs.
-    /// This is a fallback/manual-refresh mechanism. It will NOT overwrite
-    /// `specs_title` or `specs_summary` that were already set (e.g. by
-    /// `generate_project_overview` from the user's requirements).
-    pub async fn generate_specs_summary(&self, project_id: &ProjectId) -> Result<Option<String>, SpecGenError> {
-        let project = self.store.get_project(project_id).map_err(SpecGenError::Store)?;
-        if project.specs_title.is_some() && project.specs_summary.is_some() {
-            info!(%project_id, "Project already has title and summary, skipping spec-derived generation");
-            return Ok(project.specs_summary);
-        }
-
+    /// Regenerate project overview (title + summary) from the current specs.
+    /// Used only as a manual refresh from the API endpoint.
+    pub async fn regenerate_specs_summary(&self, project_id: &ProjectId) -> Result<(String, String), SpecGenError> {
         let specs = self.list_specs(project_id)?;
         if specs.is_empty() {
-            info!(%project_id, "No specs found, skipping summary generation");
-            return Ok(None);
+            return Err(SpecGenError::ParseError("No specs found".to_string()));
         }
-        info!(%project_id, count = specs.len(), "Generating summary for existing specs");
         let api_key = self.settings.get_decrypted_api_key()?;
         let mut lines: Vec<String> = Vec::new();
         for (i, spec) in specs.iter().enumerate() {
@@ -277,27 +269,19 @@ impl SpecGenerationService {
             .complete(&api_key, SPEC_SUMMARY_SYSTEM_PROMPT, &user_prompt, SPEC_SUMMARY_MAX_TOKENS)
             .await
             .map_err(SpecGenError::Claude)?;
-        let (title, summary) = parse_title_and_summary(&response, SPEC_SUMMARY_MAX_WORDS);
+        let (title_opt, summary) = parse_title_and_summary(&response, SPEC_SUMMARY_MAX_WORDS);
+        let title = title_opt.ok_or_else(|| {
+            SpecGenError::ParseError("LLM did not produce a TITLE line".to_string())
+        })?;
         if summary.is_empty() {
-            return Ok(None);
+            return Err(SpecGenError::ParseError("LLM produced empty summary".to_string()));
         }
         let mut project = self.store.get_project(project_id).map_err(SpecGenError::Store)?;
-        let mut changed = false;
-        if project.specs_summary.is_none() {
-            project.specs_summary = Some(summary.clone());
-            changed = true;
-        }
-        if project.specs_title.is_none() {
-            if let Some(t) = title {
-                project.specs_title = Some(t.trim().to_string());
-                changed = true;
-            }
-        }
-        if changed {
-            self.store.put_project(&project).map_err(SpecGenError::Store)?;
-            info!(%project_id, "Specs summary generated and persisted (fallback)");
-        }
-        Ok(project.specs_summary)
+        project.specs_title = Some(title.clone());
+        project.specs_summary = Some(summary.clone());
+        self.store.put_project(&project).map_err(SpecGenError::Store)?;
+        info!(%project_id, %title, "Specs summary regenerated");
+        Ok((title, summary))
     }
 
     fn load_project_and_key(

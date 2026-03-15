@@ -96,7 +96,7 @@ export function SpecList() {
     () => [
       {
         id: "__specs_root__",
-        label: ctx?.project?.specs_title ?? "Specs",
+        label: ctx?.project?.specs_title ?? "",
         children: mergedSpecs.map((spec) => ({
           id: spec.spec_id,
           label: spec.title,

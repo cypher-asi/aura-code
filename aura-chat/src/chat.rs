@@ -645,7 +645,10 @@ impl ChatService {
                 .join("\n\n");
 
             if requirements_content.is_empty() {
-                warn!(%project_id, "No user message text found for overview generation");
+                error!(%project_id, "No user message text found for overview generation");
+                let _ = tx.send(ChatStreamEvent::Error(
+                    "Cannot generate project overview: no requirements text found in chat messages".to_string(),
+                ));
             } else {
                 info!(%project_id, len = requirements_content.len(), "Generating project overview from user messages");
                 match self
@@ -653,14 +656,10 @@ impl ChatService {
                     .generate_project_overview(project_id, &requirements_content)
                     .await
                 {
-                    Ok((title_opt, summary)) => {
-                        if let Some(title) = title_opt {
-                            info!(%project_id, %title, "Project overview title generated");
-                            let _ = tx.send(ChatStreamEvent::SpecsTitle(title));
-                        }
-                        if !summary.is_empty() {
-                            let _ = tx.send(ChatStreamEvent::SpecsSummary(summary));
-                        }
+                    Ok((title, summary)) => {
+                        info!(%project_id, %title, "Project overview generated");
+                        let _ = tx.send(ChatStreamEvent::SpecsTitle(title));
+                        let _ = tx.send(ChatStreamEvent::SpecsSummary(summary));
                     }
                     Err(e) => {
                         error!(%project_id, error = %e, "Failed to generate project overview");
@@ -670,8 +669,6 @@ impl ChatService {
                     }
                 }
             }
-        } else {
-            info!(%project_id, "No specs created in this chat turn, skipping overview generation");
         }
 
         if accumulated_input_tokens > 0 || accumulated_output_tokens > 0 {

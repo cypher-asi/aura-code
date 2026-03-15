@@ -32,9 +32,7 @@ function SpecsOverviewPreview({ specs }: { specs: Spec[] }) {
   const ctx = useProjectContext();
   const project = ctx?.project;
 
-  const summaryText = project?.specs_summary ?? (specs.length > 0
-    ? `This project has ${specs.length} spec${specs.length !== 1 ? "s" : ""}, ordered by dependency (most fundamental first).`
-    : null);
+  const summaryText = project?.specs_summary ?? null;
 
   const firstCreated = specs.length > 0
     ? specs.reduce((a, s) => (s.created_at < a ? s.created_at : a), specs[0].created_at)
@@ -898,7 +896,7 @@ export function PreviewHeader() {
 
   const title =
     displayItem.kind === "specs_overview"
-      ? (ctx?.project?.specs_title ?? "Specs")
+      ? (ctx?.project?.specs_title ?? "")
       : previewTitle(displayItem);
 
   return (

@@ -30,10 +30,10 @@ pub async fn generate_specs_summary(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
 ) -> ApiResult<Json<aura_core::Project>> {
-    info!(%project_id, "Specs summary generation requested");
+    info!(%project_id, "Specs summary regeneration requested");
     state
         .spec_gen_service
-        .generate_specs_summary(&project_id)
+        .regenerate_specs_summary(&project_id)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
     let project = state
