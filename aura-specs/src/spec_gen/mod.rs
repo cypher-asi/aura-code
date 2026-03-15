@@ -22,6 +22,7 @@ pub type ProgressTx = mpsc::UnboundedSender<String>;
 #[serde(tag = "type", content = "data")]
 pub enum SpecStreamEvent {
     Progress(String),
+    SpecsTitle(String),
     Delta(String),
     Generating { tokens: usize },
     SpecSaved(Spec),
@@ -32,6 +33,11 @@ pub enum SpecStreamEvent {
 }
 
 pub(crate) const MAX_TOKENS: u32 = 32768;
+
+pub(crate) const SPEC_TITLE_SYSTEM_PROMPT: &str =
+    "You generate concise project titles. Given a requirements document, produce a single short title (at most 6 words) that captures what is being built. Respond with ONLY the title text, nothing else. No quotes, no punctuation at the end.";
+
+pub(crate) const SPEC_TITLE_MAX_TOKENS: u32 = 64;
 
 pub(crate) const SPEC_GENERATION_SYSTEM_PROMPT: &str = r#"
 You are an expert software architect. Given a requirements document, produce

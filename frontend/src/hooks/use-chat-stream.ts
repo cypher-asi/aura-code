@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback } from "react";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
+import { useProjectContext } from "../context/ProjectContext";
 import type { ToolCallInfo, ToolResultInfo } from "../api/streams";
 
 export interface DisplayContentBlock {
@@ -51,6 +52,9 @@ function decodeBase64Text(base64: string): string {
 
 export function useChatStream({ projectId, chatSessionId }: UseChatStreamOptions) {
   const sidekick = useSidekick();
+  const projectCtx = useProjectContext();
+  const projectCtxRef = useRef(projectCtx);
+  projectCtxRef.current = projectCtx;
 
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -214,6 +218,12 @@ export function useChatStream({ projectId, chatSessionId }: UseChatStreamOptions
               sidekick.removeSpec(pendingId);
             }
             sidekick.pushSpec(spec);
+          },
+          onSpecsTitle(title) {
+            const ctx = projectCtxRef.current;
+            if (ctx) {
+              ctx.setProject({ ...ctx.project, specs_title: title });
+            }
           },
           onTaskSaved(task) {
             sidekick.pushTask(task);

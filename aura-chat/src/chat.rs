@@ -173,6 +173,7 @@ pub enum ChatStreamEvent {
         is_error: bool,
     },
     SpecSaved(Spec),
+    SpecsTitle(String),
     TaskSaved(Box<Task>),
     MessageSaved(ChatMessage),
     TitleUpdated(ChatSession),
@@ -1059,6 +1060,9 @@ impl ChatService {
                 }
                 SpecStreamEvent::SpecSaved(spec) => {
                     let _ = tx.send(ChatStreamEvent::SpecSaved(spec));
+                }
+                SpecStreamEvent::SpecsTitle(title) => {
+                    let _ = tx.send(ChatStreamEvent::SpecsTitle(title));
                 }
                 SpecStreamEvent::TaskSaved(task) => {
                     let _ = tx.send(ChatStreamEvent::TaskSaved(task));
