@@ -6,7 +6,6 @@ import { useSidekick, type SidekickTab } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
 import { useClickOutside } from "../hooks/use-click-outside";
 import { StatusBadge } from "./StatusBadge";
-import { SprintList } from "../views/SprintList";
 import { SpecList } from "../views/SpecList";
 import { TaskList } from "../views/TaskList";
 import { ProgressDashboard } from "../views/ProgressDashboard";
@@ -51,7 +50,6 @@ export function SidekickHeader() {
       <div className={styles.panelHeader}>
         <Tabs
           tabs={[
-            { id: "sprint", label: "Sprint" },
             { id: "specs", label: "Specs" },
             { id: "tasks", label: "Tasks" },
             { id: "log", label: "Log" },
@@ -121,7 +119,6 @@ export function SidekickContent() {
   }
 
   const tabContent: Record<string, React.ReactNode> = {
-    sprint: <SprintList />,
     specs: <SpecList />,
     tasks: <TaskList />,
     progress: <ProgressDashboard />,
