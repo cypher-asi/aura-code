@@ -13,7 +13,23 @@ import { NewProjectModal } from "./NewProjectModal";
 import { DeleteProjectModal, DeleteAgentInstanceModal } from "./ProjectModals";
 import { AgentSelectorModal } from "./AgentSelectorModal";
 import { useEventContext } from "../context/EventContext";
+import { useSidebarSearch } from "../context/SidebarSearchContext";
 import styles from "./ProjectList.module.css";
+
+function filterTree(nodes: ExplorerNode[], q: string): ExplorerNode[] {
+  if (!q) return nodes;
+  const lower = q.toLowerCase();
+  return nodes.reduce<ExplorerNode[]>((acc, node) => {
+    const labelMatch = node.label.toLowerCase().includes(lower);
+    const filteredChildren = node.children ? filterTree(node.children, q) : [];
+    if (labelMatch) {
+      acc.push(node);
+    } else if (filteredChildren.length > 0) {
+      acc.push({ ...node, children: filteredChildren });
+    }
+    return acc;
+  }, []);
+}
 
 
 /**
@@ -117,6 +133,7 @@ export function ProjectList() {
   const sidekick = useSidekick();
   const { activeOrg } = useOrg();
 
+  const { query: searchQuery } = useSidebarSearch();
   const { subscribe } = useEventContext();
   const [automatingProjectId, setAutomatingProjectId] = useState<string | null>(null);
   const [automatingAgentInstanceId, setAutomatingAgentInstanceId] = useState<string | null>(null);
@@ -297,6 +314,11 @@ export function ProjectList() {
             : [{ id: `_load_${p.project_id}`, label: "Loading...", disabled: true }],
       })),
     [projects, agentsByProject, streamingAgentInstanceId, automatingProjectId, automatingAgentInstanceId, failedIcons],
+  );
+
+  const filteredExplorerData = useMemo(
+    () => filterTree(explorerData, searchQuery),
+    [explorerData, searchQuery],
   );
 
   const defaultExpandedIds = useMemo(
@@ -493,9 +515,7 @@ export function ProjectList() {
           <ButtonPlus onClick={() => setShowNewProject(true)} size="sm" title="New Project" />
         </div>
         <Explorer
-          data={explorerData}
-          searchable
-          searchPlaceholder="Search Agents..."
+          data={filteredExplorerData}
           expandOnSelect
           enableDragDrop={false}
           enableMultiSelect={false}

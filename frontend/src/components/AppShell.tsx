@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Topbar, ButtonWindow } from "@cypher-asi/zui";
+import { Topbar, ButtonWindow, Input } from "@cypher-asi/zui";
+import { Search } from "lucide-react";
 import { Lane } from "./Lane";
 import { AppNavRail } from "./AppNavRail";
 import { BottomTaskbar } from "./BottomTaskbar";
@@ -8,7 +9,10 @@ import { SettingsModal } from "./SettingsModal";
 import { OrgSettingsPanel } from "./OrgSettingsPanel";
 import { OrgProvider } from "../context/OrgContext";
 import { AppProvider, useAppContext } from "../context/AppContext";
+import { SidebarSearchProvider, useSidebarSearch } from "../context/SidebarSearchContext";
 import { useSidekick } from "../context/SidekickContext";
+import { ProjectsProvider } from "../apps/projects/ProjectsProvider";
+import { AgentAppProvider } from "../apps/agents/AgentAppProvider";
 import { apps } from "../apps/registry";
 import { windowCommand } from "../lib/windowCommand";
 
@@ -55,6 +59,33 @@ function PreviewLane() {
   );
 }
 
+function SidebarSearchInput() {
+  const { query, setQuery } = useSidebarSearch();
+
+  return (
+    <div style={{ position: "relative", padding: "var(--space-2)" }}>
+      <Search
+        size={14}
+        style={{
+          position: "absolute",
+          left: "calc(var(--space-2) + var(--space-3, 12px))",
+          top: "50%",
+          transform: "translateY(-50%)",
+          color: "var(--color-text-muted)",
+          pointerEvents: "none",
+        }}
+      />
+      <Input
+        size="sm"
+        placeholder="Search Agents..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        style={{ paddingLeft: "calc(var(--space-3, 12px) + 14px + var(--space-2, 8px))" }}
+      />
+    </div>
+  );
+}
+
 function AppContent() {
   const { activeApp } = useAppContext();
   const [orgSettingsOpen, setOrgSettingsOpen] = useState(false);
@@ -95,6 +126,7 @@ function AppContent() {
                 defaultWidth={200}
                 maxWidth={600}
                 storageKey="aura-sidebar"
+                header={<SidebarSearchInput />}
               >
                 <LeftPanel />
               </Lane>
@@ -121,22 +153,17 @@ function AppContent() {
   );
 }
 
-function AppLayout() {
-  const { activeApp } = useAppContext();
-  const Provider = activeApp.Provider;
-
-  return Provider ? (
-    <Provider><AppContent /></Provider>
-  ) : (
-    <AppContent />
-  );
-}
-
 export function AppShell() {
   return (
     <OrgProvider>
       <AppProvider apps={apps}>
-        <AppLayout />
+        <SidebarSearchProvider>
+          <ProjectsProvider>
+            <AgentAppProvider>
+              <AppContent />
+            </AgentAppProvider>
+          </ProjectsProvider>
+        </SidebarSearchProvider>
       </AppProvider>
     </OrgProvider>
   );

@@ -4,10 +4,12 @@ import { Text, Explorer } from "@cypher-asi/zui";
 import type { ExplorerNode } from "@cypher-asi/zui";
 import { Bot, Loader2 } from "lucide-react";
 import { useAgentApp } from "./AgentAppProvider";
+import { useSidebarSearch } from "../../context/SidebarSearchContext";
 import styles from "./AgentList.module.css";
 
 export function AgentList() {
   const { agents, loading } = useAgentApp();
+  const { query: searchQuery } = useSidebarSearch();
   const navigate = useNavigate();
   const { agentId } = useParams();
 
@@ -20,6 +22,12 @@ export function AgentList() {
       })),
     [agents],
   );
+
+  const filteredData = useMemo(() => {
+    if (!searchQuery) return data;
+    const q = searchQuery.toLowerCase();
+    return data.filter((n) => n.label.toLowerCase().includes(q));
+  }, [data, searchQuery]);
 
   const defaultSelectedIds = useMemo(
     () => (agentId ? [agentId] : []),
@@ -53,9 +61,7 @@ export function AgentList() {
   return (
     <div className={styles.list}>
       <Explorer
-        data={data}
-        searchable
-        searchPlaceholder="Search Agents..."
+        data={filteredData}
         enableDragDrop={false}
         enableMultiSelect={false}
         defaultSelectedIds={defaultSelectedIds}
