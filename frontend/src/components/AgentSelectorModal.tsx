@@ -95,7 +95,11 @@ export function AgentSelectorModal({ isOpen, projectId, onClose, onCreated }: Ag
                   disabled={!!creating}
                 >
                   <div className={styles.cardIcon}>
-                    {agent.icon || agent.name.charAt(0).toUpperCase()}
+                    {agent.icon ? (
+                      <img src={agent.icon} alt="" className={styles.cardIconImg} />
+                    ) : (
+                      agent.name.charAt(0).toUpperCase()
+                    )}
                   </div>
                   <div className={styles.cardName}>{agent.name}</div>
                   {agent.role && <div className={styles.cardRole}>{agent.role}</div>}
