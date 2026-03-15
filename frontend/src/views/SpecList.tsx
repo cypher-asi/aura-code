@@ -49,6 +49,13 @@ export function SpecList() {
   }, [fetchSpecs]);
 
   useEffect(() => {
+    if (!loading && mergedSpecs.length > 0 && selectedId === null) {
+      setSelectedId("__specs_root__");
+      sidekick.pushPreview({ kind: "specs_overview", specs: mergedSpecs });
+    }
+  }, [loading, mergedSpecs, selectedId, sidekick]);
+
+  useEffect(() => {
     const unsubs = [
       subscribe("spec_gen_started", (e: EngineEvent) => {
         if (e.project_id === projectId) {

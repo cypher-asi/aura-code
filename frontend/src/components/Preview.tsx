@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Button, Text, GroupCollapsible, Item } from "@cypher-asi/zui";
-import { X, ArrowLeft, Loader2, FilePlus, FilePen, FileX, RotateCcw, Play, Check, XCircle, Wrench, MinusCircle, SkipForward } from "lucide-react";
+import { X, ArrowLeft, Loader2, FilePlus, FilePen, FileX, RotateCcw, Play, Check, XCircle, Wrench, MinusCircle, SkipForward, FileText } from "lucide-react";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
@@ -14,10 +14,15 @@ import { formatCostFromTokens } from "../utils/pricing";
 import { parseTaskStream } from "../utils/parse-task-stream";
 import { deriveActivity } from "../utils/derive-activity";
 import type { PreviewItem } from "../context/SidekickContext";
-import type { Task, Session } from "../types";
+import type { Spec, Task, Session } from "../types";
 import { StatusBadge } from "./StatusBadge";
 import { CodeEditor } from "../ide";
 import styles from "./Preview.module.css";
+
+function extractPurpose(markdown: string): string {
+  const match = markdown.match(/\n## Purpose\s*\n\n([\s\S]*?)(?=\n## |$)/);
+  return match ? match[1].trim().slice(0, 200) : "";
+}
 
 function extractErrorMessage(raw: string): string {
   const jsonMatch = raw.match(/"message"\s*:\s*"([^"]+)"/);
@@ -25,6 +30,76 @@ function extractErrorMessage(raw: string): string {
   const prefixMatch = raw.match(/^[\w\s]+error:\s*(.+)/i);
   if (prefixMatch) return prefixMatch[1];
   return raw;
+}
+
+function SpecsOverviewPreview({ specs }: { specs: Spec[] }) {
+  const sidekick = useSidekick();
+
+  const firstCreated = specs.length > 0
+    ? specs.reduce((a, s) => (s.created_at < a ? s.created_at : a), specs[0].created_at)
+    : null;
+  const lastUpdated = specs.length > 0
+    ? specs.reduce((a, s) => (s.updated_at > a ? s.updated_at : a), specs[0].updated_at)
+    : null;
+
+  return (
+    <>
+      <div className={styles.taskMeta}>
+        <div className={styles.taskField}>
+          <span className={styles.fieldLabel}>Summary</span>
+          <Text size="sm">
+            This project has {specs.length} spec{specs.length !== 1 ? "s" : ""}, ordered by dependency
+            (most fundamental first).
+          </Text>
+        </div>
+        {firstCreated && (
+          <div className={styles.taskField}>
+            <span className={styles.fieldLabel}>First created</span>
+            <Text size="sm">{formatRelativeTime(firstCreated)}</Text>
+          </div>
+        )}
+        {lastUpdated && (
+          <div className={styles.taskField}>
+            <span className={styles.fieldLabel}>Last updated</span>
+            <Text size="sm">{formatRelativeTime(lastUpdated)}</Text>
+          </div>
+        )}
+      </div>
+
+      <GroupCollapsible
+        label="Specs"
+        count={specs.length}
+        defaultOpen
+        className={styles.section}
+      >
+        <div className={styles.fileOpsList}>
+          {specs.map((spec) => {
+            const purpose = extractPurpose(spec.markdown_contents);
+            return (
+              <Item
+                key={spec.spec_id}
+                onClick={() => sidekick.pushPreview({ kind: "spec", spec })}
+                className={styles.fileOpItem}
+              >
+                <Item.Icon><FileText size={14} /></Item.Icon>
+                <div className={styles.specOverviewRow}>
+                  <Item.Label>{spec.title}</Item.Label>
+                  {purpose && (
+                    <Text variant="muted" size="xs" className={styles.specOverviewPurpose}>
+                      {purpose}{purpose.length >= 200 ? "..." : ""}
+                    </Text>
+                  )}
+                  <Text variant="muted" size="xs">
+                    Created {formatRelativeTime(spec.created_at)}
+                  </Text>
+                </div>
+              </Item>
+            );
+          })}
+        </div>
+      </GroupCollapsible>
+    </>
+  );
 }
 
 function SpecPreview({ spec }: { spec: import("../types").Spec }) {
@@ -811,6 +886,7 @@ function SessionPreview({ session }: { session: Session }) {
 function previewTitle(item: PreviewItem): string {
   switch (item.kind) {
     case "spec": return item.spec.title;
+    case "specs_overview": return "Specs";
     case "task": return item.task.title;
     case "session": return `Session ${item.session.session_id.slice(0, 8)}`;
   }
@@ -851,6 +927,7 @@ export function PreviewContent() {
   const resetKey = displayItem
     ? displayItem.kind === "task" ? displayItem.task.task_id
     : displayItem.kind === "spec" ? displayItem.spec.spec_id
+    : displayItem.kind === "specs_overview" ? "__specs_root__"
     : displayItem.kind === "session" ? displayItem.session.session_id
     : null
     : null;
@@ -892,6 +969,7 @@ export function PreviewContent() {
   return (
     <div ref={bodyRef} className={styles.previewBody}>
       {displayItem?.kind === "spec" && <SpecPreview spec={displayItem.spec} />}
+      {displayItem?.kind === "specs_overview" && <SpecsOverviewPreview specs={displayItem.specs} />}
       {displayItem?.kind === "task" && <TaskPreview task={displayItem.task} />}
       {displayItem?.kind === "session" && <SessionPreview session={displayItem.session} />}
     </div>

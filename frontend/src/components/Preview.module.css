@@ -146,6 +146,19 @@
   min-height: 26px;
 }
 
+.specOverviewRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.specOverviewPurpose {
+  display: block;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
 .section {
   margin-bottom: var(--space-3, 12px);
 }
