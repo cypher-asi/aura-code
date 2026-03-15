@@ -168,6 +168,32 @@ pub fn agent_tool_definitions() -> Vec<ToolDefinition> {
     chat_tool_definitions()
 }
 
+/// Returns tool definitions for multi-project agent chat.
+/// Each tool gains a required `project_id` parameter so the LLM
+/// specifies which project to target.
+pub fn multi_project_tool_definitions() -> Vec<ToolDefinition> {
+    agent_tool_definitions()
+        .into_iter()
+        .map(|mut td| {
+            if let Some(props) = td.input_schema.get_mut("properties") {
+                props.as_object_mut().unwrap().insert(
+                    "project_id".to_string(),
+                    serde_json::json!({
+                        "type": "string",
+                        "description": "The project ID to operate on (required for multi-project context)"
+                    }),
+                );
+            }
+            if let Some(req) = td.input_schema.get_mut("required") {
+                if let Some(arr) = req.as_array_mut() {
+                    arr.insert(0, serde_json::json!("project_id"));
+                }
+            }
+            td
+        })
+        .collect()
+}
+
 fn chat_management_tools() -> Vec<ToolDefinition> {
     vec![
         // ── Specs ──────────────────────────────────────────────────────
