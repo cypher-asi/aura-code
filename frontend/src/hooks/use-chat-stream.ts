@@ -266,6 +266,10 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
           onAgentInstanceUpdated(instance) {
             sidekick.notifyAgentInstanceUpdate(instance);
           },
+          onTokenUsage(_inputTokens, _outputTokens) {
+            // Cumulative token counts streamed in real-time.
+            // Final totals arrive via onAgentInstanceUpdated after persistence.
+          },
           onError(message) {
             console.error("Chat stream error:", message);
             if (streamBufferRef.current) {
@@ -347,7 +351,17 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
     setIsStreaming(false);
     sidekick.setStreamingAgentInstanceId(null);
     abortRef.current = null;
-  }, [sidekick]);
+
+    if (projectId && agentInstanceId) {
+      const refetch = () => {
+        api.getAgentInstance(projectId, agentInstanceId).then((instance) => {
+          sidekick.notifyAgentInstanceUpdate(instance);
+        }).catch(() => {});
+      };
+      setTimeout(refetch, 2000);
+      setTimeout(refetch, 5000);
+    }
+  }, [sidekick, projectId, agentInstanceId]);
 
   return {
     messages,

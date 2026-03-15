@@ -320,6 +320,10 @@ pub async fn send_message_stream(
                 .event("agent_instance_updated")
                 .json_data(serde_json::json!({ "agent_instance": instance }))
                 .unwrap(),
+            ChatStreamEvent::TokenUsage { input_tokens, output_tokens } => Event::default()
+                .event("token_usage")
+                .json_data(serde_json::json!({ "input_tokens": input_tokens, "output_tokens": output_tokens }))
+                .unwrap(),
             ChatStreamEvent::Error(msg) => Event::default()
                 .event("error")
                 .json_data(serde_json::json!({ "message": msg }))

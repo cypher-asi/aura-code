@@ -61,6 +61,7 @@ export interface ChatStreamCallbacks {
   onTaskSaved?: (task: Task) => void;
   onMessageSaved?: (message: Message) => void;
   onAgentInstanceUpdated?: (instance: AgentInstance) => void;
+  onTokenUsage?: (inputTokens: number, outputTokens: number) => void;
   onError: (message: string) => void;
   onDone?: () => void;
 }
@@ -143,7 +144,7 @@ export function sendMessageStream(
   if (attachments && attachments.length > 0) {
     body.attachments = attachments;
   }
-  return streamSSE<"delta" | "thinking_delta" | "tool_call" | "tool_result" | "spec_saved" | "specs_title" | "specs_summary" | "task_saved" | "message_saved" | "agent_instance_updated" | "error" | "done">(
+  return streamSSE<"delta" | "thinking_delta" | "tool_call" | "tool_result" | "spec_saved" | "specs_title" | "specs_summary" | "task_saved" | "message_saved" | "agent_instance_updated" | "token_usage" | "error" | "done">(
     `${BASE_URL}/api/projects/${projectId}/agents/${agentInstanceId}/messages/stream`,
     {
       method: "POST",
@@ -191,7 +192,10 @@ export function sendMessageStream(
             cb.onMessageSaved?.(d.message as Message);
             break;
           case "agent_instance_updated":
-            cb.onAgentInstanceUpdated?.(d.instance as AgentInstance);
+            cb.onAgentInstanceUpdated?.(d.agent_instance as AgentInstance);
+            break;
+          case "token_usage":
+            cb.onTokenUsage?.(d.input_tokens as number, d.output_tokens as number);
             break;
           case "error":
             cb.onError(d.message as string);
