@@ -1,0 +1,71 @@
+.bar {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: var(--control-height-sm, 28px);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  flex-shrink: 0;
+}
+
+.btnWrap,
+.orgWrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.creditsWrap {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+}
+
+.btnWrap .taskbarBtn,
+.orgWrap > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.taskbarBtn {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  justify-content: flex-start;
+  border-radius: 0;
+  font-size: var(--font-size-2xs, 11px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.taskbarBtn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
+.orgWrap {
+  overflow: visible;
+  position: relative;
+}
+
+.orgWrap > div {
+  border-top: none;
+  background: none;
+  min-width: 0;
+}
+
+.creditsWrap > div {
+  border-radius: 0;
+  justify-content: flex-start;
+  flex: 0 0 auto;
+}
