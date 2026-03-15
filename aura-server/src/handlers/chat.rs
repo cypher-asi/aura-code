@@ -117,6 +117,10 @@ pub async fn send_message_stream(
                 .event("delta")
                 .json_data(serde_json::json!({ "text": text }))
                 .unwrap(),
+            ChatStreamEvent::ThinkingDelta(text) => Event::default()
+                .event("thinking_delta")
+                .json_data(serde_json::json!({ "text": text }))
+                .unwrap(),
             ChatStreamEvent::ToolCall { id, name, input } => Event::default()
                 .event("tool_call")
                 .json_data(serde_json::json!({ "id": id, "name": name, "input": input }))
