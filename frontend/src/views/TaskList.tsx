@@ -149,9 +149,15 @@ export function TaskList() {
                     fontSize: "0.7rem",
                     opacity: 0.7,
                     whiteSpace: "nowrap",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
                   }}
                 >
-                  {agent.icon ?? ""} {agent.name}
+                  {agent.icon ? (
+                    <img src={agent.icon} alt="" style={{ width: 14, height: 14, borderRadius: "50%", objectFit: "cover" }} />
+                  ) : null}
+                  {agent.name}
                 </span>
               )}
               <TaskStatusIcon status={task.status} />

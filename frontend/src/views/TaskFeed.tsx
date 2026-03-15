@@ -119,8 +119,11 @@ export function TaskFeed({ projectId }: TaskFeedProps) {
               <Item.Label>
                 {task.parent_task_id ? `↳ ${task.title}` : task.title}
                 {agent && (
-                  <span style={{ marginLeft: 8, fontSize: "0.75rem", opacity: 0.6 }}>
-                    {agent.icon ?? ""} {agent.name}
+                  <span style={{ marginLeft: 8, fontSize: "0.75rem", opacity: 0.6, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    {agent.icon ? (
+                      <img src={agent.icon} alt="" style={{ width: 14, height: 14, borderRadius: "50%", objectFit: "cover" }} />
+                    ) : null}
+                    {agent.name}
                   </span>
                 )}
               </Item.Label>
