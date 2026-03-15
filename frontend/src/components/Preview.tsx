@@ -19,27 +19,6 @@ import { StatusBadge } from "./StatusBadge";
 import { CodeEditor } from "../ide";
 import styles from "./Preview.module.css";
 
-function extractPurpose(markdown: string): string {
-  const match = markdown.match(/\n## Purpose\s*\n\n([\s\S]*?)(?=\n## |$)/);
-  return match ? match[1].trim().slice(0, 200) : "";
-}
-
-/** Derives a short, descriptive label for a spec (max ~38 chars) for list display. */
-function getShortSpecLabel(spec: Spec): string {
-  const purpose = extractPurpose(spec.markdown_contents);
-  if (purpose) {
-    const words = purpose.split(/\s+/).filter(Boolean);
-    let phrase = "";
-    for (const w of words) {
-      if (phrase.length + w.length + 1 <= 38) phrase = phrase ? `${phrase} ${w}` : w;
-      else break;
-    }
-    if (phrase) return phrase;
-  }
-  const title = spec.title.replace(/^Phase \d+\s*[—\-:]\s*/i, "").replace(/^P\d+:\s*/i, "").trim();
-  return title.length <= 40 ? title : `${title.slice(0, 37)}…`;
-}
-
 function extractErrorMessage(raw: string): string {
   const jsonMatch = raw.match(/"message"\s*:\s*"([^"]+)"/);
   if (jsonMatch) return jsonMatch[1];
@@ -102,26 +81,16 @@ function SpecsOverviewPreview({ specs }: { specs: Spec[] }) {
         className={styles.section}
       >
         <div className={styles.fileOpsList}>
-          {specs.map((spec) => {
-            const purpose = extractPurpose(spec.markdown_contents);
-            return (
+          {specs.map((spec) => (
               <Item
                 key={spec.spec_id}
                 onClick={() => sidekick.pushPreview({ kind: "spec", spec })}
                 className={styles.fileOpItem}
               >
                 <Item.Icon><FileText size={14} /></Item.Icon>
-                <div className={styles.specOverviewRow}>
-                  <Item.Label title={spec.title}>{getShortSpecLabel(spec)}</Item.Label>
-                  {purpose && (
-                    <Text variant="muted" size="xs" className={styles.specOverviewPurpose}>
-                      {purpose}{purpose.length >= 200 ? "..." : ""}
-                    </Text>
-                  )}
-                </div>
+                <Item.Label title={spec.title}>{spec.title}</Item.Label>
               </Item>
-            );
-          })}
+          ))}
         </div>
       </GroupCollapsible>
     </>
