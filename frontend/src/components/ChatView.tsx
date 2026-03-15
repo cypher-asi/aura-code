@@ -158,6 +158,7 @@ export function ChatView() {
           onModelChange={setSelectedModel}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
+          onRemoveAttachment={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
         />
       </div>
     </div>

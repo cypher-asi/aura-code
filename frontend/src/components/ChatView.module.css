@@ -206,6 +206,99 @@
   margin-right: auto;
 }
 
+.dropZoneActive {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.attachmentPreviews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 8px 14px 0;
+  max-height: 80px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.attachmentThumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-bg-tertiary, rgba(0, 0, 0, 0.2));
+}
+
+.attachmentThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.attachmentThumbPlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--color-text-muted);
+  font-size: 20px;
+}
+
+.attachmentRemove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  transition: background 0.15s ease;
+}
+
+.attachmentRemove:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.fileInputHidden {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.attachmentThumbImg {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.attachmentFileIcon {
+  color: var(--color-text-muted);
+}
+
+.attachmentName {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  max-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .inputContainer:focus-within {
   border-color: var(--color-border);
   box-shadow: none;

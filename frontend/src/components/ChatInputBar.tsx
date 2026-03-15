@@ -1,9 +1,14 @@
-import { useRef, useState, useImperativeHandle, forwardRef } from "react";
+import { useRef, useState, useImperativeHandle, forwardRef, useCallback, useEffect } from "react";
 import { Menu } from "@cypher-asi/zui";
 import type { MenuItem } from "@cypher-asi/zui";
-import { ArrowUp, Square, ChevronDown } from "lucide-react";
+import { ArrowUp, Square, ChevronDown, Paperclip, X, FileText } from "lucide-react";
 import { useClickOutside } from "../hooks/use-click-outside";
 import styles from "./ChatView.module.css";
+
+const MAX_ATTACHMENTS = 5;
+const MAX_FILE_SIZE_MB = 5;
+const MAX_TOTAL_SIZE_MB = 10;
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 const MODEL_OPTIONS: Record<string, string> = {
   "opus-4.6": "Opus 4.6",
@@ -50,18 +55,104 @@ export const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatI
   selectedModel,
   onModelChange,
   attachments = [],
-  onAttachmentsChange: _onAttachmentsChange,
-  onRemoveAttachment: _onRemoveAttachment,
+  onAttachmentsChange,
+  onRemoveAttachment,
 }, ref) {
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useImperativeHandle(ref, () => ({
     focus: () => textareaRef.current?.focus(),
   }));
 
   useClickOutside(modelMenuRef, () => setModelMenuOpen(false), modelMenuOpen);
+
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+  useEffect(
+    () => () => {
+      attachmentsRef.current.forEach((a) => a.preview && URL.revokeObjectURL(a.preview));
+    },
+    [],
+  );
+
+  const totalSizeMB = attachments.reduce((sum, a) => sum + a.file.size, 0) / (1024 * 1024);
+  const canAddMore = attachments.length < MAX_ATTACHMENTS && totalSizeMB < MAX_TOTAL_SIZE_MB;
+
+  const processFile = useCallback(
+    (file: File): Promise<AttachmentItem | null> =>
+      new Promise((resolve) => {
+        if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+          resolve(null);
+          return;
+        }
+        if (!IMAGE_TYPES.includes(file.type)) {
+          resolve(null);
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const data = reader.result as string;
+          const base64 = data.split(",")[1] ?? "";
+          const preview = URL.createObjectURL(file);
+          resolve({
+            id: crypto.randomUUID(),
+            file,
+            data: base64,
+            mediaType: file.type,
+            name: file.name,
+            preview,
+          });
+        };
+        reader.readAsDataURL(file);
+      }),
+    [],
+  );
+
+  const addFiles = useCallback(
+    async (files: FileList | null) => {
+      if (!files?.length || !onAttachmentsChange || !canAddMore) return;
+      const toAdd = Array.from(files).slice(0, MAX_ATTACHMENTS - attachments.length);
+      const results = await Promise.all(toAdd.map(processFile));
+      const valid = results.filter((r): r is AttachmentItem => r !== null);
+      if (valid.length) onAttachmentsChange([...attachments, ...valid]);
+    },
+    [attachments, canAddMore, onAttachmentsChange, processFile],
+  );
+
+  const handleRemove = useCallback(
+    (id: string) => {
+      const a = attachments.find((x) => x.id === id);
+      if (a?.preview) URL.revokeObjectURL(a.preview);
+      onRemoveAttachment?.(id);
+    },
+    [attachments, onRemoveAttachment],
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      addFiles(e.dataTransfer.files);
+    },
+    [addFiles],
+  );
 
   const autoResizeTextarea = () => {
     const el = textareaRef.current;
@@ -79,7 +170,45 @@ export const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatI
 
   return (
     <div className={styles.inputWrapper}>
-      <div className={styles.inputContainer}>
+      <div
+        className={`${styles.inputContainer} ${isDragOver ? styles.dropZoneActive : ""}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          multiple
+          className={styles.fileInputHidden}
+          onChange={(e) => {
+            addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        {attachments.length > 0 && (
+          <div className={styles.attachmentPreviews}>
+            {attachments.map((a) => (
+              <div key={a.id} className={styles.attachmentThumb}>
+                {a.preview ? (
+                  <img src={a.preview} alt="" className={styles.attachmentThumbImg} />
+                ) : (
+                  <FileText size={20} className={styles.attachmentFileIcon} />
+                )}
+                <span className={styles.attachmentName}>{a.name}</span>
+                <button
+                  type="button"
+                  className={styles.attachmentRemove}
+                  onClick={() => handleRemove(a.id)}
+                  aria-label="Remove attachment"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           className={styles.textarea}
@@ -94,6 +223,15 @@ export const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatI
         />
         <div className={styles.inputToolbar}>
           <div className={styles.toolbarLeft}>
+            <button
+              type="button"
+              className={styles.attachButton}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!canAddMore}
+              aria-label="Attach file"
+            >
+              <Paperclip size={16} />
+            </button>
             <div ref={modelMenuRef} className={styles.modelMenuWrap}>
               <button
                 type="button"
