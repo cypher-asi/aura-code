@@ -48,6 +48,21 @@ impl RocksStore {
         Ok(())
     }
 
+    // -- Agent-level messages (keyed by agent_id, not project/instance) --
+
+    pub fn put_agent_message(&self, agent_id: &AgentId, message: &Message) -> StoreResult<()> {
+        let key = format!("agent:{}:{}", agent_id, message.message_id);
+        let value = serde_json::to_vec(message)?;
+        self.db
+            .put_cf(&self.cf_messages(), key.as_bytes(), &value)?;
+        Ok(())
+    }
+
+    pub fn list_agent_messages(&self, agent_id: &AgentId) -> StoreResult<Vec<Message>> {
+        let prefix = format!("agent:{agent_id}:");
+        self.scan_cf::<Message>(&self.cf_messages(), Some(&prefix))
+    }
+
     pub fn count_messages_by_project(&self, project_id: &ProjectId) -> StoreResult<usize> {
         let prefix = format!("{project_id}:");
         let cf = self.cf_messages();
