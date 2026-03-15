@@ -154,6 +154,7 @@ pub struct ChatAttachment {
 #[derive(Debug, Clone)]
 pub enum ChatStreamEvent {
     Delta(String),
+    ThinkingDelta(String),
     ToolCall {
         id: String,
         name: String,
@@ -511,7 +512,9 @@ impl ChatService {
                         });
                         iter_tool_calls.push(aura_claude::ToolCall { id, name, input });
                     }
-                    ClaudeStreamEvent::ThinkingDelta(_) => {}
+                    ClaudeStreamEvent::ThinkingDelta(text) => {
+                        let _ = tx.send(ChatStreamEvent::ThinkingDelta(text));
+                    }
                     ClaudeStreamEvent::Done { stop_reason, .. } => {
                         info!(iteration, stop_reason = %stop_reason, tool_calls = iter_tool_calls.len(), "Chat iteration done");
                     }
