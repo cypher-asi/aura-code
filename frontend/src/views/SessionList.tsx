@@ -88,7 +88,7 @@ export function SessionList() {
   };
 
   const isEmpty = sessions.length === 0;
-  const showEmpty = useDelayedEmpty(isEmpty, loading);
+  const showEmpty = useDelayedEmpty(isEmpty, loading, 0);
 
   if (isEmpty) {
     if (!showEmpty) return null;

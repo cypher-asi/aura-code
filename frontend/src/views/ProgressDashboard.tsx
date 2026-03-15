@@ -26,7 +26,7 @@ export function ProgressDashboard() {
     return () => clearInterval(interval);
   }, [projectId]);
 
-  const showEmpty = useDelayedEmpty(!progress, loading);
+  const showEmpty = useDelayedEmpty(!progress, loading, 0);
 
   if (!progress) {
     if (!showEmpty) return null;
