@@ -36,9 +36,9 @@ export function ProgressDashboard() {
   const pct = Math.round(progress.completion_percentage * 100) / 100;
 
   return (
-    <div style={{ padding: "var(--space-4) var(--space-8)" }}>
-      <div style={{ textAlign: "center", marginBottom: "var(--space-5)" }}>
-        <div style={{ fontSize: 36, fontWeight: 700, color: "var(--color-text-secondary)" }}>
+    <div style={{ padding: "var(--space-3) var(--space-3)" }}>
+      <div style={{ textAlign: "center", marginBottom: "var(--space-3)" }}>
+        <div style={{ fontSize: 28, fontWeight: 700, color: "var(--color-text-secondary)" }}>
           {pct}%
         </div>
         <div className={styles.progressBarContainer}>
@@ -56,7 +56,7 @@ export function ProgressDashboard() {
         <StatCard value={progress.failed_tasks} label="Tasks Failed" />
       </div>
 
-      <div style={{ margin: "var(--space-4) 0 var(--space-2)" }}>
+      <div style={{ margin: "var(--space-2) 0 var(--space-1)" }}>
         <Text variant="muted" size="xs" style={{ textTransform: "uppercase", letterSpacing: "0.05em" }}>
           Activity
         </Text>
@@ -97,9 +97,9 @@ function StatCard({ value, label, fmt, fmtFn }: { value: number; label: string; 
   const display = fmtFn ? fmtFn(value) : fmt ? formatCompact(value) : value;
   const title = (fmtFn || fmt) ? value.toLocaleString() : undefined;
   return (
-    <Panel variant="solid" border="solid" style={{ padding: "var(--space-3)", textAlign: "center" }}>
+    <Panel variant="solid" border="solid" style={{ padding: "var(--space-1) var(--space-2)", textAlign: "center" }}>
       <div className={styles.statValue} style={{ color: "var(--color-text-secondary)" }} title={title}>{display}</div>
-      <Text size="xs" align="center" style={{ color: "var(--color-text-muted)" }}>{label}</Text>
+      <Text size="xs" align="center" style={{ color: "var(--color-text-muted)", fontSize: 10 }}>{label}</Text>
     </Panel>
   );
 }

@@ -10,13 +10,13 @@
 
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 8px;
-  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 5px;
+  margin-bottom: 10px;
 }
 
 .statValue {
-  font-size: 28px;
+  font-size: 18px;
   font-weight: 700;
   text-align: center;
 }
