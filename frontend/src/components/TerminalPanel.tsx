@@ -8,11 +8,13 @@ import styles from "./TerminalPanel.module.css";
 function TerminalTab({
   instance,
   active,
+  canClose,
   onSelect,
   onClose,
 }: {
   instance: TerminalInstance;
   active: boolean;
+  canClose: boolean;
   onSelect: () => void;
   onClose: () => void;
 }) {
@@ -22,15 +24,17 @@ function TerminalTab({
       onClick={onSelect}
     >
       {instance.title}
-      <span
-        className={styles.tabClose}
-        onClick={(e) => {
-          e.stopPropagation();
-          onClose();
-        }}
-      >
-        <X size={10} />
-      </span>
+      {canClose && (
+        <span
+          className={styles.tabClose}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+        >
+          <X size={10} />
+        </span>
+      )}
     </button>
   );
 }
@@ -68,13 +72,13 @@ export function TerminalPanelHeader() {
 
   return (
     <div className={styles.terminalHeaderTaskbar}>
-      <span className={styles.headerLabel}>Terminal</span>
       <div className={styles.tabList}>
-        {terminals.map((t) => (
+        {terminals.map((t, i) => (
           <TerminalTab
             key={t.id}
             instance={t}
             active={t.id === activeId}
+            canClose={i > 0}
             onSelect={() => setActiveId(t.id)}
             onClose={() => removeTerminal(t.id)}
           />
