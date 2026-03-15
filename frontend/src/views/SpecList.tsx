@@ -14,8 +14,8 @@ import { FileText } from "lucide-react";
 export function SpecList() {
   const ctx = useProjectContext();
   const projectId = ctx?.project.project_id;
-  const [localSpecs, setLocalSpecs] = useState<Spec[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [localSpecs, setLocalSpecs] = useState<Spec[]>(() => ctx?.initialSpecs ?? []);
+  const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { subscribe } = useEventContext();
   const sidekick = useSidekick();
@@ -24,7 +24,6 @@ export function SpecList() {
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
   const generatingRef = useRef(false);
-  const triedSummaryRef = useRef(false);
 
   const mergedSpecs = useMemo(
     () => mergeById(localSpecs, sidekick.specs, "spec_id"),
@@ -100,32 +99,34 @@ export function SpecList() {
   const specsSummary = ctx?.project?.specs_summary;
 
   useEffect(() => {
-    triedSummaryRef.current = false;
-  }, [mergedSpecs.length]);
-
-  useEffect(() => {
     if (
       !projectId ||
       mergedSpecs.length === 0 ||
       specsSummary ||
-      generatingRef.current ||
-      triedSummaryRef.current
+      generatingRef.current
     ) {
       return;
     }
     generatingRef.current = true;
-    triedSummaryRef.current = true;
-    api
-      .generateSpecsSummary(projectId)
-      .then((updated) => {
-        ctxRef.current?.setProject(updated);
-      })
-      .catch((err) => {
-        console.error("Failed to generate specs summary:", err);
-      })
-      .finally(() => {
-        generatingRef.current = false;
-      });
+    const timer = setTimeout(() => {
+      api
+        .generateSpecsSummary(projectId)
+        .then((updated) => {
+          if (updated.specs_summary) {
+            ctxRef.current?.setProject(updated);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to generate specs summary:", err);
+        })
+        .finally(() => {
+          generatingRef.current = false;
+        });
+    }, 1500);
+    return () => {
+      clearTimeout(timer);
+      generatingRef.current = false;
+    };
   }, [projectId, mergedSpecs.length, specsSummary]);
 
   const specById = useMemo(
@@ -172,7 +173,7 @@ export function SpecList() {
   };
 
   const isEmpty = mergedSpecs.length === 0;
-  const showEmpty = useDelayedEmpty(isEmpty, loading);
+  const showEmpty = useDelayedEmpty(isEmpty, loading, sidekick.streamingSessionId ? 800 : 0);
 
   if (isEmpty) {
     if (!showEmpty) return null;
