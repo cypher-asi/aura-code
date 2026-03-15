@@ -11,10 +11,10 @@ import type { ExplorerNode, MenuItem } from "@cypher-asi/zui";
 import { Bot, Pencil, Trash2, Loader2 } from "lucide-react";
 import { NewProjectModal } from "./NewProjectModal";
 import { DeleteProjectModal, DeleteAgentInstanceModal } from "./ProjectModals";
+import { AgentSelectorModal } from "./AgentSelectorModal";
 import { useEventContext } from "../context/EventContext";
 import styles from "./ProjectList.module.css";
 
-const DEFAULT_AGENT_ID = "default";
 
 /**
  * Self-contained inline rename input that overlays the label of a tree node.
@@ -129,6 +129,7 @@ export function ProjectList() {
   const [deleteAgentTarget, setDeleteAgentTarget] = useState<AgentInstance | null>(null);
   const [deleteAgentLoading, setDeleteAgentLoading] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
+  const [agentSelectorProjectId, setAgentSelectorProjectId] = useState<string | null>(null);
 
   const ctxMenuRef = useRef<HTMLDivElement>(null);
 
@@ -353,14 +354,15 @@ export function ProjectList() {
   );
 
   const handleAddAgent = useCallback(
-    async (pid: string) => {
-      try {
-        const instance = await api.createAgentInstance(pid, DEFAULT_AGENT_ID);
-        fetchAgentInstances(pid);
-        navigate(`/projects/${pid}/agents/${instance.agent_instance_id}`);
-      } catch (err) {
-        console.error("Failed to create agent instance", err);
-      }
+    (pid: string) => setAgentSelectorProjectId(pid),
+    [],
+  );
+
+  const handleAgentCreated = useCallback(
+    (instance: AgentInstance) => {
+      const pid = instance.project_id;
+      fetchAgentInstances(pid);
+      navigate(`/projects/${pid}/agents/${instance.agent_instance_id}`);
     },
     [fetchAgentInstances, navigate],
   );
@@ -527,6 +529,13 @@ export function ProjectList() {
         isOpen={showNewProject}
         onClose={handleNewProjectClose}
         onCreated={handleNewProjectCreated}
+      />
+
+      <AgentSelectorModal
+        isOpen={!!agentSelectorProjectId}
+        projectId={agentSelectorProjectId!}
+        onClose={() => setAgentSelectorProjectId(null)}
+        onCreated={handleAgentCreated}
       />
     </div>
   );

@@ -52,7 +52,7 @@ export interface EngineEvent {
   files?: { op: string; path: string }[];
   message?: string;
   project_id?: string;
-  agent_id?: string;
+  agent_instance_id?: string;
   stage?: string;
   spec_count?: number;
   spec?: import("./entities").Spec;

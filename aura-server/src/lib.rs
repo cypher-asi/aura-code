@@ -173,6 +173,46 @@ fn finalize_all_live_output(store: &Arc<RocksStore>, buffers: &TaskOutputBuffers
     }
 }
 
+fn seed_default_agents(agent_service: &AgentService) {
+    let user_id = "default";
+    if let Ok(existing) = agent_service.list_agents(user_id) {
+        if !existing.is_empty() {
+            return;
+        }
+    }
+
+    let defaults = vec![
+        ("Atlas", "Senior Developer", "Thorough, opinionated, loves clean code and well-structured architecture",
+         "You are Atlas, a senior software developer. You are thorough, opinionated, and love clean code. You focus on architecture, maintainability, and best practices. When implementing features, you think carefully about edge cases, error handling, and code organization. You write clean, well-documented code and prefer simple solutions over clever ones.",
+         vec!["architecture", "code-review", "refactoring", "rust", "typescript"],
+         Some("🏛️")),
+        ("Sage", "QA Engineer", "Meticulous, detail-oriented, finds edge cases others miss",
+         "You are Sage, a QA engineer. You are meticulous and detail-oriented, always thinking about what could go wrong. You focus on testing, edge cases, quality assurance, and reliability. When reviewing code, you look for potential bugs, race conditions, and missing error handling. You write comprehensive tests and think about both happy paths and failure modes.",
+         vec!["testing", "qa", "edge-cases", "debugging", "security"],
+         Some("🔍")),
+        ("Nova", "Designer", "Creative, user-focused, values simplicity and accessibility",
+         "You are Nova, a UI/UX designer who also codes. You are creative and user-focused, valuing simplicity and accessibility above all. You focus on user experience, visual consistency, and making interfaces intuitive. When implementing UI, you think about responsive design, accessibility (WCAG), and delightful interactions.",
+         vec!["ui-ux", "css", "accessibility", "design-systems", "frontend"],
+         Some("🎨")),
+    ];
+
+    for (name, role, personality, system_prompt, skills, icon) in defaults {
+        if let Err(e) = agent_service.create_agent(
+            user_id,
+            name.to_string(),
+            role.to_string(),
+            personality.to_string(),
+            system_prompt.to_string(),
+            skills.into_iter().map(String::from).collect(),
+            icon.map(String::from),
+        ) {
+            warn!(name, error = %e, "Failed to seed default agent");
+        } else {
+            info!(name, "Seeded default agent");
+        }
+    }
+}
+
 pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
     let store = Arc::new(RocksStore::open(db_path).expect("failed to open RocksDB"));
     let org_service = Arc::new(OrgService::new(store.clone()));
@@ -231,6 +271,8 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
             }
         }
     }
+
+    seed_default_agents(&agent_service);
 
     let (event_tx, event_rx) = mpsc::unbounded_channel::<EngineEvent>();
     let (event_broadcast, _) = broadcast::channel::<EngineEvent>(4096);

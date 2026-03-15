@@ -66,21 +66,21 @@ export function AgentStatusBar({ projectId }: AgentStatusBarProps) {
       }),
       subscribe("task_started", (e) => {
         if (!isForProject(e)) return;
-        const agentId = e.agent_id;
+        const agentId = e.agent_instance_id;
         if (agentId && e.task_title) {
           setCurrentTaskTitles((prev) => ({ ...prev, [agentId]: e.task_title ?? null }));
         }
       }),
       subscribe("task_completed", (e) => {
         if (!isForProject(e)) return;
-        const agentId = e.agent_id;
+        const agentId = e.agent_instance_id;
         if (agentId) {
           setCurrentTaskTitles((prev) => ({ ...prev, [agentId]: null }));
         }
       }),
       subscribe("task_failed", (e) => {
         if (!isForProject(e)) return;
-        const agentId = e.agent_id;
+        const agentId = e.agent_instance_id;
         if (agentId) {
           setCurrentTaskTitles((prev) => ({ ...prev, [agentId]: null }));
         }
@@ -91,21 +91,21 @@ export function AgentStatusBar({ projectId }: AgentStatusBarProps) {
       }),
       subscribe("loop_paused", (e) => {
         if (!isForProject(e)) return;
-        const agentId = e.agent_id;
+        const agentId = e.agent_instance_id;
         if (agentId) {
           setCurrentTaskTitles((prev) => ({ ...prev, [agentId]: null }));
         }
       }),
       subscribe("loop_stopped", (e) => {
         if (!isForProject(e)) return;
-        const agentId = e.agent_id;
+        const agentId = e.agent_instance_id;
         if (agentId) {
           setCurrentTaskTitles((prev) => ({ ...prev, [agentId]: null }));
         }
       }),
       subscribe("loop_finished", (e) => {
         if (!isForProject(e)) return;
-        const agentId = e.agent_id;
+        const agentId = e.agent_instance_id;
         if (agentId) {
           setCurrentTaskTitles((prev) => ({ ...prev, [agentId]: null }));
         }

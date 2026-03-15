@@ -30,8 +30,8 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
   const fetchLoopStatus = useCallback(() => {
     api.getLoopStatus(projectId)
       .then((res) => {
-        if (res.active_agents && res.active_agents.length > 0) {
-          setActiveAgents(res.active_agents);
+        if (res.active_agent_instances && res.active_agent_instances.length > 0) {
+          setActiveAgents(res.active_agent_instances);
           setPaused(res.paused);
           setStarting(false);
         } else {
@@ -60,7 +60,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
     const unsubs = [
       subscribe("loop_started", (e) => {
         if (!isForProject(e)) return;
-        const agentId = e.agent_id;
+        const agentId = e.agent_instance_id;
         if (agentId) {
           setActiveAgents((prev) => prev.includes(agentId) ? prev : [...prev, agentId]);
         }
@@ -73,7 +73,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
       }),
       subscribe("loop_stopped", (e) => {
         if (!isForProject(e)) return;
-        const agentId = e.agent_id;
+        const agentId = e.agent_instance_id;
         if (agentId) {
           setActiveAgents((prev) => prev.filter((id) => id !== agentId));
         } else {
@@ -84,7 +84,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
       }),
       subscribe("loop_finished", (e) => {
         if (!isForProject(e)) return;
-        const agentId = e.agent_id;
+        const agentId = e.agent_instance_id;
         if (agentId) {
           setActiveAgents((prev) => prev.filter((id) => id !== agentId));
         } else {
@@ -111,7 +111,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
       setStarting(true);
       setActiveTab("tasks");
       const res = await api.startLoop(projectId);
-      if (res.active_agents) setActiveAgents(res.active_agents);
+      if (res.active_agent_instances) setActiveAgents(res.active_agent_instances);
       setPaused(false);
     } catch (err) {
       setStarting(false);

@@ -37,7 +37,7 @@ function DetailView({ event }: { event: EngineEvent }) {
   if (event.attempt != null) pairs.push(["Attempt", String(event.attempt)]);
   if (event.execution_notes) pairs.push(["Notes", event.execution_notes]);
   if (event.project_id) pairs.push(["Project", event.project_id]);
-  if (event.agent_id) pairs.push(["Agent", event.agent_id]);
+  if (event.agent_instance_id) pairs.push(["Agent", event.agent_instance_id]);
   if (event.old_session_id) pairs.push(["Old Session", event.old_session_id]);
   if (event.new_session_id) pairs.push(["New Session", event.new_session_id]);
   if (event.completed_count != null) pairs.push(["Completed", String(event.completed_count)]);
