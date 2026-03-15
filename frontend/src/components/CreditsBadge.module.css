@@ -22,7 +22,7 @@
 }
 
 .creditsBadge:hover .icon {
-  color: var(--color-accent);
+  color: var(--color-text-primary);
 }
 
 .label {

@@ -67,11 +67,11 @@ function AppLayout() {
             flex
             style={{ borderLeft: "1px solid var(--color-border)" }}
             taskbar={<TaskbarMiddle />}
+            footer={<TerminalPanel />}
           >
             <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "auto" }}>
               <Outlet />
             </main>
-            <TerminalPanel />
           </Lane>
 
           {/* Lane 3: Sidekick */}

@@ -6,6 +6,8 @@ export interface LaneProps {
   children?: ReactNode;
   header?: ReactNode;
   taskbar?: ReactNode;
+  /** Renders below the taskbar (e.g. terminal panel in agent chat). */
+  footer?: ReactNode;
 
   /** Enable horizontal resize. */
   resizable?: boolean;
@@ -38,6 +40,7 @@ export const Lane = forwardRef<HTMLDivElement, LaneProps>(
       children,
       header,
       taskbar,
+      footer,
       resizable = false,
       resizePosition = "right",
       defaultWidth = 240,
@@ -109,6 +112,7 @@ export const Lane = forwardRef<HTMLDivElement, LaneProps>(
           {header && <div className={styles.laneHeader}>{header}</div>}
           <div className={styles.laneContent}>{children}</div>
           {taskbar && <div className={styles.laneTaskbar}>{taskbar}</div>}
+          {footer && <div className={styles.laneFooter}>{footer}</div>}
         </div>
       </div>
     );
