@@ -248,7 +248,11 @@ fn main() {
     let _webview = {
         let builder = WebViewBuilder::new_with_web_context(&mut web_context)
             .with_url(&url)
-            .with_ipc_handler(ipc_handler(proxy));
+            .with_ipc_handler(ipc_handler(proxy))
+            .with_new_window_req_handler(|uri, _features| {
+                let _ = open::that(&uri);
+                wry::NewWindowResponse::Deny
+            });
 
         #[cfg(not(target_os = "linux"))]
         let webview = builder.build(&window).expect("failed to build webview");
