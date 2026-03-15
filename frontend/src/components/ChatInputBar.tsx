@@ -44,6 +44,7 @@ interface Props {
   isStreaming: boolean;
   selectedModel: string;
   onModelChange: (model: string) => void;
+  agentName?: string;
   attachments?: AttachmentItem[];
   onAttachmentsChange?: (items: AttachmentItem[]) => void;
   onRemoveAttachment?: (id: string) => void;
@@ -57,6 +58,7 @@ export const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatI
   isStreaming,
   selectedModel,
   onModelChange,
+  agentName,
   attachments = [],
   onAttachmentsChange,
   onRemoveAttachment,
@@ -251,7 +253,7 @@ export const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatI
             autoResizeTextarea();
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Message AURA..."
+          placeholder={`Message ${agentName ?? "AURA"}...`}
           rows={1}
         />
         <div className={styles.inputToolbar}>

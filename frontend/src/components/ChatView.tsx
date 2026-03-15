@@ -34,6 +34,7 @@ export function ChatView() {
   const [input, setInput] = useState("");
   const [selectedModel, setSelectedModel] = useState("opus-4.6");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+  const [agentName, setAgentName] = useState<string | undefined>();
 
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const inputBarRef = useRef<ChatInputBarHandle>(null);
@@ -43,6 +44,11 @@ export function ChatView() {
     if (projectId && agentInstanceId) {
       setLastAgent(projectId, agentInstanceId);
       requestAnimationFrame(() => inputBarRef.current?.focus());
+      api.getAgentInstance(projectId, agentInstanceId).then((inst) => {
+        setAgentName(inst.name);
+      }).catch(() => {});
+    } else {
+      setAgentName(undefined);
     }
   }, [projectId, agentInstanceId]);
 
@@ -148,6 +154,7 @@ export function ChatView() {
           isStreaming={isStreaming}
           selectedModel={selectedModel}
           onModelChange={setSelectedModel}
+          agentName={agentName}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
           onRemoveAttachment={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}

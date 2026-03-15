@@ -69,7 +69,7 @@
 
 .resizeHandle:hover .resizeHandleLine,
 .resizing .resizeHandleLine {
-  background: var(--color-accent);
+  background: #fff;
 }
 
 .resizing {
