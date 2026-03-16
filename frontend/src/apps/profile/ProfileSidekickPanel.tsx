@@ -1,0 +1,167 @@
+import { useState } from "react";
+import { Text } from "@cypher-asi/zui";
+import { Bot, User, Send, MapPin, Globe, Calendar } from "lucide-react";
+import { useProfile } from "./ProfileProvider";
+import { timeAgo } from "../feed/FeedMainPanel";
+import styles from "./ProfileSidekickPanel.module.css";
+
+function formatJoinedDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function ProfileCard() {
+  const { profile, events, projects } = useProfile();
+
+  const totalCommits = events.reduce((sum, e) => sum + e.commits.length, 0);
+
+  return (
+    <div className={styles.cardContainer}>
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <span className={styles.cardHeaderLabel}>PROFILE</span>
+          <span className={styles.cardHeaderAccess}>ACTIVE</span>
+        </div>
+
+        <div className={styles.identityRow}>
+          <div className={styles.avatarFrame}>
+            {profile.avatarUrl ? (
+              <img src={profile.avatarUrl} alt={profile.name} className={styles.avatarImg} />
+            ) : (
+              <User size={32} />
+            )}
+          </div>
+
+          <div className={styles.identityInfo}>
+            <span className={styles.displayName}>{profile.name}</span>
+            <span className={styles.handle}>{profile.handle}</span>
+          </div>
+        </div>
+
+        <div className={styles.bioSection}>
+          <p className={styles.bioText}>{profile.bio}</p>
+        </div>
+
+        <div className={styles.metaGrid}>
+          <div className={styles.metaRow}>
+            <MapPin size={13} className={styles.metaIcon} />
+            <span className={styles.metaValue}>{profile.location}</span>
+          </div>
+          <div className={styles.metaRow}>
+            <Globe size={13} className={styles.metaIcon} />
+            <a
+              href={profile.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.metaLink}
+            >
+              {profile.website.replace(/^https?:\/\//, "")}
+            </a>
+          </div>
+          <div className={styles.metaRow}>
+            <Calendar size={13} className={styles.metaIcon} />
+            <span className={styles.metaValue}>Joined {formatJoinedDate(profile.joinedDate)}</span>
+          </div>
+        </div>
+
+        <div className={styles.statsRow}>
+          <div className={styles.stat}>
+            <span className={styles.statValue}>{projects.length}</span>
+            <span className={styles.statLabel}>Projects</span>
+          </div>
+          <div className={styles.stat}>
+            <span className={styles.statValue}>{totalCommits}</span>
+            <span className={styles.statLabel}>Commits</span>
+          </div>
+          <div className={styles.stat}>
+            <span className={styles.statValue}>{events.length}</span>
+            <span className={styles.statLabel}>Pushes</span>
+          </div>
+        </div>
+
+        <div className={styles.cardFooter}>
+          <span className={styles.footerLabel}>CYPHER-ASI // AURA</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CommentsPanel() {
+  const { selectedEventId, getCommentsForEvent, addComment } = useProfile();
+  const [draft, setDraft] = useState("");
+
+  if (!selectedEventId) return null;
+
+  const comments = getCommentsForEvent(selectedEventId);
+
+  const handleSubmit = () => {
+    const text = draft.trim();
+    if (!text) return;
+    addComment(selectedEventId, text);
+    setDraft("");
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
+
+  return (
+    <div className={styles.commentsPanel}>
+      <div className={styles.commentList}>
+        {comments.length === 0 ? (
+          <div className={styles.emptyComments}>
+            <Text variant="muted" size="sm">No comments yet</Text>
+          </div>
+        ) : (
+          comments.map((c) => (
+            <div key={c.id} className={styles.commentItem}>
+              <div className={styles.commentAvatar}>
+                {c.author.type === "agent" ? <Bot size={14} /> : <User size={14} />}
+              </div>
+              <div className={styles.commentContent}>
+                <div className={styles.commentHeader}>
+                  <span className={styles.commentAuthor}>{c.author.name}</span>
+                  <span className={styles.commentTime}>{timeAgo(c.timestamp)}</span>
+                </div>
+                <span className={styles.commentText}>{c.text}</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className={styles.inputArea}>
+        <input
+          className={styles.inputField}
+          placeholder="Add a comment..."
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+        <button
+          className={styles.sendButton}
+          onClick={handleSubmit}
+          disabled={!draft.trim()}
+        >
+          <Send size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function ProfileSidekickPanel() {
+  const { selectedEventId } = useProfile();
+
+  if (selectedEventId) {
+    return <CommentsPanel />;
+  }
+
+  return <ProfileCard />;
+}
