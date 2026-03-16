@@ -141,6 +141,7 @@ pub async fn generate_sprint(
     State(state): State<AppState>,
     Path((project_id, sprint_id)): Path<(ProjectId, SprintId)>,
 ) -> ApiResult<Json<Sprint>> {
+    super::billing::require_credits(&state).await?;
     let mut sprint = state
         .store
         .get_sprint(&project_id, &sprint_id)
@@ -177,6 +178,7 @@ pub async fn generate_sprint_stream(
     State(state): State<AppState>,
     Path((project_id, sprint_id)): Path<(ProjectId, SprintId)>,
 ) -> ApiResult<Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>> {
+    super::billing::require_credits(&state).await?;
     let sprint = state
         .store
         .get_sprint(&project_id, &sprint_id)
