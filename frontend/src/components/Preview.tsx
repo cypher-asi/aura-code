@@ -16,6 +16,7 @@ import { deriveActivity } from "../utils/derive-activity";
 import type { PreviewItem } from "../context/SidekickContext";
 import type { Spec, Task, Session } from "../types";
 import { StatusBadge } from "./StatusBadge";
+import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import styles from "./Preview.module.css";
 
 function extractErrorMessage(raw: string): string {
@@ -353,6 +354,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
   const { subscribe, seedTaskOutput } = useEventContext();
   const taskOutput = useTaskOutput(task.task_id);
   const ctx = useProjectContext();
+  const { supportsDesktopWorkspace } = useAuraCapabilities();
   const sidekick = useSidekick();
   const projectId = ctx?.project.project_id;
   const [retrying, setRetrying] = useState(false);
@@ -655,7 +657,7 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
               return (
                 <Item
                   key={f.path}
-                  onClick={() => api.openIde(fullPath)}
+                  onClick={supportsDesktopWorkspace ? () => api.openIde(fullPath) : undefined}
                   className={styles.fileOpItem}
                 >
                   <Item.Icon><FileOpIcon op={f.op} /></Item.Icon>

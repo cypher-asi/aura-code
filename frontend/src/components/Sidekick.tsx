@@ -14,6 +14,7 @@ import { StatsDashboard } from "../views/StatsDashboard";
 import { SessionList } from "../views/SessionList";
 import { SidekickLog } from "../views/SidekickLog";
 import { FileExplorer } from "./FileExplorer";
+import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import styles from "./Sidekick.module.css";
 
 function InfoPanel({ project, onClose }: { project: import("../types").Project; onClose: () => void }) {
@@ -58,6 +59,14 @@ export function SidekickTaskbar() {
   const [menuRect, setMenuRect] = useState<{ top: number; left: number } | null>(null);
   const moreBtnRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
+  const { supportsDesktopWorkspace } = useAuraCapabilities();
+  const visibleTabs = supportsDesktopWorkspace ? TAB_ICONS : TAB_ICONS.filter((tab) => tab.id !== "files");
+
+  useEffect(() => {
+    if (!supportsDesktopWorkspace && activeTab === "files") {
+      setActiveTab("tasks");
+    }
+  }, [activeTab, setActiveTab, supportsDesktopWorkspace]);
 
   useLayoutEffect(() => {
     if (moreOpen && moreBtnRef.current) {
@@ -77,7 +86,7 @@ export function SidekickTaskbar() {
   return (
     <div className={styles.sidekickTaskbar}>
       <div className={styles.sidekickTabBar}>
-        {TAB_ICONS.map(({ id, icon, title }) => (
+        {visibleTabs.map(({ id, icon, title }) => (
           <Button
             key={id}
             variant="ghost"
@@ -153,6 +162,7 @@ export function SidekickContent() {
   const { activeTab, showInfo, toggleInfo } = useSidekick();
   const ctx = useProjectContext();
   const [searchQuery, setSearchQuery] = useState("");
+  const { supportsDesktopWorkspace } = useAuraCapabilities();
 
   useEffect(() => {
     setSearchQuery("");
@@ -179,7 +189,13 @@ export function SidekickContent() {
     tasks: <TaskList searchQuery={searchQuery} />,
     stats: <StatsDashboard />,
     sessions: <SessionList searchQuery={searchQuery} />,
-    files: <FileExplorer rootPath={project.linked_folder_path} searchQuery={searchQuery} />,
+    files: supportsDesktopWorkspace
+      ? <FileExplorer rootPath={project.linked_folder_path} searchQuery={searchQuery} />
+      : (
+        <div className={styles.emptyState}>
+          <Text variant="muted" size="sm">File browsing stays in the desktop app for now.</Text>
+        </div>
+      ),
   };
 
   return (

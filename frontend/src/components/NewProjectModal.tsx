@@ -4,6 +4,7 @@ import { useOrg } from "../context/OrgContext";
 import { Modal, Input, Button, Spinner, Text } from "@cypher-asi/zui";
 import { PathInput } from "./PathInput";
 import type { GitHubRepo } from "../types";
+import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 
 interface NewProjectModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ interface NewProjectModalProps {
 
 export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalProps) {
   const { activeOrg, isLoading: orgLoading } = useOrg();
+  const { supportsDesktopWorkspace } = useAuraCapabilities();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [folderPath, setFolderPath] = useState("");
@@ -88,7 +90,7 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
           <Button variant="ghost" onClick={handleClose} disabled={loading}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleSubmit} disabled={loading || orgLoading || !activeOrg}>
+          <Button variant="primary" onClick={handleSubmit} disabled={loading || orgLoading || !activeOrg || !supportsDesktopWorkspace}>
             {loading ? <><Spinner size="sm" /> Creating...</> : "Create Project"}
           </Button>
         </>
@@ -113,6 +115,11 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
           placeholder="Linked folder path"
           mode="folder"
         />
+        {!supportsDesktopWorkspace && (
+          <Text variant="muted" size="sm">
+            Creating linked projects stays in the desktop app for now. Use the companion to monitor and control existing projects.
+          </Text>
+        )}
         {repos.length > 0 && (
           <select
             value={selectedRepo}

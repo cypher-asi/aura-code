@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Panel, Input, Button, Tabs, Heading, Text, Spinner, Topbar, ButtonWindow } from "@cypher-asi/zui";
+import { Panel, Input, Button, Tabs, Heading, Text, Spinner, Topbar } from "@cypher-asi/zui";
 import { useAuth } from "../context/AuthContext";
 import { ApiClientError } from "../api/client";
 import { windowCommand } from "../lib/windowCommand";
+import { WindowControls } from "../components/WindowControls";
 import styles from "./LoginView.module.css";
 
 type AuthTab = "signin" | "register";
@@ -79,13 +80,7 @@ export function LoginView() {
         onDoubleClick={() => windowCommand("maximize")}
         icon={<img src="/aura-icon.png" alt="" className="titlebar-icon" />}
         title={<span className="titlebar-center">AURA</span>}
-        actions={
-          <div className="titlebar-no-drag" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-            <ButtonWindow action="minimize" size="sm" onClick={() => windowCommand("minimize")} />
-            <ButtonWindow action="maximize" size="sm" onClick={() => windowCommand("maximize")} />
-            <ButtonWindow action="close" size="sm" onClick={() => windowCommand("close")} />
-          </div>
-        }
+        actions={<WindowControls />}
       />
       <div className={styles.container}>
       <Panel variant="solid" border="solid" borderRadius="lg" className={styles.card}>

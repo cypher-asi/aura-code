@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
-import { Topbar, ButtonWindow } from "@cypher-asi/zui";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Topbar, Drawer, Badge, Button } from "@cypher-asi/zui";
+import { Eye, Menu, Rows3 } from "lucide-react";
 import { Lane } from "./Lane";
 import { AppNavRail } from "./AppNavRail";
 import { BottomTaskbar } from "./BottomTaskbar";
@@ -8,10 +9,15 @@ import { SettingsModal } from "./SettingsModal";
 import { UpdateBanner } from "./UpdateBanner";
 import { OrgSettingsPanel } from "./OrgSettingsPanel";
 import { PanelSearch } from "./PanelSearch";
+import { OrgSelector } from "./OrgSelector";
+import { CreditsBadge } from "./CreditsBadge";
+import { WindowControls } from "./WindowControls";
 import { OrgProvider } from "../context/OrgContext";
 import { AppProvider, useAppContext } from "../context/AppContext";
 import { SidebarSearchProvider, useSidebarSearch } from "../context/SidebarSearchContext";
 import { useSidekick } from "../context/SidekickContext";
+import { useEventContext } from "../context/EventContext";
+import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { ProjectsProvider } from "../apps/projects/ProjectsProvider";
 import { AgentAppProvider } from "../apps/agents/AgentAppProvider";
 import { FeedProvider } from "../apps/feed/FeedProvider";
@@ -20,6 +26,7 @@ import { ProfileProvider } from "../apps/profile/ProfileProvider";
 import { apps } from "../apps/registry";
 import { windowCommand } from "../lib/windowCommand";
 import { INSUFFICIENT_CREDITS_EVENT } from "../api/client";
+import styles from "./AppShell.module.css";
 
 const useAlwaysOpen = () => false;
 
@@ -90,25 +97,14 @@ function SidebarSearchInput() {
   );
 }
 
-function AppContent() {
+interface ShellChromeProps {
+  onOpenOrgSettings: () => void;
+  onBuyCredits: () => void;
+}
+
+function DesktopShell({ onOpenOrgSettings, onBuyCredits }: ShellChromeProps) {
   const { activeApp } = useAppContext();
-  const [orgSettingsOpen, setOrgSettingsOpen] = useState(false);
-  const [orgInitialSection, setOrgInitialSection] = useState<"billing" | undefined>(undefined);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
-  const openOrgBilling = useCallback(() => {
-    setOrgInitialSection("billing");
-    setOrgSettingsOpen(true);
-  }, []);
-
-  useEffect(() => {
-    const handler = () => openOrgBilling();
-    window.addEventListener(INSUFFICIENT_CREDITS_EVENT, handler);
-    return () => window.removeEventListener(INSUFFICIENT_CREDITS_EVENT, handler);
-  }, [openOrgBilling]);
-
   const { MainPanel } = activeApp;
-
   const leftPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -123,57 +119,252 @@ function AppContent() {
   }, []);
 
   return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <Topbar
+        className="titlebar-drag"
+        onDoubleClick={() => windowCommand("maximize")}
+        icon={<img src="/aura-icon.png" alt="" className="titlebar-icon" />}
+        title={<span className="titlebar-center"><Link to="/projects" style={{ color: "inherit", textDecoration: "none" }}>AURA</Link></span>}
+        actions={<WindowControls />}
+      />
+
+      <UpdateBanner />
+
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        <div ref={leftPanelRef} style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
+          <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+            <AppNavRail />
+            <Lane
+              resizable
+              resizePosition="right"
+              defaultWidth={200}
+              maxWidth={600}
+              storageKey="aura-sidebar"
+              header={<SidebarSearchInput />}
+            >
+              {apps.map((app) => (
+                <div
+                  key={app.id}
+                  style={{ display: app.id === activeApp.id ? "contents" : "none" }}
+                >
+                  <app.LeftPanel />
+                </div>
+              ))}
+            </Lane>
+          </div>
+          <BottomTaskbar
+            onOpenOrgSettings={onOpenOrgSettings}
+            onBuyCredits={onBuyCredits}
+          />
+        </div>
+
+        <MainPanel />
+        <SidekickLane />
+        {activeApp.PreviewPanel && <PreviewLane />}
+      </div>
+    </div>
+  );
+}
+
+function MobileShell({ onOpenOrgSettings, onBuyCredits }: ShellChromeProps) {
+  const { apps: registeredApps, activeApp } = useAppContext();
+  const { connected } = useEventContext();
+  const { previewItem } = useSidekick();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [navOpen, setNavOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const { MainPanel, SidekickPanel, SidekickTaskbar, SidekickHeader: SidekickHeaderComp, PreviewPanel, PreviewHeader: PreviewHeaderComp } = activeApp;
+
+  useEffect(() => {
+    setNavOpen(false);
+    setContextOpen(false);
+    setPreviewOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!PreviewPanel || !previewItem) {
+      setPreviewOpen(false);
+    }
+  }, [PreviewPanel, previewItem]);
+
+  return (
     <>
-      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div className={styles.mobileShell}>
         <Topbar
-          className="titlebar-drag"
-          onDoubleClick={() => windowCommand("maximize")}
-          icon={<img src="/aura-icon.png" alt="" className="titlebar-icon" />}
-          title={<span className="titlebar-center"><Link to="/projects" style={{ color: "inherit", textDecoration: "none" }}>AURA</Link></span>}
-          actions={
-            <div className="titlebar-no-drag" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-              <ButtonWindow action="minimize" size="sm" onClick={() => windowCommand("minimize")} />
-              <ButtonWindow action="maximize" size="sm" onClick={() => windowCommand("maximize")} />
-              <ButtonWindow action="close" size="sm" onClick={() => windowCommand("close")} />
+          className={styles.mobileTopbar}
+          icon={
+            <div className={styles.mobileTopbarInner}>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                icon={<Menu size={18} />}
+                aria-label="Open navigation"
+                onClick={() => setNavOpen(true)}
+              />
+              <img src="/aura-icon.png" alt="" className="titlebar-icon" />
             </div>
           }
+          title={(
+            <div className={styles.mobileTitleBlock}>
+              <span className={styles.mobileEyebrow}>Aura Companion</span>
+              <span className={styles.mobileTitle}>{activeApp.label}</span>
+            </div>
+          )}
+          actions={(
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+              <Badge variant={connected ? "running" : "error"}>
+                {connected ? "Host online" : "Host offline"}
+              </Badge>
+              {SidekickPanel && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  icon={<Rows3 size={16} />}
+                  aria-label="Open project details"
+                  onClick={() => setContextOpen(true)}
+                />
+              )}
+              {PreviewPanel && previewItem && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  icon={<Eye size={16} />}
+                  aria-label="Open preview"
+                  onClick={() => setPreviewOpen(true)}
+                />
+              )}
+            </div>
+          )}
         />
 
         <UpdateBanner />
 
-        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-          <div ref={leftPanelRef} style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
-            <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-              <AppNavRail />
-              <Lane
-                resizable
-                resizePosition="right"
-                defaultWidth={200}
-                maxWidth={600}
-                storageKey="aura-sidebar"
-                header={<SidebarSearchInput />}
-              >
-                {apps.map((app) => (
-                  <div
-                    key={app.id}
-                    style={{ display: app.id === activeApp.id ? "contents" : "none" }}
-                  >
-                    <app.LeftPanel />
-                  </div>
-                ))}
-              </Lane>
-            </div>
-            <BottomTaskbar
-              onOpenOrgSettings={() => setOrgSettingsOpen(true)}
-              onBuyCredits={openOrgBilling}
-            />
-          </div>
-
+        <div className={styles.mobileMain}>
           <MainPanel />
-          <SidekickLane />
-          {activeApp.PreviewPanel && <PreviewLane />}
         </div>
+
+        <nav className={styles.mobileBottomNav} aria-label="Primary navigation">
+          {registeredApps.map((app) => (
+            <button
+              key={app.id}
+              type="button"
+              className={`${styles.mobileNavButton} ${activeApp.id === app.id ? styles.mobileNavButtonActive : ""}`}
+              onClick={() => navigate(app.basePath)}
+              aria-current={activeApp.id === app.id ? "page" : undefined}
+            >
+              <app.icon size={18} />
+              <span className={styles.mobileNavLabel}>{app.label}</span>
+            </button>
+          ))}
+        </nav>
       </div>
+
+      <Drawer
+        side="left"
+        isOpen={navOpen}
+        onClose={() => setNavOpen(false)}
+        title={activeApp.label}
+        className={styles.mobileDrawer}
+        defaultSize={340}
+        maxSize={420}
+      >
+        <div className={styles.mobileDrawerContent}>
+          <div className={styles.mobileDrawerSearch}>
+            <SidebarSearchInput />
+          </div>
+          <div className={styles.mobileDrawerBody}>
+            <activeApp.LeftPanel />
+          </div>
+          <div className={styles.mobileDrawerFooter}>
+            <OrgSelector onOpenSettings={onOpenOrgSettings} />
+            <CreditsBadge onClick={onBuyCredits} />
+          </div>
+        </div>
+      </Drawer>
+
+      {SidekickPanel && (
+        <Drawer
+          side="bottom"
+          isOpen={contextOpen}
+          onClose={() => setContextOpen(false)}
+          title={`${activeApp.label} details`}
+          className={styles.mobileDrawer}
+          defaultSize={440}
+          maxSize={640}
+        >
+          <div className={styles.mobileDrawerContent}>
+            {SidekickTaskbar && (
+              <div className={styles.mobileContextHeader}>
+                <SidekickTaskbar />
+              </div>
+            )}
+            <div className={styles.mobileDrawerBody}>
+              <SidekickPanel />
+            </div>
+            {SidekickHeaderComp && (
+              <div className={styles.mobileContextHeader}>
+                <SidekickHeaderComp />
+              </div>
+            )}
+          </div>
+        </Drawer>
+      )}
+
+      {PreviewPanel && (
+        <Drawer
+          side="bottom"
+          isOpen={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          title="Preview"
+          className={styles.mobileDrawer}
+          defaultSize={420}
+          maxSize={640}
+        >
+          <div className={styles.mobileDrawerContent}>
+            {PreviewHeaderComp && (
+              <div className={styles.mobileContextHeader}>
+                <PreviewHeaderComp />
+              </div>
+            )}
+            <div className={styles.mobileDrawerBody}>
+              <PreviewPanel />
+            </div>
+          </div>
+        </Drawer>
+      )}
+    </>
+  );
+}
+
+function AppContent() {
+  const [orgSettingsOpen, setOrgSettingsOpen] = useState(false);
+  const [orgInitialSection, setOrgInitialSection] = useState<"billing" | undefined>(undefined);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { isMobileLayout } = useAuraCapabilities();
+
+  const openOrgBilling = useCallback(() => {
+    setOrgInitialSection("billing");
+    setOrgSettingsOpen(true);
+  }, []);
+
+  useEffect(() => {
+    const handler = () => openOrgBilling();
+    window.addEventListener(INSUFFICIENT_CREDITS_EVENT, handler);
+    return () => window.removeEventListener(INSUFFICIENT_CREDITS_EVENT, handler);
+  }, [openOrgBilling]);
+
+  return (
+    <>
+      {isMobileLayout ? (
+        <MobileShell onOpenOrgSettings={() => setOrgSettingsOpen(true)} onBuyCredits={openOrgBilling} />
+      ) : (
+        <DesktopShell onOpenOrgSettings={() => setOrgSettingsOpen(true)} onBuyCredits={openOrgBilling} />
+      )}
 
       <OrgSettingsPanel
         isOpen={orgSettingsOpen}

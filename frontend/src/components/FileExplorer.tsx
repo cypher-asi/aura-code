@@ -4,6 +4,7 @@ import { filterExplorerNodes } from "../utils/filterExplorerNodes";
 import { Explorer, Spinner, PageEmptyState } from "@cypher-asi/zui";
 import type { ExplorerNode } from "@cypher-asi/zui";
 import { Folder, File, FolderOpen } from "lucide-react";
+import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 
 interface FileExplorerProps {
   rootPath: string;
@@ -25,8 +26,10 @@ export function FileExplorer({ rootPath, searchQuery, onFileSelect }: FileExplor
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { supportsDesktopWorkspace } = useAuraCapabilities();
 
   useEffect(() => {
+    if (!supportsDesktopWorkspace) return;
     if (!rootPath) return;
     setLoading(true);
     setError(null);
@@ -41,7 +44,7 @@ export function FileExplorer({ rootPath, searchQuery, onFileSelect }: FileExplor
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [rootPath]);
+  }, [rootPath, supportsDesktopWorkspace]);
 
   const explorerData: ExplorerNode[] = useMemo(() => {
     const rootName = rootPath.split(/[\\/]/).pop() ?? rootPath;
@@ -64,6 +67,7 @@ export function FileExplorer({ rootPath, searchQuery, onFileSelect }: FileExplor
 
   const handleSelect = useCallback(
     (ids: string[]) => {
+      if (!supportsDesktopWorkspace) return;
       const id = ids[0];
       if (!id || id === "__files_root__") return;
       const node = findNode(filteredData, id);
@@ -75,8 +79,18 @@ export function FileExplorer({ rootPath, searchQuery, onFileSelect }: FileExplor
         }
       }
     },
-    [filteredData, onFileSelect],
+    [filteredData, onFileSelect, rootPath, supportsDesktopWorkspace],
   );
+
+  if (!supportsDesktopWorkspace) {
+    return (
+      <PageEmptyState
+        icon={<FolderOpen size={32} />}
+        title="Files stay on desktop"
+        description="Aura Mobile Companion does not expose the host filesystem or IDE."
+      />
+    );
+  }
 
   if (loading) {
     return (
