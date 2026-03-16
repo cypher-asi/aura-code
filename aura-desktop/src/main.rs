@@ -2,8 +2,6 @@ mod updater;
 
 use std::net::TcpListener as StdTcpListener;
 use std::path::PathBuf;
-use std::sync::Arc;
-
 use axum::extract::State as AxumState;
 use axum::routing::{get as axum_get, post as axum_post};
 use axum::Json;
@@ -15,7 +13,7 @@ use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
 use wry::{WebContext, WebViewBuilder};
 
-use updater::{UpdateChannel, UpdateState, UpdateStatus};
+use updater::{UpdateChannel, UpdateState};
 
 const PREFERRED_PORT: u16 = 19847;
 

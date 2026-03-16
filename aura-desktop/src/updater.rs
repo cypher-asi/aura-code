@@ -88,8 +88,8 @@ struct UpdateManifest {
     version: String,
     url: String,
     signature: String,
-    #[serde(default)]
-    format: Option<String>,
+    #[serde(default, rename = "format")]
+    _format: Option<String>,
 }
 
 /// Check for updates and download if available. Returns the new version string
