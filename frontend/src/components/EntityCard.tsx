@@ -1,0 +1,71 @@
+import type { ReactNode } from "react";
+import styles from "./EntityCard.module.css";
+
+interface EntityCardProps {
+  headerLabel: string;
+  headerStatus?: string;
+  image?: string;
+  fallbackIcon: ReactNode;
+  name: string;
+  subtitle?: string;
+  children?: ReactNode;
+  stats?: { value: string | number; label: string }[];
+  footer?: string;
+}
+
+export function EntityCard({
+  headerLabel,
+  headerStatus,
+  image,
+  fallbackIcon,
+  name,
+  subtitle,
+  children,
+  stats,
+  footer,
+}: EntityCardProps) {
+  return (
+    <div className={styles.cardContainer}>
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <span className={styles.cardHeaderLabel}>{headerLabel}</span>
+          {headerStatus && (
+            <span className={styles.cardHeaderStatus}>{headerStatus}</span>
+          )}
+        </div>
+
+        <div className={styles.imageBlock}>
+          {image ? (
+            <img src={image} alt={name} className={styles.image} />
+          ) : (
+            fallbackIcon
+          )}
+        </div>
+
+        <div className={styles.nameRow}>
+          <span className={styles.displayName}>{name}</span>
+          {subtitle && <span className={styles.subtitle}>{subtitle}</span>}
+        </div>
+
+        {children && <div className={styles.body}>{children}</div>}
+
+        {stats && stats.length > 0 && (
+          <div className={styles.statsRow}>
+            {stats.map((s) => (
+              <div key={s.label} className={styles.stat}>
+                <span className={styles.statValue}>{s.value}</span>
+                <span className={styles.statLabel}>{s.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {footer && (
+          <div className={styles.cardFooter}>
+            <span className={styles.footerLabel}>{footer}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
