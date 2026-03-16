@@ -76,13 +76,16 @@ function FeedCard({ event, isLast }: { event: FeedEvent; isLast: boolean }) {
 
       <div className={styles.body}>
         <div className={styles.header}>
-          <span className={styles.authorName}>{event.author.name}</span>
+          <div className={styles.headerLine}>
+            <span className={styles.authorName}>{event.author.name}</span>
+            <span className={styles.headerDot}>&middot;</span>
+            <span className={styles.time}>{timeAgo(event.timestamp)}</span>
+          </div>
           <span className={styles.action}>
-            pushed {event.commits.length} commit{event.commits.length !== 1 ? "s" : ""} to{" "}
+            Pushed {event.commits.length} commit{event.commits.length !== 1 ? "s" : ""} to{" "}
             <span className={styles.branch}>{event.branch}</span> on{" "}
             <span className={styles.repo}>{repoShort}</span>
           </span>
-          <span className={styles.time}>{timeAgo(event.timestamp)}</span>
         </div>
 
         <div className={styles.commits}>
