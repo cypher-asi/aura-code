@@ -26,10 +26,11 @@
   padding: var(--space-4);
   border-radius: var(--radius-lg);
   transition: background 0.12s ease;
+  cursor: pointer;
 }
 
 .card:hover {
-  background: var(--color-bg-hover);
+  background: color-mix(in srgb, var(--color-bg-hover) 50%, transparent);
 }
 
 .avatarCol {
