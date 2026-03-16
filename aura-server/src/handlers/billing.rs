@@ -18,6 +18,9 @@ fn get_auth_session(state: &AppState) -> Result<ZeroAuthSession, (StatusCode, Js
 
 fn billing_err(e: aura_billing::BillingError) -> (StatusCode, Json<ApiError>) {
     match e {
+        aura_billing::BillingError::InsufficientCredits { .. } => {
+            ApiError::payment_required("Insufficient credits. Please purchase credits to continue.")
+        }
         aura_billing::BillingError::ServerError { status, body } => {
             let (sc, code, msg) = match status {
                 401 => (StatusCode::UNAUTHORIZED, "unauthorized", "billing token expired or invalid"),
@@ -35,6 +38,18 @@ fn billing_err(e: aura_billing::BillingError) -> (StatusCode, Json<ApiError>) {
         }
         _ => ApiError::internal(e.to_string()),
     }
+}
+
+/// Pre-flight check: ensures the authenticated user has a positive credit balance.
+/// Call this at the top of any handler that triggers LLM usage.
+pub async fn require_credits(state: &AppState) -> Result<(), (StatusCode, Json<ApiError>)> {
+    let session = get_auth_session(state)?;
+    state
+        .billing_client
+        .ensure_has_credits(&session.access_token)
+        .await
+        .map_err(billing_err)?;
+    Ok(())
 }
 
 pub async fn get_credit_tiers(
