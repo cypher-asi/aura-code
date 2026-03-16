@@ -30,6 +30,8 @@ import type {
   CreditBalance,
   CheckoutSessionResponse,
   DailyCommitActivity,
+  Follow,
+  FollowTargetType,
 } from "../types";
 import {
   generateSprintStream,
@@ -109,6 +111,13 @@ export interface UpdateProjectRequest {
   linked_folder_path?: string;
   github_integration_id?: string;
   github_repo_full_name?: string;
+}
+
+export interface DirEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  children?: DirEntry[];
 }
 
 export interface LoopStatusResponse {
@@ -388,6 +397,13 @@ export const api = {
       `/api/log-entries?limit=${limit}`,
     ),
 
+  // Desktop file tree
+  listDirectory: (path: string) =>
+    apiFetch<{ ok: boolean; entries?: DirEntry[]; error?: string }>("/api/list-directory", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    }),
+
   // Desktop file/folder picker
   pickFolder: () =>
     apiFetch<string | null>("/api/pick-folder", { method: "POST" }),
@@ -451,6 +467,22 @@ export const api = {
   },
   getLoopStatus: (projectId: ProjectId) =>
     apiFetch<LoopStatusResponse>(`/api/projects/${projectId}/loop/status`),
+
+  // Follows
+  follows: {
+    follow: (targetType: FollowTargetType, targetId: string) =>
+      apiFetch<Follow>("/api/follows", {
+        method: "POST",
+        body: JSON.stringify({ target_type: targetType, target_id: targetId }),
+      }),
+    unfollow: (targetType: FollowTargetType, targetId: string) =>
+      apiFetch<void>(`/api/follows/${targetType}/${targetId}`, {
+        method: "DELETE",
+      }),
+    list: () => apiFetch<Follow[]>("/api/follows"),
+    check: (targetType: FollowTargetType, targetId: string) =>
+      apiFetch<{ following: boolean }>(`/api/follows/check/${targetType}/${targetId}`),
+  },
 
   // Activity
   activity: {
