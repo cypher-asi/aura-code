@@ -3,6 +3,7 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
+  position: relative;
 }
 
 .scrollArea {
@@ -16,8 +17,10 @@
 .feedList {
   display: flex;
   flex-direction: column;
-  max-width: 600px;
-  margin: 0 auto;
+  max-width: 480px;
+  width: 100%;
+  margin-left: max(0px, calc(50vw - 510px));
+  margin-right: auto;
   gap: var(--space-1);
 }
 
