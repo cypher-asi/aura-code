@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import styles from "./CommitGrid.module.css";
 
-const DEFAULT_DAYS = 7;
+const DEFAULT_DAYS = 14;
 const HOURS = 24;
 const HOURS_PER_GROUP = 6;
 const DAYS_PER_GROUP = 7;
