@@ -1,0 +1,101 @@
+.root {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+
+  --commit-0: rgba(255, 255, 255, 0.08);
+  --commit-1: #0d4a3a;
+  --commit-2: #1a7a5a;
+  --commit-3: #2db87a;
+  --commit-4: #4aeaa8;
+}
+
+.months {
+  display: flex;
+  padding-left: 32px;
+}
+
+.monthLabel {
+  font-size: 10px;
+  color: var(--color-text-muted, #6b7280);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.body {
+  display: flex;
+  gap: 0;
+}
+
+.dayLabels {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-right: 6px;
+  justify-content: flex-start;
+}
+
+.dayLabel {
+  width: 26px;
+  height: 12px;
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--color-text-muted, #6b7280);
+  text-align: right;
+}
+
+.grid {
+  display: flex;
+  gap: 3px;
+}
+
+.week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--commit-0);
+}
+
+.cell[data-level="1"] {
+  background: var(--commit-1);
+}
+
+.cell[data-level="2"] {
+  background: var(--commit-2);
+}
+
+.cell[data-level="3"] {
+  background: var(--commit-3);
+}
+
+.cell[data-level="4"] {
+  background: var(--commit-4);
+}
+
+.placeholder {
+  width: 12px;
+  height: 12px;
+  visibility: hidden;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 32px;
+  font-size: 10px;
+  color: var(--color-text-muted, #6b7280);
+}
+
+.legendCell {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
