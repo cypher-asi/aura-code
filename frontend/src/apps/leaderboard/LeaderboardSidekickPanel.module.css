@@ -1,0 +1,61 @@
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: var(--space-3);
+}
+
+.emptyIcon {
+  opacity: 0.3;
+  color: var(--color-text-muted);
+}
+
+.breakdownSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.breakdownList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.breakdownRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.breakdownDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.breakdownName {
+  font-size: var(--font-size-sm, 13px);
+  font-weight: 500;
+  color: var(--color-text);
+  min-width: 60px;
+}
+
+.breakdownValue {
+  font-size: var(--font-size-xs, 11px);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary);
+  margin-left: auto;
+}
+
+.breakdownCommits {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+  min-width: 65px;
+  text-align: right;
+}
