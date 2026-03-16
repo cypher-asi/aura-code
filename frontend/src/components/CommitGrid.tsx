@@ -5,6 +5,7 @@ const CELL_SIZE = 7;
 const GAP = 3;
 const MONTH_GAP = 10;
 const DAYS_PER_WEEK = 7;
+const ROWS = 4;
 const MONTH_BLOCK_WIDTH = DAYS_PER_WEEK * CELL_SIZE + (DAYS_PER_WEEK - 1) * GAP;
 const DEFAULT_LEVELS = [1, 4, 8, 12];
 
@@ -70,7 +71,11 @@ function buildMonthBlocks(
       weeks.push(week);
     }
 
-    blocks.push({ key: `${year}-${month}`, weeks });
+    while (weeks.length < ROWS) {
+      weeks.push(Array(DAYS_PER_WEEK).fill(null));
+    }
+
+    blocks.push({ key: `${year}-${month}`, weeks: weeks.slice(0, ROWS) });
 
     month++;
     if (month > 11) { month = 0; year++; }
