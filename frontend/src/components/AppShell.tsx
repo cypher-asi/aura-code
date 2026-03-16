@@ -16,6 +16,7 @@ import { ProjectsProvider } from "../apps/projects/ProjectsProvider";
 import { AgentAppProvider } from "../apps/agents/AgentAppProvider";
 import { FeedProvider } from "../apps/feed/FeedProvider";
 import { LeaderboardProvider } from "../apps/leaderboard/LeaderboardContext";
+import { ProfileProvider } from "../apps/profile/ProfileProvider";
 import { apps } from "../apps/registry";
 import { windowCommand } from "../lib/windowCommand";
 import { INSUFFICIENT_CREDITS_EVENT } from "../api/client";
@@ -179,7 +180,9 @@ export function AppShell() {
             <AgentAppProvider>
               <FeedProvider>
                 <LeaderboardProvider>
-                  <AppContent />
+                  <ProfileProvider>
+                    <AppContent />
+                  </ProfileProvider>
                 </LeaderboardProvider>
               </FeedProvider>
             </AgentAppProvider>

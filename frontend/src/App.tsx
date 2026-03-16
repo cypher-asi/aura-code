@@ -43,6 +43,9 @@ export default function App() {
 
                 {/* Feed app routes */}
                 <Route path="feed" element={null} />
+
+                {/* Profile app routes */}
+                <Route path="profile" element={null} />
               </Route>
             </Route>
           </Routes>
