@@ -56,5 +56,6 @@
 .placeholder {
   width: 7px;
   height: 7px;
-  visibility: hidden;
+  border-radius: 1px;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.15) 1.2px, #000 1.2px);
 }
