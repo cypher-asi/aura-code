@@ -12,6 +12,7 @@ import { LoginView } from "./views/LoginView";
 import { InviteAcceptView } from "./views/InviteAcceptView";
 import { AgentChatView } from "./apps/agents/AgentChatView";
 import { AgentIndexRedirect } from "./apps/agents/AgentIndexRedirect";
+import { IdeView } from "./views/IdeView";
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
         <EventProvider>
           <Routes>
             <Route path="login" element={<LoginView />} />
+            <Route path="ide" element={<IdeView />} />
             <Route element={<RequireAuth />}>
               <Route path="invite/:token" element={<InviteAcceptView />} />
               <Route element={<AppShell />}>
