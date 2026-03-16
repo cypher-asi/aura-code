@@ -116,6 +116,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
       const res = await api.startLoop(projectId);
       if (res.active_agent_instances) setActiveAgents(res.active_agent_instances);
       setPaused(false);
+      setStarting(false);
     } catch (err) {
       setStarting(false);
       if (isInsufficientCreditsError(err)) {
