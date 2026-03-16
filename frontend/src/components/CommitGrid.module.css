@@ -10,24 +10,24 @@
 
 .grid {
   display: flex;
-  gap: 2px;
+  gap: 3px;
 }
 
 .week {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .cell {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 1px;
   background: #000;
 }
 
 .cell[data-level="0"] {
-  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.15) 1px, #000 1px);
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.15) 1.2px, #000 1.2px);
 }
 
 .cell[data-level="1"] {
@@ -47,7 +47,7 @@
 }
 
 .placeholder {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   visibility: hidden;
 }

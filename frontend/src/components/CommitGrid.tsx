@@ -1,8 +1,9 @@
 import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import styles from "./CommitGrid.module.css";
 
-const CELL_SIZE = 6;
-const GAP = 2;
+const CELL_SIZE = 7;
+const GAP = 3;
+const MONTH_GAP = 8;
 const COL_WIDTH = CELL_SIZE + GAP;
 const DEFAULT_LEVELS = [1, 4, 8, 12];
 
@@ -14,6 +15,7 @@ interface DaySlot {
 
 interface Week {
   days: (DaySlot | null)[];
+  monthStart: boolean;
 }
 
 function toISODate(d: Date): string {
@@ -48,9 +50,13 @@ function buildWeeks(
 
   const weeks: Week[] = [];
   let cursor = new Date(weekStart);
+  let prevMonth = -1;
 
   while (cursor <= end || weeks.length === 0) {
     const week: (DaySlot | null)[] = [];
+    const weekMonth = cursor.getMonth();
+    const monthStart = prevMonth !== -1 && weekMonth !== prevMonth;
+    prevMonth = weekMonth;
 
     for (let d = 0; d < 7; d++) {
       const iso = toISODate(cursor);
@@ -66,7 +72,7 @@ function buildWeeks(
       cursor = addDays(cursor, 1);
     }
 
-    weeks.push({ days: week });
+    weeks.push({ days: week, monthStart });
   }
 
   return weeks;
@@ -104,7 +110,9 @@ export function CommitGrid({
   const measure = useCallback(() => {
     if (containerRef.current) {
       const width = containerRef.current.clientWidth;
-      setMaxWeeks(Math.floor((width + GAP) / COL_WIDTH));
+      const approxMonthGaps = Math.floor(width / (COL_WIDTH * 4.3));
+      const usable = width - approxMonthGaps * (MONTH_GAP - GAP);
+      setMaxWeeks(Math.floor((usable + GAP) / COL_WIDTH));
     }
   }, []);
 
@@ -134,7 +142,11 @@ export function CommitGrid({
       {maxWeeks !== null && (
         <div className={styles.grid}>
           {weeks.map((week, wi) => (
-            <div key={wi} className={styles.week}>
+            <div
+              key={wi}
+              className={styles.week}
+              style={week.monthStart ? { marginLeft: MONTH_GAP - GAP } : undefined}
+            >
               {week.days.map((slot, di) =>
                 slot ? (
                   <div
