@@ -1,10 +1,10 @@
 import { useMemo } from "react";
 import styles from "./CommitGrid.module.css";
 
-const DEFAULT_DAYS = 30;
+const DEFAULT_DAYS = 7;
 const HOURS = 24;
 const HOURS_PER_GROUP = 6;
-const DAYS_PER_GROUP = 4;
+const DAYS_PER_GROUP = 7;
 const DEFAULT_LEVELS = [1, 4, 8, 12];
 
 interface HourSlot {
