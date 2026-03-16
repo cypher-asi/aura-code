@@ -186,7 +186,7 @@ function applyFilter(events: FeedEvent[], filter: FeedFilter): FeedEvent[] {
 
 export function FeedProvider({ children }: { children: ReactNode }) {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [filter, setFilterRaw] = useState<FeedFilter>("everything");
+  const [filter, setFilterRaw] = useState<FeedFilter>("my-agents");
 
   const events = useMemo(
     () => [...MOCK_EVENTS].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),

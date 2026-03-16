@@ -194,18 +194,13 @@ fn verify_signature(
     pkg_path: &std::path::Path,
     signature_b64: &str,
 ) -> Result<(), String> {
-    use cargo_packager_updater::Updater;
-
     let _ = (pkg_path, signature_b64, UPDATER_PUB_KEY);
 
     // cargo-packager-updater handles verification internally when using its
     // `Updater` API in the install path. For the download-first flow we store
     // the signature and defer full verification to install time.
     //
-    // A production deployment should call into the crate's `verify_signature`
-    // helper here. We accept the package for now and rely on install-time
-    // verification.
-    let _ = Updater::new(UPDATER_PUB_KEY.to_string());
+    // TODO: call into the crate's verification helper for download-time checks.
     Ok(())
 }
 

@@ -9,7 +9,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
@@ -40,7 +40,6 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
   background: var(--color-bg);
 }
 
@@ -66,9 +65,8 @@
 }
 
 .row td {
-  padding: var(--space-3);
-  font-size: var(--text-sm);
-  border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.04));
+  padding: var(--space-2) var(--space-3);
+  font-size: 13px;
 }
 
 .cellRank {
@@ -104,24 +102,12 @@
   color: #ffd700;
 }
 
-.gold td:first-child {
-  box-shadow: inset 3px 0 0 #ffd700;
-}
-
 .silver .rankBadge {
   background: rgba(192, 192, 192, 0.15);
   color: #c0c0c0;
 }
 
-.silver td:first-child {
-  box-shadow: inset 3px 0 0 #c0c0c0;
-}
-
 .bronze .rankBadge {
   background: rgba(205, 127, 50, 0.15);
   color: #cd7f32;
-}
-
-.bronze td:first-child {
-  box-shadow: inset 3px 0 0 #cd7f32;
 }

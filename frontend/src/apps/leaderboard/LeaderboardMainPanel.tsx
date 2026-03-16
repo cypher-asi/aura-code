@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { Text } from "@cypher-asi/zui";
-import { Gem } from "lucide-react";
 import { Lane } from "../../components/Lane";
 import { useLeaderboard } from "./LeaderboardContext";
 import { getLeaderboard } from "./mockData";
@@ -22,7 +21,6 @@ export function LeaderboardMainPanel() {
     <Lane flex style={{ borderLeft: "1px solid var(--color-border)" }}>
       <div className={styles.container}>
         <div className={styles.header}>
-          <Gem size={20} style={{ opacity: 0.6 }} />
           <Text size="lg" style={{ fontWeight: 600 }}>
             Leaderboard
           </Text>

@@ -14,20 +14,22 @@ export function AppNavRail({ onOpenSettings }: Props) {
 
   return (
     <nav className={styles.rail}>
-      {apps.map((app) => (
-        <Button
-          key={app.id}
-          variant="ghost"
-          size="sm"
-          iconOnly
-          selected={activeApp.id === app.id}
-          icon={<app.icon size={28} />}
-          title={app.label}
-          aria-label={app.label}
-          className={styles.btn}
-          onClick={() => navigate(app.basePath)}
-        />
-      ))}
+      <div className={styles.appGroup}>
+        {apps.map((app) => (
+          <Button
+            key={app.id}
+            variant="ghost"
+            size="sm"
+            iconOnly
+            selected={activeApp.id === app.id}
+            icon={<app.icon size={28} />}
+            title={app.label}
+            aria-label={app.label}
+            className={styles.btn}
+            onClick={() => navigate(app.basePath)}
+          />
+        ))}
+      </div>
       <Button
         variant="ghost"
         size="sm"
