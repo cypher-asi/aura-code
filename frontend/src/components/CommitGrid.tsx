@@ -4,18 +4,18 @@ import styles from "./CommitGrid.module.css";
 const CELL_SIZE = 7;
 const GAP = 3;
 const MONTH_GAP = 10;
-const COL_WIDTH = CELL_SIZE + GAP;
+const DAYS_PER_WEEK = 7;
+const MONTH_BLOCK_WIDTH = DAYS_PER_WEEK * CELL_SIZE + (DAYS_PER_WEEK - 1) * GAP;
 const DEFAULT_LEVELS = [1, 4, 8, 12];
 
 interface DaySlot {
   date: string;
   count: number;
-  dayOfWeek: number;
 }
 
-interface Week {
-  days: (DaySlot | null)[];
-  monthStart: boolean;
+interface MonthBlock {
+  key: string;
+  weeks: (DaySlot | null)[][];
 }
 
 function toISODate(d: Date): string {
@@ -23,12 +23,6 @@ function toISODate(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
-}
-
-function addDays(d: Date, n: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() + n);
-  return r;
 }
 
 function getLevel(count: number, thresholds: number[]): number {
@@ -39,43 +33,50 @@ function getLevel(count: number, thresholds: number[]): number {
   return 1;
 }
 
-function buildWeeks(
+function buildMonthBlocks(
   start: Date,
   end: Date,
   data: Record<string, number>,
-): Week[] {
-  const startDay = start.getDay();
-  const offset = startDay === 0 ? 6 : startDay - 1;
-  const weekStart = addDays(start, -offset);
+): MonthBlock[] {
+  const blocks: MonthBlock[] = [];
+  let year = start.getFullYear();
+  let month = start.getMonth();
 
-  const weeks: Week[] = [];
-  let cursor = new Date(weekStart);
-  let prevMonth = -1;
+  while (new Date(year, month, 1) <= end) {
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDow = new Date(year, month, 1).getDay();
+    const mondayOffset = firstDow === 0 ? 6 : firstDow - 1;
 
-  while (cursor <= end || weeks.length === 0) {
-    const week: (DaySlot | null)[] = [];
-    const weekMonth = cursor.getMonth();
-    const monthStart = prevMonth !== -1 && weekMonth !== prevMonth;
-    prevMonth = weekMonth;
+    const weeks: (DaySlot | null)[][] = [];
+    let week: (DaySlot | null)[] = [];
 
-    for (let d = 0; d < 7; d++) {
-      const iso = toISODate(cursor);
-      if (cursor < start || cursor > end) {
-        week.push(null);
-      } else {
-        week.push({
-          date: iso,
-          count: data[iso] ?? 0,
-          dayOfWeek: d,
-        });
+    for (let i = 0; i < mondayOffset; i++) week.push(null);
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(year, month, day);
+      const iso = toISODate(d);
+      const inRange = d >= start && d <= end;
+
+      week.push(inRange ? { date: iso, count: data[iso] ?? 0 } : null);
+
+      if (week.length === DAYS_PER_WEEK) {
+        weeks.push(week);
+        week = [];
       }
-      cursor = addDays(cursor, 1);
     }
 
-    weeks.push({ days: week, monthStart });
+    if (week.length > 0) {
+      while (week.length < DAYS_PER_WEEK) week.push(null);
+      weeks.push(week);
+    }
+
+    blocks.push({ key: `${year}-${month}`, weeks });
+
+    month++;
+    if (month > 11) { month = 0; year++; }
   }
 
-  return weeks;
+  return blocks;
 }
 
 function formatTooltip(date: string, count: number): string {
@@ -105,14 +106,12 @@ export function CommitGrid({
   className,
 }: CommitGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [maxWeeks, setMaxWeeks] = useState<number | null>(null);
+  const [maxMonths, setMaxMonths] = useState<number | null>(null);
 
   const measure = useCallback(() => {
     if (containerRef.current) {
       const width = containerRef.current.clientWidth;
-      const approxMonthGaps = Math.floor(width / (COL_WIDTH * 4.3));
-      const usable = width - approxMonthGaps * (MONTH_GAP - GAP);
-      setMaxWeeks(Math.floor((usable + GAP) / COL_WIDTH));
+      setMaxMonths(Math.floor((width + MONTH_GAP) / (MONTH_BLOCK_WIDTH + MONTH_GAP)));
     }
   }, []);
 
@@ -126,39 +125,40 @@ export function CommitGrid({
   const end = useMemo(() => endDate ?? new Date(), [endDate]);
   const start = useMemo(() => {
     if (startDate) return startDate;
-    const weeksToShow = maxWeeks ?? 52;
+    const months = maxMonths ?? 12;
     const d = new Date(end);
-    d.setDate(d.getDate() - weeksToShow * 7 + 1);
+    d.setMonth(d.getMonth() - months + 1);
+    d.setDate(1);
     return d;
-  }, [startDate, end, maxWeeks]);
+  }, [startDate, end, maxMonths]);
 
-  const weeks = useMemo(
-    () => buildWeeks(start, end, data),
+  const blocks = useMemo(
+    () => buildMonthBlocks(start, end, data),
     [start, end, data],
   );
 
   return (
     <div ref={containerRef} className={`${styles.root}${className ? ` ${className}` : ""}`}>
-      {maxWeeks !== null && (
+      {maxMonths !== null && (
         <div className={styles.grid}>
-          {weeks.map((week, wi) => (
-            <div
-              key={wi}
-              className={styles.week}
-              style={week.monthStart ? { marginLeft: MONTH_GAP - GAP } : undefined}
-            >
-              {week.days.map((slot, di) =>
-                slot ? (
-                  <div
-                    key={slot.date}
-                    className={styles.cell}
-                    data-level={getLevel(slot.count, levels)}
-                    title={formatTooltip(slot.date, slot.count)}
-                  />
-                ) : (
-                  <div key={`empty-${wi}-${di}`} className={styles.placeholder} />
-                ),
-              )}
+          {blocks.map((block) => (
+            <div key={block.key} className={styles.monthBlock}>
+              {block.weeks.map((week, wi) => (
+                <div key={wi} className={styles.weekRow}>
+                  {week.map((slot, di) =>
+                    slot ? (
+                      <div
+                        key={slot.date}
+                        className={styles.cell}
+                        data-level={getLevel(slot.count, levels)}
+                        title={formatTooltip(slot.date, slot.count)}
+                      />
+                    ) : (
+                      <div key={`e-${wi}-${di}`} className={styles.placeholder} />
+                    ),
+                  )}
+                </div>
+              ))}
             </div>
           ))}
         </div>

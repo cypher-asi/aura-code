@@ -10,12 +10,19 @@
 
 .grid {
   display: flex;
-  gap: 3px;
+  gap: 10px;
+  align-items: flex-start;
 }
 
-.week {
+.monthBlock {
   display: flex;
   flex-direction: column;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.weekRow {
+  display: flex;
   gap: 3px;
 }
 
