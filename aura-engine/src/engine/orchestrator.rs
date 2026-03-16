@@ -266,6 +266,31 @@ impl DevLoopEngine {
                 return Ok(LoopOutcome::Stopped { completed_count });
             }
 
+            if let Err(EngineError::InsufficientCredits) = self.check_credits().await {
+                warn!("Insufficient credits, stopping dev loop");
+                let _ = self.session_service.end_session(
+                    &project_id, &agent_instance_id, &session.session_id, SessionStatus::Completed,
+                );
+                let _ = self.agent_instance_service.finish_working(&project_id, &agent_instance_id);
+                self.emit(EngineEvent::LoopFinished {
+                    project_id,
+                    agent_instance_id,
+                    outcome: "insufficient_credits".into(),
+                    total_duration_ms: Some(loop_start.elapsed().as_millis() as u64),
+                    tasks_completed: Some(completed_count),
+                    tasks_failed: Some(failed_count),
+                    tasks_retried: Some(tasks_retried),
+                    total_input_tokens: Some(total_input_tokens),
+                    total_output_tokens: Some(total_output_tokens),
+                    sessions_used: Some(sessions_used),
+                    total_parse_retries: Some(total_parse_retries),
+                    total_build_fix_attempts: Some(total_build_fix_attempts),
+                    duplicate_error_bailouts: Some(duplicate_error_bailouts),
+                });
+                flush_metrics!("insufficient_credits");
+                return Ok(LoopOutcome::AllDone { completed_count });
+            }
+
             let task = match self.task_service.claim_next_task(&project_id, &agent_instance_id, Some(session.session_id))? {
                 Some(t) => t,
                 None => {
@@ -840,6 +865,17 @@ impl DevLoopEngine {
             .ok()
             .and_then(|bytes| serde_json::from_slice::<ZeroAuthSession>(&bytes).ok())
             .map(|s| s.access_token)
+    }
+
+    pub(crate) async fn check_credits(&self) -> Result<(), EngineError> {
+        let Some(token) = self.access_token() else {
+            return Ok(());
+        };
+        self.billing_client
+            .ensure_has_credits(&token)
+            .await
+            .map_err(|_| EngineError::InsufficientCredits)?;
+        Ok(())
     }
 
     pub(crate) async fn debit_credits(
