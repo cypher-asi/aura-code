@@ -3,7 +3,7 @@ import { FeedList } from "./FeedList";
 import { FeedMainPanel } from "./FeedMainPanel";
 import { FeedSidekickPanel } from "./FeedSidekickPanel";
 import { FeedSidekickHeader } from "./FeedSidekickHeader";
-import { FeedProvider } from "./FeedProvider";
+import { FeedProvider, useFeedSidekickCollapsed } from "./FeedProvider";
 import type { AuraApp } from "../types";
 
 export const FeedApp: AuraApp = {
@@ -15,5 +15,6 @@ export const FeedApp: AuraApp = {
   MainPanel: FeedMainPanel,
   SidekickPanel: FeedSidekickPanel,
   SidekickTaskbar: FeedSidekickHeader,
+  useSidekickCollapsed: useFeedSidekickCollapsed,
   Provider: FeedProvider,
 };

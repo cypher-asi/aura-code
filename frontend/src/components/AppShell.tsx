@@ -18,10 +18,16 @@ import { FeedProvider } from "../apps/feed/FeedProvider";
 import { LeaderboardProvider } from "../apps/leaderboard/LeaderboardContext";
 import { apps } from "../apps/registry";
 import { windowCommand } from "../lib/windowCommand";
+import shellStyles from "./AppShell.module.css";
 
-function SidekickLane() {
+const useAlwaysOpen = () => false;
+
+function SidekickLaneInner() {
   const { activeApp } = useAppContext();
   const { SidekickPanel, SidekickTaskbar, SidekickHeader: SidekickHeaderComp } = activeApp;
+  const useCollapsed = activeApp.useSidekickCollapsed ?? useAlwaysOpen;
+  const collapsed = useCollapsed();
+
   if (!SidekickPanel) return null;
 
   return (
@@ -31,6 +37,8 @@ function SidekickLane() {
       defaultWidth={320}
       maxWidth={1200}
       storageKey="aura-sidekick"
+      collapsible={!!activeApp.useSidekickCollapsed}
+      collapsed={collapsed}
       header={SidekickTaskbar && <SidekickTaskbar />}
       taskbar={SidekickHeaderComp && <SidekickHeaderComp />}
       style={{ boxShadow: "-1px 0 0 0 var(--color-border)" }}
@@ -38,6 +46,11 @@ function SidekickLane() {
       <SidekickPanel />
     </Lane>
   );
+}
+
+function SidekickLane() {
+  const { activeApp } = useAppContext();
+  return <SidekickLaneInner key={activeApp.id} />;
 }
 
 function PreviewLane() {
@@ -66,12 +79,12 @@ function SidebarSearchInput() {
   const { query, setQuery, action } = useSidebarSearch();
 
   return (
-    <div style={{ position: "relative", padding: "var(--space-2)" }}>
+    <div className={shellStyles.sidebarSearch} style={{ position: "relative", padding: "var(--space-2) 0" }}>
       <Search
         size={14}
         style={{
           position: "absolute",
-          left: "calc(var(--space-2) + var(--space-3, 12px))",
+          left: "var(--space-4, 16px)",
           top: "50%",
           transform: "translateY(-50%)",
           color: "var(--color-text-muted)",
@@ -84,14 +97,14 @@ function SidebarSearchInput() {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         style={{
-          paddingLeft: "calc(var(--space-3, 12px) + 14px + var(--space-2, 8px))",
+          paddingLeft: "calc(var(--space-4, 16px) + 14px + var(--space-2, 8px))",
           paddingRight: action ? "calc(var(--control-height-sm, 28px) + 2px)" : undefined,
         }}
       />
       {action && (
         <div style={{
           position: "absolute",
-          right: "calc(var(--space-2) + 2px)",
+          right: "var(--space-2, 8px)",
           top: "50%",
           transform: "translateY(-50%)",
           display: "flex",

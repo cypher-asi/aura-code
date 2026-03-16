@@ -263,3 +263,8 @@ export function useFeed() {
   if (!ctx) throw new Error("useFeed must be used within FeedProvider");
   return ctx;
 }
+
+export function useFeedSidekickCollapsed() {
+  const { selectedEventId } = useFeed();
+  return !selectedEventId;
+}
