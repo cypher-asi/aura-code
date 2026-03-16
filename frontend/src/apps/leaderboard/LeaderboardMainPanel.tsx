@@ -5,6 +5,7 @@ import { Lane } from "../../components/Lane";
 import { useLeaderboard } from "./LeaderboardContext";
 import { getLeaderboard } from "./mockData";
 import { formatTokens } from "../../utils/format";
+import { formatCost } from "../../utils/pricing";
 import styles from "./LeaderboardMainPanel.module.css";
 
 const periodLabels: Record<string, string> = {
@@ -37,6 +38,7 @@ export function LeaderboardMainPanel() {
                 <th className={styles.thRank}>#</th>
                 <th className={styles.thName}>User</th>
                 <th className={styles.thStat}>Tokens</th>
+                <th className={styles.thStat}>Cost</th>
                 <th className={styles.thStat}>Commits</th>
                 <th className={styles.thStat}>Agents</th>
               </tr>
@@ -64,6 +66,9 @@ export function LeaderboardMainPanel() {
                     <td className={styles.cellName}>{user.name}</td>
                     <td className={styles.cellStat}>
                       {formatTokens(user.tokens)}
+                    </td>
+                    <td className={styles.cellStat}>
+                      {formatCost(user.cost)}
                     </td>
                     <td className={styles.cellStat}>{user.commits}</td>
                     <td className={styles.cellStat}>{user.agents}</td>
