@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Text } from "@cypher-asi/zui";
 import { Bot, User, Send, MapPin, Globe, Calendar } from "lucide-react";
+import { EntityCard } from "../../components/EntityCard";
 import { useProfile } from "./ProfileProvider";
 import { timeAgo } from "../feed/FeedMainPanel";
 import styles from "./ProfileSidekickPanel.module.css";
@@ -18,72 +19,46 @@ function ProfileCard() {
   const totalCommits = events.reduce((sum, e) => sum + e.commits.length, 0);
 
   return (
-    <div className={styles.cardContainer}>
-      <div className={styles.card}>
-        <div className={styles.cardHeader}>
-          <span className={styles.cardHeaderLabel}>PROFILE</span>
-          <span className={styles.cardHeaderAccess}>ACTIVE</span>
-        </div>
+    <EntityCard
+      headerLabel="PROFILE"
+      headerStatus="ACTIVE"
+      image={profile.avatarUrl}
+      fallbackIcon={<User size={48} />}
+      name={profile.name}
+      subtitle={profile.handle}
+      stats={[
+        { value: projects.length, label: "Projects" },
+        { value: totalCommits, label: "Commits" },
+        { value: events.length, label: "Pushes" },
+      ]}
+      footer="CYPHER-ASI // AURA"
+    >
+      <div className={styles.bioSection}>
+        <p className={styles.bioText}>{profile.bio}</p>
+      </div>
 
-        <div className={styles.imageBlock}>
-          {profile.avatarUrl ? (
-            <img src={profile.avatarUrl} alt={profile.name} className={styles.avatarImg} />
-          ) : (
-            <User size={48} />
-          )}
+      <div className={styles.metaGrid}>
+        <div className={styles.metaRow}>
+          <MapPin size={13} className={styles.metaIcon} />
+          <span className={styles.metaValue}>{profile.location}</span>
         </div>
-
-        <div className={styles.nameRow}>
-          <span className={styles.displayName}>{profile.name}</span>
-          <span className={styles.handle}>{profile.handle}</span>
+        <div className={styles.metaRow}>
+          <Globe size={13} className={styles.metaIcon} />
+          <a
+            href={profile.website}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.metaLink}
+          >
+            {profile.website.replace(/^https?:\/\//, "")}
+          </a>
         </div>
-
-        <div className={styles.bioSection}>
-          <p className={styles.bioText}>{profile.bio}</p>
-        </div>
-
-        <div className={styles.metaGrid}>
-          <div className={styles.metaRow}>
-            <MapPin size={13} className={styles.metaIcon} />
-            <span className={styles.metaValue}>{profile.location}</span>
-          </div>
-          <div className={styles.metaRow}>
-            <Globe size={13} className={styles.metaIcon} />
-            <a
-              href={profile.website}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.metaLink}
-            >
-              {profile.website.replace(/^https?:\/\//, "")}
-            </a>
-          </div>
-          <div className={styles.metaRow}>
-            <Calendar size={13} className={styles.metaIcon} />
-            <span className={styles.metaValue}>Joined {formatJoinedDate(profile.joinedDate)}</span>
-          </div>
-        </div>
-
-        <div className={styles.statsRow}>
-          <div className={styles.stat}>
-            <span className={styles.statValue}>{projects.length}</span>
-            <span className={styles.statLabel}>Projects</span>
-          </div>
-          <div className={styles.stat}>
-            <span className={styles.statValue}>{totalCommits}</span>
-            <span className={styles.statLabel}>Commits</span>
-          </div>
-          <div className={styles.stat}>
-            <span className={styles.statValue}>{events.length}</span>
-            <span className={styles.statLabel}>Pushes</span>
-          </div>
-        </div>
-
-        <div className={styles.cardFooter}>
-          <span className={styles.footerLabel}>CYPHER-ASI // AURA</span>
+        <div className={styles.metaRow}>
+          <Calendar size={13} className={styles.metaIcon} />
+          <span className={styles.metaValue}>Joined {formatJoinedDate(profile.joinedDate)}</span>
         </div>
       </div>
-    </div>
+    </EntityCard>
   );
 }
 

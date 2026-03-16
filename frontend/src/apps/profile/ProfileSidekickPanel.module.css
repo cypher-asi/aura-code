@@ -1,97 +1,7 @@
-/* ── Profile card container ── */
-
-.cardContainer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-5);
-  height: 100%;
-  overflow-y: auto;
-}
-
-.card {
-  width: 100%;
-  max-width: 280px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg);
-  overflow: hidden;
-}
-
-/* ── Card header ── */
-
-.cardHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-secondary);
-}
-
-.cardHeaderLabel {
-  opacity: 0.7;
-}
-
-.cardHeaderAccess {
-  color: var(--color-success, #4ade80);
-  opacity: 0.8;
-}
-
-/* ── Image block ── */
-
-.imageBlock {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  background: var(--color-bg-hover);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-secondary);
-  overflow: hidden;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.avatarImg {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-/* ── Name row ── */
-
-.nameRow {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--space-3) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.displayName {
-  font-weight: 600;
-  font-size: var(--font-size-base, 14px);
-  color: var(--color-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.handle {
-  font-family: var(--font-mono, monospace);
-  font-size: var(--font-size-xs, 11px);
-  color: var(--color-text-secondary);
-}
-
-/* ── Bio ── */
+/* ── Profile-specific child content ── */
 
 .bioSection {
-  padding: var(--space-3) var(--space-3);
+  padding: var(--space-3);
 }
 
 .bioText {
@@ -100,8 +10,6 @@
   line-height: 1.5;
   margin: 0;
 }
-
-/* ── Meta grid ── */
 
 .metaGrid {
   display: flex;
@@ -141,58 +49,6 @@
 
 .metaLink:hover {
   text-decoration: underline;
-}
-
-/* ── Stats row ── */
-
-.statsRow {
-  display: flex;
-  border-top: 1px solid var(--color-border);
-}
-
-.stat {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: var(--space-3) var(--space-2);
-}
-
-.stat + .stat {
-  border-left: 1px solid var(--color-border);
-}
-
-.statValue {
-  font-family: var(--font-mono, monospace);
-  font-size: var(--font-size-base, 14px);
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.statLabel {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text-secondary);
-  opacity: 0.7;
-}
-
-/* ── Card footer ── */
-
-.cardFooter {
-  padding: var(--space-2) var(--space-3);
-  border-top: 1px solid var(--color-border);
-  text-align: center;
-}
-
-.footerLabel {
-  font-family: var(--font-mono, monospace);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--color-text-secondary);
-  opacity: 0.5;
 }
 
 /* ── Comments panel ── */
