@@ -72,9 +72,9 @@ function FeedCard({ event, isLast }: { event: FeedEvent; isLast: boolean }) {
 }
 
 export function FeedMainPanel() {
-  const { events } = useFeed();
+  const { filteredEvents } = useFeed();
 
-  if (events.length === 0) {
+  if (filteredEvents.length === 0) {
     return (
       <Lane flex style={{ borderLeft: "1px solid var(--color-border)" }}>
         <div className={styles.empty}>
@@ -90,11 +90,11 @@ export function FeedMainPanel() {
       <div className={styles.container}>
         <div className={styles.scrollArea}>
           <div className={styles.feedList}>
-            {events.map((evt, i) => (
+            {filteredEvents.map((evt, i) => (
               <FeedCard
                 key={evt.id}
                 event={evt}
-                isLast={i === events.length - 1}
+                isLast={i === filteredEvents.length - 1}
               />
             ))}
           </div>
