@@ -61,7 +61,8 @@
 }
 
 .sidebar.open {
-  width: 240px;
+  width: 220px;
+  overflow-y: auto;
 }
 
 .editorPane {
@@ -81,11 +82,19 @@
   flex-shrink: 0;
   background: var(--color-bg, #0d1117);
   border-bottom: 1px solid var(--color-border, #30363d);
+  gap: 0;
+}
+
+.tabList {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
 
-.tabBar::-webkit-scrollbar {
+.tabList::-webkit-scrollbar {
   display: none;
 }
 
@@ -93,7 +102,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 14px;
+  padding: 0 10px 0 14px;
   font-size: 12px;
   color: var(--color-text-secondary, #8b949e);
   background: transparent;
@@ -124,6 +133,62 @@
 
 .tab.dirty .tabDot {
   background: var(--color-accent, #a371f7);
+}
+
+.tabClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s;
+}
+
+.tab:hover .tabClose {
+  opacity: 1;
+}
+
+.tabClose:hover {
+  background: var(--color-border, #30363d);
+}
+
+.tabCloseIcon {
+  color: var(--color-text-muted, #484f58);
+}
+
+.tabClose:hover .tabCloseIcon {
+  color: var(--color-text-primary, #e6edf3);
+}
+
+/* ---- Save button in tab bar ---- */
+
+.saveButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #8b949e);
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--color-border, #30363d);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.saveButton:hover:not(:disabled) {
+  color: var(--color-text-primary, #e6edf3);
+  background: var(--color-surface, #161b22);
+}
+
+.saveButton:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* ---- Editor ---- */
