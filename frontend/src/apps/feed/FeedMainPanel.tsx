@@ -34,7 +34,13 @@ function FeedCard({ event, isLast }: { event: FeedEvent; isLast: boolean }) {
     <div className={styles.card}>
       <div className={styles.avatarCol}>
         <div className={styles.avatar} data-agent={isAgent}>
-          {isAgent ? <Bot size={18} /> : <User size={18} />}
+          {event.author.avatarUrl ? (
+            <img src={event.author.avatarUrl} alt={event.author.name} />
+          ) : isAgent ? (
+            <Bot size={18} />
+          ) : (
+            <User size={18} />
+          )}
         </div>
         {!isLast && <div className={styles.timeline} />}
       </div>
