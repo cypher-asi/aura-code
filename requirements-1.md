@@ -96,12 +96,12 @@ Required capabilities:
 
 ### 4.4 Stats App
 
-Purpose: Display progress and KPI analytics.
+Purpose: Display progress and stats analytics.
 
 Required capabilities:
 
 - Project progress dashboards.
-- Throughput and cycle-time KPIs.
+- Throughput and cycle-time stats.
 - Agent productivity and utilization indicators.
 - Trend view across time windows.
 
@@ -185,7 +185,7 @@ The platform must support long-running agent workflows where agents:
   - Agent status/activity
   - Task movement/status
   - Incoming commits
-  - KPI refresh triggers
+  - Stats refresh triggers
   - Team membership/admin changes relevant to active context
 - UI should gracefully degrade to polling if websocket/channel unavailable.
 
@@ -311,7 +311,7 @@ MVP must include:
 8. Tasks board supports all required columns and transitions.
 9. Agents app reflects real-time status and active context.
 10. Commits app shows live + historical commit activity linked to tasks/specs/projects/teams.
-11. Stats app shows meaningful progress/KPI views.
+11. Stats app shows meaningful progress/stats views.
 12. Settings securely stores provider API keys.
 13. Every code-change artifact is traceable to task → spec → project → team.
 14. Autonomous workflows can continue without manual interaction and resume after restart.

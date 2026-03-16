@@ -6,7 +6,7 @@ import { useDelayedEmpty } from "../hooks/use-delayed-empty";
 import { PageEmptyState, Panel, Text } from "@cypher-asi/zui";
 import styles from "./aura.module.css";
 
-export function ProgressDashboard() {
+export function StatsDashboard() {
   const ctx = useProjectContext();
   const projectId = ctx?.project.project_id;
   const [progress, setProgress] = useState<ProjectProgress | null>(null);
@@ -30,7 +30,7 @@ export function ProgressDashboard() {
 
   if (!progress) {
     if (!showEmpty) return null;
-    return <PageEmptyState title="No progress data" />;
+    return <PageEmptyState title="No stats data" />;
   }
 
   const pct = Math.round(progress.completion_percentage * 100) / 100;

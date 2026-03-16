@@ -47,7 +47,7 @@ const TOOL_LABELS: Record<string, string> = {
   write_file: "Write file",
   delete_file: "Delete file",
   list_files: "List files",
-  get_progress: "Get progress",
+  get_progress: "Get stats",
 };
 
 function ToolCallBlock({ entry }: { entry: ToolCallEntry }) {
