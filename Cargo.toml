@@ -20,5 +20,6 @@ members = [
     "aura-settings",
     "aura-store",
     "aura-terminal",
+    "aura-ide",
 ]
 resolver = "2"

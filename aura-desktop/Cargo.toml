@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 aura-server = { path = "../aura-server" }
+aura-ide = { path = "../aura-ide" }
 axum = "0.7"
 wry = "0.54"
 tao = "0.34"

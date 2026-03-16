@@ -414,6 +414,7 @@ dependencies = [
 name = "aura-desktop"
 version = "0.1.0"
 dependencies = [
+ "aura-ide",
  "aura-server",
  "axum",
  "cargo-packager-updater",
@@ -470,6 +471,17 @@ dependencies = [
  "serde",
  "thiserror 1.0.69",
  "tracing",
+]
+
+[[package]]
+name = "aura-ide"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "tao",
+ "tracing",
+ "urlencoding",
+ "wry",
 ]
 
 [[package]]
