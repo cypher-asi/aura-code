@@ -319,6 +319,12 @@ impl ChatService {
             let _ = tx.send(evt);
         };
 
+        if let Err(msg) = self.check_credits().await {
+            send(ChatStreamEvent::Error(msg));
+            send(ChatStreamEvent::Done);
+            return;
+        }
+
         let now = Utc::now();
 
         let content_blocks = if attachments.is_empty() {
@@ -402,6 +408,12 @@ impl ChatService {
         let send = |evt: ChatStreamEvent| {
             let _ = tx.send(evt);
         };
+
+        if let Err(msg) = self.check_credits().await {
+            send(ChatStreamEvent::Error(msg));
+            send(ChatStreamEvent::Done);
+            return;
+        }
 
         let now = Utc::now();
 
@@ -1561,8 +1573,23 @@ impl ChatService {
     }
 
     // -----------------------------------------------------------------------
-    // Credit debiting
+    // Credit checks & debiting
     // -----------------------------------------------------------------------
+
+    async fn check_credits(&self) -> Result<(), String> {
+        let token = self.store
+            .get_setting("zero_auth_session")
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<ZeroAuthSession>(&bytes).ok())
+            .map(|s| s.access_token);
+        let Some(token) = token else {
+            return Err("Not authenticated. Please log in to continue.".to_string());
+        };
+        self.billing_client
+            .ensure_has_credits(&token)
+            .await
+            .map_err(|_| "Insufficient credits. Please purchase credits to continue.".to_string())
+    }
 
     async fn debit_credits(
         &self,
