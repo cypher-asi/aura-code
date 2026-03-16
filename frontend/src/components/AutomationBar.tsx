@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button, Text, ModalConfirm } from "@cypher-asi/zui";
-import { Play, Pause, Square } from "lucide-react";
+import { Play, Pause, Square, Loader2 } from "lucide-react";
 import { api, isInsufficientCreditsError, dispatchInsufficientCredits } from "../api/client";
 import { useEventContext } from "../context/EventContext";
 import { useSidekick } from "../context/SidekickContext";
@@ -170,7 +170,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
             variant="ghost"
             size="sm"
             iconOnly
-            icon={<Play size={14} />}
+            icon={starting ? <Loader2 size={14} className={styles.automationSpinner} /> : <Play size={14} />}
             onClick={handleStart}
             disabled={!canPlay}
             title={paused ? "Resume" : "Start"}
