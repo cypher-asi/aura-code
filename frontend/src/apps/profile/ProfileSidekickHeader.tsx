@@ -9,11 +9,7 @@ export function ProfileSidekickHeader() {
   const event = selectedEventId ? events.find((e) => e.id === selectedEventId) : null;
 
   if (!event) {
-    return (
-      <div className={styles.header}>
-        <span className={styles.meta}>Profile</span>
-      </div>
-    );
+    return <div className={styles.header} />;
   }
 
   const repoShort = event.repo.split("/").pop();
