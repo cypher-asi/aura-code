@@ -89,6 +89,12 @@ export function SessionList() {
     }
   };
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const filteredData = useMemo(
+    () => filterExplorerNodes(explorerData, searchQuery),
+    [explorerData, searchQuery],
+  );
+
   const isEmpty = sessions.length === 0;
   const showEmpty = useDelayedEmpty(isEmpty, loading, 0);
 
@@ -104,12 +110,6 @@ export function SessionList() {
       </div>
     );
   }
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const filteredData = useMemo(
-    () => filterExplorerNodes(explorerData, searchQuery),
-    [explorerData, searchQuery],
-  );
 
   return (
     <div className={styles.sessionListWrap}>
