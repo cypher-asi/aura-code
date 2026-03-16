@@ -29,19 +29,25 @@ export function ProjectLayout() {
 
   useEffect(() => {
     if (!projectId) return;
+    let cancelled = false;
     setLoading(true);
+    setProjectRaw(null);
+    setInitialSpecs([]);
+    setInitialTasks([]);
     Promise.all([
       api.getProject(projectId),
       api.listSpecs(projectId).catch(() => [] as Spec[]),
       api.listTasks(projectId).catch(() => [] as Task[]),
     ])
       .then(([proj, specs, tasks]) => {
+        if (cancelled) return;
         setProjectRaw(proj);
         setInitialSpecs(specs.sort((a, b) => a.order_index - b.order_index));
         setInitialTasks(tasks.sort((a, b) => a.order_index - b.order_index));
       })
-      .catch(() => setProjectRaw(null))
-      .finally(() => setLoading(false));
+      .catch(() => { if (!cancelled) setProjectRaw(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [projectId]);
 
   useEffect(() => {
@@ -54,11 +60,10 @@ export function ProjectLayout() {
   }, [projectId, subscribe]);
 
   useEffect(() => {
-    return () => unregister();
-  }, [unregister]);
-
-  useEffect(() => {
-    if (!project) return;
+    if (!project) {
+      unregister();
+      return;
+    }
 
     const handleArchive = async () => {
       try {
@@ -82,12 +87,13 @@ export function ProjectLayout() {
       initialSpecs,
       initialTasks,
     });
-  }, [project, initialSpecs, initialTasks, message, navigate, register]);
+
+    return () => unregister();
+  }, [project, initialSpecs, initialTasks, message, navigate, register, unregister]);
 
   if (loading) return <Spinner />;
-  if (!project) {
-    return <PageEmptyState title="Project not found" />;
-  }
+  if (!project) return <PageEmptyState title="Project not found" />;
+  if (project.project_id !== projectId) return <Spinner />;
 
   return <Outlet />;
 }

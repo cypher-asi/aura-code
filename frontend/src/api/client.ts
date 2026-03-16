@@ -420,7 +420,7 @@ export const api = {
   },
   stopLoop: (projectId: ProjectId, agentId?: string) => {
     const params = agentId ? `?agent_id=${agentId}` : "";
-    return apiFetch<void>(`/api/projects/${projectId}/loop/stop${params}`, {
+    return apiFetch<LoopStatusResponse>(`/api/projects/${projectId}/loop/stop${params}`, {
       method: "POST",
     });
   },

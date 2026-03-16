@@ -11,8 +11,6 @@ const POLL_INTERVAL_MS = 60_000;
 const DEBOUNCE_MS = 2_000;
 
 function formatCredits(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
   return n.toLocaleString();
 }
 
@@ -75,7 +73,7 @@ export function CreditsBadge({ onClick }: Props) {
   const displayCredits = credits !== null ? formatCredits(credits) : "---";
   return (
     <div className={styles.creditsBadge} onClick={onClick} role="button" tabIndex={0}>
-      <span className={credits === null || credits === 0 ? `${styles.label} ${styles.labelSecondary}` : styles.label}>{displayCredits}</span>
+      <span className={styles.label}>{displayCredits}</span>
       <Coins size={14} className={styles.icon} />
     </div>
   );

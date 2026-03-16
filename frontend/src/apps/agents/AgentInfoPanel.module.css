@@ -40,6 +40,15 @@
   gap: var(--space-1);
 }
 
+.skillBadge {
+  background: #1a1a1a !important;
+  color: #fff !important;
+  border-radius: 0 !important;
+  padding: 4px 10px !important;
+  font-weight: 400 !important;
+  font-size: 11px !important;
+}
+
 .prompt {
   white-space: pre-wrap;
   word-break: break-word;

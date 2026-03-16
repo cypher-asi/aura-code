@@ -75,7 +75,7 @@
 }
 
 .bubbleUser {
-  background: #2f2f2f;
+  background: var(--color-bg-secondary, #1e1e1e);
   color: #ffffff;
   border-bottom-right-radius: 4px;
 }

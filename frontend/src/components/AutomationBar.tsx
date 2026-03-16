@@ -134,7 +134,10 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
   const handleStopConfirm = async () => {
     setConfirmStop(false);
     try {
-      await api.stopLoop(projectId);
+      const res = await api.stopLoop(projectId);
+      setActiveAgents(res.active_agent_instances ?? []);
+      setPaused(false);
+      setStarting(false);
     } catch (err) {
       console.error("Failed to stop loop", err);
     }

@@ -22,6 +22,12 @@
   gap: var(--space-1);
 }
 
+.automationControls button:disabled {
+  opacity: 0.25;
+  cursor: default;
+  pointer-events: none;
+}
+
 .connectionDot {
   display: inline-flex;
   align-items: center;
