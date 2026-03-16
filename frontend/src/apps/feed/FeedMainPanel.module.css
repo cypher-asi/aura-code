@@ -30,7 +30,7 @@
 }
 
 .card:hover {
-  background: color-mix(in srgb, var(--color-bg-hover) 50%, transparent);
+  background: color-mix(in srgb, var(--color-bg-hover) 75%, transparent);
 }
 
 .avatarCol {
