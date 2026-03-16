@@ -20,7 +20,7 @@ function agentColor(name: string): string {
 }
 
 export function LeaderboardMainPanel() {
-  const { period, filter } = useLeaderboard();
+  const { period, filter, selectedUserId, selectUser } = useLeaderboard();
   const users = useMemo(() => getLeaderboard(period, filter), [period, filter]);
 
   const maxTokens = useMemo(
@@ -36,7 +36,11 @@ export function LeaderboardMainPanel() {
             {users.map((user, i) => {
               const totalPct = (user.tokens / maxTokens) * 100;
               return (
-                <div key={user.id} className={styles.row}>
+                <div
+                  key={user.id}
+                  className={`${styles.row} ${selectedUserId === user.id ? styles.rowActive : ""}`}
+                  onClick={() => selectUser(selectedUserId === user.id ? null : user.id)}
+                >
                   <div className={styles.rankCell}>
                     <span className={styles.rankBadge}>{i + 1}</span>
                   </div>
