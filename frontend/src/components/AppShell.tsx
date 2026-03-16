@@ -129,7 +129,7 @@ function AppContent() {
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
           <div style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
             <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-              <AppNavRail onOpenSettings={() => setSettingsOpen(true)} />
+              <AppNavRail />
               <Lane
                 resizable
                 resizePosition="right"
