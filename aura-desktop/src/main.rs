@@ -1,7 +1,11 @@
+mod updater;
+
 use std::net::TcpListener as StdTcpListener;
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use axum::routing::post as axum_post;
+use axum::extract::State as AxumState;
+use axum::routing::{get as axum_get, post as axum_post};
 use axum::Json;
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
@@ -10,6 +14,8 @@ use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
 use wry::{WebContext, WebViewBuilder};
+
+use updater::{UpdateChannel, UpdateState, UpdateStatus};
 
 const PREFERRED_PORT: u16 = 19847;
 
@@ -62,8 +68,10 @@ fn find_frontend_dir() -> Option<PathBuf> {
         PathBuf::from("frontend/dist"),
         PathBuf::from("../frontend/dist"),
     ];
-    if let Some(dir) = exe_dir {
+    if let Some(ref dir) = exe_dir {
         candidates.push(dir.join("frontend/dist"));
+        // cargo-packager places resources next to the executable
+        candidates.push(dir.join("dist"));
     }
 
     candidates
@@ -147,6 +155,56 @@ struct OpenPathRequest {
     path: String,
 }
 
+// ---------------------------------------------------------------------------
+// Update routes
+// ---------------------------------------------------------------------------
+
+async fn get_update_status(
+    AxumState(state): AxumState<UpdateState>,
+) -> Json<serde_json::Value> {
+    let status = state.status.read().await;
+    let channel = state.channel.read().await;
+    Json(serde_json::json!({
+        "update": *status,
+        "channel": *channel,
+        "current_version": env!("CARGO_PKG_VERSION"),
+    }))
+}
+
+async fn post_update_install() -> Json<serde_json::Value> {
+    match updater::install_and_restart() {
+        Ok(()) => Json(serde_json::json!({ "ok": true })),
+        Err(e) => {
+            warn!(error = %e, "install_and_restart failed");
+            Json(serde_json::json!({ "ok": false, "error": e }))
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SetChannelRequest {
+    channel: UpdateChannel,
+}
+
+async fn post_update_channel(
+    AxumState(state): AxumState<UpdateState>,
+    Json(req): Json<SetChannelRequest>,
+) -> Json<serde_json::Value> {
+    let old = {
+        let mut ch = state.channel.write().await;
+        let old = *ch;
+        *ch = req.channel;
+        old
+    };
+    info!(from = %old, to = %req.channel, "update channel changed");
+    updater::trigger_recheck(state);
+    Json(serde_json::json!({ "ok": true, "channel": req.channel }))
+}
+
+// ---------------------------------------------------------------------------
+// File / path helpers
+// ---------------------------------------------------------------------------
+
 async fn open_path(Json(req): Json<OpenPathRequest>) -> Json<serde_json::Value> {
     let target = std::path::Path::new(&req.path);
     if !target.exists() {
@@ -204,13 +262,27 @@ fn main() {
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
         rt.block_on(async move {
-            let state = aura_server::build_app_state(&db_path, &data_dir);
-            let app = aura_server::create_router_with_frontend(state, frontend_dir)
+            let update_state = UpdateState::new(UpdateChannel::Stable);
+
+            let app_state = aura_server::build_app_state(&db_path, &data_dir);
+            let app = aura_server::create_router_with_frontend(app_state, frontend_dir)
                 .route("/api/pick-folder", axum_post(pick_folder))
                 .route("/api/pick-file", axum_post(pick_file))
                 .route("/api/open-path", axum_post(open_path))
                 .route("/api/read-file", axum_post(read_file))
-                .route("/api/write-file", axum_post(write_file));
+                .route("/api/write-file", axum_post(write_file))
+                .route(
+                    "/api/update-status",
+                    axum_get(get_update_status).with_state(update_state.clone()),
+                )
+                .route("/api/update-install", axum_post(post_update_install))
+                .route(
+                    "/api/update-channel",
+                    axum_post(post_update_channel).with_state(update_state.clone()),
+                );
+
+            updater::spawn_update_loop(update_state);
+
             let listener = TcpListener::from_std(std_listener).expect("failed to create listener");
 
             let _ = ready_tx.send(());
