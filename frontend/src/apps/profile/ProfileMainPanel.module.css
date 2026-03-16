@@ -21,7 +21,7 @@
   margin-right: auto;
   padding: var(--space-4);
   padding-bottom: var(--space-2);
-  overflow-x: auto;
+  overflow: hidden;
 }
 
 .feedList {

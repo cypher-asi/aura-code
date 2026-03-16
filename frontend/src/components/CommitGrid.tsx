@@ -1,6 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import styles from "./CommitGrid.module.css";
 
+const CELL_SIZE = 6;
+const GAP = 2;
+const COL_WIDTH = CELL_SIZE + GAP;
 const DEFAULT_LEVELS = [1, 4, 8, 12];
 
 interface DaySlot {
@@ -95,14 +98,31 @@ export function CommitGrid({
   levels = DEFAULT_LEVELS,
   className,
 }: CommitGridProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [maxWeeks, setMaxWeeks] = useState<number | null>(null);
+
+  const measure = useCallback(() => {
+    if (containerRef.current) {
+      const width = containerRef.current.clientWidth;
+      setMaxWeeks(Math.floor((width + GAP) / COL_WIDTH));
+    }
+  }, []);
+
+  useEffect(() => {
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [measure]);
+
   const end = useMemo(() => endDate ?? new Date(), [endDate]);
   const start = useMemo(() => {
     if (startDate) return startDate;
+    const weeksToShow = maxWeeks ?? 52;
     const d = new Date(end);
-    d.setFullYear(d.getFullYear() - 1);
-    d.setDate(d.getDate() + 1);
+    d.setDate(d.getDate() - weeksToShow * 7 + 1);
     return d;
-  }, [startDate, end]);
+  }, [startDate, end, maxWeeks]);
 
   const weeks = useMemo(
     () => buildWeeks(start, end, data),
@@ -110,25 +130,27 @@ export function CommitGrid({
   );
 
   return (
-    <div className={`${styles.root}${className ? ` ${className}` : ""}`}>
-      <div className={styles.grid}>
-        {weeks.map((week, wi) => (
-          <div key={wi} className={styles.week}>
-            {week.days.map((slot, di) =>
-              slot ? (
-                <div
-                  key={slot.date}
-                  className={styles.cell}
-                  data-level={getLevel(slot.count, levels)}
-                  title={formatTooltip(slot.date, slot.count)}
-                />
-              ) : (
-                <div key={`empty-${wi}-${di}`} className={styles.placeholder} />
-              ),
-            )}
-          </div>
-        ))}
-      </div>
+    <div ref={containerRef} className={`${styles.root}${className ? ` ${className}` : ""}`}>
+      {maxWeeks !== null && (
+        <div className={styles.grid}>
+          {weeks.map((week, wi) => (
+            <div key={wi} className={styles.week}>
+              {week.days.map((slot, di) =>
+                slot ? (
+                  <div
+                    key={slot.date}
+                    className={styles.cell}
+                    data-level={getLevel(slot.count, levels)}
+                    title={formatTooltip(slot.date, slot.count)}
+                  />
+                ) : (
+                  <div key={`empty-${wi}-${di}`} className={styles.placeholder} />
+                ),
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
