@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Text } from "@cypher-asi/zui";
 import { GitCommitVertical, Bot, User, MessageSquare } from "lucide-react";
 import { Lane } from "../../components/Lane";
+import { CommitGrid } from "../../components/CommitGrid";
 import { useProfile } from "./ProfileProvider";
 import { timeAgo } from "../feed/FeedMainPanel";
 import type { FeedEvent, FeedComment } from "../feed/FeedProvider";
@@ -102,32 +103,32 @@ function ProfileFeedCard({ event, isLast }: { event: FeedEvent; isLast: boolean 
 }
 
 export function ProfileMainPanel() {
-  const { filteredEvents } = useProfile();
-
-  if (filteredEvents.length === 0) {
-    return (
-      <Lane flex style={{ borderLeft: "1px solid var(--color-border)" }}>
-        <div className={styles.empty}>
-          <GitCommitVertical size={32} className={styles.emptyIcon} />
-          <Text variant="muted" size="sm">No activity yet</Text>
-        </div>
-      </Lane>
-    );
-  }
+  const { filteredEvents, commitActivity } = useProfile();
 
   return (
     <Lane flex style={{ borderLeft: "1px solid var(--color-border)" }}>
       <div className={styles.container}>
         <div className={styles.scrollArea}>
-          <div className={styles.feedList}>
-            {filteredEvents.map((evt, i) => (
-              <ProfileFeedCard
-                key={evt.id}
-                event={evt}
-                isLast={i === filteredEvents.length - 1}
-              />
-            ))}
+          <div className={styles.commitGridWrapper}>
+            <CommitGrid data={commitActivity} />
           </div>
+
+          {filteredEvents.length === 0 ? (
+            <div className={styles.empty}>
+              <GitCommitVertical size={32} className={styles.emptyIcon} />
+              <Text variant="muted" size="sm">No activity yet</Text>
+            </div>
+          ) : (
+            <div className={styles.feedList}>
+              {filteredEvents.map((evt, i) => (
+                <ProfileFeedCard
+                  key={evt.id}
+                  event={evt}
+                  isLast={i === filteredEvents.length - 1}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </Lane>

@@ -23,6 +23,7 @@ interface ProfileContextValue {
   projects: ProfileProject[];
   events: FeedEvent[];
   filteredEvents: FeedEvent[];
+  commitActivity: Record<string, number>;
   selectedProject: string | null;
   setSelectedProject: (id: string | null) => void;
   selectedEventId: string | null;
@@ -152,6 +153,52 @@ const MOCK_COMMENTS: FeedComment[] = [
   { id: "p-cmt-6", eventId: "p-evt-6", author: { name: "Atlas", type: "agent" }, text: "409 over 500 is the right call. Less alarming for clients.", timestamp: new Date(now - 2.3 * DAY).toISOString() },
 ];
 
+function toISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function buildMockCommitActivity(): Record<string, number> {
+  const activity: Record<string, number> = {};
+  const today = new Date();
+
+  for (let i = 0; i < 365; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = toISODate(d);
+    const rand = Math.random();
+    if (rand < 0.3) continue;
+    if (rand < 0.55) activity[key] = Math.ceil(Math.random() * 2);
+    else if (rand < 0.8) activity[key] = Math.ceil(Math.random() * 6) + 2;
+    else if (rand < 0.93) activity[key] = Math.ceil(Math.random() * 6) + 8;
+    else activity[key] = Math.ceil(Math.random() * 8) + 12;
+  }
+
+  for (const evt of MOCK_EVENTS) {
+    const key = evt.timestamp.slice(0, 10);
+    activity[key] = (activity[key] ?? 0) + evt.commits.length;
+  }
+
+  return activity;
+}
+
+const MOCK_COMMIT_ACTIVITY = buildMockCommitActivity();
+
+function buildRepoActivityMap(): Map<string, Record<string, number>> {
+  const map = new Map<string, Record<string, number>>();
+  for (const evt of MOCK_EVENTS) {
+    if (!map.has(evt.repo)) map.set(evt.repo, {});
+    const repoActivity = map.get(evt.repo)!;
+    const key = evt.timestamp.slice(0, 10);
+    repoActivity[key] = (repoActivity[key] ?? 0) + evt.commits.length;
+  }
+  return map;
+}
+
+const REPO_ACTIVITY_MAP = buildRepoActivityMap();
+
 const CURRENT_USER = "real-n3o";
 
 let nextCommentId = MOCK_COMMENTS.length + 1;
@@ -172,6 +219,13 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     if (!project) return events;
     return events.filter((e) => e.repo === project.repo);
   }, [events, selectedProject]);
+
+  const commitActivity = useMemo(() => {
+    if (!selectedProject) return MOCK_COMMIT_ACTIVITY;
+    const project = MOCK_PROJECTS.find((p) => p.id === selectedProject);
+    if (!project) return MOCK_COMMIT_ACTIVITY;
+    return REPO_ACTIVITY_MAP.get(project.repo) ?? {};
+  }, [selectedProject]);
 
   const setSelectedProject = useCallback((id: string | null) => {
     setSelectedProjectRaw(id);
@@ -205,6 +259,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       projects: MOCK_PROJECTS,
       events,
       filteredEvents,
+      commitActivity,
       selectedProject,
       setSelectedProject,
       selectedEventId,
@@ -212,7 +267,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       getCommentsForEvent,
       addComment,
     }),
-    [events, filteredEvents, selectedProject, setSelectedProject, selectedEventId, selectEvent, getCommentsForEvent, addComment],
+    [events, filteredEvents, commitActivity, selectedProject, setSelectedProject, selectedEventId, selectEvent, getCommentsForEvent, addComment],
   );
 
   return <ProfileCtx.Provider value={value}>{children}</ProfileCtx.Provider>;

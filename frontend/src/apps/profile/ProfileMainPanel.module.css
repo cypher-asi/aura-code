@@ -14,6 +14,16 @@
   box-sizing: border-box;
 }
 
+.commitGridWrapper {
+  max-width: 480px;
+  width: 100%;
+  margin-left: max(0px, calc(50vw - 510px));
+  margin-right: auto;
+  padding: var(--space-4);
+  padding-bottom: var(--space-2);
+  overflow-x: auto;
+}
+
 .feedList {
   display: flex;
   flex-direction: column;
