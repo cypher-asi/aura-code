@@ -42,27 +42,17 @@
   opacity: 0.8;
 }
 
-/* ── Identity row ── */
+/* ── Image block ── */
 
-.identityRow {
-  display: flex;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-3);
-  align-items: center;
-}
-
-.avatarFrame {
-  width: 56px;
-  height: 56px;
-  border-radius: var(--radius-md);
+.imageBlock {
+  width: 100%;
+  aspect-ratio: 1 / 1;
   background: var(--color-bg-hover);
-  border: 1px solid var(--color-border);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--color-text-secondary);
   overflow: hidden;
-  flex-shrink: 0;
 }
 
 .avatarImg {
@@ -71,11 +61,14 @@
   object-fit: cover;
 }
 
-.identityInfo {
+/* ── Name row ── */
+
+.nameRow {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 0;
+  padding: var(--space-3) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .displayName {

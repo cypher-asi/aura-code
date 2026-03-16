@@ -25,19 +25,17 @@ function ProfileCard() {
           <span className={styles.cardHeaderAccess}>ACTIVE</span>
         </div>
 
-        <div className={styles.identityRow}>
-          <div className={styles.avatarFrame}>
-            {profile.avatarUrl ? (
-              <img src={profile.avatarUrl} alt={profile.name} className={styles.avatarImg} />
-            ) : (
-              <User size={32} />
-            )}
-          </div>
+        <div className={styles.imageBlock}>
+          {profile.avatarUrl ? (
+            <img src={profile.avatarUrl} alt={profile.name} className={styles.avatarImg} />
+          ) : (
+            <User size={48} />
+          )}
+        </div>
 
-          <div className={styles.identityInfo}>
-            <span className={styles.displayName}>{profile.name}</span>
-            <span className={styles.handle}>{profile.handle}</span>
-          </div>
+        <div className={styles.nameRow}>
+          <span className={styles.displayName}>{profile.name}</span>
+          <span className={styles.handle}>{profile.handle}</span>
         </div>
 
         <div className={styles.bioSection}>
