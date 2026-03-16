@@ -25,7 +25,7 @@ function formatDuration(startedAt: string, endedAt: string | null): string {
   return `${hr}h ${min % 60}m`;
 }
 
-export function SessionList() {
+export function SessionList({ searchQuery: externalQuery }: { searchQuery?: string }) {
   const ctx = useProjectContext();
   const projectId = ctx?.project.project_id;
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -89,10 +89,11 @@ export function SessionList() {
     }
   };
 
-  const [searchQuery, setSearchQuery] = useState("");
+  const [localQuery, setLocalQuery] = useState("");
+  const activeQuery = externalQuery ?? localQuery;
   const filteredData = useMemo(
-    () => filterExplorerNodes(explorerData, searchQuery),
-    [explorerData, searchQuery],
+    () => filterExplorerNodes(explorerData, activeQuery),
+    [explorerData, activeQuery],
   );
 
   const isEmpty = sessions.length === 0;
@@ -113,11 +114,13 @@ export function SessionList() {
 
   return (
     <div className={styles.sessionListWrap}>
-      <PanelSearch
-        placeholder="Search sessions..."
-        value={searchQuery}
-        onChange={setSearchQuery}
-      />
+      {externalQuery === undefined && (
+        <PanelSearch
+          placeholder="Search sessions..."
+          value={localQuery}
+          onChange={setLocalQuery}
+        />
+      )}
       <Explorer
         data={filteredData}
         enableMultiSelect={false}

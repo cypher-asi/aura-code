@@ -14,7 +14,7 @@ import styles from "./aura.module.css";
 import type { ExplorerNode } from "@cypher-asi/zui";
 import { ListTodo } from "lucide-react";
 
-export function TaskList() {
+export function TaskList({ searchQuery: externalQuery }: { searchQuery?: string }) {
   const ctx = useProjectContext();
   const projectId = ctx?.project.project_id;
   const sidekick = useSidekick();
@@ -213,6 +213,13 @@ export function TaskList() {
     [previewTaskId],
   );
 
+  const [localQuery, setLocalQuery] = useState("");
+  const activeQuery = externalQuery ?? localQuery;
+  const filteredData = useMemo(
+    () => filterExplorerNodes(explorerData, activeQuery),
+    [explorerData, activeQuery],
+  );
+
   const isEmpty = tasks.length === 0;
   const showEmpty = useDelayedEmpty(isEmpty, loading, sidekick.streamingAgentInstanceId ? 800 : 0);
 
@@ -227,19 +234,15 @@ export function TaskList() {
     );
   }
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const filteredData = useMemo(
-    () => filterExplorerNodes(explorerData, searchQuery),
-    [explorerData, searchQuery],
-  );
-
   return (
     <>
-      <PanelSearch
-        placeholder="Search tasks..."
-        value={searchQuery}
-        onChange={setSearchQuery}
-      />
+      {externalQuery === undefined && (
+        <PanelSearch
+          placeholder="Search tasks..."
+          value={localQuery}
+          onChange={setLocalQuery}
+        />
+      )}
       <Explorer
         data={filteredData}
         className={styles.taskExplorer}

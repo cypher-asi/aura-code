@@ -203,7 +203,7 @@ function LogRow({
   );
 }
 
-export function SidekickLog() {
+export function SidekickLog({ searchQuery }: { searchQuery?: string }) {
   const { entries, contentRef, handleScroll } = useLogStream();
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [activeFilters, setActiveFilters] = useState<Set<string>>(
@@ -227,10 +227,14 @@ export function SidekickLog() {
     setSelectedIdx(null);
   }, []);
 
-  const filtered = useMemo(
-    () => entries.filter((e) => activeFilters.has(EVENT_LABELS[e.type] ?? "")),
-    [entries, activeFilters],
-  );
+  const filtered = useMemo(() => {
+    let result = entries.filter((e) => activeFilters.has(EVENT_LABELS[e.type] ?? ""));
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((e) => e.summary.toLowerCase().includes(q));
+    }
+    return result;
+  }, [entries, activeFilters, searchQuery]);
 
   return (
     <div className={styles.logWrap}>
