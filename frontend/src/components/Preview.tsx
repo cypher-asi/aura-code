@@ -114,6 +114,7 @@ function FileOpIcon({ op }: { op: string }) {
 function RunTaskButton({ task }: { task: import("../types").Task }) {
   const { subscribe } = useEventContext();
   const ctx = useProjectContext();
+  const sidekick = useSidekick();
   const projectId = ctx?.project.project_id;
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState(task.status);
@@ -147,6 +148,7 @@ function RunTaskButton({ task }: { task: import("../types").Task }) {
     setRunning(true);
     try {
       await api.runTask(projectId, task.task_id);
+      sidekick.pushTask({ ...task, status: "in_progress" });
     } catch (err) {
       if (isInsufficientCreditsError(err)) dispatchInsufficientCredits();
       console.error("Run task failed:", err);
