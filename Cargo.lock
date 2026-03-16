@@ -478,6 +478,7 @@ name = "aura-ide"
 version = "0.1.0"
 dependencies = [
  "image",
+ "open",
  "tao",
  "tracing",
  "urlencoding",
@@ -542,29 +543,6 @@ dependencies = [
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "aura-services"
-version = "0.1.0"
-dependencies = [
- "aura-agents",
- "aura-auth",
- "aura-billing",
- "aura-chat",
- "aura-claude",
- "aura-core",
- "aura-github",
- "aura-orgs",
- "aura-projects",
- "aura-sessions",
- "aura-settings",
- "aura-specs",
- "aura-store",
- "aura-tasks",
- "aura-tools",
- "tempfile",
- "tokio",
 ]
 
 [[package]]

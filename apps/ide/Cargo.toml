@@ -1,0 +1,12 @@
+[package]
+name = "aura-ide"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tao = "0.34"
+wry = "0.54"
+tracing = "0.1"
+image = "0.25.10"
+urlencoding = "2"
+open = "5"
