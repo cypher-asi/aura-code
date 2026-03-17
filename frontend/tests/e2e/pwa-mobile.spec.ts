@@ -18,28 +18,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("mobile login page renders with PWA metadata", async ({ page }) => {
-  await page.goto("/login");
-
-  await expect(page).toHaveTitle(/AURA/);
-  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#05070d");
-  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("href", "/manifest.webmanifest");
-  await expect(page.getByText("Sign in required")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Change host" })).toBeVisible();
-  await expect(page.getByPlaceholder("Email")).toBeVisible();
-  await expect(page.locator("form").getByRole("button", { name: "Sign In" })).toBeVisible();
-});
-
-test("mobile login page can open host settings", async ({ page }) => {
-  await page.goto("/login");
-
-  await page.getByRole("button", { name: "Change host" }).click();
-
-  await expect(page.getByRole("heading", { name: "Host Connection" })).toBeVisible();
-  await expect(page.getByPlaceholder("192.168.1.20:5173")).toBeVisible();
-});
-
-test("mobile project header can switch between execution and chat", async ({ page }) => {
+async function mockAuthenticatedProjectApp(page: import("@playwright/test").Page) {
   await page.unroute("**/api/auth/session");
   await page.unroute("**/api/auth/validate");
 
@@ -127,6 +106,11 @@ test("mobile project header can switch between execution and chat", async ({ pag
     if (path === "/api/orgs/org-1/credits/balance") {
       return json({ total_credits: 1200, purchases: [] });
     }
+    if (path === "/api/orgs/org-1/invites") return json([]);
+    if (path === "/api/orgs/org-1/billing") return json({ billing_email: "billing@example.com", plan: "free" });
+    if (path === "/api/orgs/org-1/integrations/github") return json(null);
+    if (path === "/api/orgs/org-1/integrations/github/app") return json([]);
+    if (path === "/api/orgs/org-1/credits/tiers") return json([]);
     if (path === "/api/projects?org_id=org-1") {
       return json([project]);
     }
@@ -170,6 +154,31 @@ test("mobile project header can switch between execution and chat", async ({ pag
       body: JSON.stringify({ error: `Unhandled route: ${path}` }),
     });
   });
+}
+
+test("mobile login page renders with PWA metadata", async ({ page }) => {
+  await page.goto("/login");
+
+  await expect(page).toHaveTitle(/AURA/);
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#05070d");
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("href", "/manifest.webmanifest");
+  await expect(page.getByText("Sign in required")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Change host" })).toBeVisible();
+  await expect(page.getByPlaceholder("Email")).toBeVisible();
+  await expect(page.locator("form").getByRole("button", { name: "Sign In" })).toBeVisible();
+});
+
+test("mobile login page can open host settings", async ({ page }) => {
+  await page.goto("/login");
+
+  await page.getByRole("button", { name: "Change host" }).click();
+
+  await expect(page.getByRole("heading", { name: "Host Connection" })).toBeVisible();
+  await expect(page.getByPlaceholder("192.168.1.20:5173")).toBeVisible();
+});
+
+test("mobile project header can switch between execution and chat", async ({ page }) => {
+  await mockAuthenticatedProjectApp(page);
 
   await page.goto("/projects/proj-1/execution");
 
@@ -180,6 +189,22 @@ test("mobile project header can switch between execution and chat", async ({ pag
 
   await page.getByRole("button", { name: "Execution" }).click();
   await expect(page).toHaveURL(/\/projects\/proj-1\/execution$/);
+});
+
+test("mobile drawer exposes team and app settings", async ({ page }) => {
+  await mockAuthenticatedProjectApp(page);
+
+  await page.goto("/projects/proj-1/execution");
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Team settings" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "App settings" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeHidden();
+  await page.getByRole("button", { name: "App settings" }).dispatchEvent("click");
+  await expect(page.getByText("Claude API Key")).toBeVisible();
 });
 
 test("manifest and service worker assets are reachable", async ({ page }) => {

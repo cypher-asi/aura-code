@@ -128,11 +128,23 @@
   background: rgba(255, 255, 255, 0.03);
 }
 
-.mobileDrawerAction {
+.mobileDrawerActions {
   grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.mobileDrawerAction {
   justify-content: center;
 }
 
 .mobileContextHeader {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 420px) {
+  .mobileDrawerActions {
+    grid-template-columns: 1fr;
+  }
 }

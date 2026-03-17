@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Topbar, Drawer, Badge, Button } from "@cypher-asi/zui";
-import { Eye, Menu, Rows3, Server, Settings } from "lucide-react";
+import { Building2, Eye, Menu, Rows3, Server, Settings } from "lucide-react";
 import { Lane } from "./Lane";
 import { AppNavRail } from "./AppNavRail";
 import { BottomTaskbar } from "./BottomTaskbar";
@@ -212,6 +212,12 @@ function MobileShell({
     }
   }, [PreviewPanel, previewItem]);
 
+  const drawerOpen = navOpen || contextOpen || previewOpen || hostSettingsOpen;
+  const openAfterDrawerClose = useCallback((callback: () => void) => {
+    setNavOpen(false);
+    window.setTimeout(callback, 0);
+  }, []);
+
   return (
     <>
       <div className={styles.mobileShell}>
@@ -279,20 +285,22 @@ function MobileShell({
           <MainPanel />
         </div>
 
-        <nav className={styles.mobileBottomNav} aria-label="Primary navigation">
-          {registeredApps.map((app) => (
-            <button
-              key={app.id}
-              type="button"
-              className={`${styles.mobileNavButton} ${activeApp.id === app.id ? styles.mobileNavButtonActive : ""}`}
-              onClick={() => navigate(app.basePath)}
-              aria-current={activeApp.id === app.id ? "page" : undefined}
-            >
-              <app.icon size={18} />
-              <span className={styles.mobileNavLabel}>{app.label}</span>
-            </button>
-          ))}
-        </nav>
+        {!drawerOpen && (
+          <nav className={styles.mobileBottomNav} aria-label="Primary navigation">
+            {registeredApps.map((app) => (
+              <button
+                key={app.id}
+                type="button"
+                className={`${styles.mobileNavButton} ${activeApp.id === app.id ? styles.mobileNavButtonActive : ""}`}
+                onClick={() => navigate(app.basePath)}
+                aria-current={activeApp.id === app.id ? "page" : undefined}
+              >
+                <app.icon size={18} />
+                <span className={styles.mobileNavLabel}>{app.label}</span>
+              </button>
+            ))}
+          </nav>
+        )}
       </div>
 
       <Drawer
@@ -314,18 +322,26 @@ function MobileShell({
           <div className={styles.mobileDrawerFooter}>
             <OrgSelector onOpenSettings={onOpenOrgSettings} />
             <CreditsBadge onClick={onBuyCredits} />
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Settings size={14} />}
-              className={styles.mobileDrawerAction}
-              onClick={() => {
-                setNavOpen(false);
-                onOpenSettings();
-              }}
-            >
-              App settings
-            </Button>
+            <div className={styles.mobileDrawerActions}>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<Building2 size={14} />}
+                className={styles.mobileDrawerAction}
+                onClick={() => openAfterDrawerClose(onOpenOrgSettings)}
+              >
+                Team settings
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<Settings size={14} />}
+                className={styles.mobileDrawerAction}
+                onClick={() => openAfterDrawerClose(onOpenSettings)}
+              >
+                App settings
+              </Button>
+            </div>
           </div>
         </div>
       </Drawer>

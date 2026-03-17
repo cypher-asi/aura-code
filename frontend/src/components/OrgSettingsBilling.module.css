@@ -156,3 +156,17 @@
   padding: var(--space-4);
   margin-bottom: var(--space-4);
 }
+
+@media (max-width: 640px) {
+  .tierGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .customPrice {
+    width: 100%;
+  }
+
+  .errorState {
+    flex-wrap: wrap;
+  }
+}
