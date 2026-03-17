@@ -390,7 +390,7 @@ fn main() {
         rt.block_on(async move {
             let update_state = UpdateState::new(UpdateChannel::Stable);
 
-            let app_state = aura_server::build_app_state(&db_path, &data_dir);
+            let app_state = aura_server::build_app_state(&db_path);
             let app = aura_server::create_router_with_frontend(app_state, frontend_dir)
                 .route("/api/pick-folder", axum_post(pick_folder))
                 .route("/api/pick-file", axum_post(pick_file))
