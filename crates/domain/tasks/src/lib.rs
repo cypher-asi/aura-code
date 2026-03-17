@@ -191,6 +191,7 @@ impl TaskService {
             })?;
         Self::validate_transition(task.status, TaskStatus::Done)?;
         task.status = TaskStatus::Done;
+        task.completed_by_agent_instance_id = task.assigned_agent_instance_id;
         task.execution_notes = notes.to_string();
         task.files_changed = files_changed;
         task.updated_at = Utc::now();
@@ -442,6 +443,7 @@ impl TaskService {
             dependency_ids,
             parent_task_id: Some(originating_task.task_id),
             assigned_agent_instance_id: None,
+            completed_by_agent_instance_id: None,
             session_id: None,
             execution_notes: String::new(),
             files_changed: vec![],
@@ -677,6 +679,7 @@ impl TaskExtractionService {
                 dependency_ids: vec![],
                 parent_task_id: None,
                 assigned_agent_instance_id: None,
+                completed_by_agent_instance_id: None,
                 session_id: None,
                 execution_notes: String::new(),
                 files_changed: vec![],
