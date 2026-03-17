@@ -670,6 +670,7 @@ impl ChatService {
             thinking: Some(ThinkingConfig::enabled(self.llm_config.thinking_budget)),
             stream_timeout: std::time::Duration::from_secs(300),
             billing_reason: "aura_chat",
+            max_context_tokens: Some(self.llm_config.max_context_tokens),
         };
 
         let thinking_start = std::time::Instant::now();
@@ -834,6 +835,7 @@ impl ChatService {
             thinking: Some(ThinkingConfig::enabled(self.llm_config.thinking_budget)),
             stream_timeout: std::time::Duration::from_secs(300),
             billing_reason: "aura_chat",
+            max_context_tokens: Some(self.llm_config.max_context_tokens),
         };
 
         let thinking_start = std::time::Instant::now();

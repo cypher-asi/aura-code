@@ -6,7 +6,8 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use aura_claude::{
-    ClaudeStreamEvent, ContentBlock, RichMessage, ThinkingConfig, ToolCall, ToolDefinition,
+    ClaudeStreamEvent, ContentBlock, MessageContent, RichMessage, ThinkingConfig, ToolCall,
+    ToolDefinition,
 };
 use aura_billing::MeteredLlm;
 
@@ -20,6 +21,10 @@ pub struct ToolLoopConfig {
     pub thinking: Option<ThinkingConfig>,
     pub stream_timeout: Duration,
     pub billing_reason: &'static str,
+    /// When set, the loop uses API-reported input_tokens (not the chars/4
+    /// heuristic) to detect context window pressure and retroactively compact
+    /// older tool results before the next iteration.
+    pub max_context_tokens: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +251,21 @@ pub async fn run_tool_loop(
             output_tokens: total_output_tokens,
         });
 
+        // Use API-reported input_tokens to detect context window pressure.
+        // stream_result.input_tokens is the exact count for this call.
+        if let Some(max_ctx) = config.max_context_tokens {
+            let utilization = stream_result.input_tokens as f64 / max_ctx as f64;
+            if utilization > 0.80 {
+                info!(
+                    input_tokens = stream_result.input_tokens,
+                    max_context = max_ctx,
+                    utilization_pct = (utilization * 100.0) as u32,
+                    "Context utilization high, compacting older tool results in-flight"
+                );
+                compact_older_tool_results(&mut api_messages);
+            }
+        }
+
         append_text(&mut total_text, &iter_text);
 
         if stream_result.stop_reason != "tool_use" || iter_tool_calls.is_empty() {
@@ -338,6 +358,51 @@ fn append_text(total: &mut String, new: &str) {
         }
         total.push_str(new);
     }
+}
+
+/// Retroactively compact tool results in older messages when the context
+/// window is under pressure. Skips the last 4 messages (the most recent
+/// assistant turn + tool results pair) to avoid losing fresh context.
+fn compact_older_tool_results(messages: &mut [RichMessage]) {
+    let len = messages.len();
+    let cutoff = len.saturating_sub(4);
+    for msg in &mut messages[..cutoff] {
+        if msg.role != "user" {
+            continue;
+        }
+        if let MessageContent::Blocks(blocks) = &mut msg.content {
+            for block in blocks.iter_mut() {
+                if let ContentBlock::ToolResult { content, .. } = block {
+                    if content.len() > AGGRESSIVE_COMPACT_THRESHOLD {
+                        *content = aggressive_compact(content);
+                    }
+                }
+            }
+        }
+    }
+}
+
+const AGGRESSIVE_COMPACT_THRESHOLD: usize = 2_000;
+const AGGRESSIVE_KEEP_HEAD: usize = 800;
+const AGGRESSIVE_KEEP_TAIL: usize = 400;
+
+fn aggressive_compact(content: &str) -> String {
+    if content.len() <= AGGRESSIVE_COMPACT_THRESHOLD {
+        return content.to_string();
+    }
+    let head: String = content.chars().take(AGGRESSIVE_KEEP_HEAD).collect();
+    let tail: String = content
+        .chars()
+        .rev()
+        .take(AGGRESSIVE_KEEP_TAIL)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let omitted = content.len() - AGGRESSIVE_KEEP_HEAD - AGGRESSIVE_KEEP_TAIL;
+    format!(
+        "{head}\n[...{omitted} chars omitted...]\n{tail}"
+    )
 }
 
 const MICROCOMPACT_CHAR_THRESHOLD: usize = 8_000;
@@ -442,6 +507,7 @@ mod tests {
             thinking: None,
             stream_timeout: Duration::from_secs(30),
             billing_reason: "test",
+            max_context_tokens: None,
         }
     }
 
