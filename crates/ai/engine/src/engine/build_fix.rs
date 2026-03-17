@@ -433,6 +433,7 @@ impl DevLoopEngine {
         let base_path = Path::new(&project.linked_folder_path);
         let mut all_fix_ops: Vec<FileOp> = Vec::new();
         let mut prior_attempts: Vec<BuildFixAttemptRecord> = Vec::new();
+        let mut prior_test_attempts: Vec<BuildFixAttemptRecord> = Vec::new();
         let mut duplicate_bailouts: u32 = 0;
         let mut fix_input_tokens: u64 = 0;
         let mut fix_output_tokens: u64 = 0;
@@ -510,7 +511,7 @@ impl DevLoopEngine {
                     let (test_result, test_inp, test_out) = self.run_and_handle_tests(
                         project, task, session, api_key, initial_execution,
                         test_cmd, base_path, attempt, &mut all_fix_ops,
-                        baseline_test_failures,
+                        baseline_test_failures, &mut prior_test_attempts,
                     ).await?;
                     fix_input_tokens += test_inp;
                     fix_output_tokens += test_out;
@@ -705,6 +706,7 @@ impl DevLoopEngine {
         attempt: u32,
         all_fix_ops: &mut Vec<FileOp>,
         baseline_test_failures: &HashSet<String>,
+        prior_test_attempts: &mut Vec<BuildFixAttemptRecord>,
     ) -> Result<(bool, u64, u64), EngineError> {
         self.emit(EngineEvent::TestVerificationStarted {
             project_id: project.project_id,
@@ -854,7 +856,7 @@ impl DevLoopEngine {
             &test_result.stderr,
             &test_result.stdout,
             &initial_execution.notes,
-            &[],
+            prior_test_attempts,
         );
 
         let (tx, handle) = StreamTokenCapture::sink();
@@ -878,6 +880,23 @@ impl DevLoopEngine {
                 if !fix_execution.file_ops.is_empty() {
                     self.emit_file_ops_applied(project.project_id, session.agent_instance_id, task, &fix_execution.file_ops);
                 }
+
+                let attempt_files: Vec<String> = fix_execution.file_ops.iter().map(|op| {
+                    let (op_name, path) = match op {
+                        FileOp::Create { path, .. } => ("create", path.as_str()),
+                        FileOp::Modify { path, .. } => ("modify", path.as_str()),
+                        FileOp::Delete { path } => ("delete", path.as_str()),
+                        FileOp::SearchReplace { path, .. } => ("search_replace", path.as_str()),
+                    };
+                    format!("{op_name} {path}")
+                }).collect();
+                let sig = normalize_error_signature(&test_result.stderr);
+                prior_test_attempts.push(BuildFixAttemptRecord {
+                    stderr: test_result.stderr.clone(),
+                    error_signature: sig,
+                    files_changed: attempt_files,
+                });
+
                 all_fix_ops.extend(fix_execution.file_ops);
             }
             Err(e) => {

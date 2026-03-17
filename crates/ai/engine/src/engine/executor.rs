@@ -509,11 +509,12 @@ impl DevLoopEngine {
                         };
                         let mut test_fix_ops = Vec::new();
                         let no_baseline = HashSet::new();
+                        let mut prior_test_attempts = Vec::new();
                         let (test_passed, _test_inp, _test_out) = self.run_and_handle_tests(
                             project, task, &dummy_session,
                             &self.settings.get_decrypted_api_key()?,
                             &dummy_exec, test_cmd, base_path, attempt, &mut test_fix_ops,
-                            &no_baseline,
+                            &no_baseline, &mut prior_test_attempts,
                         ).await?;
                         if !test_passed {
                             if attempt < max_attempts {
