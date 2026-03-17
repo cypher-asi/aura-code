@@ -288,9 +288,10 @@ pub async fn run_tool_loop(
                 content: result.content.clone(),
                 is_error: result.is_error,
             });
+            let compacted = microcompact(&result.content);
             result_blocks.push(ContentBlock::ToolResult {
                 tool_use_id: result.tool_use_id.clone(),
-                content: result.content.clone(),
+                content: compacted,
                 is_error: if result.is_error { Some(true) } else { None },
             });
             if result.stop_loop {
@@ -337,6 +338,33 @@ fn append_text(total: &mut String, new: &str) {
         }
         total.push_str(new);
     }
+}
+
+const MICROCOMPACT_CHAR_THRESHOLD: usize = 8_000;
+const MICROCOMPACT_KEEP_HEAD: usize = 3_000;
+const MICROCOMPACT_KEEP_TAIL: usize = 1_500;
+
+/// Truncate large tool results to keep the conversation history lean.
+/// The full result is still sent to the UI via events; this only affects
+/// what the LLM sees on the next turn.
+fn microcompact(content: &str) -> String {
+    if content.len() <= MICROCOMPACT_CHAR_THRESHOLD {
+        return content.to_string();
+    }
+    let total_chars = content.len();
+    let head: String = content.chars().take(MICROCOMPACT_KEEP_HEAD).collect();
+    let tail: String = content
+        .chars()
+        .rev()
+        .take(MICROCOMPACT_KEEP_TAIL)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let omitted = total_chars - MICROCOMPACT_KEEP_HEAD - MICROCOMPACT_KEEP_TAIL;
+    format!(
+        "{head}\n\n[... {omitted} characters omitted — re-read the file or re-run the command if you need the full output ...]\n\n{tail}"
+    )
 }
 
 #[cfg(test)]
