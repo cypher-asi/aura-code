@@ -100,11 +100,10 @@ function SidebarSearchInput() {
 
 interface ShellChromeProps {
   onOpenOrgSettings: () => void;
-  onOpenSettings: () => void;
   onBuyCredits: () => void;
 }
 
-function DesktopShell({ onOpenOrgSettings, onOpenSettings, onBuyCredits }: ShellChromeProps) {
+function DesktopShell({ onOpenOrgSettings, onBuyCredits }: ShellChromeProps) {
   const { activeApp } = useAppContext();
   const { MainPanel } = activeApp;
   const leftPanelRef = useRef<HTMLDivElement>(null);
@@ -155,7 +154,6 @@ function DesktopShell({ onOpenOrgSettings, onOpenSettings, onBuyCredits }: Shell
             </Lane>
           </div>
           <BottomTaskbar
-            onOpenSettings={onOpenSettings}
             onOpenOrgSettings={onOpenOrgSettings}
             onBuyCredits={onBuyCredits}
           />
@@ -169,7 +167,11 @@ function DesktopShell({ onOpenOrgSettings, onOpenSettings, onBuyCredits }: Shell
   );
 }
 
-function MobileShell({ onOpenOrgSettings, onOpenSettings, onBuyCredits }: ShellChromeProps) {
+function MobileShell({
+  onOpenOrgSettings,
+  onOpenSettings,
+  onBuyCredits,
+}: ShellChromeProps & { onOpenSettings: () => void }) {
   const { apps: registeredApps, activeApp } = useAppContext();
   const { status: hostStatus } = useHost();
   const { previewItem } = useSidekick();
@@ -412,7 +414,6 @@ function AppContent() {
       ) : (
         <DesktopShell
           onOpenOrgSettings={() => setOrgSettingsOpen(true)}
-          onOpenSettings={() => setSettingsOpen(true)}
           onBuyCredits={openOrgBilling}
         />
       )}

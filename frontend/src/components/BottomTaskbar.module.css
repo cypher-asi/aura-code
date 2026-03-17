@@ -8,25 +8,17 @@
   flex-shrink: 0;
 }
 
-.settingsWrap,
 .orgWrap {
-  flex: 1 1 33.33%;
+  flex: 1 1 50%;
   min-width: 0;
   display: flex;
   align-items: stretch;
 }
 
 .creditsWrap {
-  flex: 1 1 33.33%;
+  flex: 1 1 50%;
   display: flex;
   align-items: stretch;
-}
-
-.settingsButton {
-  width: 100%;
-  height: 100%;
-  justify-content: center;
-  border-radius: 0;
 }
 
 .orgWrap > div {

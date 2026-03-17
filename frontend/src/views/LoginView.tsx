@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { useHost, type HostConnectionStatus } from "../context/HostContext";
 import { ApiClientError } from "../api/client";
 import { HostSettingsModal } from "../components/HostSettingsModal";
+import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { windowCommand } from "../lib/windowCommand";
 import { WindowControls } from "../components/WindowControls";
 import styles from "./LoginView.module.css";
@@ -71,6 +72,7 @@ function formatAuthError(err: unknown, hostLabel: string): string {
 export function LoginView() {
   const { login, register } = useAuth();
   const { hostLabel, status, refreshStatus } = useHost();
+  const { isMobileLayout } = useAuraCapabilities();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? "/";
@@ -157,38 +159,40 @@ export function LoginView() {
             </Text>
           </div>
 
-          <div className={`${styles.hostCard} ${showHostWarning ? styles.hostCardWarning : ""}`}>
-            <div className={styles.hostCardTop}>
-              <div className={styles.hostCardText}>
-                <Text size="sm" weight="medium">
-                  {hostStatus.title}
-                </Text>
-                <Text variant="muted" size="sm" className={styles.hostLabel}>
-                  {hostLabel}
-                </Text>
+          {isMobileLayout && (
+            <div className={`${styles.hostCard} ${showHostWarning ? styles.hostCardWarning : ""}`}>
+              <div className={styles.hostCardTop}>
+                <div className={styles.hostCardText}>
+                  <Text size="sm" weight="medium">
+                    {hostStatus.title}
+                  </Text>
+                  <Text variant="muted" size="sm" className={styles.hostLabel}>
+                    {hostLabel}
+                  </Text>
+                </div>
+                <Badge variant={HOST_BADGE_VARIANT[status]}>
+                  {status.replace(/_/g, " ")}
+                </Badge>
               </div>
-              <Badge variant={HOST_BADGE_VARIANT[status]}>
-                {status.replace(/_/g, " ")}
-              </Badge>
+              <Text variant="muted" size="sm">
+                {hostStatus.detail}
+              </Text>
+              <div className={styles.hostActions}>
+                <Button variant="ghost" size="sm" onClick={() => setHostSettingsOpen(true)}>
+                  Change host
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRefreshHost}
+                  disabled={hostRefreshing}
+                  icon={hostRefreshing ? <Spinner size="sm" /> : undefined}
+                >
+                  {hostRefreshing ? "Retrying..." : "Retry check"}
+                </Button>
+              </div>
             </div>
-            <Text variant="muted" size="sm">
-              {hostStatus.detail}
-            </Text>
-            <div className={styles.hostActions}>
-              <Button variant="ghost" size="sm" onClick={() => setHostSettingsOpen(true)}>
-                Change host
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRefreshHost}
-                disabled={hostRefreshing}
-                icon={hostRefreshing ? <Spinner size="sm" /> : undefined}
-              >
-                {hostRefreshing ? "Retrying..." : "Retry check"}
-              </Button>
-            </div>
-          </div>
+          )}
 
           <div className={styles.tabs}>
             <Tabs tabs={AUTH_TABS} value={activeTab} onChange={handleTabChange} />
@@ -242,7 +246,9 @@ export function LoginView() {
           </form>
         </Panel>
       </div>
-      <HostSettingsModal isOpen={hostSettingsOpen} onClose={() => setHostSettingsOpen(false)} />
+      {isMobileLayout && (
+        <HostSettingsModal isOpen={hostSettingsOpen} onClose={() => setHostSettingsOpen(false)} />
+      )}
     </div>
   );
 }
