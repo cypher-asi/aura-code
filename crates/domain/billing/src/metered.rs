@@ -88,18 +88,19 @@ impl MeteredLlm {
         output_tokens: u64,
         reason: &str,
         metadata: Option<serde_json::Value>,
-    ) {
+    ) -> Result<(), MeteredLlmError> {
         let amount = input_tokens + output_tokens;
         if amount == 0 {
-            return;
+            return Ok(());
         }
         let Some(token) = self.access_token() else {
             warn!("No access token available for credit debit");
-            return;
+            return Ok(());
         };
         match self.billing.debit_credits(&token, amount, reason, None, metadata).await {
             Ok(resp) => {
                 info!(amount, reason, balance = resp.balance, tx = %resp.transaction_id, "Credits debited");
+                Ok(())
             }
             Err(BillingError::InsufficientCredits { available, required }) => {
                 warn!(available, required, "Insufficient credits during debit, draining remaining");
@@ -114,9 +115,11 @@ impl MeteredLlm {
                     }
                 }
                 self.credits_exhausted.store(true, Ordering::SeqCst);
+                Err(MeteredLlmError::InsufficientCredits)
             }
             Err(e) => {
                 warn!(error = %e, reason, "Failed to debit credits");
+                Ok(())
             }
         }
     }
@@ -132,7 +135,7 @@ impl MeteredLlm {
     ) -> Result<LlmResponse, MeteredLlmError> {
         self.pre_flight_check().await?;
         let resp = self.provider.complete(api_key, system_prompt, user_message, max_tokens).await?;
-        self.debit(resp.input_tokens, resp.output_tokens, reason, metadata).await;
+        self.debit(resp.input_tokens, resp.output_tokens, reason, metadata).await?;
         Ok(resp)
     }
 
@@ -152,7 +155,7 @@ impl MeteredLlm {
             api_key, system_prompt, user_message, max_tokens, tx,
         ).await?;
         let (inp, out) = handle.finalize().await;
-        self.debit(inp, out, reason, metadata).await;
+        self.debit(inp, out, reason, metadata).await?;
         Ok(result)
     }
 
@@ -172,7 +175,7 @@ impl MeteredLlm {
             api_key, system_prompt, messages, max_tokens, tx,
         ).await?;
         let (inp, out) = handle.finalize().await;
-        self.debit(inp, out, reason, metadata).await;
+        self.debit(inp, out, reason, metadata).await?;
         Ok(result)
     }
 
@@ -191,7 +194,7 @@ impl MeteredLlm {
         let resp = self.provider.complete_stream_with_tools(
             api_key, system_prompt, messages, tools, max_tokens, None, event_tx,
         ).await?;
-        self.debit(resp.input_tokens, resp.output_tokens, reason, metadata).await;
+        self.debit(resp.input_tokens, resp.output_tokens, reason, metadata).await?;
         Ok(resp)
     }
 
@@ -211,7 +214,7 @@ impl MeteredLlm {
         let resp = self.provider.complete_stream_with_tools(
             api_key, system_prompt, messages, tools, max_tokens, Some(thinking), event_tx,
         ).await?;
-        self.debit(resp.input_tokens, resp.output_tokens, reason, metadata).await;
+        self.debit(resp.input_tokens, resp.output_tokens, reason, metadata).await?;
         Ok(resp)
     }
 }
