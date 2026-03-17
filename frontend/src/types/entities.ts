@@ -4,7 +4,6 @@ import type {
   TaskStatus,
   AgentStatus,
   SessionStatus,
-  ApiKeyStatus,
 } from "./enums";
 
 export interface Project {
@@ -148,10 +147,7 @@ export interface Session {
 }
 
 export interface ApiKeyInfo {
-  status: ApiKeyStatus;
-  masked_key: string | null;
-  last_validated_at: string | null;
-  updated_at: string | null;
+  configured: boolean;
 }
 
 export interface ProjectProgress {
