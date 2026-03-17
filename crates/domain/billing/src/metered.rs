@@ -30,6 +30,14 @@ impl MeteredLlmError {
     pub fn is_insufficient_credits(&self) -> bool {
         matches!(self, MeteredLlmError::InsufficientCredits)
     }
+
+    /// Returns true for any billing-related failure (insufficient credits,
+    /// server errors, deserialization, network issues). Use this to decide
+    /// whether to stop the automation loop — we must not keep running LLM
+    /// calls if we can't record the billing for them.
+    pub fn is_billing_error(&self) -> bool {
+        matches!(self, MeteredLlmError::InsufficientCredits | MeteredLlmError::Billing(_))
+    }
 }
 
 pub struct MeteredLlm {
@@ -125,7 +133,8 @@ impl MeteredLlm {
                 Err(MeteredLlmError::InsufficientCredits)
             }
             Err(e) => {
-                warn!(error = %e, reason, "Failed to debit credits");
+                warn!(error = %e, reason, "Failed to debit credits — flagging exhausted to stop loop");
+                self.credits_exhausted.store(true, Ordering::SeqCst);
                 Err(MeteredLlmError::Billing(e))
             }
         }

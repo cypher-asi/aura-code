@@ -199,10 +199,14 @@ pub async fn run_tool_loop(
         let stream_result = match stream_handle.await {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => {
-                let is_credits = e.is_insufficient_credits();
-                if is_credits {
+                let is_billing = e.is_billing_error();
+                if e.is_insufficient_credits() {
                     let _ = event_tx.send(ToolLoopEvent::Error(
                         "Insufficient credits — please top up to continue.".to_string(),
+                    ));
+                } else if is_billing {
+                    let _ = event_tx.send(ToolLoopEvent::Error(
+                        format!("Billing error — stopping to prevent unbilled usage: {e}"),
                     ));
                 } else if iter_text.is_empty() && iter_tool_calls.is_empty() {
                     let _ = event_tx.send(ToolLoopEvent::Error(format!("LLM error: {e}")));
@@ -215,7 +219,7 @@ pub async fn run_tool_loop(
                     total_output_tokens,
                     iterations_run: iteration + 1,
                     timed_out: false,
-                    insufficient_credits: is_credits,
+                    insufficient_credits: is_billing,
                 };
             }
             Err(e) => {
