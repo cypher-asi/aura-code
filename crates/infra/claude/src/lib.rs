@@ -1,4 +1,5 @@
 mod error;
+pub mod mock;
 
 pub use error::ClaudeClientError;
 
@@ -833,6 +834,76 @@ impl ClaudeClient {
 impl Default for ClaudeClient {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Stream-token-capture helper
+// ---------------------------------------------------------------------------
+
+/// Wraps an event channel to intercept `Done` events and capture token counts,
+/// optionally forwarding all events to an outer sender.
+///
+/// Eliminates the repeated `(inner_tx, inner_rx) + Arc<Mutex<(u64,u64)>> +
+/// tokio::spawn` pattern from `MeteredLlm` and build-fix code.
+/// Handle returned by [`stream_token_capture`] constructors. Await to get
+/// the captured `(input_tokens, output_tokens)` once the sender is dropped.
+pub struct TokenCaptureHandle {
+    forwarder: tokio::task::JoinHandle<()>,
+    tokens: std::sync::Arc<tokio::sync::Mutex<(u64, u64)>>,
+}
+
+impl TokenCaptureHandle {
+    /// Wait for the forwarder task to complete, then return accumulated
+    /// `(input_tokens, output_tokens)`.
+    pub async fn finalize(self) -> (u64, u64) {
+        let _ = self.forwarder.await;
+        *self.tokens.lock().await
+    }
+}
+
+/// Helpers for intercepting stream events to capture token usage.
+pub struct StreamTokenCapture;
+
+impl StreamTokenCapture {
+    /// Create a channel that forwards every event to `outer` while capturing
+    /// token counts from `Done` events. Returns the sender (to pass to
+    /// `LlmProvider::complete_stream*`) and a handle to retrieve the counts.
+    pub fn forwarding(
+        outer: mpsc::UnboundedSender<ClaudeStreamEvent>,
+    ) -> (mpsc::UnboundedSender<ClaudeStreamEvent>, TokenCaptureHandle) {
+        let (tx, mut rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
+        let tokens = std::sync::Arc::new(tokio::sync::Mutex::new((0u64, 0u64)));
+        let tc = tokens.clone();
+        let forwarder = tokio::spawn(async move {
+            while let Some(evt) = rx.recv().await {
+                if let ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } = &evt {
+                    let mut g = tc.lock().await;
+                    g.0 = *input_tokens;
+                    g.1 = *output_tokens;
+                }
+                let _ = outer.send(evt);
+            }
+        });
+        (tx, TokenCaptureHandle { forwarder, tokens })
+    }
+
+    /// Create a channel that consumes events without forwarding, accumulating
+    /// token counts across multiple `Done` events (useful for build-fix loops).
+    pub fn sink() -> (mpsc::UnboundedSender<ClaudeStreamEvent>, TokenCaptureHandle) {
+        let (tx, mut rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
+        let tokens = std::sync::Arc::new(tokio::sync::Mutex::new((0u64, 0u64)));
+        let tc = tokens.clone();
+        let forwarder = tokio::spawn(async move {
+            while let Some(evt) = rx.recv().await {
+                if let ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } = &evt {
+                    let mut g = tc.lock().await;
+                    g.0 += *input_tokens;
+                    g.1 += *output_tokens;
+                }
+            }
+        });
+        (tx, TokenCaptureHandle { forwarder, tokens })
     }
 }
 
