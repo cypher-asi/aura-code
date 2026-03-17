@@ -217,9 +217,8 @@ impl DevLoopEngine {
         let mut total_build_fix_attempts: u32 = 0;
         let mut duplicate_error_bailouts: u32 = 0;
 
-        let project_root = self.project_service.get_project(&project_id)
-            .map(|p| p.linked_folder_path.clone())
-            .unwrap_or_default();
+        let project_root = self.project_service.get_project(&project_id)?
+            .linked_folder_path.clone();
         let mut run_metrics = LoopRunMetrics::new(project_id.to_string());
         let fee_schedule = aura_billing::PricingService::new(self.store.clone())
             .get_fee_schedule();
@@ -267,19 +266,23 @@ impl DevLoopEngine {
 
         loop {
             if *stop_rx.borrow() == LoopCommand::Pause {
-                let _ = self.session_service.end_session(
+                if let Err(e) = self.session_service.end_session(
                     &project_id, &agent_instance_id, &session.session_id, SessionStatus::Completed,
-                );
-                let _ = self.agent_instance_service.finish_working(&project_id, &agent_instance_id);
+                ) { warn!(error = %e, "failed to end session on pause"); }
+                if let Err(e) = self.agent_instance_service.finish_working(&project_id, &agent_instance_id) {
+                    warn!(error = %e, "failed to finish_working on pause");
+                }
                 self.emit(EngineEvent::LoopPaused { project_id, agent_instance_id, completed_count });
                 flush_metrics!("paused");
                 return Ok(LoopOutcome::Paused { completed_count });
             }
             if *stop_rx.borrow() == LoopCommand::Stop {
-                let _ = self.session_service.end_session(
+                if let Err(e) = self.session_service.end_session(
                     &project_id, &agent_instance_id, &session.session_id, SessionStatus::Completed,
-                );
-                let _ = self.agent_instance_service.finish_working(&project_id, &agent_instance_id);
+                ) { warn!(error = %e, "failed to end session on stop"); }
+                if let Err(e) = self.agent_instance_service.finish_working(&project_id, &agent_instance_id) {
+                    warn!(error = %e, "failed to finish_working on stop");
+                }
                 self.emit(EngineEvent::LoopStopped { project_id, agent_instance_id, completed_count });
                 flush_metrics!("stopped");
                 return Ok(LoopOutcome::Stopped { completed_count });
@@ -301,9 +304,12 @@ impl DevLoopEngine {
                             *count += 1;
                             tasks_retried += 1;
                             info!(task_id = %t.task_id, title = %t.title, attempt = *count, "resetting failed task for retry");
-                            let _ = self.task_service.retry_task(
+                            if let Err(e) = self.task_service.retry_task(
                                 &project_id, &t.spec_id, &t.task_id,
-                            );
+                            ) {
+                                warn!(task_id = %t.task_id, error = %e, "retry_task failed, skipping");
+                                continue;
+                            }
                             self.emit(EngineEvent::TaskBecameReady { project_id, agent_instance_id, task_id: t.task_id });
                         }
                         continue;
@@ -326,16 +332,16 @@ impl DevLoopEngine {
                         duplicate_error_bailouts: Some(duplicate_error_bailouts),
                     };
                     if progress.blocked_tasks > 0 || progress.failed_tasks > 0 {
-                        let _ = self.session_service.end_session(
+                        if let Err(e) = self.session_service.end_session(
                             &project_id, &agent_instance_id, &session.session_id, SessionStatus::Completed,
-                        );
+                        ) { warn!(error = %e, "failed to end session on all_tasks_blocked"); }
                         self.emit(loop_metrics("all_tasks_blocked"));
                         flush_metrics!("all_tasks_blocked");
                         return Ok(LoopOutcome::AllTasksBlocked);
                     }
-                    let _ = self.session_service.end_session(
+                    if let Err(e) = self.session_service.end_session(
                         &project_id, &agent_instance_id, &session.session_id, SessionStatus::Completed,
-                    );
+                    ) { warn!(error = %e, "failed to end session on all_tasks_complete"); }
                     self.emit(loop_metrics("all_tasks_complete"));
                     flush_metrics!("all_tasks_complete");
                     return Ok(LoopOutcome::AllTasksComplete);
@@ -385,24 +391,26 @@ impl DevLoopEngine {
             };
 
             if result.is_none() {
-                let _ = self.task_service.reset_task_to_ready(
+                if let Err(e) = self.task_service.reset_task_to_ready(
                     &project_id, &task.spec_id, &task.task_id,
-                );
+                ) { warn!(error = %e, "failed to reset task to ready after interruption"); }
                 self.emit(EngineEvent::TaskBecameReady { project_id, agent_instance_id, task_id: task.task_id });
-                let _ = self.agent_instance_service.finish_working(&project_id, &agent_instance_id);
+                if let Err(e) = self.agent_instance_service.finish_working(&project_id, &agent_instance_id) {
+                    warn!(error = %e, "failed to finish_working after interruption");
+                }
 
                 let cmd = *stop_rx.borrow();
                 if cmd == LoopCommand::Stop {
-                    let _ = self.session_service.end_session(
+                    if let Err(e) = self.session_service.end_session(
                         &project_id, &agent_instance_id, &session.session_id, SessionStatus::Completed,
-                    );
+                    ) { warn!(error = %e, "failed to end session on stop"); }
                     self.emit(EngineEvent::LoopStopped { project_id, agent_instance_id, completed_count });
                     flush_metrics!("stopped");
                     return Ok(LoopOutcome::Stopped { completed_count });
                 } else {
-                    let _ = self.session_service.end_session(
+                    if let Err(e) = self.session_service.end_session(
                         &project_id, &agent_instance_id, &session.session_id, SessionStatus::Completed,
-                    );
+                    ) { warn!(error = %e, "failed to end session on pause"); }
                     self.emit(EngineEvent::LoopPaused { project_id, agent_instance_id, completed_count });
                     flush_metrics!("paused");
                     return Ok(LoopOutcome::Paused { completed_count });
@@ -690,9 +698,9 @@ impl DevLoopEngine {
 
             if self.llm.is_credits_exhausted() {
                 warn!("Credits exhausted, stopping engine loop");
-                let _ = self.session_service.end_session(
+                if let Err(e) = self.session_service.end_session(
                     &project_id, &agent_instance_id, &session.session_id, SessionStatus::Completed,
-                );
+                ) { warn!(error = %e, "failed to end session on credits exhausted"); }
                 self.emit(EngineEvent::LoopFinished {
                     project_id,
                     agent_instance_id,
@@ -736,19 +744,21 @@ impl DevLoopEngine {
                         &history,
                     ) => { res? }
                     _ = stop_rx.changed() => {
-                        let _ = self.agent_instance_service.finish_working(&project_id, &agent_instance_id);
+                        if let Err(e) = self.agent_instance_service.finish_working(&project_id, &agent_instance_id) {
+                            warn!(error = %e, "failed to finish_working during rollover interruption");
+                        }
                         let cmd = *stop_rx.borrow();
                         if cmd == LoopCommand::Stop {
-                            let _ = self.session_service.end_session(
+                            if let Err(e) = self.session_service.end_session(
                                 &project_id, &agent_instance_id, &session.session_id, SessionStatus::Completed,
-                            );
+                            ) { warn!(error = %e, "failed to end session on stop"); }
                             self.emit(EngineEvent::LoopStopped { project_id, agent_instance_id, completed_count });
                             flush_metrics!("stopped");
                             return Ok(LoopOutcome::Stopped { completed_count });
                         } else {
-                            let _ = self.session_service.end_session(
+                            if let Err(e) = self.session_service.end_session(
                                 &project_id, &agent_instance_id, &session.session_id, SessionStatus::Completed,
-                            );
+                            ) { warn!(error = %e, "failed to end session on pause"); }
                             self.emit(EngineEvent::LoopPaused { project_id, agent_instance_id, completed_count });
                             flush_metrics!("paused");
                             return Ok(LoopOutcome::Paused { completed_count });
@@ -812,7 +822,7 @@ impl DevLoopEngine {
     ) {
         let uid = user_id.clone();
         let m = model.clone();
-        let _ = self.store.atomic_update_task(
+        if let Err(e) = self.store.atomic_update_task(
             project_id, &task.spec_id, &task.task_id,
             |t| {
                 t.user_id = uid;
@@ -820,7 +830,9 @@ impl DevLoopEngine {
                 t.total_input_tokens += input_tokens;
                 t.total_output_tokens += output_tokens;
             },
-        );
+        ) {
+            warn!(task_id = %task.task_id, error = %e, "failed to update task tracking metadata");
+        }
     }
 
     pub(crate) fn current_user_id(&self) -> Option<String> {

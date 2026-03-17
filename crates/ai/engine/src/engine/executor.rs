@@ -101,9 +101,8 @@ impl DevLoopEngine {
         let task_start = Instant::now();
         let model_name = model.clone();
 
-        let project_root = self.project_service.get_project(&project_id)
-            .map(|p| p.linked_folder_path.clone())
-            .unwrap_or_default();
+        let project_root = self.project_service.get_project(&project_id)?
+            .linked_folder_path.clone();
         let fee_schedule = aura_billing::PricingService::new(self.store.clone())
             .get_fee_schedule();
 
@@ -147,9 +146,9 @@ impl DevLoopEngine {
                 if let Err(e) = apply_result {
                     let reason = format!("file operation failed: {e}");
                     let task_dur = task_start.elapsed().as_millis() as u64;
-                    let _ = self.task_service.fail_task(
+                    if let Err(e) = self.task_service.fail_task(
                         &project_id, &task.spec_id, &task.task_id, &reason,
-                    );
+                    ) { warn!(task_id = %task.task_id, error = %e, "failed to mark task as failed"); }
                     self.emit(EngineEvent::TaskFailed {
                         project_id,
                         agent_instance_id: aiid,
@@ -176,10 +175,10 @@ impl DevLoopEngine {
                             &fee_schedule,
                         );
                     }
-                    let _ = self.session_service.update_context_usage(
+                    if let Err(e) = self.session_service.update_context_usage(
                         &project_id, &agent.agent_instance_id, &session.session_id,
                         execution.input_tokens, execution.output_tokens,
-                    );
+                    ) { warn!(error = %e, "failed to update context usage after file_ops failure"); }
                     SessionStatus::Failed
                 } else {
                     let file_ops_duration_ms = file_ops_start.elapsed().as_millis() as u64;
@@ -207,10 +206,10 @@ impl DevLoopEngine {
                     );
 
                     if build_passed {
-                        let _ = self.task_service.complete_task(
+                        if let Err(e) = self.task_service.complete_task(
                             &project_id, &task.spec_id, &task.task_id,
                             &execution.notes, file_changes,
-                        );
+                        ) { warn!(task_id = %task.task_id, error = %e, "failed to mark task as completed"); }
                         self.emit(EngineEvent::TaskCompleted {
                             project_id,
                             agent_instance_id: aiid,
@@ -275,9 +274,9 @@ impl DevLoopEngine {
                         }
                     } else {
                         let reason = "build verification failed after all fix attempts".to_string();
-                        let _ = self.task_service.fail_task(
+                        if let Err(e) = self.task_service.fail_task(
                             &project_id, &task.spec_id, &task.task_id, &reason,
-                        );
+                        ) { warn!(task_id = %task.task_id, error = %e, "failed to mark task as failed"); }
                         self.emit(EngineEvent::TaskFailed {
                             project_id,
                             agent_instance_id: aiid,
@@ -313,19 +312,19 @@ impl DevLoopEngine {
                             );
                         }
                     }
-                    let _ = self.session_service.update_context_usage(
+                    if let Err(e) = self.session_service.update_context_usage(
                         &project_id, &agent.agent_instance_id, &session.session_id,
                         total_input, total_output,
-                    );
+                    ) { warn!(error = %e, "failed to update context usage"); }
                     SessionStatus::Completed
                 }
             }
             Err(e) => {
                 let reason = format!("execution error: {e}");
                 let task_dur = task_start.elapsed().as_millis() as u64;
-                let _ = self.task_service.fail_task(
+                if let Err(e) = self.task_service.fail_task(
                     &project_id, &task.spec_id, &task.task_id, &reason,
-                );
+                ) { warn!(task_id = %task.task_id, error = %e, "failed to mark task as failed"); }
                 self.emit(EngineEvent::TaskFailed {
                     project_id,
                     agent_instance_id: aiid,
@@ -352,10 +351,12 @@ impl DevLoopEngine {
             }
         };
 
-        let _ = self.session_service.end_session(
+        if let Err(e) = self.session_service.end_session(
             &project_id, &agent.agent_instance_id, &session.session_id, end_status,
-        );
-        let _ = self.agent_instance_service.finish_working(&project_id, &agent.agent_instance_id);
+        ) { warn!(error = %e, "failed to end session after single task"); }
+        if let Err(e) = self.agent_instance_service.finish_working(&project_id, &agent.agent_instance_id) {
+            warn!(error = %e, "failed to finish_working after single task");
+        }
         Ok(())
     }
 
@@ -471,7 +472,7 @@ impl DevLoopEngine {
                         let no_baseline = HashSet::new();
                         let (test_passed, _test_inp, _test_out) = self.run_and_handle_tests(
                             project, task, &dummy_session,
-                            &self.settings.get_decrypted_api_key().unwrap_or_default(),
+                            &self.settings.get_decrypted_api_key()?,
                             &dummy_exec, test_cmd, base_path, attempt, &mut test_fix_ops,
                             &no_baseline,
                         ).await?;
