@@ -24,8 +24,19 @@ test("mobile login page renders with PWA metadata", async ({ page }) => {
   await expect(page).toHaveTitle(/AURA/);
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#05070d");
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("href", "/manifest.webmanifest");
+  await expect(page.getByText("Sign in required")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Change host" })).toBeVisible();
   await expect(page.getByPlaceholder("Email")).toBeVisible();
   await expect(page.locator("form").getByRole("button", { name: "Sign In" })).toBeVisible();
+});
+
+test("mobile login page can open host settings", async ({ page }) => {
+  await page.goto("/login");
+
+  await page.getByRole("button", { name: "Change host" }).click();
+
+  await expect(page.getByRole("heading", { name: "Host Connection" })).toBeVisible();
+  await expect(page.getByPlaceholder("192.168.1.20:5173")).toBeVisible();
 });
 
 test("manifest and service worker assets are reachable", async ({ page }) => {

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Topbar, Drawer, Badge, Button } from "@cypher-asi/zui";
-import { Eye, Menu, Rows3, Server } from "lucide-react";
+import { Eye, Menu, Rows3, Server, Settings } from "lucide-react";
 import { Lane } from "./Lane";
 import { AppNavRail } from "./AppNavRail";
 import { BottomTaskbar } from "./BottomTaskbar";
@@ -100,10 +100,11 @@ function SidebarSearchInput() {
 
 interface ShellChromeProps {
   onOpenOrgSettings: () => void;
+  onOpenSettings: () => void;
   onBuyCredits: () => void;
 }
 
-function DesktopShell({ onOpenOrgSettings, onBuyCredits }: ShellChromeProps) {
+function DesktopShell({ onOpenOrgSettings, onOpenSettings, onBuyCredits }: ShellChromeProps) {
   const { activeApp } = useAppContext();
   const { MainPanel } = activeApp;
   const leftPanelRef = useRef<HTMLDivElement>(null);
@@ -154,6 +155,7 @@ function DesktopShell({ onOpenOrgSettings, onBuyCredits }: ShellChromeProps) {
             </Lane>
           </div>
           <BottomTaskbar
+            onOpenSettings={onOpenSettings}
             onOpenOrgSettings={onOpenOrgSettings}
             onBuyCredits={onBuyCredits}
           />
@@ -167,7 +169,7 @@ function DesktopShell({ onOpenOrgSettings, onBuyCredits }: ShellChromeProps) {
   );
 }
 
-function MobileShell({ onOpenOrgSettings, onBuyCredits }: ShellChromeProps) {
+function MobileShell({ onOpenOrgSettings, onOpenSettings, onBuyCredits }: ShellChromeProps) {
   const { apps: registeredApps, activeApp } = useAppContext();
   const { status: hostStatus } = useHost();
   const { previewItem } = useSidekick();
@@ -310,6 +312,18 @@ function MobileShell({ onOpenOrgSettings, onBuyCredits }: ShellChromeProps) {
           <div className={styles.mobileDrawerFooter}>
             <OrgSelector onOpenSettings={onOpenOrgSettings} />
             <CreditsBadge onClick={onBuyCredits} />
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Settings size={14} />}
+              className={styles.mobileDrawerAction}
+              onClick={() => {
+                setNavOpen(false);
+                onOpenSettings();
+              }}
+            >
+              App settings
+            </Button>
           </div>
         </div>
       </Drawer>
@@ -390,9 +404,17 @@ function AppContent() {
   return (
     <>
       {isMobileLayout ? (
-        <MobileShell onOpenOrgSettings={() => setOrgSettingsOpen(true)} onBuyCredits={openOrgBilling} />
+        <MobileShell
+          onOpenOrgSettings={() => setOrgSettingsOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onBuyCredits={openOrgBilling}
+        />
       ) : (
-        <DesktopShell onOpenOrgSettings={() => setOrgSettingsOpen(true)} onBuyCredits={openOrgBilling} />
+        <DesktopShell
+          onOpenOrgSettings={() => setOrgSettingsOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onBuyCredits={openOrgBilling}
+        />
       )}
 
       <OrgSettingsPanel

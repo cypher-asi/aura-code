@@ -11,11 +11,12 @@
   justify-content: center;
   flex: 1;
   min-height: 0;
+  padding: var(--space-4);
 }
 
 .card {
   width: 100%;
-  max-width: 400px;
+  max-width: 440px;
   padding: var(--space-8);
 }
 
@@ -46,6 +47,46 @@
   margin-bottom: var(--space-5);
 }
 
+.hostCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hostCardWarning {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.hostCardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.hostCardText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.hostLabel {
+  word-break: break-word;
+}
+
+.hostActions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -63,4 +104,14 @@
 
 .submit {
   margin-top: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-6);
+  }
+
+  .hostCardTop {
+    flex-direction: column;
+  }
 }

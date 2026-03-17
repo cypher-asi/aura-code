@@ -128,6 +128,11 @@
   background: rgba(255, 255, 255, 0.03);
 }
 
+.mobileDrawerAction {
+  grid-column: 1 / -1;
+  justify-content: center;
+}
+
 .mobileContextHeader {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
