@@ -59,7 +59,8 @@ export function AgentChatView() {
           msgs
             .filter((m: Message) =>
               (m.content && m.content.trim().length > 0) ||
-              (m.content_blocks && m.content_blocks.length > 0),
+              (m.content_blocks && m.content_blocks.length > 0) ||
+              m.thinking,
             )
             .map((m: Message) => {
               const blocks = (m.content_blocks ?? [])
@@ -74,6 +75,8 @@ export function AgentChatView() {
                 role: m.role,
                 content: m.content,
                 contentBlocks: blocks.length > 0 ? blocks : undefined,
+                thinkingText: m.thinking || undefined,
+                thinkingDurationMs: m.thinking_duration_ms ?? null,
               };
             }),
         );

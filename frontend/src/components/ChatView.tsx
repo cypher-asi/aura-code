@@ -62,7 +62,7 @@ export function ChatView() {
       .then((msgs) => {
         resetMessages(
           msgs
-            .filter((m: Message) => (m.content && m.content.trim().length > 0) || (m.content_blocks && m.content_blocks.length > 0))
+            .filter((m: Message) => (m.content && m.content.trim().length > 0) || (m.content_blocks && m.content_blocks.length > 0) || m.thinking)
             .map((m: Message) => {
               const blocks = (m.content_blocks ?? [])
                 .filter((b) => b.type === "text" || b.type === "image")
@@ -74,6 +74,8 @@ export function ChatView() {
                 role: m.role,
                 content: m.content,
                 contentBlocks: blocks.length > 0 ? blocks : undefined,
+                thinkingText: m.thinking || undefined,
+                thinkingDurationMs: m.thinking_duration_ms ?? null,
               };
             }),
         );

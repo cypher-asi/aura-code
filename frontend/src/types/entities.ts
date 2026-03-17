@@ -196,6 +196,8 @@ export interface Message {
   role: "user" | "assistant" | "system";
   content: string;
   content_blocks?: ChatContentBlock[];
+  thinking?: string;
+  thinking_duration_ms?: number;
   created_at: string;
 }
 

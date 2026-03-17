@@ -22,6 +22,8 @@ interface DisplayMessage {
   content: string;
   toolCalls?: ToolCallEntry[];
   contentBlocks?: DisplayContentBlockUnion[];
+  thinkingText?: string;
+  thinkingDurationMs?: number | null;
 }
 
 interface Props {
@@ -80,7 +82,7 @@ function ToolCallBlock({ entry }: { entry: ToolCallEntry }) {
           <span className={toolStyles.toolSummary}>{inputSummary}</span>
         )}
       </button>
-      {expanded && (
+      <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
         <div className={toolStyles.toolBody}>
           <div className={toolStyles.section}>
             <div className={toolStyles.sectionLabel}>Input</div>
@@ -99,7 +101,7 @@ function ToolCallBlock({ entry }: { entry: ToolCallEntry }) {
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -181,11 +183,11 @@ function FileAttachmentBlock({ text }: { text: string }) {
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </span>
       </button>
-      {expanded && (
+      <div className={`${styles.fileAttachmentBodyWrap} ${expanded ? styles.fileAttachmentBodyExpanded : ""}`}>
         <div className={styles.fileAttachmentContent}>
           <pre>{fileContent}</pre>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -257,8 +259,9 @@ export function MessageBubble({ message }: Props) {
   const hasContent = message.content && message.content.trim().length > 0;
   const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
   const hasContentBlocks = message.contentBlocks && message.contentBlocks.length > 0;
+  const hasThinking = message.thinkingText && message.thinkingText.length > 0;
 
-  if (!hasContent && !hasToolCalls && !hasContentBlocks) return null;
+  if (!hasContent && !hasToolCalls && !hasContentBlocks && !hasThinking) return null;
 
   const renderUserContent = () => {
     if (hasContentBlocks) {
@@ -301,6 +304,13 @@ export function MessageBubble({ message }: Props) {
           renderUserContent()
         ) : (
           <div className={styles.markdown}>
+            {hasThinking && (
+              <ThinkingBlock
+                text={message.thinkingText!}
+                isStreaming={false}
+                durationMs={message.thinkingDurationMs}
+              />
+            )}
             {hasToolCalls && (
               <ToolCallsList entries={message.toolCalls!} />
             )}

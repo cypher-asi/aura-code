@@ -362,6 +362,8 @@ impl ChatService {
             role: ChatRole::User,
             content: content.to_string(),
             content_blocks,
+            thinking: None,
+            thinking_duration_ms: None,
             created_at: now,
         };
         if let Err(e) = self.store.put_message(&user_msg) {
@@ -445,6 +447,8 @@ impl ChatService {
             role: ChatRole::User,
             content: content.to_string(),
             content_blocks,
+            thinking: None,
+            thinking_duration_ms: None,
             created_at: now,
         };
         if let Err(e) = self.store.put_agent_message(agent_id, &user_msg) {
@@ -564,6 +568,8 @@ impl ChatService {
 
         let max_iters = ChatToolExecutor::max_iterations();
         let mut total_text = String::new();
+        let mut total_thinking = String::new();
+        let thinking_start = std::time::Instant::now();
         let mut accumulated_input_tokens: u64 = 0;
         let mut accumulated_output_tokens: u64 = 0;
         let stream_timeout = std::time::Duration::from_secs(300);
@@ -615,6 +621,7 @@ impl ChatService {
                             iter_tool_calls.push(aura_claude::ToolCall { id, name, input });
                         }
                         ClaudeStreamEvent::ThinkingDelta(text) => {
+                            total_thinking.push_str(&text);
                             let _ = tx.send(ChatStreamEvent::ThinkingDelta(text));
                         }
                         ClaudeStreamEvent::Done { stop_reason, .. } => {
@@ -713,6 +720,8 @@ impl ChatService {
                 role: ChatRole::Assistant,
                 content: String::new(),
                 content_blocks: Some(assistant_persist_blocks),
+                thinking: None,
+                thinking_duration_ms: None,
                 created_at: Utc::now(),
             };
             if let Err(e) = self.store.put_agent_message(agent_id, &assistant_iter_msg) {
@@ -773,6 +782,8 @@ impl ChatService {
                 role: ChatRole::User,
                 content: String::new(),
                 content_blocks: Some(result_persist_blocks),
+                thinking: None,
+                thinking_duration_ms: None,
                 created_at: Utc::now(),
             };
             if let Err(e) = self.store.put_agent_message(agent_id, &tool_result_msg) {
@@ -795,6 +806,8 @@ impl ChatService {
         );
 
         if !total_text.is_empty() {
+            let thinking = if total_thinking.is_empty() { None } else { Some(total_thinking) };
+            let thinking_duration_ms = thinking.as_ref().map(|_| thinking_start.elapsed().as_millis() as u64);
             let assistant_msg = Message {
                 message_id: MessageId::new(),
                 agent_instance_id: dummy_agent_instance_id,
@@ -802,6 +815,8 @@ impl ChatService {
                 role: ChatRole::Assistant,
                 content: total_text,
                 content_blocks: None,
+                thinking,
+                thinking_duration_ms,
                 created_at: Utc::now(),
             };
             if let Err(e) = self.store.put_agent_message(agent_id, &assistant_msg) {
@@ -925,6 +940,8 @@ impl ChatService {
 
         let max_iters = ChatToolExecutor::max_iterations();
         let mut total_text = String::new();
+        let mut total_thinking = String::new();
+        let thinking_start = std::time::Instant::now();
         let mut accumulated_input_tokens: u64 = 0;
         let mut accumulated_output_tokens: u64 = 0;
         let stream_timeout = std::time::Duration::from_secs(300);
@@ -1009,6 +1026,7 @@ impl ChatService {
                             iter_tool_calls.push(aura_claude::ToolCall { id, name, input });
                         }
                         ClaudeStreamEvent::ThinkingDelta(text) => {
+                            total_thinking.push_str(&text);
                             let _ = tx.send(ChatStreamEvent::ThinkingDelta(text));
                         }
                         ClaudeStreamEvent::Done { stop_reason, .. } => {
@@ -1131,6 +1149,8 @@ impl ChatService {
                 role: ChatRole::Assistant,
                 content: String::new(),
                 content_blocks: Some(assistant_persist_blocks),
+                thinking: None,
+                thinking_duration_ms: None,
                 created_at: Utc::now(),
             };
             if let Err(e) = self.store.put_message(&assistant_iter_msg) {
@@ -1177,6 +1197,8 @@ impl ChatService {
                 role: ChatRole::User,
                 content: String::new(),
                 content_blocks: Some(result_persist_blocks),
+                thinking: None,
+                thinking_duration_ms: None,
                 created_at: Utc::now(),
             };
             if let Err(e) = self.store.put_message(&tool_result_msg) {
@@ -1200,6 +1222,8 @@ impl ChatService {
 
         if !total_text.is_empty() {
             let assistant_reply = total_text.clone();
+            let thinking = if total_thinking.is_empty() { None } else { Some(total_thinking) };
+            let thinking_duration_ms = thinking.as_ref().map(|_| thinking_start.elapsed().as_millis() as u64);
             let assistant_msg = Message {
                 message_id: MessageId::new(),
                 agent_instance_id: *agent_instance_id,
@@ -1207,6 +1231,8 @@ impl ChatService {
                 role: ChatRole::Assistant,
                 content: total_text,
                 content_blocks: None,
+                thinking,
+                thinking_duration_ms,
                 created_at: Utc::now(),
             };
             if let Err(e) = self.store.put_message(&assistant_msg) {
@@ -1655,6 +1681,8 @@ impl ChatService {
                 role: ChatRole::Assistant,
                 content: accumulated,
                 content_blocks: None,
+                thinking: None,
+                thinking_duration_ms: None,
                 created_at: Utc::now(),
             };
             if let Err(e) = self.store.put_message(&assistant_msg) {
