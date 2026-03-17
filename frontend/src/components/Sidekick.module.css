@@ -462,3 +462,7 @@
   transform-origin: center;
   animation: spinRing 1.2s linear infinite;
 }
+
+.automationSpinner {
+  animation: spinRing 1s linear infinite;
+}
