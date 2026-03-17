@@ -368,6 +368,7 @@ dependencies = [
 name = "aura-chat"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aura-billing",
  "aura-claude",
  "aura-core",
@@ -441,6 +442,7 @@ dependencies = [
 name = "aura-engine"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aura-agents",
  "aura-billing",
  "aura-chat",

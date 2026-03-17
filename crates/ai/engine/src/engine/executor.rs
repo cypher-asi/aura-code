@@ -3,14 +3,15 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
+use async_trait::async_trait;
 use tokio::sync::{mpsc, Mutex};
 use tracing::warn;
 
 use aura_core::*;
 use aura_claude::{
-    ClaudeStreamEvent, ContentBlock, RichMessage, ThinkingConfig, DEFAULT_MODEL,
+    ClaudeStreamEvent, RichMessage, ThinkingConfig, ToolCall, DEFAULT_MODEL,
 };
-use aura_chat::ChatToolExecutor;
+use aura_chat::{ChatToolExecutor, ToolCallResult, ToolExecutor, ToolLoopConfig, ToolLoopEvent, run_tool_loop};
 use aura_tools::engine_tool_definitions;
 
 use super::build_fix::{auto_correct_build_command, normalize_error_signature, BuildFixAttemptRecord};
@@ -698,193 +699,94 @@ impl DevLoopEngine {
         let system_prompt = agentic_execution_system_prompt(&project, agent);
         let task_context = build_agentic_task_context(&project, &spec, task, session);
         let tools = engine_tool_definitions();
-        let executor = ChatToolExecutor::new(
-            self.store.clone(),
-            self.project_service.clone(),
-            self.task_service.clone(),
-        );
 
-        let task_id = task.task_id;
-        let mut api_messages: Vec<RichMessage> = vec![RichMessage::user(&task_context)];
-        let mut total_input_tokens: u64 = 0;
-        let mut total_output_tokens: u64 = 0;
-        let mut tracked_file_ops: Vec<FileOp> = Vec::new();
-        let mut notes = String::new();
-        let mut follow_ups: Vec<FollowUpSuggestion> = Vec::new();
-        let mut task_done_called = false;
+        let api_messages: Vec<RichMessage> = vec![RichMessage::user(&task_context)];
 
         let pid = *project_id;
         let aiid = session.agent_instance_id;
-        const MAX_AGENTIC_ITERATIONS: usize = 50;
+        let task_id = task.task_id;
 
-        for iteration in 0..MAX_AGENTIC_ITERATIONS {
-            let (claude_tx, mut claude_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-            let event_tx = self.event_tx.clone();
-            let tid = task_id;
-            let fwd_pid = pid;
-            let fwd_aiid = aiid;
-            let forwarder = tokio::spawn(async move {
-                while let Some(evt) = claude_rx.recv().await {
-                    if let ClaudeStreamEvent::Delta(text) = evt {
-                        let _ = event_tx.send(EngineEvent::TaskOutputDelta {
-                            project_id: fwd_pid,
-                            agent_instance_id: fwd_aiid,
-                            task_id: tid,
-                            delta: text,
-                        });
-                    }
-                }
-            });
+        let tracked_file_ops: Arc<Mutex<Vec<FileOp>>> = Arc::new(Mutex::new(Vec::new()));
+        let notes: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+        let follow_ups: Arc<Mutex<Vec<FollowUpSuggestion>>> = Arc::new(Mutex::new(Vec::new()));
 
-            let thinking = ThinkingConfig::enabled(10_000);
-            let stream_result = self
-                .llm
-                .complete_stream_with_tools_thinking(
-                    api_key,
-                    &system_prompt,
-                    api_messages.clone(),
-                    tools.clone(),
-                    TASK_EXECUTION_MAX_TOKENS,
-                    thinking,
-                    claude_tx,
-                    "aura_task",
-                    None,
-                )
-                .await?;
-            let _ = forwarder.await;
+        let executor = EngineToolLoopExecutor {
+            inner: ChatToolExecutor::new(
+                self.store.clone(),
+                self.project_service.clone(),
+                self.task_service.clone(),
+            ),
+            project_id: pid,
+            project: project.clone(),
+            spec: spec.clone(),
+            task: task.clone(),
+            session: session.clone(),
+            engine_event_tx: self.event_tx.clone(),
+            agent_instance_id: aiid,
+            task_id,
+            tracked_file_ops: tracked_file_ops.clone(),
+            notes: notes.clone(),
+            follow_ups: follow_ups.clone(),
+        };
 
-            total_input_tokens += stream_result.input_tokens;
-            total_output_tokens += stream_result.output_tokens;
+        let config = ToolLoopConfig {
+            max_iterations: 50,
+            max_tokens: TASK_EXECUTION_MAX_TOKENS,
+            thinking: Some(ThinkingConfig::enabled(10_000)),
+            stream_timeout: std::time::Duration::from_secs(600),
+            billing_reason: "aura_task",
+        };
 
-            if stream_result.stop_reason != "tool_use" || stream_result.tool_calls.is_empty() {
-                if notes.is_empty() && !stream_result.text.is_empty() {
-                    notes = stream_result.text.clone();
-                }
-                break;
-            }
-
-            let mut assistant_blocks: Vec<ContentBlock> = Vec::new();
-            if !stream_result.text.is_empty() {
-                assistant_blocks.push(ContentBlock::Text {
-                    text: stream_result.text.clone(),
-                });
-            }
-            for tc in &stream_result.tool_calls {
-                assistant_blocks.push(ContentBlock::ToolUse {
-                    id: tc.id.clone(),
-                    name: tc.name.clone(),
-                    input: tc.input.clone(),
-                });
-            }
-            api_messages.push(RichMessage::assistant_blocks(assistant_blocks));
-
-            let mut executor_indices: Vec<usize> = Vec::new();
-            for (i, tc) in stream_result.tool_calls.iter().enumerate() {
-                match tc.name.as_str() {
-                    "task_done" | "get_task_context" => {}
-                    _ => {
-                        track_file_op(&tc.name, &tc.input, &mut tracked_file_ops);
-                        executor_indices.push(i);
-                    }
+        let (loop_tx, mut loop_rx) = mpsc::unbounded_channel::<ToolLoopEvent>();
+        let engine_tx = self.event_tx.clone();
+        let fwd_pid = pid;
+        let fwd_aiid = aiid;
+        let fwd_tid = task_id;
+        let forwarder = tokio::spawn(async move {
+            while let Some(evt) = loop_rx.recv().await {
+                if let ToolLoopEvent::Delta(text) = evt {
+                    let _ = engine_tx.send(EngineEvent::TaskOutputDelta {
+                        project_id: fwd_pid,
+                        agent_instance_id: fwd_aiid,
+                        task_id: fwd_tid,
+                        delta: text,
+                    });
                 }
             }
+        });
 
-            let executor_futures: Vec<_> = executor_indices.iter().map(|&i| {
-                let tc = &stream_result.tool_calls[i];
-                executor.execute(project_id, &tc.name, tc.input.clone())
-            }).collect();
-            let executor_results = futures::future::join_all(executor_futures).await;
+        let result = run_tool_loop(
+            self.llm.clone(),
+            api_key,
+            &system_prompt,
+            api_messages,
+            tools,
+            &config,
+            &executor,
+            &loop_tx,
+        )
+        .await;
+        drop(loop_tx);
+        let _ = forwarder.await;
 
-            let mut result_blocks: Vec<ContentBlock> = Vec::new();
-            let mut exec_result_iter = executor_results.into_iter();
-            for tc in &stream_result.tool_calls {
-                match tc.name.as_str() {
-                    "task_done" => {
-                        notes = tc.input.get("notes")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        if let Some(arr) = tc.input.get("follow_ups").and_then(|v| v.as_array()) {
-                            for fu in arr {
-                                let title = fu.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                let desc = fu.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                follow_ups.push(FollowUpSuggestion { title, description: desc });
-                            }
-                        }
-                        result_blocks.push(ContentBlock::ToolResult {
-                            tool_use_id: tc.id.clone(),
-                            content: r#"{"status":"completed"}"#.to_string(),
-                            is_error: None,
-                        });
-                        task_done_called = true;
-                    }
-                    "get_task_context" => {
-                        let ctx = build_agentic_task_context(&project, &spec, task, session);
-                        result_blocks.push(ContentBlock::ToolResult {
-                            tool_use_id: tc.id.clone(),
-                            content: ctx,
-                            is_error: None,
-                        });
-                    }
-                    _ => {
-                        if let Some(result) = exec_result_iter.next() {
-                            let arg_hint = match tc.name.as_str() {
-                                "read_file" | "write_file" | "edit_file" | "delete_file" =>
-                                    tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                "list_files" =>
-                                    tc.input.get("directory").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                "search_code" =>
-                                    tc.input.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                "run_command" =>
-                                    tc.input.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                _ => String::new(),
-                            };
-                            let status_str = if result.is_error { "error" } else { "ok" };
-                            let marker = if arg_hint.is_empty() {
-                                format!("\n[tool: {} -> {}]\n", tc.name, status_str)
-                            } else {
-                                format!("\n[tool: {}({}) -> {}]\n", tc.name, arg_hint, status_str)
-                            };
-                            let _ = self.event_tx.send(EngineEvent::TaskOutputDelta {
-                                project_id: pid,
-                                agent_instance_id: aiid,
-                                task_id,
-                                delta: marker,
-                            });
-                            result_blocks.push(ContentBlock::ToolResult {
-                                tool_use_id: tc.id.clone(),
-                                content: result.content,
-                                is_error: if result.is_error { Some(true) } else { None },
-                            });
-                        }
-                    }
-                }
-            }
-            api_messages.push(RichMessage::tool_results(result_blocks));
-
-            if task_done_called {
-                break;
-            }
-
-            if iteration + 1 >= MAX_AGENTIC_ITERATIONS {
-                warn!(
-                    task_id = %task_id,
-                    "agentic tool-use loop hit max iterations ({}), stopping",
-                    MAX_AGENTIC_ITERATIONS
-                );
-            }
-        }
+        let tracked_file_ops = tracked_file_ops.lock().await.clone();
+        let mut notes = notes.lock().await.clone();
+        let follow_ups = follow_ups.lock().await.clone();
 
         if notes.is_empty() {
-            notes = "Task completed via agentic tool-use loop".to_string();
+            if !result.text.is_empty() {
+                notes = result.text;
+            } else {
+                notes = "Task completed via agentic tool-use loop".to_string();
+            }
         }
 
         Ok(TaskExecution {
             notes,
             file_ops: tracked_file_ops,
             follow_up_tasks: follow_ups,
-            input_tokens: total_input_tokens,
-            output_tokens: total_output_tokens,
+            input_tokens: result.total_input_tokens,
+            output_tokens: result.total_output_tokens,
             parse_retries: 0,
             files_already_applied: true,
         })
@@ -1081,5 +983,171 @@ impl DevLoopEngine {
                 Err(first_err)
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ToolExecutor for the agentic engine loop
+// ---------------------------------------------------------------------------
+
+struct EngineToolLoopExecutor {
+    inner: ChatToolExecutor,
+    project_id: ProjectId,
+    project: Project,
+    spec: Spec,
+    task: Task,
+    session: Session,
+    engine_event_tx: mpsc::UnboundedSender<EngineEvent>,
+    agent_instance_id: AgentInstanceId,
+    task_id: TaskId,
+    tracked_file_ops: Arc<Mutex<Vec<FileOp>>>,
+    notes: Arc<Mutex<String>>,
+    follow_ups: Arc<Mutex<Vec<FollowUpSuggestion>>>,
+}
+
+#[async_trait]
+impl ToolExecutor for EngineToolLoopExecutor {
+    async fn execute(&self, tool_calls: &[ToolCall]) -> Vec<ToolCallResult> {
+        let mut executor_indices: Vec<usize> = Vec::new();
+        for (i, tc) in tool_calls.iter().enumerate() {
+            match tc.name.as_str() {
+                "task_done" | "get_task_context" => {}
+                _ => {
+                    {
+                        let mut ops = self.tracked_file_ops.lock().await;
+                        track_file_op(&tc.name, &tc.input, &mut ops);
+                    }
+                    executor_indices.push(i);
+                }
+            }
+        }
+
+        let executor_futures: Vec<_> = executor_indices
+            .iter()
+            .map(|&i| {
+                let tc = &tool_calls[i];
+                self.inner.execute(&self.project_id, &tc.name, tc.input.clone())
+            })
+            .collect();
+        let executor_results = futures::future::join_all(executor_futures).await;
+
+        let mut exec_result_iter = executor_results.into_iter();
+        let mut results = Vec::with_capacity(tool_calls.len());
+        let mut stop = false;
+
+        for tc in tool_calls {
+            match tc.name.as_str() {
+                "task_done" => {
+                    let task_notes = tc
+                        .input
+                        .get("notes")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    {
+                        let mut n = self.notes.lock().await;
+                        *n = task_notes;
+                    }
+                    if let Some(arr) = tc.input.get("follow_ups").and_then(|v| v.as_array()) {
+                        let mut fu_lock = self.follow_ups.lock().await;
+                        for fu in arr {
+                            let title = fu
+                                .get("title")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let desc = fu
+                                .get("description")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            fu_lock.push(FollowUpSuggestion {
+                                title,
+                                description: desc,
+                            });
+                        }
+                    }
+                    results.push(ToolCallResult {
+                        tool_use_id: tc.id.clone(),
+                        content: r#"{"status":"completed"}"#.to_string(),
+                        is_error: false,
+                        stop_loop: true,
+                    });
+                    stop = true;
+                }
+                "get_task_context" => {
+                    let ctx = build_agentic_task_context(
+                        &self.project,
+                        &self.spec,
+                        &self.task,
+                        &self.session,
+                    );
+                    results.push(ToolCallResult {
+                        tool_use_id: tc.id.clone(),
+                        content: ctx,
+                        is_error: false,
+                        stop_loop: false,
+                    });
+                }
+                _ => {
+                    if let Some(result) = exec_result_iter.next() {
+                        let arg_hint = match tc.name.as_str() {
+                            "read_file" | "write_file" | "edit_file" | "delete_file" => tc
+                                .input
+                                .get("path")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            "list_files" => tc
+                                .input
+                                .get("directory")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            "search_code" => tc
+                                .input
+                                .get("pattern")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            "run_command" => tc
+                                .input
+                                .get("command")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            _ => String::new(),
+                        };
+                        let status_str = if result.is_error { "error" } else { "ok" };
+                        let marker = if arg_hint.is_empty() {
+                            format!("\n[tool: {} -> {}]\n", tc.name, status_str)
+                        } else {
+                            format!("\n[tool: {}({}) -> {}]\n", tc.name, arg_hint, status_str)
+                        };
+                        let _ = self.engine_event_tx.send(EngineEvent::TaskOutputDelta {
+                            project_id: self.project_id,
+                            agent_instance_id: self.agent_instance_id,
+                            task_id: self.task_id,
+                            delta: marker,
+                        });
+                        results.push(ToolCallResult {
+                            tool_use_id: tc.id.clone(),
+                            content: result.content,
+                            is_error: result.is_error,
+                            stop_loop: false,
+                        });
+                    }
+                }
+            }
+        }
+
+        // If task_done was in the batch, mark all remaining results as stop_loop too
+        if stop {
+            for r in &mut results {
+                r.stop_loop = true;
+            }
+        }
+
+        results
     }
 }

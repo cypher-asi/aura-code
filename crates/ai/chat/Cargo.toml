@@ -13,6 +13,7 @@ aura-tools = { path = "../tools" }
 aura-projects = { path = "../../domain/projects" }
 aura-tasks = { path = "../../domain/tasks" }
 aura-specs = { path = "../../domain/specs" }
+async-trait = "0.1"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
