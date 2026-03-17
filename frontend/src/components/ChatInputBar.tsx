@@ -255,7 +255,7 @@ export const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatI
             disabled={!canAddMore}
             aria-label="Attach file"
           >
-            <Plus size={16} />
+            <Plus size={16} strokeWidth={1} />
           </button>
           <textarea
             ref={textareaRef}

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { Text } from "@cypher-asi/zui";
 import { Check } from "lucide-react";
 import { useLogStream, EVENT_LABELS } from "../hooks/use-log-stream";
@@ -44,7 +45,23 @@ function LogFilterBar({
   const allActive = active.size === ALL_CATEGORIES.length;
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
-  useClickOutside(moreRef, () => setMoreOpen(false), moreOpen);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ bottom: 0, right: 0 });
+
+  useClickOutside([moreRef, dropdownRef], () => setMoreOpen(false), moreOpen);
+
+  const handleToggleMore = useCallback(() => {
+    setMoreOpen((prev) => {
+      if (!prev && moreRef.current) {
+        const rect = moreRef.current.getBoundingClientRect();
+        setPos({
+          bottom: window.innerHeight - rect.top + 4,
+          right: window.innerWidth - rect.right,
+        });
+      }
+      return !prev;
+    });
+  }, []);
 
   return (
     <div className={styles.logFilterBar}>
@@ -66,12 +83,16 @@ function LogFilterBar({
       <div ref={moreRef} className={styles.logFilterMore}>
         <button
           className={styles.logFilterChip}
-          onClick={() => setMoreOpen((v) => !v)}
+          onClick={handleToggleMore}
         >
           More
         </button>
-        {moreOpen && (
-          <div className={styles.logFilterDropdown}>
+        {moreOpen && createPortal(
+          <div
+            ref={dropdownRef}
+            className={styles.logFilterDropdown}
+            style={{ position: "fixed", bottom: pos.bottom, right: pos.right }}
+          >
             {MORE_CATEGORIES.map((cat) => (
               <button
                 key={cat}
@@ -84,7 +105,8 @@ function LogFilterBar({
                 {cat}
               </button>
             ))}
-          </div>
+          </div>,
+          document.body,
         )}
       </div>
     </div>

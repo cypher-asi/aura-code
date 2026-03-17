@@ -176,6 +176,16 @@
 
 /* ── Expandable detail body ── */
 
+.toolBodyWrap {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+}
+
+.toolBodyExpanded {
+  max-height: 500px;
+}
+
 .toolBody {
   padding: 4px 0 8px 22px;
   margin-left: 18px;
