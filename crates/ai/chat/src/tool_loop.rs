@@ -199,7 +199,7 @@ pub async fn run_tool_loop(
         let stream_result = match stream_handle.await {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => {
-                let is_credits = e.to_string().contains("Insufficient credits");
+                let is_credits = e.is_insufficient_credits();
                 if is_credits {
                     let _ = event_tx.send(ToolLoopEvent::Error(
                         "Insufficient credits — please top up to continue.".to_string(),
