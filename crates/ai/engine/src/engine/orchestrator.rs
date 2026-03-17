@@ -98,7 +98,7 @@ impl DevLoopEngine {
     pub async fn start(
         self: Arc<Self>,
         project_id: ProjectId,
-        agent_name: Option<String>,
+        agent_instance_id: Option<AgentInstanceId>,
     ) -> Result<LoopHandle, EngineError> {
         let _project = self.project_service.get_project(&project_id)?;
 
@@ -107,10 +107,14 @@ impl DevLoopEngine {
             info!("closed {} stale active session(s) from previous run", stale.len());
         }
 
-        let name = agent_name.unwrap_or_else(|| "dev-agent".into());
-        let agent = self
-            .agent_instance_service
-            .create_instance(&project_id, name)?;
+        let agent = if let Some(aiid) = agent_instance_id {
+            self.agent_instance_service
+                .get_instance(&project_id, &aiid)
+                .map_err(|_| EngineError::Parse(format!("agent instance {aiid} not found")))?
+        } else {
+            self.agent_instance_service
+                .create_instance(&project_id, "dev-agent".into())?
+        };
 
         let session = self.session_service.create_session(
             &agent.agent_instance_id,

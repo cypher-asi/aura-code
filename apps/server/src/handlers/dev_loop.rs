@@ -42,7 +42,7 @@ pub async fn start_loop(
     );
 
     let loop_handle = engine
-        .start(project_id, params.agent_name)
+        .start(project_id, params.agent_instance_id)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
 

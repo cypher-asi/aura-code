@@ -330,10 +330,12 @@ export const api = {
     apiFetch<Task>(`/api/projects/${projectId}/tasks/${taskId}/retry`, {
       method: "POST",
     }),
-  runTask: (projectId: ProjectId, taskId: TaskId) =>
-    apiFetch<void>(`/api/projects/${projectId}/tasks/${taskId}/run`, {
+  runTask: (projectId: ProjectId, taskId: TaskId, agentInstanceId?: string) => {
+    const params = agentInstanceId ? `?agent_instance_id=${agentInstanceId}` : "";
+    return apiFetch<void>(`/api/projects/${projectId}/tasks/${taskId}/run${params}`, {
       method: "POST",
-    }),
+    });
+  },
   getProgress: (projectId: ProjectId) =>
     apiFetch<ProjectProgress>(`/api/projects/${projectId}/progress`),
   getTaskOutput: (projectId: ProjectId, taskId: TaskId) =>
@@ -453,8 +455,8 @@ export const api = {
     }),
 
   // Loop
-  startLoop: (projectId: ProjectId, agentName?: string) => {
-    const params = agentName ? `?agent_name=${encodeURIComponent(agentName)}` : "";
+  startLoop: (projectId: ProjectId, agentInstanceId?: string) => {
+    const params = agentInstanceId ? `?agent_instance_id=${agentInstanceId}` : "";
     return apiFetch<LoopStatusResponse>(
       `/api/projects/${projectId}/loop/start${params}`,
       { method: "POST" },
