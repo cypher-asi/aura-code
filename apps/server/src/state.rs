@@ -14,7 +14,7 @@ use aura_orgs::OrgService;
 use aura_billing::{BillingClient, MeteredLlm, PricingService};
 use aura_projects::ProjectService;
 use aura_sessions::SessionService;
-use aura_specs::SpecGenerationService;
+use aura_specs::{SpecGenerationService, SprintGenerationService};
 use aura_tasks::{TaskExtractionService, TaskService};
 use aura_settings::SettingsService;
 use aura_store::RocksStore;
@@ -41,6 +41,7 @@ pub struct AppState {
     pub agent_instance_service: Arc<AgentInstanceService>,
     pub session_service: Arc<SessionService>,
     pub chat_service: Arc<ChatService>,
+    pub sprint_gen: Arc<SprintGenerationService>,
     pub llm: Arc<MeteredLlm>,
     pub event_tx: mpsc::UnboundedSender<EngineEvent>,
     pub event_broadcast: broadcast::Sender<EngineEvent>,

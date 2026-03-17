@@ -289,6 +289,11 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
         task_output_buffers.clone(),
     );
 
+    let sprint_gen = Arc::new(aura_specs::SprintGenerationService::new(
+        llm.clone(),
+        store.clone(),
+    ));
+
     AppState {
         store,
         org_service,
@@ -305,6 +310,7 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
         agent_instance_service,
         session_service,
         chat_service,
+        sprint_gen,
         llm,
         event_tx,
         event_broadcast,
