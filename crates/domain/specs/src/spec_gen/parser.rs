@@ -222,6 +222,7 @@ pub(crate) fn parse_tasks_from_markdown(
                 dependency_ids: vec![],
                 parent_task_id: None,
                 assigned_agent_instance_id: None,
+                completed_by_agent_instance_id: None,
                 session_id: None,
                 execution_notes: String::new(),
                 files_changed: vec![],

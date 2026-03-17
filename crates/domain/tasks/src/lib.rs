@@ -73,6 +73,7 @@ impl TaskService {
         task_id: &TaskId,
         new_status: TaskStatus,
     ) -> Result<Task, TaskError> {
+        let _guard = self.store.lock_task_writes();
         let mut task = self
             .store
             .get_task(project_id, spec_id, task_id)
@@ -115,6 +116,7 @@ impl TaskService {
         spec_id: &SpecId,
         task_id: &TaskId,
     ) -> Result<Task, TaskError> {
+        let _guard = self.store.lock_task_writes();
         let mut task = self
             .store
             .get_task(project_id, spec_id, task_id)
@@ -158,6 +160,7 @@ impl TaskService {
         agent_instance_id: &AgentInstanceId,
         session_id: Option<SessionId>,
     ) -> Result<Task, TaskError> {
+        let _guard = self.store.lock_task_writes();
         let mut task = self
             .store
             .get_task(project_id, spec_id, task_id)
@@ -182,6 +185,7 @@ impl TaskService {
         notes: &str,
         files_changed: Vec<FileChangeSummary>,
     ) -> Result<Task, TaskError> {
+        let _guard = self.store.lock_task_writes();
         let mut task = self
             .store
             .get_task(project_id, spec_id, task_id)
@@ -206,6 +210,7 @@ impl TaskService {
         task_id: &TaskId,
         reason: &str,
     ) -> Result<Task, TaskError> {
+        let _guard = self.store.lock_task_writes();
         let mut task = self
             .store
             .get_task(project_id, spec_id, task_id)
@@ -227,6 +232,7 @@ impl TaskService {
         spec_id: &SpecId,
         task_id: &TaskId,
     ) -> Result<Task, TaskError> {
+        let _guard = self.store.lock_task_writes();
         let mut task = self
             .store
             .get_task(project_id, spec_id, task_id)

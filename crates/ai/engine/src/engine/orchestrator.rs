@@ -863,13 +863,17 @@ impl DevLoopEngine {
         input_tokens: u64,
         output_tokens: u64,
     ) {
-        if let Ok(mut t) = self.store.get_task(project_id, &task.spec_id, &task.task_id) {
-            t.user_id = user_id.clone();
-            t.model = model.clone();
-            t.total_input_tokens += input_tokens;
-            t.total_output_tokens += output_tokens;
-            let _ = self.store.put_task(&t);
-        }
+        let uid = user_id.clone();
+        let m = model.clone();
+        let _ = self.store.atomic_update_task(
+            project_id, &task.spec_id, &task.task_id,
+            |t| {
+                t.user_id = uid;
+                t.model = m;
+                t.total_input_tokens += input_tokens;
+                t.total_output_tokens += output_tokens;
+            },
+        );
     }
 
     pub(crate) fn current_user_id(&self) -> Option<String> {

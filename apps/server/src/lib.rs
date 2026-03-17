@@ -132,11 +132,10 @@ fn flush_live_output(store: &Arc<RocksStore>, buffers: &TaskOutputBuffers) {
         bufs.iter().map(|(k, v)| (*k, v.clone())).collect()
     };
     for (task_id, text) in snapshot {
-        if let Ok(Some(mut task)) = store.find_task_by_id(&task_id) {
+        if let Err(e) = store.atomic_update_task_by_id(&task_id, |task| {
             task.live_output = text;
-            if let Err(e) = store.put_task(&task) {
-                warn!(%task_id, "Failed to flush live_output: {e}");
-            }
+        }) {
+            warn!(%task_id, "Failed to flush live_output: {e}");
         }
     }
 }
@@ -148,11 +147,10 @@ fn finalize_live_output(
 ) {
     let final_text = buffers.lock().ok().and_then(|mut bufs| bufs.remove(task_id));
     if let Some(text) = final_text {
-        if let Ok(Some(mut task)) = store.find_task_by_id(task_id) {
+        if let Err(e) = store.atomic_update_task_by_id(task_id, |task| {
             task.live_output = text;
-            if let Err(e) = store.put_task(&task) {
-                warn!(%task_id, "Failed to finalize live_output: {e}");
-            }
+        }) {
+            warn!(%task_id, "Failed to finalize live_output: {e}");
         }
     }
 }
@@ -164,11 +162,10 @@ fn finalize_all_live_output(store: &Arc<RocksStore>, buffers: &TaskOutputBuffers
         drained
     };
     for (task_id, text) in entries {
-        if let Ok(Some(mut task)) = store.find_task_by_id(&task_id) {
+        if let Err(e) = store.atomic_update_task_by_id(&task_id, |task| {
             task.live_output = text;
-            if let Err(e) = store.put_task(&task) {
-                warn!(%task_id, "Failed to finalize live_output: {e}");
-            }
+        }) {
+            warn!(%task_id, "Failed to finalize live_output: {e}");
         }
     }
 }

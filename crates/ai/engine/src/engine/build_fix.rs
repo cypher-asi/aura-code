@@ -310,17 +310,17 @@ pub(crate) fn parse_error_references(stderr: &str) -> file_ops::ErrorReferences 
 
 impl DevLoopEngine {
     pub(crate) fn persist_build_step(&self, task: &Task, step: BuildStepRecord) {
-        if let Ok(mut t) = self.store.get_task(&task.project_id, &task.spec_id, &task.task_id) {
-            t.build_steps.push(step);
-            let _ = self.store.put_task(&t);
-        }
+        let _ = self.store.atomic_update_task(
+            &task.project_id, &task.spec_id, &task.task_id,
+            |t| { t.build_steps.push(step); },
+        );
     }
 
     pub(crate) fn persist_test_step(&self, task: &Task, step: TestStepRecord) {
-        if let Ok(mut t) = self.store.get_task(&task.project_id, &task.spec_id, &task.task_id) {
-            t.test_steps.push(step);
-            let _ = self.store.put_task(&t);
-        }
+        let _ = self.store.atomic_update_task(
+            &task.project_id, &task.spec_id, &task.task_id,
+            |t| { t.test_steps.push(step); },
+        );
     }
 
     /// Run the test suite and return the names of currently-failing tests.
