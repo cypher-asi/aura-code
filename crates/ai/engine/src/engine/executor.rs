@@ -9,7 +9,7 @@ use tracing::warn;
 
 use aura_core::*;
 use aura_claude::{
-    ClaudeStreamEvent, RichMessage, ThinkingConfig, ToolCall,
+    ClaudeStreamEvent, RichMessage, StreamTokenCapture, ThinkingConfig, ToolCall,
 };
 use aura_chat::{ChatToolExecutor, ToolCallResult, ToolExecutor, ToolLoopConfig, ToolLoopEvent, run_tool_loop};
 use aura_tools::engine_tool_definitions;
@@ -603,12 +603,7 @@ impl DevLoopEngine {
                 );
 
                 let api_key = self.settings.get_decrypted_api_key()?;
-                let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-                let forwarder = tokio::spawn(async move {
-                    while let Some(evt) = stream_rx.recv().await {
-                        drop(evt);
-                    }
-                });
+                let (stream_tx, sink_handle) = StreamTokenCapture::sink();
 
                 let response = self.llm.complete_stream(
                     &api_key,
@@ -619,7 +614,7 @@ impl DevLoopEngine {
                     "aura_build_fix",
                     None,
                 ).await?;
-                let _ = forwarder.await;
+                let _ = sink_handle.finalize().await;
 
                 let mut attempt_files: Vec<String> = Vec::new();
                 if let Ok(fix_execution) = parse_execution_response(&response) {
@@ -787,11 +782,11 @@ impl DevLoopEngine {
             build_execution_prompt(&project, &spec, task, session, &codebase_snapshot);
 
         let task_id = task.task_id;
-
-        let token_counts: Arc<Mutex<(u64, u64)>> = Arc::new(Mutex::new((0, 0)));
-
         let pid = *project_id;
         let aiid = session.agent_instance_id;
+
+        let mut total_inp = 0u64;
+        let mut total_out = 0u64;
 
         let response = {
             let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
@@ -799,21 +794,21 @@ impl DevLoopEngine {
             let tid = task_id;
             let fwd_pid = pid;
             let fwd_aiid = aiid;
-            let tc = token_counts.clone();
             let forwarder = tokio::spawn(async move {
+                let (mut inp, mut out) = (0u64, 0u64);
                 while let Some(evt) = stream_rx.recv().await {
                     match evt {
                         ClaudeStreamEvent::Delta(text) => {
                             let _ = event_tx.send(EngineEvent::TaskOutputDelta { project_id: fwd_pid, agent_instance_id: fwd_aiid, task_id: tid, delta: text });
                         }
                         ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } => {
-                            let mut g = tc.lock().await;
-                            g.0 += input_tokens;
-                            g.1 += output_tokens;
+                            inp += input_tokens;
+                            out += output_tokens;
                         }
                         _ => {}
                     }
                 }
+                (inp, out)
             });
 
             let resp = self
@@ -828,15 +823,16 @@ impl DevLoopEngine {
                     None,
                 )
                 .await?;
-            let _ = forwarder.await;
+            let (inp, out) = forwarder.await.unwrap_or((0, 0));
+            total_inp += inp;
+            total_out += out;
             resp
         };
 
         match parse_execution_response(&response) {
             Ok(mut execution) => {
-                let (inp, out) = *token_counts.lock().await;
-                execution.input_tokens = inp;
-                execution.output_tokens = out;
+                execution.input_tokens = total_inp;
+                execution.output_tokens = total_out;
                 execution.parse_retries = 0;
 
                 let validation_report = file_ops::validate_all_file_ops(&execution.file_ops);
@@ -862,17 +858,7 @@ impl DevLoopEngine {
                         ("user".to_string(), correction_prompt),
                     ];
 
-                    let (stream_tx2, mut stream_rx2) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-                    let tc2 = token_counts.clone();
-                    let forwarder2 = tokio::spawn(async move {
-                        while let Some(evt) = stream_rx2.recv().await {
-                            if let ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } = evt {
-                                let mut g = tc2.lock().await;
-                                g.0 += input_tokens;
-                                g.1 += output_tokens;
-                            }
-                        }
-                    });
+                    let (sink_tx, sink_handle) = StreamTokenCapture::sink();
 
                     let corrected = self
                         .llm
@@ -881,17 +867,18 @@ impl DevLoopEngine {
                             &task_execution_system_prompt(),
                             messages,
                             self.llm_config.task_execution_max_tokens,
-                            stream_tx2,
+                            sink_tx,
                             "aura_task",
                             None,
                         )
                         .await?;
-                    let _ = forwarder2.await;
+                    let (inp, out) = sink_handle.finalize().await;
+                    total_inp += inp;
+                    total_out += out;
 
                     if let Ok(mut corrected_exec) = parse_execution_response(&corrected) {
-                        let (inp, out) = *token_counts.lock().await;
-                        corrected_exec.input_tokens = inp;
-                        corrected_exec.output_tokens = out;
+                        corrected_exec.input_tokens = total_inp;
+                        corrected_exec.output_tokens = total_out;
                         corrected_exec.parse_retries = 1;
                         return Ok(corrected_exec);
                     }
@@ -918,17 +905,7 @@ impl DevLoopEngine {
                         ("user".to_string(), RETRY_CORRECTION_PROMPT.to_string()),
                     ];
 
-                    let (stream_tx, mut stream_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-                    let tc = token_counts.clone();
-                    let forwarder = tokio::spawn(async move {
-                        while let Some(evt) = stream_rx.recv().await {
-                            if let ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } = evt {
-                                let mut g = tc.lock().await;
-                                g.0 += input_tokens;
-                                g.1 += output_tokens;
-                            }
-                        }
-                    });
+                    let (sink_tx, sink_handle) = StreamTokenCapture::sink();
 
                     let retry_resp = self
                         .llm
@@ -937,18 +914,19 @@ impl DevLoopEngine {
                             &task_execution_system_prompt(),
                             messages,
                             self.llm_config.task_execution_max_tokens,
-                            stream_tx,
+                            sink_tx,
                             "aura_task",
                             None,
                         )
                         .await?;
-                    let _ = forwarder.await;
+                    let (inp, out) = sink_handle.finalize().await;
+                    total_inp += inp;
+                    total_out += out;
 
                     match parse_execution_response(&retry_resp) {
                         Ok(mut execution) => {
-                            let (inp, out) = *token_counts.lock().await;
-                            execution.input_tokens = inp;
-                            execution.output_tokens = out;
+                            execution.input_tokens = total_inp;
+                            execution.output_tokens = total_out;
                             execution.parse_retries = attempt;
                             return Ok(execution);
                         }
