@@ -26,6 +26,12 @@ pub enum MeteredLlmError {
     Billing(#[from] BillingError),
 }
 
+impl MeteredLlmError {
+    pub fn is_insufficient_credits(&self) -> bool {
+        matches!(self, MeteredLlmError::InsufficientCredits)
+    }
+}
+
 pub struct MeteredLlm {
     provider: Arc<dyn LlmProvider>,
     billing: Arc<BillingClient>,
@@ -95,7 +101,8 @@ impl MeteredLlm {
         }
         let Some(token) = self.access_token() else {
             warn!("No access token available for credit debit");
-            return Ok(());
+            self.credits_exhausted.store(true, Ordering::SeqCst);
+            return Err(MeteredLlmError::InsufficientCredits);
         };
         match self.billing.debit_credits(&token, amount, reason, None, metadata).await {
             Ok(resp) => {
@@ -119,7 +126,7 @@ impl MeteredLlm {
             }
             Err(e) => {
                 warn!(error = %e, reason, "Failed to debit credits");
-                Ok(())
+                Err(MeteredLlmError::Billing(e))
             }
         }
     }
