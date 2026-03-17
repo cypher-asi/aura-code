@@ -59,10 +59,26 @@ pub fn estimate_message_tokens(msg: &RichMessage) -> u64 {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheControl {
+    #[serde(rename = "type")]
+    pub cache_type: String,
+}
+
+impl CacheControl {
+    pub fn ephemeral() -> Self {
+        Self {
+            cache_type: "ephemeral".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolDefinition {
     pub name: String,
     pub description: String,
     pub input_schema: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<CacheControl>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,7 +283,7 @@ struct SimpleMessage {
 struct SimpleMessagesRequest {
     model: String,
     max_tokens: u32,
-    system: String,
+    system: serde_json::Value,
     messages: Vec<SimpleMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
@@ -293,7 +309,7 @@ impl ThinkingConfig {
 struct ToolMessagesRequest {
     model: String,
     max_tokens: u32,
-    system: String,
+    system: serde_json::Value,
     messages: Vec<RichMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
@@ -312,11 +328,16 @@ struct MessagesResponse {
 }
 
 #[derive(Deserialize, Default)]
+#[allow(dead_code)]
 struct UsageBlock {
     #[serde(default)]
     input_tokens: u64,
     #[serde(default)]
     output_tokens: u64,
+    #[serde(default)]
+    cache_creation_input_tokens: u64,
+    #[serde(default)]
+    cache_read_input_tokens: u64,
 }
 
 #[derive(Deserialize)]
@@ -382,7 +403,7 @@ impl ClaudeClient {
         let request = SimpleMessagesRequest {
             model: model.to_string(),
             max_tokens,
-            system: system_prompt.to_string(),
+            system: serde_json::Value::String(system_prompt.to_string()),
             messages: vec![SimpleMessage {
                 role: "user".to_string(),
                 content: user_message.to_string(),
@@ -524,7 +545,7 @@ impl ClaudeClient {
         let request = SimpleMessagesRequest {
             model: DEFAULT_MODEL.to_string(),
             max_tokens,
-            system: system_prompt.to_string(),
+            system: serde_json::Value::String(system_prompt.to_string()),
             messages: api_messages,
             stream: Some(true),
         };
@@ -594,17 +615,24 @@ impl ClaudeClient {
         api_key: &str,
         system_prompt: &str,
         messages: Vec<RichMessage>,
-        tools: Vec<ToolDefinition>,
+        mut tools: Vec<ToolDefinition>,
         max_tokens: u32,
         thinking: Option<ThinkingConfig>,
         event_tx: mpsc::UnboundedSender<ClaudeStreamEvent>,
     ) -> Result<ToolStreamResponse, ClaudeClientError> {
         let msg_count = messages.len();
         let tool_count = tools.len();
+
+        // Mark last tool definition with cache_control so the entire system
+        // prompt + tool block is eligible for Anthropic prompt caching.
+        if let Some(last) = tools.last_mut() {
+            last.cache_control = Some(CacheControl::ephemeral());
+        }
+
         let request = ToolMessagesRequest {
             model: DEFAULT_MODEL.to_string(),
             max_tokens,
-            system: system_prompt.to_string(),
+            system: cached_system_blocks(system_prompt),
             messages,
             stream: Some(true),
             tools: if tools.is_empty() { None } else { Some(tools) },
@@ -645,6 +673,7 @@ impl ClaudeClient {
             .post(url)
             .header("x-api-key", api_key)
             .header("anthropic-version", ANTHROPIC_API_VERSION)
+            .header("anthropic-beta", "prompt-caching-2024-07-31")
             .header("content-type", "application/json")
             .json(body)
             .send()
@@ -680,6 +709,17 @@ impl ClaudeClient {
         let byte_stream = response.bytes_stream().map(|r| r.map_err(ClaudeClientError::Http));
         parse_sse_events(byte_stream, event_tx).await
     }
+}
+
+/// Build a structured system prompt with `cache_control` for Anthropic prompt caching.
+/// The entire system prompt is marked as ephemeral so subsequent requests with the
+/// same prefix can read from the cache (~90% input cost reduction on cache hits).
+fn cached_system_blocks(text: &str) -> serde_json::Value {
+    serde_json::json!([{
+        "type": "text",
+        "text": text,
+        "cache_control": {"type": "ephemeral"}
+    }])
 }
 
 /// Standalone SSE frame parser, decoupled from `reqwest::Response` for testability.
@@ -736,6 +776,11 @@ pub(crate) async fn parse_sse_events(
                         if let Some(usage) = data.get("message").and_then(|m| m.get("usage")) {
                             if let Some(it) = usage.get("input_tokens").and_then(|v| v.as_u64()) {
                                 input_tokens = it;
+                            }
+                            let cache_created = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            if cache_created > 0 || cache_read > 0 {
+                                info!(cache_created, cache_read, "Prompt cache metrics");
                             }
                         }
                     }

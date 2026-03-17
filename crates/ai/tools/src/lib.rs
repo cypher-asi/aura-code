@@ -5,6 +5,7 @@ fn tool(name: &str, description: &str, schema: serde_json::Value) -> ToolDefinit
         name: name.into(),
         description: description.into(),
         input_schema: schema,
+        cache_control: None,
     }
 }
 
