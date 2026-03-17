@@ -784,6 +784,12 @@ impl DevLoopEngine {
         if result.insufficient_credits {
             return Err(EngineError::InsufficientCredits);
         }
+        if let Some(ref err) = result.llm_error {
+            return Err(EngineError::LlmError(err.clone()));
+        }
+        if result.timed_out {
+            return Err(EngineError::LlmError("LLM streaming timed out".into()));
+        }
 
         let tracked_file_ops = tracked_file_ops.lock().await.clone();
         let mut notes = notes.lock().await.clone();

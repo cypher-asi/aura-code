@@ -82,6 +82,10 @@ pub struct ToolLoopResult {
     pub iterations_run: usize,
     pub timed_out: bool,
     pub insufficient_credits: bool,
+    /// Set when the LLM returned a non-billing API error (e.g. provider
+    /// credit exhaustion, rate limit, auth failure). Callers should treat
+    /// this as a hard failure rather than a successful completion.
+    pub llm_error: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +202,7 @@ pub async fn run_tool_loop(
                 iterations_run: iteration + 1,
                 timed_out: true,
                 insufficient_credits: false,
+                llm_error: None,
             };
         }
 
@@ -205,6 +210,7 @@ pub async fn run_tool_loop(
             Ok(Ok(r)) => r,
             Ok(Err(e)) => {
                 let is_billing = e.is_billing_error();
+                let error_msg = format!("{e}");
                 if e.is_insufficient_credits() {
                     let _ = event_tx.send(ToolLoopEvent::Error(
                         "Insufficient credits — please top up to continue.".to_string(),
@@ -217,6 +223,7 @@ pub async fn run_tool_loop(
                     let _ = event_tx.send(ToolLoopEvent::Error(format!("LLM error: {e}")));
                 }
                 append_text(&mut total_text, &iter_text);
+                let llm_error = if is_billing { None } else { Some(error_msg) };
                 return ToolLoopResult {
                     text: total_text,
                     thinking: total_thinking,
@@ -225,11 +232,13 @@ pub async fn run_tool_loop(
                     iterations_run: iteration + 1,
                     timed_out: false,
                     insufficient_credits: is_billing,
+                    llm_error,
                 };
             }
             Err(e) => {
+                let error_msg = format!("Stream task error: {e}");
                 if iter_text.is_empty() && iter_tool_calls.is_empty() {
-                    let _ = event_tx.send(ToolLoopEvent::Error(format!("Stream task error: {e}")));
+                    let _ = event_tx.send(ToolLoopEvent::Error(error_msg.clone()));
                 }
                 append_text(&mut total_text, &iter_text);
                 return ToolLoopResult {
@@ -240,6 +249,7 @@ pub async fn run_tool_loop(
                     iterations_run: iteration + 1,
                     timed_out: false,
                     insufficient_credits: false,
+                    llm_error: Some(error_msg),
                 };
             }
         };
@@ -277,6 +287,7 @@ pub async fn run_tool_loop(
                 iterations_run: iteration + 1,
                 timed_out: false,
                 insufficient_credits: false,
+                llm_error: None,
             };
         }
 
@@ -329,6 +340,7 @@ pub async fn run_tool_loop(
                 iterations_run: iteration + 1,
                 timed_out: false,
                 insufficient_credits: false,
+                llm_error: None,
             };
         }
 
@@ -348,6 +360,7 @@ pub async fn run_tool_loop(
         iterations_run: config.max_iterations,
         timed_out: false,
         insufficient_credits: false,
+        llm_error: None,
     }
 }
 

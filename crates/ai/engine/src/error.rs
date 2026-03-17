@@ -33,6 +33,8 @@ pub enum EngineError {
     Build(String),
     #[error("join error: {0}")]
     Join(String),
+    #[error("LLM error: {0}")]
+    LlmError(String),
     #[error("insufficient credits")]
     InsufficientCredits,
     #[error("loop already running")]
