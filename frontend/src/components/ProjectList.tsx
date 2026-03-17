@@ -6,14 +6,15 @@ import { useSidekick } from "../context/SidekickContext";
 import { useOrg } from "../context/OrgContext";
 import { clearLastAgentIf } from "../utils/storage";
 import type { Project, AgentInstance } from "../types";
-import { ButtonPlus, Explorer, Menu } from "@cypher-asi/zui";
+import { ButtonPlus, Explorer, Menu, PageEmptyState } from "@cypher-asi/zui";
 import type { ExplorerNode, MenuItem } from "@cypher-asi/zui";
-import { Bot, Pencil, Trash2, Loader2 } from "lucide-react";
+import { Bot, FolderGit2, Pencil, Trash2, Loader2 } from "lucide-react";
 import { NewProjectModal } from "./NewProjectModal";
 import { DeleteProjectModal, DeleteAgentInstanceModal } from "./ProjectModals";
 import { AgentSelectorModal } from "./AgentSelectorModal";
 import { useEventContext } from "../context/EventContext";
 import { useSidebarSearch } from "../context/SidebarSearchContext";
+import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import styles from "./ProjectList.module.css";
 
 function filterTree(nodes: ExplorerNode[], q: string): ExplorerNode[] {
@@ -127,11 +128,13 @@ interface ContextMenuState {
 
 export function ProjectList() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(true);
   const [agentsByProject, setAgentsByProject] = useState<Record<string, AgentInstance[]>>({});
   const { projectId, agentInstanceId } = useParams();
   const navigate = useNavigate();
   const sidekick = useSidekick();
   const { activeOrg } = useOrg();
+  const { supportsDesktopWorkspace } = useAuraCapabilities();
 
   const { query: searchQuery, setAction } = useSidebarSearch();
   const { subscribe } = useEventContext();
@@ -152,7 +155,11 @@ export function ProjectList() {
   const ctxMenuRef = useRef<HTMLDivElement>(null);
 
   const fetchProjects = useCallback(() => {
-    api.listProjects(activeOrg?.org_id).then(setProjects).catch(console.error);
+    setLoadingProjects(true);
+    api.listProjects(activeOrg?.org_id)
+      .then(setProjects)
+      .catch(console.error)
+      .finally(() => setLoadingProjects(false));
   }, [activeOrg?.org_id]);
 
   const fetchAgentInstances = useCallback((pid: string) => {
@@ -194,6 +201,16 @@ export function ProjectList() {
       }
     }
   }, [projectId, agentInstanceId]);
+
+  useEffect(() => {
+    if (supportsDesktopWorkspace) return;
+
+    projects.forEach((project) => {
+      if (!(project.project_id in agentsByProject)) {
+        fetchAgentInstances(project.project_id);
+      }
+    });
+  }, [agentsByProject, fetchAgentInstances, projects, supportsDesktopWorkspace]);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -329,8 +346,8 @@ export function ProjectList() {
   );
 
   const defaultExpandedIds = useMemo(
-    () => (projectId ? [projectId] : []),
-    [projectId],
+    () => (projectId ? [projectId] : supportsDesktopWorkspace ? [] : projects.map((project) => project.project_id)),
+    [projectId, projects, supportsDesktopWorkspace],
   );
 
   const defaultSelectedIds = useMemo(() => {
@@ -514,6 +531,18 @@ export function ProjectList() {
       setDeleteAgentLoading(false);
     }
   };
+
+  if (!loadingProjects && projects.length === 0) {
+    return (
+      <div className={styles.root}>
+        <PageEmptyState
+          icon={<FolderGit2 size={32} />}
+          title="No projects yet"
+          description="Open an existing project from this team, or create a linked project from the desktop app."
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={styles.root}>

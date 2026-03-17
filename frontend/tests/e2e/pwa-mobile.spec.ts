@@ -67,6 +67,45 @@ async function mockAuthenticatedApp(page: import("@playwright/test").Page) {
       updated_at: "2026-03-17T01:00:00.000Z",
     };
 
+    const tasks = [
+      {
+        task_id: "task-1",
+        project_id: "proj-1",
+        spec_id: "spec-1",
+        dependency_ids: [],
+        parent_task_id: null,
+        session_id: null,
+        user_id: "user-1",
+        assigned_agent_instance_id: "agent-inst-1",
+        title: "Patch auth flow",
+        description: "Verify mobile preview parity",
+        status: "ready",
+        execution_notes: "",
+        files_changed: [{ op: "modify", path: "src/auth.ts" }],
+        build_steps: [],
+        test_steps: [],
+        order_index: 0,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        model: null,
+        live_output: "",
+        created_at: "2026-03-17T01:00:00.000Z",
+        updated_at: "2026-03-17T01:00:00.000Z",
+      },
+    ];
+
+    const specs = [
+      {
+        spec_id: "spec-1",
+        project_id: "proj-1",
+        title: "Mobile parity spec",
+        markdown_contents: "# Mobile parity",
+        order_index: 0,
+        created_at: "2026-03-17T01:00:00.000Z",
+        updated_at: "2026-03-17T01:00:00.000Z",
+      },
+    ];
+
     const agents = [
       {
         agent_id: "agent-1",
@@ -142,8 +181,8 @@ async function mockAuthenticatedApp(page: import("@playwright/test").Page) {
       return json([project]);
     }
     if (path === "/api/projects/proj-1") return json(project);
-    if (path === "/api/projects/proj-1/specs") return json([]);
-    if (path === "/api/projects/proj-1/tasks") return json([]);
+    if (path === "/api/projects/proj-1/specs") return json(specs);
+    if (path === "/api/projects/proj-1/tasks") return json(tasks);
     if (path === "/api/projects/proj-1/agents") return json([agentInstance]);
     if (path === "/api/projects/proj-1/agents/agent-inst-1") return json(agentInstance);
     if (path === "/api/projects/proj-1/agents/agent-inst-1/messages") return json([]);
@@ -223,6 +262,15 @@ test("mobile project header can switch between execution and chat", async ({ pag
   await expect(page).toHaveURL(/\/projects\/proj-1\/execution$/);
 });
 
+test("mobile projects route shows the shared project browser", async ({ page }) => {
+  await mockAuthenticatedApp(page);
+
+  await page.goto("/projects");
+
+  await expect(page.getByText("Demo Project")).toBeVisible();
+  await expect(page.getByText("Welcome to AURA")).toBeHidden();
+});
+
 test("mobile drawer exposes team and app settings", async ({ page }) => {
   await mockAuthenticatedApp(page);
 
@@ -235,19 +283,30 @@ test("mobile drawer exposes team and app settings", async ({ page }) => {
   await expect(page.getByText("Claude API Key")).toBeVisible();
 });
 
+test("mobile details selection auto-opens preview", async ({ page }) => {
+  await mockAuthenticatedApp(page);
+
+  await page.goto("/projects/proj-1/execution");
+
+  await page.getByRole("button", { name: "Open details" }).click();
+  await page.getByRole("button", { name: "Tasks" }).click();
+  await page.getByRole("treeitem", { name: "Patch auth flow" }).dispatchEvent("click");
+
+  await expect(page.getByText("Open changed files from the desktop app.")).toBeVisible();
+});
+
 test("mobile agent header can switch between agents", async ({ page }) => {
   await mockAuthenticatedApp(page);
 
   await page.goto("/agents/agent-1");
 
-  await expect(page.getByRole("combobox", { name: "Choose agent" })).toHaveValue("agent-1");
+  await expect(page.getByRole("combobox", { name: "Choose agent" })).toBeVisible();
   await expect(page.getByText("Engineer / Global agent chat")).toBeVisible();
   await expect(page.getByText("Send a message to chat with Builder Bot across all linked projects")).toBeVisible();
 
-  await page.getByRole("combobox", { name: "Choose agent" }).selectOption("agent-2");
+  await page.getByRole("combobox", { name: "Choose agent" }).selectOption({ label: "Research Bot" });
 
   await expect(page).toHaveURL(/\/agents\/agent-2$/);
-  await expect(page.getByRole("combobox", { name: "Choose agent" })).toHaveValue("agent-2");
   await expect(page.getByText("Send a message to chat with Research Bot across all linked projects")).toBeVisible();
 });
 

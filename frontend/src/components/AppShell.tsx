@@ -31,6 +31,20 @@ import styles from "./AppShell.module.css";
 
 const useAlwaysOpen = () => false;
 
+function previewItemKey(item: ReturnType<typeof useSidekick>["previewItem"]): string | null {
+  if (!item) return null;
+  switch (item.kind) {
+    case "spec":
+      return `spec:${item.spec.spec_id}`;
+    case "specs_overview":
+      return `specs:${item.specs.map((spec) => spec.spec_id).join(",")}`;
+    case "task":
+      return `task:${item.task.task_id}`;
+    case "session":
+      return `session:${item.session.session_id}`;
+  }
+}
+
 function SidekickLaneInner() {
   const { activeApp } = useAppContext();
   const { SidekickPanel, SidekickTaskbar, SidekickHeader: SidekickHeaderComp } = activeApp;
@@ -182,6 +196,7 @@ function MobileShell({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
   const { MainPanel, SidekickPanel, SidekickTaskbar, SidekickHeader: SidekickHeaderComp, PreviewPanel, PreviewHeader: PreviewHeaderComp } = activeApp;
+  const lastPreviewKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     setNavOpen(false);
@@ -210,6 +225,23 @@ function MobileShell({
     if (!PreviewPanel || !previewItem) {
       setPreviewOpen(false);
     }
+  }, [PreviewPanel, previewItem]);
+
+  useEffect(() => {
+    const key = previewItemKey(previewItem);
+
+    if (!PreviewPanel || !key) {
+      lastPreviewKeyRef.current = null;
+      return;
+    }
+
+    if (lastPreviewKeyRef.current === key) {
+      return;
+    }
+
+    lastPreviewKeyRef.current = key;
+    setContextOpen(false);
+    setPreviewOpen(true);
   }, [PreviewPanel, previewItem]);
 
   const drawerOpen = navOpen || contextOpen || previewOpen || hostSettingsOpen;

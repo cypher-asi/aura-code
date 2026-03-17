@@ -666,6 +666,11 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
               );
             })}
           </div>
+          {!supportsDesktopWorkspace && (
+            <Text variant="muted" size="sm" style={{ padding: "var(--space-2) var(--space-3) 0" }}>
+              Open changed files from the desktop app.
+            </Text>
+          )}
         </GroupCollapsible>
       )}
 
