@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { EngineEvent } from "../types/events";
 import { createReconnectingWebSocket } from "./ws-reconnect";
-
-const WS_URL = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws/events`;
+import { resolveWsUrl } from "../lib/host-config";
 const MAX_EVENTS = 500;
 
 export interface EventStreamState {
@@ -38,7 +37,7 @@ export function useEventStream(
   useEffect(() => {
     wsRef.current = createReconnectingWebSocket(
       {
-        url: WS_URL,
+        url: resolveWsUrl("/ws/events"),
         initialDelay: 1000,
         maxDelay: 30000,
         backoffMultiplier: 2,

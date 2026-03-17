@@ -8,8 +8,7 @@ import type {
   Message,
 } from "../types";
 import { streamSSE } from "./sse";
-
-const BASE_URL = "";
+import { resolveApiUrl } from "../lib/host-config";
 
 export interface SpecGenStreamCallbacks {
   onProgress: (stage: string) => void;
@@ -89,7 +88,7 @@ export function generateSprintStream(
   signal?: AbortSignal,
 ) {
   return streamSSE<"delta" | "generating" | "done" | "error">(
-    `${BASE_URL}/api/projects/${projectId}/sprints/${sprintId}/generate/stream`,
+    resolveApiUrl(`/api/projects/${projectId}/sprints/${sprintId}/generate/stream`),
     { method: "POST" },
     createSSEHandler(
       {
@@ -110,7 +109,7 @@ export function generateSpecsStream(
   signal?: AbortSignal,
 ) {
   return streamSSE<"progress" | "specs_title" | "specs_summary" | "delta" | "generating" | "spec_saved" | "task_saved" | "complete" | "error">(
-    `${BASE_URL}/api/projects/${projectId}/specs/generate/stream`,
+    resolveApiUrl(`/api/projects/${projectId}/specs/generate/stream`),
     { method: "POST" },
     createSSEHandler(
       {
@@ -144,7 +143,7 @@ export function sendAgentMessageStream(
     body.attachments = attachments;
   }
   return streamSSE<"delta" | "thinking_delta" | "tool_call" | "tool_result" | "spec_saved" | "specs_title" | "specs_summary" | "task_saved" | "message_saved" | "agent_instance_updated" | "token_usage" | "error" | "done">(
-    `${BASE_URL}/api/agents/${agentId}/messages/stream`,
+    resolveApiUrl(`/api/agents/${agentId}/messages/stream`),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -230,7 +229,7 @@ export function sendMessageStream(
     body.attachments = attachments;
   }
   return streamSSE<"delta" | "thinking_delta" | "tool_call" | "tool_result" | "spec_saved" | "specs_title" | "specs_summary" | "task_saved" | "message_saved" | "agent_instance_updated" | "token_usage" | "error" | "done">(
-    `${BASE_URL}/api/projects/${projectId}/agents/${agentInstanceId}/messages/stream`,
+    resolveApiUrl(`/api/projects/${projectId}/agents/${agentInstanceId}/messages/stream`),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

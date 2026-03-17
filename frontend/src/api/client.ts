@@ -39,14 +39,13 @@ import {
   sendMessageStream,
   sendAgentMessageStream,
 } from "./streams";
+import { resolveApiUrl } from "../lib/host-config";
 
 export type {
   SpecGenStreamCallbacks,
   SprintStreamCallbacks,
   ChatStreamCallbacks,
 } from "./streams";
-
-const BASE_URL = "";
 
 export class ApiClientError extends Error {
   status: number;
@@ -80,8 +79,9 @@ export function dispatchInsufficientCredits(): void {
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetch(resolveApiUrl(path), {
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     ...options,
   });
   if (!res.ok) {

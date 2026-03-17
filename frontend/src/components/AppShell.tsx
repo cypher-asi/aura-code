@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Topbar, Drawer, Badge, Button } from "@cypher-asi/zui";
-import { Eye, Menu, Rows3 } from "lucide-react";
+import { Eye, Menu, Rows3, Server } from "lucide-react";
 import { Lane } from "./Lane";
 import { AppNavRail } from "./AppNavRail";
 import { BottomTaskbar } from "./BottomTaskbar";
 import { SettingsModal } from "./SettingsModal";
+import { HostSettingsModal } from "./HostSettingsModal";
 import { UpdateBanner } from "./UpdateBanner";
 import { OrgSettingsPanel } from "./OrgSettingsPanel";
 import { PanelSearch } from "./PanelSearch";
@@ -16,7 +17,7 @@ import { OrgProvider } from "../context/OrgContext";
 import { AppProvider, useAppContext } from "../context/AppContext";
 import { SidebarSearchProvider, useSidebarSearch } from "../context/SidebarSearchContext";
 import { useSidekick } from "../context/SidekickContext";
-import { useEventContext } from "../context/EventContext";
+import { useHost, type HostConnectionStatus } from "../context/HostContext";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { ProjectsProvider } from "../apps/projects/ProjectsProvider";
 import { AgentAppProvider } from "../apps/agents/AgentAppProvider";
@@ -168,20 +169,38 @@ function DesktopShell({ onOpenOrgSettings, onBuyCredits }: ShellChromeProps) {
 
 function MobileShell({ onOpenOrgSettings, onBuyCredits }: ShellChromeProps) {
   const { apps: registeredApps, activeApp } = useAppContext();
-  const { connected } = useEventContext();
+  const { status: hostStatus } = useHost();
   const { previewItem } = useSidekick();
   const navigate = useNavigate();
   const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
   const { MainPanel, SidekickPanel, SidekickTaskbar, SidekickHeader: SidekickHeaderComp, PreviewPanel, PreviewHeader: PreviewHeaderComp } = activeApp;
 
   useEffect(() => {
     setNavOpen(false);
     setContextOpen(false);
     setPreviewOpen(false);
+    setHostSettingsOpen(false);
   }, [location.pathname]);
+
+  const hostBadgeVariant: Record<HostConnectionStatus, "running" | "pending" | "error"> = {
+    checking: "pending",
+    online: "running",
+    auth_required: "pending",
+    unreachable: "error",
+    error: "error",
+  };
+
+  const hostBadgeText: Record<HostConnectionStatus, string> = {
+    checking: "Checking host",
+    online: "Host online",
+    auth_required: "Sign in required",
+    unreachable: "Host unreachable",
+    error: "Host error",
+  };
 
   useEffect(() => {
     if (!PreviewPanel || !previewItem) {
@@ -215,9 +234,17 @@ function MobileShell({ onOpenOrgSettings, onBuyCredits }: ShellChromeProps) {
           )}
           actions={(
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-              <Badge variant={connected ? "running" : "error"}>
-                {connected ? "Host online" : "Host offline"}
+              <Badge variant={hostBadgeVariant[hostStatus]}>
+                {hostBadgeText[hostStatus]}
               </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                icon={<Server size={16} />}
+                aria-label="Open host settings"
+                onClick={() => setHostSettingsOpen(true)}
+              />
               {SidekickPanel && (
                 <Button
                   variant="ghost"
@@ -337,6 +364,8 @@ function MobileShell({ onOpenOrgSettings, onBuyCredits }: ShellChromeProps) {
           </div>
         </Drawer>
       )}
+
+      <HostSettingsModal isOpen={hostSettingsOpen} onClose={() => setHostSettingsOpen(false)} />
     </>
   );
 }
