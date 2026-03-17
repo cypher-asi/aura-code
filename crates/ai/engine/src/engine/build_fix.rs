@@ -111,6 +111,7 @@ pub(crate) enum ErrorCategory {
     RustMissingMethod,
     RustTypeError,
     RustBorrowCheck,
+    RustStructFieldMismatch,
     RustApiHallucination,
     NpmDependency,
     NpmTypeScript,
@@ -139,6 +140,12 @@ pub(crate) fn classify_build_errors(stderr: &str) -> Vec<ErrorCategory> {
 
     if stderr.contains("no method named") || stderr.contains("E0599") {
         categories.push(ErrorCategory::RustMissingMethod);
+    }
+
+    if stderr.contains("missing field") || stderr.contains("E0063")
+        || stderr.contains("has no field named") || stderr.contains("E0560")
+    {
+        categories.push(ErrorCategory::RustStructFieldMismatch);
     }
 
     if stderr.contains("the trait") && stderr.contains("is not implemented")
@@ -214,6 +221,13 @@ pub(crate) fn error_category_guidance(categories: &[ErrorCategory]) -> String {
                 "DIAGNOSIS: Borrow checker violation.\n",
                 "FIX: Check ownership and lifetimes. Consider cloning, using references, ",
                 "or restructuring to avoid simultaneous mutable/immutable borrows.",
+            ),
+            ErrorCategory::RustStructFieldMismatch => concat!(
+                "DIAGNOSIS: Struct field mismatch -- fields were added, removed, or renamed.\n",
+                "FIX: Read the actual struct definition in the 'Actual API Reference' section below. ",
+                "Update every initializer and field access to match the current struct fields exactly. ",
+                "Add any new required fields (use Default/None for Option types), remove fields that ",
+                "no longer exist, and rename fields that were renamed.\n",
             ),
             ErrorCategory::RustApiHallucination => concat!(
                 "DIAGNOSIS: Systematic API hallucination detected -- your code assumes an API ",
