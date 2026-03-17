@@ -351,6 +351,15 @@ function StreamingIndicator({
   );
 }
 
+export function CookingIndicator() {
+  return (
+    <div className={styles.cookingIndicator}>
+      <img src="/aura-icon.png" alt="" className={styles.cookingIcon} />
+      <span className={styles.cookingText}>Cooking...</span>
+    </div>
+  );
+}
+
 export function StreamingBubble({ text, toolCalls, thinkingText, thinkingDurationMs }: StreamingBubbleProps) {
   const isThinking = Boolean(thinkingText) && !text;
   return (
