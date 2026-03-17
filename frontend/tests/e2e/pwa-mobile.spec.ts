@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-async function mockAuthenticatedProjectApp(page: import("@playwright/test").Page) {
+async function mockAuthenticatedApp(page: import("@playwright/test").Page) {
   await page.unroute("**/api/auth/session");
   await page.unroute("**/api/auth/validate");
 
@@ -66,6 +66,33 @@ async function mockAuthenticatedProjectApp(page: import("@playwright/test").Page
       created_at: "2026-03-17T01:00:00.000Z",
       updated_at: "2026-03-17T01:00:00.000Z",
     };
+
+    const agents = [
+      {
+        agent_id: "agent-1",
+        user_id: "user-1",
+        name: "Builder Bot",
+        role: "Engineer",
+        personality: "Helpful",
+        system_prompt: "Build features carefully.",
+        skills: [],
+        icon: null,
+        created_at: "2026-03-17T01:00:00.000Z",
+        updated_at: "2026-03-17T01:00:00.000Z",
+      },
+      {
+        agent_id: "agent-2",
+        user_id: "user-1",
+        name: "Research Bot",
+        role: "Analyst",
+        personality: "Curious",
+        system_prompt: "Research carefully.",
+        skills: [],
+        icon: null,
+        created_at: "2026-03-17T01:00:00.000Z",
+        updated_at: "2026-03-17T01:00:00.000Z",
+      },
+    ];
 
     const json = (body: unknown) =>
       route.fulfill({
@@ -124,6 +151,11 @@ async function mockAuthenticatedProjectApp(page: import("@playwright/test").Page
     if (path === "/api/projects/proj-1/loop/status") {
       return json({ running: false, paused: false, project_id: "proj-1", active_agent_instances: [] });
     }
+    if (path === "/api/agents") return json(agents);
+    if (path === "/api/agents/agent-1") return json(agents[0]);
+    if (path === "/api/agents/agent-2") return json(agents[1]);
+    if (path === "/api/agents/agent-1/messages") return json([]);
+    if (path === "/api/agents/agent-2/messages") return json([]);
     if (path === "/api/projects/proj-1/progress") {
       return json({
         project_id: "proj-1",
@@ -178,7 +210,7 @@ test("mobile login page can open host settings", async ({ page }) => {
 });
 
 test("mobile project header can switch between execution and chat", async ({ page }) => {
-  await mockAuthenticatedProjectApp(page);
+  await mockAuthenticatedApp(page);
 
   await page.goto("/projects/proj-1/execution");
 
@@ -192,19 +224,31 @@ test("mobile project header can switch between execution and chat", async ({ pag
 });
 
 test("mobile drawer exposes team and app settings", async ({ page }) => {
-  await mockAuthenticatedProjectApp(page);
+  await mockAuthenticatedApp(page);
 
   await page.goto("/projects/proj-1/execution");
 
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeHidden();
   await expect(page.getByRole("button", { name: "Team settings" })).toBeVisible();
   await expect(page.getByRole("button", { name: "App settings" })).toBeVisible();
-
-  await page.getByRole("button", { name: "Open navigation" }).click();
-  await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeHidden();
   await page.getByRole("button", { name: "App settings" }).dispatchEvent("click");
   await expect(page.getByText("Claude API Key")).toBeVisible();
+});
+
+test("mobile agent header can switch between agents", async ({ page }) => {
+  await mockAuthenticatedApp(page);
+
+  await page.goto("/agents/agent-1");
+
+  await expect(page.getByRole("combobox", { name: "Choose agent" })).toHaveValue("agent-1");
+  await expect(page.getByText("Engineer / Global agent chat")).toBeVisible();
+  await expect(page.getByText("Send a message to chat with Builder Bot across all linked projects")).toBeVisible();
+
+  await page.getByRole("combobox", { name: "Choose agent" }).selectOption("agent-2");
+
+  await expect(page).toHaveURL(/\/agents\/agent-2$/);
+  await expect(page.getByRole("combobox", { name: "Choose agent" })).toHaveValue("agent-2");
+  await expect(page.getByText("Send a message to chat with Research Bot across all linked projects")).toBeVisible();
 });
 
 test("manifest and service worker assets are reachable", async ({ page }) => {

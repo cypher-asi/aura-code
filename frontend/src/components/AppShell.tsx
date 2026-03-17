@@ -261,7 +261,7 @@ function MobileShell({
                   size="sm"
                   iconOnly
                   icon={<Rows3 size={16} />}
-                  aria-label="Open project details"
+                  aria-label="Open details"
                   onClick={() => setContextOpen(true)}
                 />
               )}

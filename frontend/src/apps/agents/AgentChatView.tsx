@@ -14,7 +14,7 @@ import styles from "../../components/ChatView.module.css";
 
 export function AgentChatView() {
   const { agentId } = useParams<{ agentId: string }>();
-  const { selectedAgent, selectAgent } = useAgentApp();
+  const { agents, selectedAgent, selectAgent } = useAgentApp();
 
   const {
     messages,
@@ -41,11 +41,15 @@ export function AgentChatView() {
     if (agentId) {
       localStorage.setItem("aura:lastAgentId", agentId);
       requestAnimationFrame(() => inputBarRef.current?.focus());
+      const cachedAgent = agents.find((agent) => agent.agent_id === agentId);
+      if (cachedAgent) {
+        selectAgent(cachedAgent);
+      }
       api.agents.get(agentId as never).then((a) => {
         selectAgent(a);
       }).catch(() => {});
     }
-  }, [agentId, selectAgent]);
+  }, [agentId, agents, selectAgent]);
 
   useEffect(() => {
     if (!agentId) {
