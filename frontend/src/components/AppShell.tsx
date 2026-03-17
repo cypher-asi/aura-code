@@ -340,7 +340,7 @@ function MobileShell({
         isOpen={navOpen}
         onClose={() => setNavOpen(false)}
         title={activeApp.label}
-        className={styles.mobileDrawer}
+        className={styles.mobileNavDrawer}
         defaultSize={340}
         maxSize={420}
       >
@@ -384,7 +384,7 @@ function MobileShell({
           isOpen={contextOpen}
           onClose={() => setContextOpen(false)}
           title={`${activeApp.label} details`}
-          className={styles.mobileDrawer}
+          className={styles.mobileSheetDrawer}
           defaultSize={440}
           maxSize={640}
         >
@@ -412,7 +412,7 @@ function MobileShell({
           isOpen={previewOpen}
           onClose={() => setPreviewOpen(false)}
           title="Preview"
-          className={styles.mobileDrawer}
+          className={styles.mobileSheetDrawer}
           defaultSize={420}
           maxSize={640}
         >
