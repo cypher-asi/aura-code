@@ -562,12 +562,18 @@ impl DevLoopEngine {
                     .get_session(&project_id, &agent_instance_id, &session.session_id)?;
             if self.session_service.should_rollover(&current_session) {
                 let project = self.project_service.get_project(&project_id)?;
+                let mut raw_log = work_log.join("\n\n---\n\n");
+                const MAX_WORK_LOG_CHARS: usize = 20_000;
+                if raw_log.len() > MAX_WORK_LOG_CHARS {
+                    raw_log.truncate(MAX_WORK_LOG_CHARS);
+                    raw_log.push_str("\n\n... (work log truncated) ...");
+                }
                 let history = format!(
                     "Project: {}\nDescription: {}\n\nSession work log ({} tasks completed):\n\n{}",
                     project.name,
                     project.description,
                     completed_count,
-                    work_log.join("\n\n---\n\n"),
+                    raw_log,
                 );
                 let summary_start = Instant::now();
                 let summary = tokio::select! {
