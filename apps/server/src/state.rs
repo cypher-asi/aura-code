@@ -12,7 +12,7 @@ use aura_chat::ChatService;
 use aura_claude::ClaudeClient;
 use aura_github::GitHubService;
 use aura_orgs::OrgService;
-use aura_billing::{BillingClient, PricingService};
+use aura_billing::{BillingClient, MeteredLlm, PricingService};
 use aura_projects::ProjectService;
 use aura_sessions::SessionService;
 use aura_specs::SpecGenerationService;
@@ -43,6 +43,7 @@ pub struct AppState {
     pub session_service: Arc<SessionService>,
     pub chat_service: Arc<ChatService>,
     pub claude_client: Arc<ClaudeClient>,
+    pub llm: Arc<MeteredLlm>,
     pub event_tx: mpsc::UnboundedSender<EngineEvent>,
     pub event_broadcast: broadcast::Sender<EngineEvent>,
     pub loop_registry: LoopRegistry,

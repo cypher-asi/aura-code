@@ -25,7 +25,7 @@ use aura_chat::ChatService;
 use aura_claude::ClaudeClient;
 use aura_github::GitHubService;
 use aura_orgs::OrgService;
-use aura_billing::{BillingClient, PricingService};
+use aura_billing::{BillingClient, MeteredLlm, PricingService};
 use aura_projects::ProjectService;
 use aura_sessions::SessionService;
 use aura_specs::SpecGenerationService;
@@ -222,6 +222,11 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
     let pricing_service = Arc::new(PricingService::new(store.clone()));
     let billing_client = Arc::new(BillingClient::new());
     let claude_client = Arc::new(ClaudeClient::new());
+    let llm = Arc::new(MeteredLlm::new(
+        claude_client.clone(),
+        billing_client.clone(),
+        store.clone(),
+    ));
     let project_service = Arc::new(ProjectService::new(store.clone()));
     project_service.cleanup_empty_projects();
     let spec_gen_service = Arc::new(SpecGenerationService::new(
@@ -302,6 +307,7 @@ pub fn build_app_state(db_path: &Path, data_dir: &Path) -> AppState {
         session_service,
         chat_service,
         claude_client,
+        llm,
         event_tx,
         event_broadcast,
         loop_registry: Arc::new(Mutex::new(HashMap::new())),
