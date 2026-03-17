@@ -171,6 +171,7 @@ pub async fn get_loop_status(
 pub async fn run_single_task(
     State(state): State<AppState>,
     Path((project_id, task_id)): Path<(ProjectId, TaskId)>,
+    Query(params): Query<LoopQueryParams>,
 ) -> ApiResult<StatusCode> {
     super::billing::require_credits(&state).await?;
     let engine = Arc::new(
@@ -188,9 +189,10 @@ pub async fn run_single_task(
         .with_write_coordinator(state.write_coordinator.clone()),
     );
 
+    let agent_instance_id = params.agent_instance_id;
     let event_tx = state.event_tx.clone();
     tokio::spawn(async move {
-        if let Err(e) = engine.run_single_task(project_id, task_id).await {
+        if let Err(e) = engine.run_single_task(project_id, task_id, agent_instance_id).await {
             let _ = event_tx.send(aura_engine::EngineEvent::TaskFailed {
                 project_id,
                 agent_instance_id: aura_core::AgentInstanceId::new(),
