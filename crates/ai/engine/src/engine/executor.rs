@@ -33,6 +33,7 @@ impl DevLoopEngine {
         self: Arc<Self>,
         project_id: ProjectId,
         task_id: TaskId,
+        agent_instance_id: Option<AgentInstanceId>,
     ) -> Result<(), EngineError> {
         let api_key = self.settings.get_decrypted_api_key()?;
 
@@ -57,9 +58,14 @@ impl DevLoopEngine {
         let user_id = self.current_user_id();
         let model = Some(DEFAULT_MODEL.to_string());
 
-        let agent = self
-            .agent_instance_service
-            .create_instance(&project_id, "dev-agent".into())?;
+        let agent = if let Some(aiid) = agent_instance_id {
+            self.agent_instance_service
+                .get_instance(&project_id, &aiid)
+                .map_err(|_| EngineError::Parse(format!("agent instance {aiid} not found")))?
+        } else {
+            self.agent_instance_service
+                .create_instance(&project_id, "dev-agent".into())?
+        };
         let session = self.session_service.create_session(
             &agent.agent_instance_id,
             &project_id,
