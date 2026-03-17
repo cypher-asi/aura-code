@@ -93,23 +93,37 @@ function shortenArg(arg: string, max: number): string {
 }
 
 function summarizeTrailingText(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes("implement") || lower.includes("writing") || lower.includes("creating")) {
-    return "Implementing changes";
-  }
-  if (lower.includes("read") || lower.includes("look") || lower.includes("check") || lower.includes("explore") || lower.includes("examin")) {
-    return "Analyzing codebase";
-  }
-  if (lower.includes("build") || lower.includes("compil")) {
-    return "Building project";
-  }
-  if (lower.includes("test")) {
-    return "Running tests";
-  }
-  if (lower.includes("fix") || lower.includes("correct") || lower.includes("resolv")) {
-    return "Fixing issues";
-  }
+  const firstLine = extractFirstMeaningfulLine(text);
+  if (firstLine) return firstLine;
   return "Generating response";
+}
+
+const MAX_SUMMARY_LEN = 100;
+
+function extractFirstMeaningfulLine(text: string): string | null {
+  const lines = text.split("\n");
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.length < 4) continue;
+    if (/^[\s\-*#`>|=]+$/.test(line)) continue;
+
+    let cleaned = line
+      .replace(/^#+\s*/, "")
+      .replace(/^\d+\.\s+/, "")
+      .replace(/^[-*]\s+/, "")
+      .replace(/^>\s+/, "")
+      .trim();
+
+    if (!cleaned) continue;
+
+    if (cleaned.length > MAX_SUMMARY_LEN) {
+      const cutoff = cleaned.lastIndexOf(" ", MAX_SUMMARY_LEN);
+      cleaned = cleaned.slice(0, cutoff > 40 ? cutoff : MAX_SUMMARY_LEN) + "\u2026";
+    }
+    return cleaned;
+  }
+  return null;
 }
 
 function deriveLegacyJsonActivity(buffer: string): ActivityItem[] {
