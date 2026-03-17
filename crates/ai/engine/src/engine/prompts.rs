@@ -99,11 +99,44 @@ Response schema:
 "#, hash = "#")
 }
 
-pub(crate) fn agentic_execution_system_prompt(project: &Project) -> String {
+pub(crate) fn agentic_execution_system_prompt(
+    project: &Project,
+    agent: Option<&AgentInstance>,
+) -> String {
     let build_cmd = project.build_command.as_deref().unwrap_or("(not configured)");
     let test_cmd = project.test_command.as_deref().unwrap_or("(not configured)");
+
+    let mut preamble = String::new();
+    if let Some(a) = agent {
+        if !a.system_prompt.is_empty() {
+            preamble.push_str(&a.system_prompt);
+            preamble.push_str("\n\n");
+        }
+        let has_identity = !a.name.is_empty() || !a.role.is_empty() || !a.personality.is_empty();
+        if has_identity {
+            preamble.push_str("You are");
+            if !a.name.is_empty() {
+                preamble.push_str(&format!(" {}", a.name));
+            }
+            if !a.role.is_empty() {
+                preamble.push_str(&format!(", a {}", a.role));
+            }
+            preamble.push('.');
+            if !a.personality.is_empty() {
+                preamble.push_str(&format!(" {}", a.personality));
+            }
+            preamble.push_str("\n\n");
+        }
+        if !a.skills.is_empty() {
+            preamble.push_str(&format!(
+                "Your capabilities include: {}.\n\n",
+                a.skills.join(", ")
+            ));
+        }
+    }
+
     format!(
-        r#"You are an expert software engineer executing a single implementation task.
+        r#"{preamble}You are an expert software engineer executing a single implementation task.
 You have tools to explore the codebase, make changes, and verify your work.
 
 Workflow:

@@ -115,7 +115,7 @@ impl DevLoopEngine {
             let project = self.project_service.get_project(&project_id)?;
             self.execute_shell_task(&project, &task, &cmd, aiid).await
         } else {
-            self.execute_task_agentic(&project_id, &task, &session, &api_key).await
+            self.execute_task_agentic(&project_id, &task, &session, &api_key, Some(&agent)).await
         };
 
         let end_status = match result {
@@ -688,11 +688,12 @@ impl DevLoopEngine {
         task: &Task,
         session: &Session,
         api_key: &str,
+        agent: Option<&AgentInstance>,
     ) -> Result<TaskExecution, EngineError> {
         let project = self.project_service.get_project(project_id)?;
         let spec = self.store.get_spec(project_id, &task.spec_id)?;
 
-        let system_prompt = agentic_execution_system_prompt(&project);
+        let system_prompt = agentic_execution_system_prompt(&project, agent);
         let task_context = build_agentic_task_context(&project, &spec, task, session);
         let tools = engine_tool_definitions();
         let executor = ChatToolExecutor::new(

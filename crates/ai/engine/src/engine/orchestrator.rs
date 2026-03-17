@@ -390,12 +390,15 @@ impl DevLoopEngine {
             };
 
             let task_start = Instant::now();
+            let loop_agent = self.agent_instance_service
+                .get_instance(&project_id, &agent_instance_id)
+                .ok();
             let result = if let Some(cmd) = shell::extract_shell_command(&task) {
                 let project = self.project_service.get_project(&project_id)?;
                 Some(self.execute_shell_task(&project, &task, &cmd, agent_instance_id).await)
             } else {
                 tokio::select! {
-                    res = self.execute_task_agentic(&project_id, &task, &session, &api_key) => {
+                    res = self.execute_task_agentic(&project_id, &task, &session, &api_key, loop_agent.as_ref()) => {
                         Some(res)
                     }
                     _ = stop_rx.changed() => {
