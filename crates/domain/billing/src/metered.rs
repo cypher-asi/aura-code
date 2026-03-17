@@ -13,6 +13,7 @@ use aura_store::RocksStore;
 
 use crate::client::BillingClient;
 use crate::error::BillingError;
+use crate::pricing::PricingService;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MeteredLlmError {
@@ -98,12 +99,15 @@ impl MeteredLlm {
 
     async fn debit(
         &self,
+        model: &str,
         input_tokens: u64,
         output_tokens: u64,
         reason: &str,
         metadata: Option<serde_json::Value>,
     ) -> Result<(), MeteredLlmError> {
-        let amount = input_tokens + output_tokens;
+        let pricing = PricingService::new(self.store.clone());
+        let (inp_rate, out_rate) = pricing.lookup_rate(model);
+        let amount = (input_tokens as f64 * inp_rate + output_tokens as f64 * out_rate).round() as u64;
         if amount == 0 {
             return Ok(());
         }
@@ -151,7 +155,7 @@ impl MeteredLlm {
     ) -> Result<LlmResponse, MeteredLlmError> {
         self.pre_flight_check().await?;
         let resp = self.provider.complete(api_key, system_prompt, user_message, max_tokens).await?;
-        self.debit(resp.input_tokens, resp.output_tokens, reason, metadata).await?;
+        self.debit(aura_claude::DEFAULT_MODEL, resp.input_tokens, resp.output_tokens, reason, metadata).await?;
         Ok(resp)
     }
 
@@ -171,7 +175,7 @@ impl MeteredLlm {
             api_key, system_prompt, user_message, max_tokens, tx,
         ).await?;
         let (inp, out) = handle.finalize().await;
-        self.debit(inp, out, reason, metadata).await?;
+        self.debit(aura_claude::DEFAULT_MODEL, inp, out, reason, metadata).await?;
         Ok(result)
     }
 
@@ -191,7 +195,7 @@ impl MeteredLlm {
             api_key, system_prompt, messages, max_tokens, tx,
         ).await?;
         let (inp, out) = handle.finalize().await;
-        self.debit(inp, out, reason, metadata).await?;
+        self.debit(aura_claude::DEFAULT_MODEL, inp, out, reason, metadata).await?;
         Ok(result)
     }
 
@@ -210,7 +214,7 @@ impl MeteredLlm {
         let resp = self.provider.complete_stream_with_tools(
             api_key, system_prompt, messages, tools, max_tokens, None, event_tx,
         ).await?;
-        self.debit(resp.input_tokens, resp.output_tokens, reason, metadata).await?;
+        self.debit(aura_claude::DEFAULT_MODEL, resp.input_tokens, resp.output_tokens, reason, metadata).await?;
         Ok(resp)
     }
 
@@ -230,7 +234,7 @@ impl MeteredLlm {
         let resp = self.provider.complete_stream_with_tools(
             api_key, system_prompt, messages, tools, max_tokens, Some(thinking), event_tx,
         ).await?;
-        self.debit(resp.input_tokens, resp.output_tokens, reason, metadata).await?;
+        self.debit(aura_claude::DEFAULT_MODEL, resp.input_tokens, resp.output_tokens, reason, metadata).await?;
         Ok(resp)
     }
 }
