@@ -65,6 +65,57 @@ pub(crate) fn track_file_op(tool_name: &str, input: &serde_json::Value, ops: &mu
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct TaskTimings {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub fix_input_tokens: u64,
+    pub fix_output_tokens: u64,
+    pub parse_retries: u32,
+    pub build_fix_attempts: u32,
+    pub duplicate_error_bailouts: u32,
+    pub llm_duration_ms: u64,
+    pub file_ops_duration_ms: u64,
+    pub build_verify_duration_ms: u64,
+    pub task_duration_ms: u64,
+    pub files_changed: u32,
+}
+
+impl TaskTimings {
+    pub fn total_input(&self) -> u64 { self.input_tokens + self.fix_input_tokens }
+    pub fn total_output(&self) -> u64 { self.output_tokens + self.fix_output_tokens }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum TaskOutcome {
+    Completed {
+        notes: String,
+        follow_up_tasks: Vec<FollowUpSuggestion>,
+        file_ops: Vec<FileOp>,
+        timings: TaskTimings,
+    },
+    Failed {
+        reason: String,
+        phase: String,
+        credit_failure: bool,
+        timings: TaskTimings,
+    },
+}
+
+impl TaskOutcome {
+    pub fn timings(&self) -> &TaskTimings {
+        match self {
+            TaskOutcome::Completed { timings, .. } => timings,
+            TaskOutcome::Failed { timings, .. } => timings,
+        }
+    }
+
+    pub fn is_completed(&self) -> bool {
+        matches!(self, TaskOutcome::Completed { .. })
+    }
+
+}
+
 pub(crate) fn simple_file_changes(ops: &[FileOp]) -> Vec<FileChangeSummary> {
     ops.iter().map(|op| match op {
         FileOp::Create { path, content } => FileChangeSummary {

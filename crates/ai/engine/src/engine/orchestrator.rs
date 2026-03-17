@@ -19,7 +19,7 @@ use super::types::*;
 use super::write_coordinator::ProjectWriteCoordinator;
 use crate::error::EngineError;
 use crate::events::{EngineEvent, PhaseTimingEntry};
-use crate::file_ops::{self, FileOp};
+use crate::file_ops::FileOp;
 use crate::metrics::{self, LoopRunMetrics, TaskMetrics};
 
 pub struct LoopHandle {
@@ -416,281 +416,114 @@ impl DevLoopEngine {
                     return Ok(LoopOutcome::Paused { completed_count });
                 }
             }
-            let result = result.unwrap();
+            let execution_result = result.unwrap();
 
-            let failure_reason = match result {
-                Ok(execution) => {
-                    let llm_duration_ms = task_start.elapsed().as_millis() as u64;
-                    let project = self.project_service.get_project(&project_id)?;
-                    let base_path = Path::new(&project.linked_folder_path);
+            let outcome = self.finalize_task_execution(
+                project_id, agent_instance_id, &task, &session, &api_key,
+                &session.user_id, &session.model, task_start, &baseline_test_failures,
+                execution_result,
+            ).await?;
 
-                    let file_changes = if execution.files_already_applied {
-                        simple_file_changes(&execution.file_ops)
-                    } else {
-                        file_ops::compute_file_changes(base_path, &execution.file_ops)
-                    };
+            let t = outcome.timings();
+            total_input_tokens += t.total_input();
+            total_output_tokens += t.total_output();
+            total_parse_retries += t.parse_retries;
+            total_build_fix_attempts += t.build_fix_attempts;
+            duplicate_error_bailouts += t.duplicate_error_bailouts;
 
-                    self.update_task_tracking(
-                        &project_id, &task, &session.user_id, &session.model,
-                        execution.input_tokens, execution.output_tokens,
-                    );
+            let failure_reason = match &outcome {
+                TaskOutcome::Completed { notes, follow_up_tasks, file_ops, timings } => {
+                    completed_count += 1;
 
-                    total_input_tokens += execution.input_tokens;
-                    total_output_tokens += execution.output_tokens;
-                    total_parse_retries += execution.parse_retries;
-
-                    let _write_guard = self.write_coordinator.acquire(&project_id).await;
-
-                    let file_ops_start = Instant::now();
-                    let apply_result = if execution.files_already_applied {
-                        Ok(())
-                    } else {
-                        file_ops::apply_file_ops(base_path, &execution.file_ops).await
-                    };
-                    if let Err(e) = apply_result {
-                        let reason = format!("file operation failed: {e}");
-                        let task_dur = task_start.elapsed().as_millis() as u64;
-                        self.task_service.fail_task(
-                            &project_id,
-                            &task.spec_id,
-                            &task.task_id,
-                            &reason,
-                        )?;
-                        failed_count += 1;
-                        self.emit(EngineEvent::TaskFailed {
-                            project_id,
-                            agent_instance_id,
-                            task_id: task.task_id,
-                            reason: e.to_string(),
-                            duration_ms: Some(task_dur),
-                            phase: Some("file_ops".into()),
-                            parse_retries: Some(execution.parse_retries),
-                            build_fix_attempts: None,
-                            model: session.model.clone(),
-                        });
-                        record_task!(TaskMetrics::failed(
-                            task.task_id.to_string(), task.title.clone(),
-                            task_dur, session.model.clone(), "file_ops", reason.clone(),
-                        )
-                        .with_tokens(execution.input_tokens, execution.output_tokens)
-                        .with_llm_duration(llm_duration_ms)
-                        .with_files_changed(execution.file_ops.len() as u32)
-                        .with_parse_retries(execution.parse_retries));
-                        let _ = self.session_service.update_context_usage(
-                            &project_id, &agent_instance_id, &session.session_id,
-                            execution.input_tokens, execution.output_tokens,
-                        );
-                        work_log.push(format!("Task (failed): {}\nReason: {}", task.title, reason));
-                        Some(reason)
-                    } else {
-                        let file_ops_duration_ms = file_ops_start.elapsed().as_millis() as u64;
-                        self.emit_file_ops_applied(project_id, agent_instance_id, &task, &execution.file_ops);
-
-                        let build_start = Instant::now();
-                        let (_, build_passed, build_attempts, dup_bailouts, fix_inp, fix_out) = self
-                            .verify_and_fix_build(
-                                &project, &task, &session, &api_key, &execution,
-                                &baseline_test_failures,
-                            )
-                            .await?;
-                        let build_verify_duration_ms = build_start.elapsed().as_millis() as u64;
-                        let task_duration_ms = task_start.elapsed().as_millis() as u64;
-
-                        total_build_fix_attempts += build_attempts;
-                        duplicate_error_bailouts += dup_bailouts;
-                        total_input_tokens += fix_inp;
-                        total_output_tokens += fix_out;
-
-                        self.update_task_tracking(
-                            &project_id, &task, &session.user_id, &session.model,
-                            fix_inp, fix_out,
-                        );
-
-                        if !build_passed {
-                            let reason = "build verification failed after all fix attempts".to_string();
-                            self.task_service.fail_task(
-                                &project_id,
-                                &task.spec_id,
-                                &task.task_id,
-                                &reason,
-                            )?;
-                            failed_count += 1;
-                            self.emit(EngineEvent::TaskFailed {
-                                project_id,
-                                agent_instance_id,
-                                task_id: task.task_id,
-                                reason: reason.clone(),
-                                duration_ms: Some(task_duration_ms),
-                                phase: Some("build_verify".into()),
-                                parse_retries: Some(execution.parse_retries),
-                                build_fix_attempts: Some(build_attempts),
-                                model: session.model.clone(),
-                            });
-                            record_task!(TaskMetrics::failed(
-                                task.task_id.to_string(), task.title.clone(),
-                                task_duration_ms, session.model.clone(), "build_verify", reason.clone(),
-                            )
-                            .with_tokens(execution.input_tokens + fix_inp, execution.output_tokens + fix_out)
-                            .with_llm_duration(llm_duration_ms)
-                            .with_file_ops_duration(file_ops_duration_ms)
-                            .with_build_verify_duration(build_verify_duration_ms)
-                            .with_files_changed(execution.file_ops.len() as u32)
-                            .with_parse_retries(execution.parse_retries)
-                            .with_build_fix_attempts(build_attempts)
-                            .with_phase_timings(vec![
-                                PhaseTimingEntry { phase: "llm_call".into(), duration_ms: llm_duration_ms },
-                                PhaseTimingEntry { phase: "file_ops".into(), duration_ms: file_ops_duration_ms },
-                                PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
-                            ]));
-                            let _ = self.session_service.update_context_usage(
-                                &project_id, &agent_instance_id, &session.session_id,
-                                execution.input_tokens + fix_inp, execution.output_tokens + fix_out,
-                            );
-                            work_log.push(format!("Task (failed): {}\nReason: {}", task.title, reason));
-                            Some(reason)
-                        } else {
-                            self.task_service.complete_task(
-                                &project_id,
-                                &task.spec_id,
-                                &task.task_id,
-                                &execution.notes,
-                                file_changes,
-                            )?;
-                            completed_count += 1;
-                            self.emit(EngineEvent::TaskCompleted {
-                                project_id,
-                                agent_instance_id,
-                                task_id: task.task_id,
-                                execution_notes: execution.notes.clone(),
-                                duration_ms: Some(task_duration_ms),
-                                input_tokens: Some(execution.input_tokens + fix_inp),
-                                output_tokens: Some(execution.output_tokens + fix_out),
-                                llm_duration_ms: Some(llm_duration_ms),
-                                build_verify_duration_ms: Some(build_verify_duration_ms),
-                                files_changed_count: Some(execution.file_ops.len() as u32),
-                                parse_retries: Some(execution.parse_retries),
-                                build_fix_attempts: Some(build_attempts),
-                                model: session.model.clone(),
-                            });
-
-                            let task_phase_timings = vec![
-                                PhaseTimingEntry { phase: "llm_call".into(), duration_ms: llm_duration_ms },
-                                PhaseTimingEntry { phase: "file_ops".into(), duration_ms: file_ops_duration_ms },
-                                PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
-                            ];
-                            self.emit(EngineEvent::LoopIterationSummary {
-                                project_id,
-                                agent_instance_id,
-                                task_id: task.task_id,
-                                phase_timings: task_phase_timings.clone(),
-                            });
-
-                            record_task!(TaskMetrics::completed(
-                                task.task_id.to_string(), task.title.clone(),
-                                task_duration_ms, session.model.clone(),
-                            )
-                            .with_tokens(execution.input_tokens + fix_inp, execution.output_tokens + fix_out)
-                            .with_llm_duration(llm_duration_ms)
-                            .with_file_ops_duration(file_ops_duration_ms)
-                            .with_build_verify_duration(build_verify_duration_ms)
-                            .with_files_changed(execution.file_ops.len() as u32)
-                            .with_parse_retries(execution.parse_retries)
-                            .with_build_fix_attempts(build_attempts)
-                            .with_phase_timings(task_phase_timings));
-
-                            let newly_ready = self
-                                .task_service
-                                .resolve_dependencies_after_completion(&project_id, &task.task_id)?;
-                            for t in &newly_ready {
-                                self.emit(EngineEvent::TaskBecameReady { project_id, agent_instance_id, task_id: t.task_id });
-                            }
-
-                            for follow_up in &execution.follow_up_tasks {
-                                if follow_up_count >= self.engine_config.max_follow_ups_per_loop {
-                                    warn!(cap = self.engine_config.max_follow_ups_per_loop, "follow-up task cap reached, skipping remaining");
-                                    break;
-                                }
-                                match self.task_service.create_follow_up_task(
-                                    &task,
-                                    follow_up.title.clone(),
-                                    follow_up.description.clone(),
-                                    vec![],
-                                ) {
-                                    Ok(new_task) => {
-                                        follow_up_count += 1;
-                                        self.emit(EngineEvent::FollowUpTaskCreated {
-                                            project_id,
-                                            agent_instance_id,
-                                            task_id: new_task.task_id,
-                                        });
-                                    }
-                                    Err(aura_tasks::TaskError::DuplicateFollowUp) => {
-                                        info!(title = %follow_up.title, "skipping duplicate follow-up task");
-                                    }
-                                    Err(e) => return Err(EngineError::Parse(format!("follow-up creation failed: {e}"))),
-                                }
-                            }
-
-                            self.session_service.update_context_usage(
-                                &project_id,
-                                &agent_instance_id,
-                                &session.session_id,
-                                execution.input_tokens + fix_inp,
-                                execution.output_tokens + fix_out,
-                            )?;
-
-                            let changed_files: Vec<&str> = execution
-                                .file_ops
-                                .iter()
-                                .map(|op| match op {
-                                    FileOp::Create { path, .. }
-                                    | FileOp::Modify { path, .. }
-                                    | FileOp::Delete { path }
-                                    | FileOp::SearchReplace { path, .. } => path.as_str(),
-                                })
-                                .collect();
-                            work_log.push(format!(
-                                "Task (completed): {}\nNotes: {}\nFiles changed: {}",
-                                task.title,
-                                execution.notes,
-                                changed_files.join(", "),
-                            ));
-
-                            None
-                        }
-                    }
-                }
-                Err(e) => {
-                    let is_credit_failure = matches!(e, EngineError::InsufficientCredits);
-                    let reason = format!("execution error: {e}");
-                    let task_dur = task_start.elapsed().as_millis() as u64;
-                    self.task_service.fail_task(
-                        &project_id,
-                        &task.spec_id,
-                        &task.task_id,
-                        &reason,
-                    )?;
-                    failed_count += 1;
-                    if is_credit_failure {
-                        credit_failed_tasks.insert(task.task_id);
-                    }
-                    self.emit(EngineEvent::TaskFailed {
+                    self.emit(EngineEvent::LoopIterationSummary {
                         project_id,
                         agent_instance_id,
                         task_id: task.task_id,
-                        reason: e.to_string(),
-                        duration_ms: Some(task_dur),
-                        phase: Some(if is_credit_failure { "insufficient_credits" } else { "execution" }.into()),
-                        parse_retries: None,
-                        build_fix_attempts: None,
-                        model: session.model.clone(),
+                        phase_timings: vec![
+                            PhaseTimingEntry { phase: "llm_call".into(), duration_ms: timings.llm_duration_ms },
+                            PhaseTimingEntry { phase: "file_ops".into(), duration_ms: timings.file_ops_duration_ms },
+                            PhaseTimingEntry { phase: "build_verify".into(), duration_ms: timings.build_verify_duration_ms },
+                        ],
                     });
+
+                    let task_phase_timings = vec![
+                        PhaseTimingEntry { phase: "llm_call".into(), duration_ms: timings.llm_duration_ms },
+                        PhaseTimingEntry { phase: "file_ops".into(), duration_ms: timings.file_ops_duration_ms },
+                        PhaseTimingEntry { phase: "build_verify".into(), duration_ms: timings.build_verify_duration_ms },
+                    ];
+                    record_task!(TaskMetrics::completed(
+                        task.task_id.to_string(), task.title.clone(),
+                        timings.task_duration_ms, session.model.clone(),
+                    )
+                    .with_tokens(timings.total_input(), timings.total_output())
+                    .with_llm_duration(timings.llm_duration_ms)
+                    .with_file_ops_duration(timings.file_ops_duration_ms)
+                    .with_build_verify_duration(timings.build_verify_duration_ms)
+                    .with_files_changed(timings.files_changed)
+                    .with_parse_retries(timings.parse_retries)
+                    .with_build_fix_attempts(timings.build_fix_attempts)
+                    .with_phase_timings(task_phase_timings));
+
+                    for follow_up in follow_up_tasks {
+                        if follow_up_count >= self.engine_config.max_follow_ups_per_loop {
+                            warn!(cap = self.engine_config.max_follow_ups_per_loop, "follow-up task cap reached, skipping remaining");
+                            break;
+                        }
+                        match self.task_service.create_follow_up_task(
+                            &task, follow_up.title.clone(), follow_up.description.clone(), vec![],
+                        ) {
+                            Ok(new_task) => {
+                                follow_up_count += 1;
+                                self.emit(EngineEvent::FollowUpTaskCreated {
+                                    project_id, agent_instance_id, task_id: new_task.task_id,
+                                });
+                            }
+                            Err(aura_tasks::TaskError::DuplicateFollowUp) => {
+                                info!(title = %follow_up.title, "skipping duplicate follow-up task");
+                            }
+                            Err(e) => return Err(EngineError::Parse(format!("follow-up creation failed: {e}"))),
+                        }
+                    }
+
+                    let changed_files: Vec<&str> = file_ops
+                        .iter()
+                        .map(|op| match op {
+                            FileOp::Create { path, .. }
+                            | FileOp::Modify { path, .. }
+                            | FileOp::Delete { path }
+                            | FileOp::SearchReplace { path, .. } => path.as_str(),
+                        })
+                        .collect();
+                    work_log.push(format!(
+                        "Task (completed): {}\nNotes: {}\nFiles changed: {}",
+                        task.title, notes, changed_files.join(", "),
+                    ));
+
+                    None
+                }
+                TaskOutcome::Failed { reason, phase, credit_failure, timings } => {
+                    failed_count += 1;
+                    if *credit_failure {
+                        credit_failed_tasks.insert(task.task_id);
+                    }
                     record_task!(TaskMetrics::failed(
                         task.task_id.to_string(), task.title.clone(),
-                        task_dur, session.model.clone(), "execution", reason.clone(),
-                    ));
+                        timings.task_duration_ms, session.model.clone(), phase, reason.clone(),
+                    )
+                    .with_tokens(timings.total_input(), timings.total_output())
+                    .with_llm_duration(timings.llm_duration_ms)
+                    .with_file_ops_duration(timings.file_ops_duration_ms)
+                    .with_build_verify_duration(timings.build_verify_duration_ms)
+                    .with_files_changed(timings.files_changed)
+                    .with_parse_retries(timings.parse_retries)
+                    .with_build_fix_attempts(timings.build_fix_attempts)
+                    .with_phase_timings(vec![
+                        PhaseTimingEntry { phase: "llm_call".into(), duration_ms: timings.llm_duration_ms },
+                        PhaseTimingEntry { phase: "file_ops".into(), duration_ms: timings.file_ops_duration_ms },
+                        PhaseTimingEntry { phase: "build_verify".into(), duration_ms: timings.build_verify_duration_ms },
+                    ]));
                     work_log.push(format!("Task (failed): {}\nReason: {}", task.title, reason));
-                    Some(reason)
+                    Some(reason.clone())
                 }
             };
 
