@@ -9,7 +9,7 @@ use tracing::warn;
 
 use aura_core::*;
 use aura_claude::{
-    ClaudeStreamEvent, RichMessage, ThinkingConfig, ToolCall, DEFAULT_MODEL,
+    ClaudeStreamEvent, RichMessage, ThinkingConfig, ToolCall,
 };
 use aura_chat::{ChatToolExecutor, ToolCallResult, ToolExecutor, ToolLoopConfig, ToolLoopEvent, run_tool_loop};
 use aura_tools::engine_tool_definitions;
@@ -57,7 +57,7 @@ impl DevLoopEngine {
         }
 
         let user_id = self.current_user_id();
-        let model = Some(DEFAULT_MODEL.to_string());
+        let model = Some(self.llm_config.default_model.clone());
 
         let agent = if let Some(aiid) = agent_instance_id {
             self.agent_instance_service
@@ -165,24 +165,14 @@ impl DevLoopEngine {
                         metrics::write_single_task_metrics(
                             Path::new(&project_root),
                             &project_id.to_string(),
-                            metrics::TaskMetrics {
-                                task_id: task.task_id.to_string(),
-                                title: task.title.clone(),
-                                outcome: "failed".into(),
-                                duration_ms: task_dur,
-                                llm_duration_ms: Some(llm_duration_ms),
-                                build_verify_duration_ms: None,
-                                file_ops_duration_ms: None,
-                                input_tokens: execution.input_tokens,
-                                output_tokens: execution.output_tokens,
-                                files_changed: execution.file_ops.len() as u32,
-                                parse_retries: execution.parse_retries,
-                                build_fix_attempts: 0,
-                                model: model_name.clone(),
-                                failure_phase: Some("file_ops".into()),
-                                failure_reason: Some(reason),
-                                phase_timings: vec![],
-                            },
+                            metrics::TaskMetrics::failed(
+                                task.task_id.to_string(), task.title.clone(),
+                                task_dur, model_name.clone(), "file_ops", reason,
+                            )
+                            .with_tokens(execution.input_tokens, execution.output_tokens)
+                            .with_llm_duration(llm_duration_ms)
+                            .with_files_changed(execution.file_ops.len() as u32)
+                            .with_parse_retries(execution.parse_retries),
                             &fee_schedule,
                         );
                     }
@@ -241,28 +231,22 @@ impl DevLoopEngine {
                             metrics::write_single_task_metrics(
                                 Path::new(&project_root),
                                 &project_id.to_string(),
-                                metrics::TaskMetrics {
-                                    task_id: task.task_id.to_string(),
-                                    title: task.title.clone(),
-                                    outcome: "completed".into(),
-                                    duration_ms: task_duration_ms,
-                                    llm_duration_ms: Some(llm_duration_ms),
-                                    build_verify_duration_ms: Some(build_verify_duration_ms),
-                                    file_ops_duration_ms: Some(file_ops_duration_ms),
-                                    input_tokens: total_input,
-                                    output_tokens: total_output,
-                                    files_changed: execution.file_ops.len() as u32,
-                                    parse_retries: execution.parse_retries,
-                                    build_fix_attempts: build_attempts,
-                                    model: model_name.clone(),
-                                    failure_phase: None,
-                                    failure_reason: None,
-                                    phase_timings: vec![
-                                        PhaseTimingEntry { phase: "llm_call".into(), duration_ms: llm_duration_ms },
-                                        PhaseTimingEntry { phase: "file_ops".into(), duration_ms: file_ops_duration_ms },
-                                        PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
-                                    ],
-                                },
+                                metrics::TaskMetrics::completed(
+                                    task.task_id.to_string(), task.title.clone(),
+                                    task_duration_ms, model_name.clone(),
+                                )
+                                .with_tokens(total_input, total_output)
+                                .with_llm_duration(llm_duration_ms)
+                                .with_file_ops_duration(file_ops_duration_ms)
+                                .with_build_verify_duration(build_verify_duration_ms)
+                                .with_files_changed(execution.file_ops.len() as u32)
+                                .with_parse_retries(execution.parse_retries)
+                                .with_build_fix_attempts(build_attempts)
+                                .with_phase_timings(vec![
+                                    PhaseTimingEntry { phase: "llm_call".into(), duration_ms: llm_duration_ms },
+                                    PhaseTimingEntry { phase: "file_ops".into(), duration_ms: file_ops_duration_ms },
+                                    PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
+                                ]),
                                 &fee_schedule,
                             );
                         }
@@ -309,28 +293,22 @@ impl DevLoopEngine {
                             metrics::write_single_task_metrics(
                                 Path::new(&project_root),
                                 &project_id.to_string(),
-                                metrics::TaskMetrics {
-                                    task_id: task.task_id.to_string(),
-                                    title: task.title.clone(),
-                                    outcome: "failed".into(),
-                                    duration_ms: task_duration_ms,
-                                    llm_duration_ms: Some(llm_duration_ms),
-                                    build_verify_duration_ms: Some(build_verify_duration_ms),
-                                    file_ops_duration_ms: Some(file_ops_duration_ms),
-                                    input_tokens: total_input,
-                                    output_tokens: total_output,
-                                    files_changed: execution.file_ops.len() as u32,
-                                    parse_retries: execution.parse_retries,
-                                    build_fix_attempts: build_attempts,
-                                    model: model_name.clone(),
-                                    failure_phase: Some("build_verify".into()),
-                                    failure_reason: Some(reason),
-                                    phase_timings: vec![
-                                        PhaseTimingEntry { phase: "llm_call".into(), duration_ms: llm_duration_ms },
-                                        PhaseTimingEntry { phase: "file_ops".into(), duration_ms: file_ops_duration_ms },
-                                        PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
-                                    ],
-                                },
+                                metrics::TaskMetrics::failed(
+                                    task.task_id.to_string(), task.title.clone(),
+                                    task_duration_ms, model_name.clone(), "build_verify", reason,
+                                )
+                                .with_tokens(total_input, total_output)
+                                .with_llm_duration(llm_duration_ms)
+                                .with_file_ops_duration(file_ops_duration_ms)
+                                .with_build_verify_duration(build_verify_duration_ms)
+                                .with_files_changed(execution.file_ops.len() as u32)
+                                .with_parse_retries(execution.parse_retries)
+                                .with_build_fix_attempts(build_attempts)
+                                .with_phase_timings(vec![
+                                    PhaseTimingEntry { phase: "llm_call".into(), duration_ms: llm_duration_ms },
+                                    PhaseTimingEntry { phase: "file_ops".into(), duration_ms: file_ops_duration_ms },
+                                    PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
+                                ]),
                                 &fee_schedule,
                             );
                         }
@@ -363,24 +341,10 @@ impl DevLoopEngine {
                     metrics::write_single_task_metrics(
                         Path::new(&project_root),
                         &project_id.to_string(),
-                        metrics::TaskMetrics {
-                            task_id: task.task_id.to_string(),
-                            title: task.title.clone(),
-                            outcome: "failed".into(),
-                            duration_ms: task_dur,
-                            llm_duration_ms: None,
-                            build_verify_duration_ms: None,
-                            file_ops_duration_ms: None,
-                            input_tokens: 0,
-                            output_tokens: 0,
-                            files_changed: 0,
-                            parse_retries: 0,
-                            build_fix_attempts: 0,
-                            model: model_name.clone(),
-                            failure_phase: Some("execution".into()),
-                            failure_reason: Some(reason),
-                            phase_timings: vec![],
-                        },
+                        metrics::TaskMetrics::failed(
+                            task.task_id.to_string(), task.title.clone(),
+                            task_dur, model_name.clone(), "execution", reason,
+                        ),
                         &fee_schedule,
                     );
                 }
@@ -414,7 +378,7 @@ impl DevLoopEngine {
         let command = command.as_str();
 
         let base_path = Path::new(&project.linked_folder_path);
-        let max_attempts: u32 = MAX_SHELL_TASK_RETRIES;
+        let max_attempts: u32 = self.engine_config.max_shell_task_retries;
         let mut prior_attempts_shell: Vec<BuildFixAttemptRecord> = Vec::new();
 
         for attempt in 1..=max_attempts {
@@ -650,7 +614,7 @@ impl DevLoopEngine {
                     &api_key,
                     &build_fix_system_prompt(),
                     &fix_prompt,
-                    TASK_EXECUTION_MAX_TOKENS,
+                    self.llm_config.task_execution_max_tokens,
                     stream_tx,
                     "aura_build_fix",
                     None,
@@ -730,10 +694,10 @@ impl DevLoopEngine {
         };
 
         let config = ToolLoopConfig {
-            max_iterations: 50,
-            max_tokens: TASK_EXECUTION_MAX_TOKENS,
-            thinking: Some(ThinkingConfig::enabled(10_000)),
-            stream_timeout: std::time::Duration::from_secs(600),
+            max_iterations: self.engine_config.max_agentic_iterations,
+            max_tokens: self.llm_config.task_execution_max_tokens,
+            thinking: Some(ThinkingConfig::enabled(self.llm_config.thinking_budget)),
+            stream_timeout: std::time::Duration::from_secs(self.llm_config.stream_timeout_secs),
             billing_reason: "aura_task",
         };
 
@@ -744,13 +708,24 @@ impl DevLoopEngine {
         let fwd_tid = task_id;
         let forwarder = tokio::spawn(async move {
             while let Some(evt) = loop_rx.recv().await {
-                if let ToolLoopEvent::Delta(text) = evt {
-                    let _ = engine_tx.send(EngineEvent::TaskOutputDelta {
-                        project_id: fwd_pid,
-                        agent_instance_id: fwd_aiid,
-                        task_id: fwd_tid,
-                        delta: text,
-                    });
+                match evt {
+                    ToolLoopEvent::Delta(text) => {
+                        let _ = engine_tx.send(EngineEvent::TaskOutputDelta {
+                            project_id: fwd_pid,
+                            agent_instance_id: fwd_aiid,
+                            task_id: fwd_tid,
+                            delta: text,
+                        });
+                    }
+                    ToolLoopEvent::Error(msg) => {
+                        let _ = engine_tx.send(EngineEvent::TaskOutputDelta {
+                            project_id: fwd_pid,
+                            agent_instance_id: fwd_aiid,
+                            task_id: fwd_tid,
+                            delta: format!("\n[error] {msg}\n"),
+                        });
+                    }
+                    _ => {}
                 }
             }
         });
@@ -843,7 +818,7 @@ impl DevLoopEngine {
                     api_key,
                     &task_execution_system_prompt(),
                     &user_message,
-                    TASK_EXECUTION_MAX_TOKENS,
+                    self.llm_config.task_execution_max_tokens,
                     stream_tx,
                     "aura_task",
                     None,
@@ -901,7 +876,7 @@ impl DevLoopEngine {
                             api_key,
                             &task_execution_system_prompt(),
                             messages,
-                            TASK_EXECUTION_MAX_TOKENS,
+                            self.llm_config.task_execution_max_tokens,
                             stream_tx2,
                             "aura_task",
                             None,
@@ -924,7 +899,7 @@ impl DevLoopEngine {
                 warn!(task_id = %task_id, error = %first_err, "first execution parse failed, retrying");
 
                 let mut last_response = response;
-                for attempt in 1..=MAX_EXECUTION_RETRIES {
+                for attempt in 1..=self.engine_config.max_execution_retries {
                     self.emit(EngineEvent::TaskRetrying {
                         project_id: pid,
                         agent_instance_id: aiid,
@@ -957,7 +932,7 @@ impl DevLoopEngine {
                             api_key,
                             &task_execution_system_prompt(),
                             messages,
-                            TASK_EXECUTION_MAX_TOKENS,
+                            self.llm_config.task_execution_max_tokens,
                             stream_tx,
                             "aura_task",
                             None,

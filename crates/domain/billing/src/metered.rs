@@ -1,11 +1,12 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use aura_claude::{
-    ClaudeStreamEvent, LlmProvider, LlmResponse, RichMessage, ThinkingConfig,
-    ToolDefinition, ToolStreamResponse,
+    ClaudeStreamEvent, LlmProvider, LlmResponse, RichMessage,
+    StreamTokenCapture, ThinkingConfig, ToolDefinition, ToolStreamResponse,
 };
 use aura_core::ZeroAuthSession;
 use aura_store::RocksStore;
@@ -29,6 +30,7 @@ pub struct MeteredLlm {
     provider: Arc<dyn LlmProvider>,
     billing: Arc<BillingClient>,
     store: Arc<RocksStore>,
+    credits_exhausted: AtomicBool,
 }
 
 impl MeteredLlm {
@@ -37,7 +39,16 @@ impl MeteredLlm {
         billing: Arc<BillingClient>,
         store: Arc<RocksStore>,
     ) -> Self {
-        Self { provider, billing, store }
+        Self {
+            provider,
+            billing,
+            store,
+            credits_exhausted: AtomicBool::new(false),
+        }
+    }
+
+    pub fn is_credits_exhausted(&self) -> bool {
+        self.credits_exhausted.load(Ordering::SeqCst)
     }
 
     fn access_token(&self) -> Option<String> {
@@ -52,10 +63,20 @@ impl MeteredLlm {
         let Some(token) = self.access_token() else {
             return Ok(());
         };
-        self.billing
-            .ensure_has_credits(&token)
-            .await
-            .map_err(|_| MeteredLlmError::InsufficientCredits)?;
+        if self.credits_exhausted.load(Ordering::SeqCst) {
+            match self.billing.ensure_has_credits(&token).await {
+                Ok(_) => {
+                    info!("Credits topped up, resetting exhausted flag");
+                    self.credits_exhausted.store(false, Ordering::SeqCst);
+                }
+                Err(_) => return Err(MeteredLlmError::InsufficientCredits),
+            }
+        } else {
+            self.billing
+                .ensure_has_credits(&token)
+                .await
+                .map_err(|_| MeteredLlmError::InsufficientCredits)?;
+        }
         Ok(())
     }
 
@@ -79,7 +100,18 @@ impl MeteredLlm {
                 info!(amount, reason, balance = resp.balance, tx = %resp.transaction_id, "Credits debited");
             }
             Err(BillingError::InsufficientCredits { available, required }) => {
-                warn!(available, required, "Insufficient credits during debit");
+                warn!(available, required, "Insufficient credits during debit, draining remaining");
+                if available > 0 {
+                    match self.billing.debit_credits(&token, available, reason, None, None).await {
+                        Ok(resp) => {
+                            info!(amount = available, balance = resp.balance, "Drained remaining credits");
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "Failed to drain remaining credits");
+                        }
+                    }
+                }
+                self.credits_exhausted.store(true, Ordering::SeqCst);
             }
             Err(e) => {
                 warn!(error = %e, reason, "Failed to debit credits");
@@ -113,30 +145,11 @@ impl MeteredLlm {
         metadata: Option<serde_json::Value>,
     ) -> Result<String, MeteredLlmError> {
         self.pre_flight_check().await?;
-
-        let (inner_tx, mut inner_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-        let fwd_tx = event_tx.clone();
-        let token_capture: Arc<tokio::sync::Mutex<(u64, u64)>> =
-            Arc::new(tokio::sync::Mutex::new((0, 0)));
-        let tc = token_capture.clone();
-
-        let forwarder = tokio::spawn(async move {
-            while let Some(evt) = inner_rx.recv().await {
-                if let ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } = &evt {
-                    let mut g = tc.lock().await;
-                    g.0 = *input_tokens;
-                    g.1 = *output_tokens;
-                }
-                let _ = fwd_tx.send(evt);
-            }
-        });
-
+        let (tx, handle) = StreamTokenCapture::forwarding(event_tx);
         let result = self.provider.complete_stream(
-            api_key, system_prompt, user_message, max_tokens, inner_tx,
+            api_key, system_prompt, user_message, max_tokens, tx,
         ).await?;
-        let _ = forwarder.await;
-
-        let (inp, out) = *token_capture.lock().await;
+        let (inp, out) = handle.finalize().await;
         self.debit(inp, out, reason, metadata).await;
         Ok(result)
     }
@@ -152,30 +165,11 @@ impl MeteredLlm {
         metadata: Option<serde_json::Value>,
     ) -> Result<String, MeteredLlmError> {
         self.pre_flight_check().await?;
-
-        let (inner_tx, mut inner_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-        let fwd_tx = event_tx.clone();
-        let token_capture: Arc<tokio::sync::Mutex<(u64, u64)>> =
-            Arc::new(tokio::sync::Mutex::new((0, 0)));
-        let tc = token_capture.clone();
-
-        let forwarder = tokio::spawn(async move {
-            while let Some(evt) = inner_rx.recv().await {
-                if let ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } = &evt {
-                    let mut g = tc.lock().await;
-                    g.0 = *input_tokens;
-                    g.1 = *output_tokens;
-                }
-                let _ = fwd_tx.send(evt);
-            }
-        });
-
+        let (tx, handle) = StreamTokenCapture::forwarding(event_tx);
         let result = self.provider.complete_stream_multi(
-            api_key, system_prompt, messages, max_tokens, inner_tx,
+            api_key, system_prompt, messages, max_tokens, tx,
         ).await?;
-        let _ = forwarder.await;
-
-        let (inp, out) = *token_capture.lock().await;
+        let (inp, out) = handle.finalize().await;
         self.debit(inp, out, reason, metadata).await;
         Ok(result)
     }

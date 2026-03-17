@@ -8,7 +8,6 @@ use tracing::{error, info, warn};
 use aura_core::*;
 use aura_agents::AgentInstanceService;
 use aura_billing::MeteredLlm;
-use aura_claude::DEFAULT_MODEL;
 use aura_projects::ProjectService;
 use aura_sessions::SessionService;
 use aura_tasks::TaskService;
@@ -60,6 +59,8 @@ pub struct DevLoopEngine {
     pub(crate) session_service: Arc<SessionService>,
     pub(crate) event_tx: mpsc::UnboundedSender<EngineEvent>,
     pub(crate) write_coordinator: ProjectWriteCoordinator,
+    pub(crate) engine_config: EngineConfig,
+    pub(crate) llm_config: LlmConfig,
 }
 
 impl DevLoopEngine {
@@ -84,6 +85,8 @@ impl DevLoopEngine {
             session_service,
             event_tx,
             write_coordinator: ProjectWriteCoordinator::new(),
+            engine_config: EngineConfig::default(),
+            llm_config: LlmConfig::default(),
         }
     }
 
@@ -133,7 +136,7 @@ impl DevLoopEngine {
             None,
             String::new(),
             self.current_user_id(),
-            Some(DEFAULT_MODEL.to_string()),
+            Some(self.llm_config.default_model.clone()),
         )?;
 
         let (stop_tx, stop_rx) = watch::channel(LoopCommand::Continue);
@@ -287,7 +290,7 @@ impl DevLoopEngine {
                     let all_tasks = self.store.list_tasks_by_project(&project_id)?;
                     let retryable: Vec<&Task> = all_tasks.iter()
                         .filter(|t| t.status == TaskStatus::Failed
-                            && *task_retry_counts.get(&t.task_id).unwrap_or(&0) < MAX_LOOP_TASK_RETRIES)
+                            && *task_retry_counts.get(&t.task_id).unwrap_or(&0) < self.engine_config.max_loop_task_retries)
                         .collect();
 
                     if !retryable.is_empty() {
@@ -455,24 +458,14 @@ impl DevLoopEngine {
                             build_fix_attempts: None,
                             model: session.model.clone(),
                         });
-                        record_task!(TaskMetrics {
-                            task_id: task.task_id.to_string(),
-                            title: task.title.clone(),
-                            outcome: "failed".into(),
-                            duration_ms: task_dur,
-                            llm_duration_ms: Some(llm_duration_ms),
-                            build_verify_duration_ms: None,
-                            file_ops_duration_ms: None,
-                            input_tokens: execution.input_tokens,
-                            output_tokens: execution.output_tokens,
-                            files_changed: execution.file_ops.len() as u32,
-                            parse_retries: execution.parse_retries,
-                            build_fix_attempts: 0,
-                            model: session.model.clone(),
-                            failure_phase: Some("file_ops".into()),
-                            failure_reason: Some(reason.clone()),
-                            phase_timings: vec![],
-                        });
+                        record_task!(TaskMetrics::failed(
+                            task.task_id.to_string(), task.title.clone(),
+                            task_dur, session.model.clone(), "file_ops", reason.clone(),
+                        )
+                        .with_tokens(execution.input_tokens, execution.output_tokens)
+                        .with_llm_duration(llm_duration_ms)
+                        .with_files_changed(execution.file_ops.len() as u32)
+                        .with_parse_retries(execution.parse_retries));
                         let _ = self.session_service.update_context_usage(
                             &project_id, &agent_instance_id, &session.session_id,
                             execution.input_tokens, execution.output_tokens,
@@ -523,28 +516,22 @@ impl DevLoopEngine {
                                 build_fix_attempts: Some(build_attempts),
                                 model: session.model.clone(),
                             });
-                            record_task!(TaskMetrics {
-                                task_id: task.task_id.to_string(),
-                                title: task.title.clone(),
-                                outcome: "failed".into(),
-                                duration_ms: task_duration_ms,
-                                llm_duration_ms: Some(llm_duration_ms),
-                                build_verify_duration_ms: Some(build_verify_duration_ms),
-                                file_ops_duration_ms: Some(file_ops_duration_ms),
-                                input_tokens: execution.input_tokens + fix_inp,
-                                output_tokens: execution.output_tokens + fix_out,
-                                files_changed: execution.file_ops.len() as u32,
-                                parse_retries: execution.parse_retries,
-                                build_fix_attempts: build_attempts,
-                                model: session.model.clone(),
-                                failure_phase: Some("build_verify".into()),
-                                failure_reason: Some(reason.clone()),
-                                phase_timings: vec![
-                                    PhaseTimingEntry { phase: "llm_call".into(), duration_ms: llm_duration_ms },
-                                    PhaseTimingEntry { phase: "file_ops".into(), duration_ms: file_ops_duration_ms },
-                                    PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
-                                ],
-                            });
+                            record_task!(TaskMetrics::failed(
+                                task.task_id.to_string(), task.title.clone(),
+                                task_duration_ms, session.model.clone(), "build_verify", reason.clone(),
+                            )
+                            .with_tokens(execution.input_tokens + fix_inp, execution.output_tokens + fix_out)
+                            .with_llm_duration(llm_duration_ms)
+                            .with_file_ops_duration(file_ops_duration_ms)
+                            .with_build_verify_duration(build_verify_duration_ms)
+                            .with_files_changed(execution.file_ops.len() as u32)
+                            .with_parse_retries(execution.parse_retries)
+                            .with_build_fix_attempts(build_attempts)
+                            .with_phase_timings(vec![
+                                PhaseTimingEntry { phase: "llm_call".into(), duration_ms: llm_duration_ms },
+                                PhaseTimingEntry { phase: "file_ops".into(), duration_ms: file_ops_duration_ms },
+                                PhaseTimingEntry { phase: "build_verify".into(), duration_ms: build_verify_duration_ms },
+                            ]));
                             let _ = self.session_service.update_context_usage(
                                 &project_id, &agent_instance_id, &session.session_id,
                                 execution.input_tokens + fix_inp, execution.output_tokens + fix_out,
@@ -588,24 +575,18 @@ impl DevLoopEngine {
                                 phase_timings: task_phase_timings.clone(),
                             });
 
-                            record_task!(TaskMetrics {
-                                task_id: task.task_id.to_string(),
-                                title: task.title.clone(),
-                                outcome: "completed".into(),
-                                duration_ms: task_duration_ms,
-                                llm_duration_ms: Some(llm_duration_ms),
-                                build_verify_duration_ms: Some(build_verify_duration_ms),
-                                file_ops_duration_ms: Some(file_ops_duration_ms),
-                                input_tokens: execution.input_tokens + fix_inp,
-                                output_tokens: execution.output_tokens + fix_out,
-                                files_changed: execution.file_ops.len() as u32,
-                                parse_retries: execution.parse_retries,
-                                build_fix_attempts: build_attempts,
-                                model: session.model.clone(),
-                                failure_phase: None,
-                                failure_reason: None,
-                                phase_timings: task_phase_timings,
-                            });
+                            record_task!(TaskMetrics::completed(
+                                task.task_id.to_string(), task.title.clone(),
+                                task_duration_ms, session.model.clone(),
+                            )
+                            .with_tokens(execution.input_tokens + fix_inp, execution.output_tokens + fix_out)
+                            .with_llm_duration(llm_duration_ms)
+                            .with_file_ops_duration(file_ops_duration_ms)
+                            .with_build_verify_duration(build_verify_duration_ms)
+                            .with_files_changed(execution.file_ops.len() as u32)
+                            .with_parse_retries(execution.parse_retries)
+                            .with_build_fix_attempts(build_attempts)
+                            .with_phase_timings(task_phase_timings));
 
                             let newly_ready = self
                                 .task_service
@@ -615,8 +596,8 @@ impl DevLoopEngine {
                             }
 
                             for follow_up in &execution.follow_up_tasks {
-                                if follow_up_count >= MAX_FOLLOW_UPS_PER_LOOP {
-                                    warn!("follow-up task cap ({MAX_FOLLOW_UPS_PER_LOOP}) reached, skipping remaining");
+                                if follow_up_count >= self.engine_config.max_follow_ups_per_loop {
+                                    warn!(cap = self.engine_config.max_follow_ups_per_loop, "follow-up task cap reached, skipping remaining");
                                     break;
                                 }
                                 match self.task_service.create_follow_up_task(
@@ -690,30 +671,40 @@ impl DevLoopEngine {
                         build_fix_attempts: None,
                         model: session.model.clone(),
                     });
-                    record_task!(TaskMetrics {
-                        task_id: task.task_id.to_string(),
-                        title: task.title.clone(),
-                        outcome: "failed".into(),
-                        duration_ms: task_dur,
-                        llm_duration_ms: None,
-                        build_verify_duration_ms: None,
-                        file_ops_duration_ms: None,
-                        input_tokens: 0,
-                        output_tokens: 0,
-                        files_changed: 0,
-                        parse_retries: 0,
-                        build_fix_attempts: 0,
-                        model: session.model.clone(),
-                        failure_phase: Some("execution".into()),
-                        failure_reason: Some(reason.clone()),
-                        phase_timings: vec![],
-                    });
+                    record_task!(TaskMetrics::failed(
+                        task.task_id.to_string(), task.title.clone(),
+                        task_dur, session.model.clone(), "execution", reason.clone(),
+                    ));
                     work_log.push(format!("Task (failed): {}\nReason: {}", task.title, reason));
                     Some(reason)
                 }
             };
 
             self.agent_instance_service.finish_working(&project_id, &agent_instance_id)?;
+
+            if self.llm.is_credits_exhausted() {
+                warn!("Credits exhausted, stopping engine loop");
+                let _ = self.session_service.end_session(
+                    &project_id, &agent_instance_id, &session.session_id, SessionStatus::Completed,
+                );
+                self.emit(EngineEvent::LoopFinished {
+                    project_id,
+                    agent_instance_id,
+                    outcome: "insufficient_credits".into(),
+                    total_duration_ms: Some(loop_start.elapsed().as_millis() as u64),
+                    tasks_completed: Some(completed_count),
+                    tasks_failed: Some(failed_count),
+                    tasks_retried: Some(tasks_retried),
+                    total_input_tokens: Some(total_input_tokens),
+                    total_output_tokens: Some(total_output_tokens),
+                    sessions_used: Some(sessions_used),
+                    total_parse_retries: Some(total_parse_retries),
+                    total_build_fix_attempts: Some(total_build_fix_attempts),
+                    duplicate_error_bailouts: Some(duplicate_error_bailouts),
+                });
+                flush_metrics!("insufficient_credits");
+                return Ok(LoopOutcome::AllTasksBlocked);
+            }
 
             if failure_reason.is_some() {
                 continue;

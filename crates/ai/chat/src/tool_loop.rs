@@ -76,6 +76,7 @@ pub struct ToolLoopResult {
     pub total_output_tokens: u64,
     pub iterations_run: usize,
     pub timed_out: bool,
+    pub insufficient_credits: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -191,13 +192,19 @@ pub async fn run_tool_loop(
                 total_output_tokens,
                 iterations_run: iteration + 1,
                 timed_out: true,
+                insufficient_credits: false,
             };
         }
 
         let stream_result = match stream_handle.await {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => {
-                if iter_text.is_empty() && iter_tool_calls.is_empty() {
+                let is_credits = e.to_string().contains("Insufficient credits");
+                if is_credits {
+                    let _ = event_tx.send(ToolLoopEvent::Error(
+                        "Insufficient credits — please top up to continue.".to_string(),
+                    ));
+                } else if iter_text.is_empty() && iter_tool_calls.is_empty() {
                     let _ = event_tx.send(ToolLoopEvent::Error(format!("LLM error: {e}")));
                 }
                 append_text(&mut total_text, &iter_text);
@@ -208,6 +215,7 @@ pub async fn run_tool_loop(
                     total_output_tokens,
                     iterations_run: iteration + 1,
                     timed_out: false,
+                    insufficient_credits: is_credits,
                 };
             }
             Err(e) => {
@@ -222,6 +230,7 @@ pub async fn run_tool_loop(
                     total_output_tokens,
                     iterations_run: iteration + 1,
                     timed_out: false,
+                    insufficient_credits: false,
                 };
             }
         };
@@ -243,6 +252,7 @@ pub async fn run_tool_loop(
                 total_output_tokens,
                 iterations_run: iteration + 1,
                 timed_out: false,
+                insufficient_credits: false,
             };
         }
 
@@ -293,6 +303,7 @@ pub async fn run_tool_loop(
                 total_output_tokens,
                 iterations_run: iteration + 1,
                 timed_out: false,
+                insufficient_credits: false,
             };
         }
 
@@ -311,6 +322,7 @@ pub async fn run_tool_loop(
         total_output_tokens,
         iterations_run: config.max_iterations,
         timed_out: false,
+        insufficient_credits: false,
     }
 }
 
