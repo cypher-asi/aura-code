@@ -25,8 +25,7 @@ use aura_projects::ProjectService;
 use aura_specs::{SpecGenerationService, SpecStreamEvent};
 use aura_tasks::TaskService;
 
-const CHAT_MAX_TOKENS: u32 = 24_576;
-const THINKING_BUDGET: u32 = 10_000;
+use aura_core::LlmConfig;
 
 const CHAT_SYSTEM_PROMPT_BASE: &str = r#"You are Aura, an AI software engineering assistant embedded in a project management and code execution platform.
 
@@ -367,6 +366,43 @@ fn forward_tool_loop_event(evt: ToolLoopEvent, tx: &mpsc::UnboundedSender<ChatSt
     }
 }
 
+fn build_attachment_blocks(
+    content: &str,
+    attachments: &[ChatAttachment],
+) -> Option<Vec<ChatContentBlock>> {
+    if attachments.is_empty() {
+        return None;
+    }
+    let mut blocks: Vec<ChatContentBlock> = Vec::new();
+    if !content.trim().is_empty() {
+        blocks.push(ChatContentBlock::Text {
+            text: content.to_string(),
+        });
+    }
+    for att in attachments {
+        if att.type_ == "image" {
+            blocks.push(ChatContentBlock::Image {
+                media_type: att.media_type.clone(),
+                data: att.data.clone(),
+            });
+        } else if att.type_ == "text" {
+            let text = match B64.decode(&att.data) {
+                Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+                Err(_) => continue,
+            };
+            let header = att
+                .name
+                .as_deref()
+                .map(|n| format!("[File: {}]\n\n", n))
+                .unwrap_or_default();
+            blocks.push(ChatContentBlock::Text {
+                text: format!("{}{}", header, text),
+            });
+        }
+    }
+    if blocks.is_empty() { None } else { Some(blocks) }
+}
+
 fn extract_user_text(messages: &[Message]) -> String {
     messages
         .iter()
@@ -447,6 +483,7 @@ pub struct ChatService {
     spec_gen: Arc<SpecGenerationService>,
     project_service: Arc<ProjectService>,
     task_service: Arc<TaskService>,
+    llm_config: LlmConfig,
 }
 
 impl ChatService {
@@ -458,6 +495,18 @@ impl ChatService {
         project_service: Arc<ProjectService>,
         task_service: Arc<TaskService>,
     ) -> Self {
+        Self::with_config(store, settings, llm, spec_gen, project_service, task_service, LlmConfig::default())
+    }
+
+    pub fn with_config(
+        store: Arc<RocksStore>,
+        settings: Arc<SettingsService>,
+        llm: Arc<MeteredLlm>,
+        spec_gen: Arc<SpecGenerationService>,
+        project_service: Arc<ProjectService>,
+        task_service: Arc<TaskService>,
+        llm_config: LlmConfig,
+    ) -> Self {
         Self {
             store,
             settings,
@@ -465,6 +514,7 @@ impl ChatService {
             spec_gen,
             project_service,
             task_service,
+            llm_config,
         }
     }
 
@@ -506,43 +556,7 @@ impl ChatService {
         };
 
         let now = Utc::now();
-
-        let content_blocks = if attachments.is_empty() {
-            None
-        } else {
-            let mut blocks: Vec<ChatContentBlock> = Vec::new();
-            if !content.trim().is_empty() {
-                blocks.push(ChatContentBlock::Text {
-                    text: content.to_string(),
-                });
-            }
-            for att in attachments.iter() {
-                if att.type_ == "image" {
-                    blocks.push(ChatContentBlock::Image {
-                        media_type: att.media_type.clone(),
-                        data: att.data.clone(),
-                    });
-                } else if att.type_ == "text" {
-                    let text = match B64.decode(&att.data) {
-                        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-                        Err(_) => continue,
-                    };
-                    let header = att
-                        .name
-                        .as_deref()
-                        .map(|n| format!("[File: {}]\n\n", n))
-                        .unwrap_or_default();
-                    blocks.push(ChatContentBlock::Text {
-                        text: format!("{}{}", header, text),
-                    });
-                }
-            }
-            if blocks.is_empty() {
-                None
-            } else {
-                Some(blocks)
-            }
-        };
+        let content_blocks = build_attachment_blocks(content, attachments);
 
         let user_msg = Message {
             message_id: MessageId::new(),
@@ -592,39 +606,7 @@ impl ChatService {
         };
 
         let now = Utc::now();
-
-        let content_blocks = if attachments.is_empty() {
-            None
-        } else {
-            let mut blocks: Vec<ChatContentBlock> = Vec::new();
-            if !content.trim().is_empty() {
-                blocks.push(ChatContentBlock::Text {
-                    text: content.to_string(),
-                });
-            }
-            for att in attachments.iter() {
-                if att.type_ == "image" {
-                    blocks.push(ChatContentBlock::Image {
-                        media_type: att.media_type.clone(),
-                        data: att.data.clone(),
-                    });
-                } else if att.type_ == "text" {
-                    let text = match B64.decode(&att.data) {
-                        Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-                        Err(_) => continue,
-                    };
-                    let header = att
-                        .name
-                        .as_deref()
-                        .map(|n| format!("[File: {}]\n\n", n))
-                        .unwrap_or_default();
-                    blocks.push(ChatContentBlock::Text {
-                        text: format!("{}{}", header, text),
-                    });
-                }
-            }
-            if blocks.is_empty() { None } else { Some(blocks) }
-        };
+        let content_blocks = build_attachment_blocks(content, attachments);
 
         let dummy_project_id = ProjectId::nil();
         let dummy_agent_instance_id = AgentInstanceId::nil();
@@ -709,8 +691,8 @@ impl ChatService {
 
         let config = ToolLoopConfig {
             max_iterations: ChatToolExecutor::max_iterations(),
-            max_tokens: CHAT_MAX_TOKENS,
-            thinking: Some(ThinkingConfig::enabled(THINKING_BUDGET)),
+            max_tokens: self.llm_config.chat_max_tokens,
+            thinking: Some(ThinkingConfig::enabled(self.llm_config.thinking_budget)),
             stream_timeout: std::time::Duration::from_secs(300),
             billing_reason: "aura_chat",
         };
@@ -873,8 +855,8 @@ impl ChatService {
 
         let config = ToolLoopConfig {
             max_iterations: ChatToolExecutor::max_iterations(),
-            max_tokens: CHAT_MAX_TOKENS,
-            thinking: Some(ThinkingConfig::enabled(THINKING_BUDGET)),
+            max_tokens: self.llm_config.chat_max_tokens,
+            thinking: Some(ThinkingConfig::enabled(self.llm_config.thinking_budget)),
             stream_timeout: std::time::Duration::from_secs(300),
             billing_reason: "aura_chat",
         };
@@ -1143,9 +1125,6 @@ impl ChatService {
     // Context window management
     // -----------------------------------------------------------------------
 
-    const MAX_CONTEXT_TOKENS: u64 = 150_000;
-    const KEEP_RECENT_MESSAGES: usize = 10;
-
     async fn manage_context_window(
         &self,
         api_key: &str,
@@ -1154,11 +1133,14 @@ impl ChatService {
     ) -> Vec<RichMessage> {
         use aura_claude::estimate_message_tokens;
 
+        let max_context_tokens = self.llm_config.max_context_tokens;
+        let keep_recent_messages = self.llm_config.keep_recent_messages;
+
         let system_tokens = aura_claude::estimate_tokens(system_prompt);
         let total_msg_tokens: u64 = messages.iter().map(|m| estimate_message_tokens(m)).sum();
         let total = system_tokens + total_msg_tokens;
 
-        if total <= Self::MAX_CONTEXT_TOKENS || messages.len() <= Self::KEEP_RECENT_MESSAGES {
+        if total <= max_context_tokens || messages.len() <= keep_recent_messages {
             return messages;
         }
 
@@ -1168,7 +1150,7 @@ impl ChatService {
             "Context window approaching limit, summarizing older messages"
         );
 
-        let mut split_at = messages.len().saturating_sub(Self::KEEP_RECENT_MESSAGES);
+        let mut split_at = messages.len().saturating_sub(keep_recent_messages);
         while split_at > 0 && Self::is_tool_results_only(&messages[split_at]) {
             split_at -= 1;
         }
