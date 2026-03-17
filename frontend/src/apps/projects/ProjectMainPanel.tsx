@@ -139,13 +139,15 @@ function MobileProjectHeader() {
 
 export function ProjectMainPanel() {
   const ctx = useProjectContext();
+  const { projectId } = useParams();
   const cwd = ctx?.project?.linked_folder_path;
   const { supportsDesktopWorkspace } = useAuraCapabilities();
+  const showMobileProjectHeader = Boolean(projectId && ctx?.project);
 
   if (!supportsDesktopWorkspace) {
     return (
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <MobileProjectHeader />
+        {showMobileProjectHeader && <MobileProjectHeader />}
         <main style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "auto" }}>
           <Outlet />
         </main>

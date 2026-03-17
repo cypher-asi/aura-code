@@ -268,6 +268,7 @@ test("mobile projects route keeps the welcome view and opens project navigation"
   await page.goto("/projects");
 
   await expect(page.getByText("Welcome to AURA")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Execution" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.getByPlaceholder("Search Projects...")).toBeVisible();
