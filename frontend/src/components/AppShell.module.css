@@ -116,14 +116,17 @@
   background: #05070d;
 }
 
-.mobileNavDrawer::before,
-.mobileSheetDrawer::before {
-  content: "";
+.mobileDrawerBackdrop {
   position: fixed;
   inset: 0;
+  z-index: 70;
+  border: 0;
+  padding: 0;
+  margin: 0;
   background: rgba(1, 4, 10, 0.52);
   backdrop-filter: blur(6px);
-  z-index: -1;
+  appearance: none;
+  cursor: default;
 }
 
 .mobileNavDrawer {

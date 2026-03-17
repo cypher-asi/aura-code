@@ -247,10 +247,16 @@ function MobileShell({
   }, [PreviewPanel, previewItem]);
 
   const drawerOpen = navOpen || contextOpen || previewOpen || hostSettingsOpen;
-  const openAfterDrawerClose = useCallback((callback: () => void) => {
+  const overlayDrawerOpen = navOpen || contextOpen || previewOpen;
+  const closeDrawers = useCallback(() => {
     setNavOpen(false);
-    window.setTimeout(callback, 0);
+    setContextOpen(false);
+    setPreviewOpen(false);
   }, []);
+  const openAfterDrawerClose = useCallback((callback: () => void) => {
+    closeDrawers();
+    window.setTimeout(callback, 0);
+  }, [closeDrawers]);
 
   return (
     <>
@@ -337,12 +343,22 @@ function MobileShell({
         )}
       </div>
 
+      {overlayDrawerOpen && (
+        <button
+          type="button"
+          className={styles.mobileDrawerBackdrop}
+          aria-label="Close drawer"
+          onClick={closeDrawers}
+        />
+      )}
+
       <Drawer
         side="left"
         isOpen={navOpen}
         onClose={() => setNavOpen(false)}
         title={activeApp.label}
         className={styles.mobileNavDrawer}
+        showMinimizedBar={false}
         defaultSize={340}
         maxSize={420}
       >
@@ -387,6 +403,7 @@ function MobileShell({
           onClose={() => setContextOpen(false)}
           title={`${activeApp.label} details`}
           className={styles.mobileSheetDrawer}
+          showMinimizedBar={false}
           defaultSize={440}
           maxSize={640}
         >
@@ -415,6 +432,7 @@ function MobileShell({
           onClose={() => setPreviewOpen(false)}
           title="Preview"
           className={styles.mobileSheetDrawer}
+          showMinimizedBar={false}
           defaultSize={420}
           maxSize={640}
         >
