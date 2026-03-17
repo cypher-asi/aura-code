@@ -68,6 +68,27 @@ impl RocksStore {
         Ok(results)
     }
 
+    /// Re-key agents stored under `"default"` to the real authenticated user ID.
+    /// Idempotent: no-op if no `default:*` entries exist.
+    pub fn migrate_agents_from_default(&self, new_user_id: &str) -> StoreResult<usize> {
+        if new_user_id == "default" {
+            return Ok(0);
+        }
+        let old_agents = self.list_agents_by_user("default")?;
+        let mut count = 0;
+        for mut agent in old_agents {
+            let old_key = format!("default:{}", agent.agent_id);
+            agent.user_id = new_user_id.to_string();
+            self.put_agent(&agent)?;
+            self.db.delete_cf(&self.cf_agents(), old_key.as_bytes())?;
+            count += 1;
+        }
+        if count > 0 {
+            tracing::info!("Migrated {count} agents from 'default' to '{new_user_id}'");
+        }
+        Ok(count)
+    }
+
     // -- Session CRUD --
 
     pub fn put_session(&self, session: &Session) -> StoreResult<()> {
