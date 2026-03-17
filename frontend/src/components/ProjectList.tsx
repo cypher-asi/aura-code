@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
-import { useOrg } from "../context/OrgContext";
 import { clearLastAgentIf } from "../utils/storage";
 import type { Project, AgentInstance } from "../types";
 import { ButtonPlus, Explorer, Menu, PageEmptyState } from "@cypher-asi/zui";
@@ -15,6 +14,7 @@ import { AgentSelectorModal } from "./AgentSelectorModal";
 import { useEventContext } from "../context/EventContext";
 import { useSidebarSearch } from "../context/SidebarSearchContext";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
+import { useProjectsList } from "../apps/projects/ProjectsListContext";
 import styles from "./ProjectList.module.css";
 
 function filterTree(nodes: ExplorerNode[], q: string): ExplorerNode[] {
@@ -127,14 +127,18 @@ interface ContextMenuState {
 }
 
 export function ProjectList() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loadingProjects, setLoadingProjects] = useState(true);
   const [agentsByProject, setAgentsByProject] = useState<Record<string, AgentInstance[]>>({});
   const { projectId, agentInstanceId } = useParams();
   const navigate = useNavigate();
   const sidekick = useSidekick();
-  const { activeOrg } = useOrg();
-  const { supportsDesktopWorkspace } = useAuraCapabilities();
+  const { isMobileLayout } = useAuraCapabilities();
+  const {
+    projects,
+    loadingProjects,
+    setProjects,
+    refreshProjects,
+    mostRecentProject,
+  } = useProjectsList();
 
   const { query: searchQuery, setAction } = useSidebarSearch();
   const { subscribe } = useEventContext();
@@ -154,23 +158,11 @@ export function ProjectList() {
 
   const ctxMenuRef = useRef<HTMLDivElement>(null);
 
-  const fetchProjects = useCallback(() => {
-    setLoadingProjects(true);
-    api.listProjects(activeOrg?.org_id)
-      .then(setProjects)
-      .catch(console.error)
-      .finally(() => setLoadingProjects(false));
-  }, [activeOrg?.org_id]);
-
   const fetchAgentInstances = useCallback((pid: string) => {
     api.listAgentInstances(pid).then((agents) => {
       setAgentsByProject((prev) => ({ ...prev, [pid]: agents }));
     }).catch(console.error);
   }, []);
-
-  useEffect(() => {
-    fetchProjects();
-  }, [fetchProjects]);
 
   useEffect(() => {
     setAction(
@@ -182,10 +174,10 @@ export function ProjectList() {
   const prevProjectIdRef = useRef(projectId);
   useEffect(() => {
     if (prevProjectIdRef.current && !projectId) {
-      fetchProjects();
+      void refreshProjects();
     }
     prevProjectIdRef.current = projectId;
-  }, [projectId, fetchProjects]);
+  }, [projectId, refreshProjects]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -203,14 +195,14 @@ export function ProjectList() {
   }, [projectId, agentInstanceId]);
 
   useEffect(() => {
-    if (supportsDesktopWorkspace) return;
+    if (!isMobileLayout) return;
 
     projects.forEach((project) => {
       if (!(project.project_id in agentsByProject)) {
         fetchAgentInstances(project.project_id);
       }
     });
-  }, [agentsByProject, fetchAgentInstances, projects, supportsDesktopWorkspace]);
+  }, [agentsByProject, fetchAgentInstances, isMobileLayout, projects]);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -348,14 +340,9 @@ export function ProjectList() {
     () => Object.values(agentsByProject).reduce((sum, agents) => sum + agents.length, 0),
     [agentsByProject],
   );
-  const mostRecentProject = useMemo(
-    () => [...projects].sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))[0] ?? null,
-    [projects],
-  );
-
   const defaultExpandedIds = useMemo(
-    () => (projectId ? [projectId] : supportsDesktopWorkspace ? [] : projects.map((project) => project.project_id)),
-    [projectId, projects, supportsDesktopWorkspace],
+    () => (projectId ? [projectId] : isMobileLayout ? projects.map((project) => project.project_id) : []),
+    [isMobileLayout, projectId, projects],
   );
 
   const defaultSelectedIds = useMemo(() => {
@@ -466,14 +453,14 @@ export function ProjectList() {
       if (!renameTarget) return;
       try {
         await api.updateProject(renameTarget.project_id, { name: newName });
-        fetchProjects();
+        await refreshProjects();
       } catch (err) {
         console.error("Failed to rename project", err);
       } finally {
         setRenameTarget(null);
       }
     },
-    [renameTarget, fetchProjects],
+    [refreshProjects, renameTarget],
   );
 
   const handleNewProjectClose = useCallback(() => setShowNewProject(false), []);
@@ -498,7 +485,7 @@ export function ProjectList() {
         navigate("/projects");
       }
       setDeleteTarget(null);
-      fetchProjects();
+      await refreshProjects();
     } catch (err) {
       console.error("Failed to delete project", err);
     } finally {
@@ -541,7 +528,7 @@ export function ProjectList() {
   };
 
   if (!loadingProjects && projects.length === 0) {
-    if (!supportsDesktopWorkspace) {
+    if (isMobileLayout) {
       return (
         <div className={styles.root}>
           <div className={styles.mobileEmptyState}>
@@ -581,7 +568,7 @@ export function ProjectList() {
         />
       </div>
 
-      {!supportsDesktopWorkspace && projects.length > 0 && (
+      {isMobileLayout && projects.length > 0 && (
         <div className={styles.mobileSummaryCard}>
           <div className={styles.mobileSummaryHeader}>
             <span className={styles.mobileSummaryEyebrow}>Project drawer</span>

@@ -94,6 +94,7 @@ function MobileProjectHeader() {
       </div>
 
       <Tabs
+        key={tabs.map((tab) => tab.id).join(":")}
         tabs={tabs}
         value={selectedTab}
         onChange={(tabId) => {
@@ -141,10 +142,10 @@ export function ProjectMainPanel() {
   const ctx = useProjectContext();
   const { projectId } = useParams();
   const cwd = ctx?.project?.linked_folder_path;
-  const { supportsDesktopWorkspace } = useAuraCapabilities();
+  const { isMobileLayout } = useAuraCapabilities();
   const showMobileProjectHeader = Boolean(projectId && ctx?.project);
 
-  if (!supportsDesktopWorkspace) {
+  if (isMobileLayout) {
     return (
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {showMobileProjectHeader && <MobileProjectHeader />}

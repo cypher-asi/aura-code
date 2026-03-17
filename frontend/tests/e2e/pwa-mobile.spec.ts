@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { mockAuthenticatedApp } from "./helpers/mockAuthenticatedApp";
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/auth/session", async (route) => {
@@ -18,56 +19,7 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-async function mockAuthenticatedApp(page: import("@playwright/test").Page) {
-  await page.unroute("**/api/auth/session");
-  await page.unroute("**/api/auth/validate");
-
-  await page.route("**/api/**", async (route) => {
-    const url = new URL(route.request().url());
-    const path = `${url.pathname}${url.search}`;
-
-    const session = {
-      user_id: "user-1",
-      display_name: "Test User",
-      profile_image: "",
-      primary_zid: "0://test-user",
-      zero_wallet: "0x123",
-      wallets: ["0x123"],
-      created_at: "2026-03-17T01:00:00.000Z",
-      validated_at: "2026-03-17T01:00:00.000Z",
-    };
-
-    const project = {
-      project_id: "proj-1",
-      org_id: "org-1",
-      name: "Demo Project",
-      description: "Parity test project",
-      linked_folder_path: "/tmp/demo-project",
-      current_status: "active",
-      created_at: "2026-03-17T01:00:00.000Z",
-      updated_at: "2026-03-17T01:00:00.000Z",
-    };
-
-    const agentInstance = {
-      agent_instance_id: "agent-inst-1",
-      project_id: "proj-1",
-      agent_id: "agent-1",
-      name: "Builder Bot",
-      role: "Engineer",
-      personality: "Helpful",
-      system_prompt: "Build features carefully.",
-      skills: [],
-      icon: null,
-      status: "idle",
-      current_task_id: null,
-      current_session_id: null,
-      total_input_tokens: 0,
-      total_output_tokens: 0,
-      created_at: "2026-03-17T01:00:00.000Z",
-      updated_at: "2026-03-17T01:00:00.000Z",
-    };
-
-    const tasks = [
+const tasks = [
       {
         task_id: "task-1",
         project_id: "proj-1",
@@ -92,9 +44,9 @@ async function mockAuthenticatedApp(page: import("@playwright/test").Page) {
         created_at: "2026-03-17T01:00:00.000Z",
         updated_at: "2026-03-17T01:00:00.000Z",
       },
-    ];
+];
 
-    const specs = [
+const specs = [
       {
         spec_id: "spec-1",
         project_id: "proj-1",
@@ -104,126 +56,60 @@ async function mockAuthenticatedApp(page: import("@playwright/test").Page) {
         created_at: "2026-03-17T01:00:00.000Z",
         updated_at: "2026-03-17T01:00:00.000Z",
       },
-    ];
+];
 
-    const agents = [
-      {
-        agent_id: "agent-1",
-        user_id: "user-1",
-        name: "Builder Bot",
-        role: "Engineer",
-        personality: "Helpful",
-        system_prompt: "Build features carefully.",
-        skills: [],
-        icon: null,
-        created_at: "2026-03-17T01:00:00.000Z",
-        updated_at: "2026-03-17T01:00:00.000Z",
-      },
-      {
-        agent_id: "agent-2",
-        user_id: "user-1",
-        name: "Research Bot",
-        role: "Analyst",
-        personality: "Curious",
-        system_prompt: "Research carefully.",
-        skills: [],
-        icon: null,
-        created_at: "2026-03-17T01:00:00.000Z",
-        updated_at: "2026-03-17T01:00:00.000Z",
-      },
-    ];
+async function mockAuthenticatedMobileApp(page: import("@playwright/test").Page) {
+  const agentInstance = {
+    agent_instance_id: "agent-inst-1",
+    project_id: "proj-1",
+    agent_id: "agent-1",
+    name: "Builder Bot",
+    role: "Engineer",
+    personality: "Helpful",
+    system_prompt: "Build features carefully.",
+    skills: [],
+    icon: null,
+    status: "idle",
+    current_task_id: null,
+    current_session_id: null,
+    total_input_tokens: 0,
+    total_output_tokens: 0,
+    created_at: "2026-03-17T01:00:00.000Z",
+    updated_at: "2026-03-17T01:00:00.000Z",
+  };
 
-    const json = (body: unknown) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(body),
-      });
+  const agents = [
+    {
+      agent_id: "agent-1",
+      user_id: "user-1",
+      name: "Builder Bot",
+      role: "Engineer",
+      personality: "Helpful",
+      system_prompt: "Build features carefully.",
+      skills: [],
+      icon: null,
+      created_at: "2026-03-17T01:00:00.000Z",
+      updated_at: "2026-03-17T01:00:00.000Z",
+    },
+    {
+      agent_id: "agent-2",
+      user_id: "user-1",
+      name: "Research Bot",
+      role: "Analyst",
+      personality: "Curious",
+      system_prompt: "Research carefully.",
+      skills: [],
+      icon: null,
+      created_at: "2026-03-17T01:00:00.000Z",
+      updated_at: "2026-03-17T01:00:00.000Z",
+    },
+  ];
 
-    if (path === "/api/auth/session") return json(session);
-    if (path === "/api/auth/validate") return json(session);
-    if (path === "/api/update-status") {
-      return json({ update: { status: "idle" }, channel: "stable", current_version: "0.0.0" });
-    }
-    if (path === "/api/orgs") {
-      return json([
-        {
-          org_id: "org-1",
-          name: "Test Org",
-          owner_user_id: "user-1",
-          billing: null,
-          github: null,
-          created_at: "2026-03-17T01:00:00.000Z",
-          updated_at: "2026-03-17T01:00:00.000Z",
-        },
-      ]);
-    }
-    if (path === "/api/orgs/org-1/members") {
-      return json([
-        {
-          org_id: "org-1",
-          user_id: "user-1",
-          display_name: "Test User",
-          role: "owner",
-          joined_at: "2026-03-17T01:00:00.000Z",
-        },
-      ]);
-    }
-    if (path === "/api/orgs/org-1/credits/balance") {
-      return json({ total_credits: 1200, purchases: [] });
-    }
-    if (path === "/api/orgs/org-1/invites") return json([]);
-    if (path === "/api/orgs/org-1/billing") return json({ billing_email: "billing@example.com", plan: "free" });
-    if (path === "/api/orgs/org-1/integrations/github") return json(null);
-    if (path === "/api/orgs/org-1/integrations/github/app") return json([]);
-    if (path === "/api/orgs/org-1/credits/tiers") return json([]);
-    if (path === "/api/projects" || path === "/api/projects?org_id=org-1") {
-      return json([project]);
-    }
-    if (path === "/api/projects/proj-1") return json(project);
-    if (path === "/api/projects/proj-1/specs") return json(specs);
-    if (path === "/api/projects/proj-1/tasks") return json(tasks);
-    if (path === "/api/projects/proj-1/agents") return json([agentInstance]);
-    if (path === "/api/projects/proj-1/agents/agent-inst-1") return json(agentInstance);
-    if (path === "/api/projects/proj-1/agents/agent-inst-1/messages") return json([]);
-    if (path === "/api/projects/proj-1/agents/agent-inst-1/sessions") return json([]);
-    if (path === "/api/projects/proj-1/loop/status") {
-      return json({ running: false, paused: false, project_id: "proj-1", active_agent_instances: [] });
-    }
-    if (path === "/api/agents") return json(agents);
-    if (path === "/api/agents/agent-1") return json(agents[0]);
-    if (path === "/api/agents/agent-2") return json(agents[1]);
-    if (path === "/api/agents/agent-1/messages") return json([]);
-    if (path === "/api/agents/agent-2/messages") return json([]);
-    if (path === "/api/projects/proj-1/progress") {
-      return json({
-        project_id: "proj-1",
-        total_tasks: 0,
-        pending_tasks: 0,
-        ready_tasks: 0,
-        in_progress_tasks: 0,
-        blocked_tasks: 0,
-        done_tasks: 0,
-        failed_tasks: 0,
-        completion_percentage: 0,
-        total_tokens: 0,
-        total_cost: 0,
-        lines_changed: 0,
-        lines_of_code: 0,
-        total_commits: 0,
-        total_pull_requests: 0,
-        total_messages: 0,
-        total_agents: 1,
-        total_sessions: 0,
-        total_tests: 0,
-      });
-    }
-
-    return route.fulfill({
-      status: 404,
-      contentType: "application/json",
-      body: JSON.stringify({ error: `Unhandled route: ${path}` }),
-    });
+  await mockAuthenticatedApp(page, {
+    agentInstances: [agentInstance],
+    agents,
+    tasks,
+    specs,
   });
 }
 
@@ -249,7 +135,7 @@ test("mobile login page can open host settings", async ({ page }) => {
 });
 
 test("mobile project header can switch between execution and chat", async ({ page }) => {
-  await mockAuthenticatedApp(page);
+  await mockAuthenticatedMobileApp(page);
 
   await page.goto("/projects/proj-1/execution");
 
@@ -264,7 +150,7 @@ test("mobile project header can switch between execution and chat", async ({ pag
 });
 
 test("mobile projects route keeps the welcome view and opens project navigation", async ({ page }) => {
-  await mockAuthenticatedApp(page);
+  await mockAuthenticatedMobileApp(page);
 
   await page.goto("/projects");
 
@@ -278,7 +164,7 @@ test("mobile projects route keeps the welcome view and opens project navigation"
 });
 
 test("mobile drawer exposes team and app settings", async ({ page }) => {
-  await mockAuthenticatedApp(page);
+  await mockAuthenticatedMobileApp(page);
 
   await page.goto("/projects/proj-1/execution");
 
@@ -290,7 +176,7 @@ test("mobile drawer exposes team and app settings", async ({ page }) => {
 });
 
 test("mobile details selection auto-opens preview", async ({ page }) => {
-  await mockAuthenticatedApp(page);
+  await mockAuthenticatedMobileApp(page);
 
   await page.goto("/projects/proj-1/execution");
 
@@ -302,7 +188,7 @@ test("mobile details selection auto-opens preview", async ({ page }) => {
 });
 
 test("mobile agent header can switch between agents", async ({ page }) => {
-  await mockAuthenticatedApp(page);
+  await mockAuthenticatedMobileApp(page);
 
   await page.goto("/agents/agent-1");
 

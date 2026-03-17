@@ -1,52 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { PageEmptyState } from "@cypher-asi/zui";
 import { Rocket } from "lucide-react";
-import { api } from "../api/client";
 import { useOrg } from "../context/OrgContext";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { getLastAgent } from "../utils/storage";
-import type { Project } from "../types";
+import { useProjectsList } from "../apps/projects/ProjectsListContext";
 import styles from "./HomeView.module.css";
 
 function MobileProjectsHome() {
   const navigate = useNavigate();
   const { activeOrg } = useOrg();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    setLoading(true);
-    api.listProjects(activeOrg?.org_id)
-      .then((items) => {
-        if (!cancelled) {
-          setProjects(items);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setProjects([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeOrg?.org_id]);
-
-  const recentProjects = useMemo(
-    () => [...projects]
-      .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))
-      .slice(0, 3),
-    [projects],
-  );
+  const { projects, loadingProjects, recentProjects } = useProjectsList();
 
   return (
     <div className={styles.mobileHome}>
@@ -68,7 +32,7 @@ function MobileProjectsHome() {
           </div>
           <div className={styles.statPill}>
             <span className={styles.statLabel}>Projects</span>
-            <span className={styles.statValue}>{loading ? "..." : projects.length}</span>
+            <span className={styles.statValue}>{loadingProjects ? "..." : projects.length}</span>
           </div>
         </div>
       </section>
@@ -79,7 +43,7 @@ function MobileProjectsHome() {
           <span className={styles.sectionHint}>Use the menu to create or browse all</span>
         </div>
 
-        {loading ? (
+        {loadingProjects ? (
           <div className={styles.loadingGrid}>
             {Array.from({ length: 3 }).map((_, index) => (
               <div key={index} className={styles.projectCardSkeleton} />

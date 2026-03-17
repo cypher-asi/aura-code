@@ -70,9 +70,9 @@ function MobileAgentHeader() {
 }
 
 export function AgentMainPanel() {
-  const { supportsDesktopWorkspace } = useAuraCapabilities();
+  const { isMobileLayout } = useAuraCapabilities();
 
-  if (!supportsDesktopWorkspace) {
+  if (isMobileLayout) {
     return (
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
         <MobileAgentHeader />
