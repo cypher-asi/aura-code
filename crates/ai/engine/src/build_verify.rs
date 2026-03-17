@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::process::Stdio;
+use std::time::Duration;
 
 use tokio::process::Command;
 use tracing::{info, warn};
@@ -17,6 +18,9 @@ pub struct BuildResult {
 
 /// Maximum bytes of compiler output to capture and send back to the model.
 const MAX_OUTPUT_BYTES: usize = 12_000;
+
+/// Maximum time a build/run command is allowed to execute before being killed.
+const BUILD_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn truncate_output(s: &str, max: usize) -> String {
     if s.len() <= max {
@@ -55,7 +59,7 @@ pub async fn run_build_command(
         "running build verification"
     );
 
-    let output = if needs_shell(build_command) {
+    let mut child = if needs_shell(build_command) {
         #[cfg(target_os = "windows")]
         {
             Command::new("cmd")
@@ -63,8 +67,7 @@ pub async fn run_build_command(
                 .current_dir(project_dir)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                .output()
-                .await
+                .spawn()
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -73,8 +76,7 @@ pub async fn run_build_command(
                 .current_dir(project_dir)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
-                .output()
-                .await
+                .spawn()
         }
     } else {
         let parts: Vec<&str> = build_command.split_whitespace().collect();
@@ -83,19 +85,70 @@ pub async fn run_build_command(
             .current_dir(project_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .output()
-            .await
+            .spawn()
     }
     .map_err(|e| EngineError::Io(format!("failed to execute build command `{build_command}`: {e}")))?;
 
-    let stdout_raw = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr_raw = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
 
-    let result = BuildResult {
-        success: output.status.success(),
-        stdout: truncate_output(&stdout_raw, MAX_OUTPUT_BYTES),
-        stderr: truncate_output(&stderr_raw, MAX_OUTPUT_BYTES),
-        exit_code: output.status.code(),
+    let stdout_handle = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stdout_pipe {
+            let _ = tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut buf).await;
+        }
+        String::from_utf8_lossy(&buf).to_string()
+    });
+    let stderr_handle = tokio::spawn(async move {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stderr_pipe {
+            let _ = tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut buf).await;
+        }
+        String::from_utf8_lossy(&buf).to_string()
+    });
+
+    let result = match tokio::time::timeout(BUILD_TIMEOUT, child.wait()).await {
+        Ok(Ok(status)) => {
+            let stdout_raw = stdout_handle.await.unwrap_or_default();
+            let stderr_raw = stderr_handle.await.unwrap_or_default();
+            BuildResult {
+                success: status.success(),
+                stdout: truncate_output(&stdout_raw, MAX_OUTPUT_BYTES),
+                stderr: truncate_output(&stderr_raw, MAX_OUTPUT_BYTES),
+                exit_code: status.code(),
+            }
+        }
+        Ok(Err(e)) => {
+            return Err(EngineError::Io(format!(
+                "IO error waiting for build command `{build_command}`: {e}"
+            )));
+        }
+        Err(_) => {
+            warn!(
+                command = %build_command,
+                timeout_secs = BUILD_TIMEOUT.as_secs(),
+                "build command timed out, killing process"
+            );
+            let _ = child.kill().await;
+            let partial_stderr = stderr_handle.await.unwrap_or_default();
+            let timeout_msg = format!(
+                "Build command timed out after {}s. The command may start a long-running \
+                 process (e.g. a server). Use `cargo build` or `cargo check` instead of \
+                 `cargo run` for build verification.",
+                BUILD_TIMEOUT.as_secs()
+            );
+            let stderr = if partial_stderr.is_empty() {
+                timeout_msg
+            } else {
+                format!("{}\n\n{}", truncate_output(&partial_stderr, MAX_OUTPUT_BYTES), timeout_msg)
+            };
+            BuildResult {
+                success: false,
+                stdout: stdout_handle.await.unwrap_or_default(),
+                stderr,
+                exit_code: None,
+            }
+        }
     };
 
     if result.success {
@@ -104,7 +157,7 @@ pub async fn run_build_command(
         warn!(
             command = %build_command,
             exit_code = ?result.exit_code,
-            stderr_len = stderr_raw.len(),
+            stderr_len = result.stderr.len(),
             "build verification failed"
         );
     }
