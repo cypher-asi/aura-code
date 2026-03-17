@@ -40,9 +40,6 @@ pub enum LoopOutcome {
     Error(String),
 }
 
-pub(crate) const RETRY_CORRECTION_PROMPT: &str =
-    "Your previous response was not valid JSON. Respond with ONLY a valid JSON object matching the schema above. No prose, no markdown fences.";
-
 pub(crate) fn track_file_op(tool_name: &str, input: &serde_json::Value, ops: &mut Vec<FileOp>) {
     let path = input.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
     if path.is_empty() {

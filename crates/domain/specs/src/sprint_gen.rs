@@ -8,11 +8,8 @@ use aura_claude::ClaudeStreamEvent;
 use aura_core::Sprint;
 use aura_store::RocksStore;
 
+use aura_core::SPRINT_SYSTEM_PROMPT;
 use crate::SpecGenError;
-
-const SPRINT_SYSTEM_PROMPT: &str = "\
-You are a requirements engineer. Take the user's input and expand it into a comprehensive, \
-well-structured requirements document. Preserve the user's intent. Output only the document text.";
 
 const SPRINT_MAX_TOKENS: u32 = 8192;
 

@@ -8,7 +8,7 @@ use aura_claude::ClaudeStreamEvent;
 
 use crate::SpecGenError;
 use super::parser::{IncrementalSpecParser, RawSpecOutput, parse_claude_response, parse_tasks_from_markdown, raw_to_specs};
-use super::{SpecGenerationService, SpecStreamEvent, SPEC_GENERATION_SYSTEM_PROMPT, SPEC_OVERVIEW_MAX_TOKENS, SPEC_OVERVIEW_SYSTEM_PROMPT, SPEC_SUMMARY_MAX_TOKENS, SPEC_SUMMARY_MAX_WORDS, SPEC_SUMMARY_SYSTEM_PROMPT, MAX_TOKENS};
+use super::{SpecGenerationService, SpecStreamEvent, SPEC_OVERVIEW_MAX_TOKENS, SPEC_SUMMARY_MAX_TOKENS, SPEC_SUMMARY_MAX_WORDS, MAX_TOKENS};
 
 /// Parses "TITLE: ...\n\nsummary" format. Returns (title, summary).
 /// Falls back to (None, full_text) if format not matched.

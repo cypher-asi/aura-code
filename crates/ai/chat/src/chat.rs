@@ -25,31 +25,6 @@ use aura_projects::ProjectService;
 use aura_specs::{SpecGenerationService, SpecStreamEvent};
 use aura_tasks::TaskService;
 
-use aura_core::LlmConfig;
-
-const CHAT_SYSTEM_PROMPT_BASE: &str = r#"You are Aura, an AI software engineering assistant embedded in a project management and code execution platform.
-
-You have access to tools that let you directly manage the user's project:
-- **Specs**: list, create, update, delete technical specifications
-- **Tasks**: list, create, update, delete, transition status, trigger execution
-- **Sprints**: list, create, update, delete sprint plans
-- **Project**: view and update project settings (name, description, build/test commands)
-- **Dev Loop**: start, pause, or stop the autonomous development loop
-- **Filesystem**: read, write, edit, delete files and list directories in the project folder
-- **Search**: search_code for regex pattern search, find_files for glob matching
-- **Shell**: run_command to execute build, test, git, or other commands
-- **Progress**: view task completion metrics
-
-When the user asks you to create, modify, or manage project artifacts, USE YOUR TOOLS to do it directly rather than just describing what to do. Be proactive -- if the user says "add a task for X", call create_task. If they say "show me the specs", call list_specs.
-
-When creating specs with create_spec:
-- Title format: two-digit zero-padded number + colon + space + short name (e.g. "01: Core Domain Types")
-- Number specs sequentially based on existing specs (check with list_specs first)
-- Do NOT use em dashes (—) in the title
-
-For conversational questions about architecture, debugging, or best practices, respond with helpful text.
-
-Use markdown formatting for code blocks and structured responses. Be concise. Do NOT use emojis in your responses."#;
 
 fn build_chat_system_prompt(project: &Project, custom_system_prompt: &str) -> String {
     let mut prompt = if custom_system_prompt.is_empty() {
@@ -1184,7 +1159,7 @@ impl ChatService {
 
         match self
             .llm
-            .complete(api_key, "You summarize conversations concisely.", &summary_input, 1024, "aura_context_summary", None)
+            .complete(api_key, CONTEXT_SUMMARY_SYSTEM_PROMPT, &summary_input, 1024, "aura_context_summary", None)
             .await
         {
             Ok(resp) => {
@@ -1243,7 +1218,7 @@ impl ChatService {
 
         match self
             .llm
-            .complete(api_key, "You generate short chat titles.", &title_prompt, 30, "aura_title_gen", None)
+            .complete(api_key, TITLE_GEN_SYSTEM_PROMPT, &title_prompt, 30, "aura_title_gen", None)
             .await
         {
             Ok(resp) => {
