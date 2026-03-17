@@ -744,6 +744,10 @@ impl DevLoopEngine {
         drop(loop_tx);
         let _ = forwarder.await;
 
+        if result.insufficient_credits {
+            return Err(EngineError::InsufficientCredits);
+        }
+
         let tracked_file_ops = tracked_file_ops.lock().await.clone();
         let mut notes = notes.lock().await.clone();
         let follow_ups = follow_ups.lock().await.clone();
