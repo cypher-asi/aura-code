@@ -230,51 +230,51 @@
 
 .logFilterChipActive_loop {
   composes: logFilterChip;
-  background: rgba(59, 130, 246, 0.18);
-  color: rgb(96, 165, 250);
-  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(74, 222, 128, 0.18);
+  color: rgb(74, 222, 128);
+  border-color: rgba(74, 222, 128, 0.3);
 }
 
 .logFilterChipActive_task {
   composes: logFilterChip;
-  background: rgba(168, 85, 247, 0.18);
-  color: rgb(192, 132, 252);
-  border-color: rgba(168, 85, 247, 0.3);
+  background: rgba(52, 211, 153, 0.18);
+  color: rgb(52, 211, 153);
+  border-color: rgba(52, 211, 153, 0.3);
 }
 
 .logFilterChipActive_output {
   composes: logFilterChip;
-  background: rgba(107, 114, 128, 0.18);
-  color: rgb(156, 163, 175);
-  border-color: rgba(107, 114, 128, 0.3);
+  background: rgba(134, 239, 172, 0.18);
+  color: rgb(134, 239, 172);
+  border-color: rgba(134, 239, 172, 0.3);
 }
 
 .logFilterChipActive_files {
   composes: logFilterChip;
-  background: rgba(234, 179, 8, 0.18);
-  color: rgb(250, 204, 21);
-  border-color: rgba(234, 179, 8, 0.3);
+  background: rgba(163, 230, 53, 0.18);
+  color: rgb(163, 230, 53);
+  border-color: rgba(163, 230, 53, 0.3);
 }
 
 .logFilterChipActive_session {
   composes: logFilterChip;
-  background: rgba(20, 184, 166, 0.18);
+  background: rgba(45, 212, 191, 0.18);
   color: rgb(45, 212, 191);
-  border-color: rgba(20, 184, 166, 0.3);
+  border-color: rgba(45, 212, 191, 0.3);
 }
 
 .logFilterChipActive_log {
   composes: logFilterChip;
-  background: rgba(107, 114, 128, 0.18);
-  color: rgb(156, 163, 175);
-  border-color: rgba(107, 114, 128, 0.3);
+  background: rgba(22, 163, 74, 0.18);
+  color: rgb(22, 163, 74);
+  border-color: rgba(22, 163, 74, 0.3);
 }
 
 .logFilterChipActive_spec {
   composes: logFilterChip;
-  background: rgba(244, 114, 182, 0.18);
-  color: rgb(244, 114, 182);
-  border-color: rgba(244, 114, 182, 0.3);
+  background: rgba(94, 234, 212, 0.18);
+  color: rgb(94, 234, 212);
+  border-color: rgba(94, 234, 212, 0.3);
 }
 
 .logFilterMore {

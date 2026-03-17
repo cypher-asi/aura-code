@@ -14,6 +14,7 @@ export interface FeedEvent {
   branch: string;
   commits: FeedCommit[];
   timestamp: string;
+  summary?: string;
 }
 
 export interface FeedComment {
@@ -66,6 +67,7 @@ const MOCK_EVENTS: FeedEvent[] = [
       { sha: "a03f4fa", message: "refactor: agent-centric architecture for Rust backend" },
     ],
     timestamp: new Date(now - 2 * HOUR).toISOString(),
+    summary: "Fixed the sidekick panel from forcefully opening the preview on entry, and restructured the Rust backend around an agent-centric model for cleaner ownership and message routing.",
   },
   {
     id: "evt-2",
@@ -77,6 +79,7 @@ const MOCK_EVENTS: FeedEvent[] = [
       { sha: "067e08b", message: "Initial commit: existing codebase before sidekick empty-state fix" },
     ],
     timestamp: new Date(now - 3 * HOUR).toISOString(),
+    summary: "Repositioned the automation bar below the tab selection panel in the sidekick for a more intuitive layout, and snapshotted the codebase before the empty-state fix.",
   },
   {
     id: "evt-3",
@@ -88,6 +91,7 @@ const MOCK_EVENTS: FeedEvent[] = [
       { sha: "edf12d4", message: "fix: stale closure race between onSpecsTitle and onSpecsSummary updates" },
     ],
     timestamp: new Date(now - 4 * HOUR).toISOString(),
+    summary: "Ensured the preview panel closes automatically when a new project is created, and resolved a stale closure race condition that caused specs title and summary to overwrite each other.",
   },
   {
     id: "evt-4",
@@ -100,6 +104,7 @@ const MOCK_EVENTS: FeedEvent[] = [
       { sha: "f82a1c9", message: "Task 3: Clean up unused Sprint-related types and imports" },
     ],
     timestamp: new Date(now - 5 * HOUR).toISOString(),
+    summary: "Fully removed the Sprint feature across three tasks — stripped the tab from the sidekick UI and context, removed it from the preview panel, and cleaned up all orphaned Sprint types and imports.",
   },
   {
     id: "evt-5",
@@ -111,6 +116,7 @@ const MOCK_EVENTS: FeedEvent[] = [
       { sha: "9786d36", message: "Match agent chat horizontal padding with preview area for consistency" },
     ],
     timestamp: new Date(now - 12 * HOUR).toISOString(),
+    summary: "Fixed dev loop and task run buttons that got stuck returning 409 after a loop finished, and aligned the agent chat horizontal padding with the preview area for visual consistency.",
   },
   {
     id: "evt-6",
@@ -124,6 +130,7 @@ const MOCK_EVENTS: FeedEvent[] = [
       { sha: "b29c7f1", message: "chore: wire Feed app into registry and routing" },
     ],
     timestamp: new Date(now - 1 * DAY).toISOString(),
+    summary: "Built out the full feed UI — added a FeedProvider with mock data, implemented the main timeline panel with activity cards, created the sidebar filter list, and wired everything into the app registry.",
   },
   {
     id: "evt-7",
@@ -135,6 +142,7 @@ const MOCK_EVENTS: FeedEvent[] = [
       { sha: "e04ecbd", message: "Format task description as bullet list in preview panel" },
     ],
     timestamp: new Date(now - 1.2 * DAY).toISOString(),
+    summary: "Introduced a toBullets utility that converts plain text into markdown bullet lists, then applied it to render task descriptions as formatted bullet lists in the preview panel.",
   },
   {
     id: "evt-8",
@@ -145,6 +153,7 @@ const MOCK_EVENTS: FeedEvent[] = [
       { sha: "d91b3e0", message: "refactor: extract task runner into standalone service" },
     ],
     timestamp: new Date(now - 1.5 * DAY).toISOString(),
+    summary: "Extracted the task runner logic out of the monolith into its own standalone service for better separation of concerns and independent scaling.",
   },
   {
     id: "evt-9",
@@ -156,6 +165,7 @@ const MOCK_EVENTS: FeedEvent[] = [
       { sha: "71cc8b2", message: "test: add integration tests for event broadcast" },
     ],
     timestamp: new Date(now - 2 * DAY).toISOString(),
+    summary: "Added real-time WebSocket broadcasting so clients receive agent status changes instantly, along with integration tests to verify the event delivery pipeline.",
   },
   {
     id: "evt-10",
@@ -168,6 +178,7 @@ const MOCK_EVENTS: FeedEvent[] = [
       { sha: "c7b28e5", message: "test: add conflict handling test cases" },
     ],
     timestamp: new Date(now - 2.5 * DAY).toISOString(),
+    summary: "Improved duplicate agent instance handling to return a proper 409 Conflict instead of crashing with a 500, and added test cases covering the various conflict scenarios.",
   },
   {
     id: "evt-11",
@@ -178,6 +189,7 @@ const MOCK_EVENTS: FeedEvent[] = [
       { sha: "5e9a0b1", message: "perf: lazy-load sidekick panels to reduce initial bundle size" },
     ],
     timestamp: new Date(now - 3 * DAY).toISOString(),
+    summary: "Switched sidekick panels to lazy-loading so they are only fetched when opened, reducing the initial JavaScript bundle size and improving first-load performance.",
   },
   {
     id: "evt-12",
@@ -189,6 +201,7 @@ const MOCK_EVENTS: FeedEvent[] = [
       { sha: "8f3e6a1", message: "feat: store encrypted tokens in user settings" },
     ],
     timestamp: new Date(now - 3.5 * DAY).toISOString(),
+    summary: "Implemented OAuth2 PKCE authentication flow for GitHub integration and added encrypted token storage in user settings so credentials are never persisted in plaintext.",
   },
 ];
 
