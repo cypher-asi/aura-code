@@ -372,6 +372,16 @@ pub(crate) fn build_fix_prompt_with_history(
         prompt.push('\n');
     }
 
+    let error_source_files = file_ops::resolve_error_source_files(
+        Path::new(&project.linked_folder_path),
+        &error_refs,
+        file_ops::ERROR_SOURCE_BUDGET,
+    );
+    if !error_source_files.is_empty() {
+        prompt.push_str(&error_source_files);
+        prompt.push('\n');
+    }
+
     if !codebase_snapshot.is_empty() {
         prompt.push_str(&format!(
             "# Current Codebase Files (after previous changes)\n{}\n",
