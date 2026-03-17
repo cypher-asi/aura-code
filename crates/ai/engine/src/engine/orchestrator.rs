@@ -207,6 +207,7 @@ impl DevLoopEngine {
         let mut failed_count: usize = 0;
         let mut follow_up_count: usize = 0;
         let mut task_retry_counts: std::collections::HashMap<TaskId, u32> = std::collections::HashMap::new();
+        let mut credit_failed_tasks: std::collections::HashSet<TaskId> = std::collections::HashSet::new();
         let mut work_log: Vec<String> = Vec::new();
         let mut total_input_tokens: u64 = 0;
         let mut total_output_tokens: u64 = 0;
@@ -290,6 +291,7 @@ impl DevLoopEngine {
                     let all_tasks = self.store.list_tasks_by_project(&project_id)?;
                     let retryable: Vec<&Task> = all_tasks.iter()
                         .filter(|t| t.status == TaskStatus::Failed
+                            && !credit_failed_tasks.contains(&t.task_id)
                             && *task_retry_counts.get(&t.task_id).unwrap_or(&0) < self.engine_config.max_loop_task_retries)
                         .collect();
 
@@ -651,6 +653,7 @@ impl DevLoopEngine {
                     }
                 }
                 Err(e) => {
+                    let is_credit_failure = matches!(e, EngineError::InsufficientCredits);
                     let reason = format!("execution error: {e}");
                     let task_dur = task_start.elapsed().as_millis() as u64;
                     self.task_service.fail_task(
@@ -660,13 +663,16 @@ impl DevLoopEngine {
                         &reason,
                     )?;
                     failed_count += 1;
+                    if is_credit_failure {
+                        credit_failed_tasks.insert(task.task_id);
+                    }
                     self.emit(EngineEvent::TaskFailed {
                         project_id,
                         agent_instance_id,
                         task_id: task.task_id,
                         reason: e.to_string(),
                         duration_ms: Some(task_dur),
-                        phase: Some("execution".into()),
+                        phase: Some(if is_credit_failure { "insufficient_credits" } else { "execution" }.into()),
                         parse_retries: None,
                         build_fix_attempts: None,
                         model: session.model.clone(),
