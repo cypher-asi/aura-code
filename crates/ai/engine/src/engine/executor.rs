@@ -796,12 +796,28 @@ impl DevLoopEngine {
                     }
                     _ => {
                         if let Some(result) = exec_result_iter.next() {
+                            let arg_hint = match tc.name.as_str() {
+                                "read_file" | "write_file" | "edit_file" | "delete_file" =>
+                                    tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                "list_files" =>
+                                    tc.input.get("directory").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                "search_code" =>
+                                    tc.input.get("pattern").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                "run_command" =>
+                                    tc.input.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                _ => String::new(),
+                            };
+                            let status_str = if result.is_error { "error" } else { "ok" };
+                            let marker = if arg_hint.is_empty() {
+                                format!("\n[tool: {} -> {}]\n", tc.name, status_str)
+                            } else {
+                                format!("\n[tool: {}({}) -> {}]\n", tc.name, arg_hint, status_str)
+                            };
                             let _ = self.event_tx.send(EngineEvent::TaskOutputDelta {
                                 project_id: pid,
                                 agent_instance_id: aiid,
                                 task_id,
-                                delta: format!("\n[tool: {} -> {}]\n", tc.name,
-                                    if result.is_error { "error" } else { "ok" }),
+                                delta: marker,
                             });
                             result_blocks.push(ContentBlock::ToolResult {
                                 tool_use_id: tc.id.clone(),
