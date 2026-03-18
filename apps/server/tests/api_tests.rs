@@ -41,7 +41,7 @@ fn build_test_app() -> (Router, AppState, tempfile::TempDir, tempfile::TempDir) 
     let billing_client = Arc::new(BillingClient::new());
     let agent_service = Arc::new(AgentService::new(store.clone()));
     let agent_instance_service = Arc::new(AgentInstanceService::new(store.clone()));
-    let session_service = Arc::new(SessionService::new(store.clone()));
+    let session_service = Arc::new(SessionService::new(store.clone(), LlmConfig::default().context_rollover_threshold));
     let chat_service = Arc::new(ChatService::new(
         store.clone(),
         settings_service.clone(),

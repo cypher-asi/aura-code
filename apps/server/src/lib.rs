@@ -288,7 +288,8 @@ pub fn build_app_state(db_path: &Path) -> AppState {
     let task_service = Arc::new(TaskService::new(store.clone()));
     let agent_service = Arc::new(AgentService::new(store.clone()));
     let agent_instance_service = Arc::new(AgentInstanceService::new(store.clone()));
-    let session_service = Arc::new(SessionService::new(store.clone()));
+    let llm_config = aura_core::LlmConfig::from_env();
+    let session_service = Arc::new(SessionService::new(store.clone(), llm_config.context_rollover_threshold));
     let chat_service = Arc::new(ChatService::new(
         store.clone(),
         settings_service.clone(),

@@ -730,7 +730,15 @@ impl DevLoopEngine {
         let workspace_info = if workspace_map.is_empty() { None } else { Some(workspace_map.as_str()) };
         let system_prompt = agentic_execution_system_prompt(&project, agent, workspace_info);
 
-        let codebase_snapshot = file_ops::read_relevant_files(&project.linked_folder_path, 50_000)?;
+        let codebase_snapshot = file_ops::retrieve_task_relevant_files(
+            &project.linked_folder_path,
+            &task.title,
+            &task.description,
+            50_000,
+        ).unwrap_or_else(|_| {
+            file_ops::read_relevant_files(&project.linked_folder_path, 50_000)
+                .unwrap_or_default()
+        });
 
         let completed_deps: Vec<Task> = task.dependency_ids.iter()
             .filter_map(|dep_id| {
