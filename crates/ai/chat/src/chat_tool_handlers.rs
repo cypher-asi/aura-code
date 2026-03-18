@@ -747,18 +747,18 @@ fn search_directory(
         if path.is_dir() {
             search_directory(root, &path, regex, include_glob, max_results, context_lines, matches);
         } else if path.is_file() {
-            if let Some(glob_pat) = include_glob {
-                if let Ok(matcher) = glob::Pattern::new(glob_pat) {
-                    if !matcher.matches(&name) {
-                        continue;
-                    }
-                }
-            }
             let rel = path
                 .strip_prefix(root)
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .replace('\\', "/");
+            if let Some(glob_pat) = include_glob {
+                if let Ok(matcher) = glob::Pattern::new(glob_pat) {
+                    if !matcher.matches(&rel) && !matcher.matches(&name) {
+                        continue;
+                    }
+                }
+            }
 
             if let Ok(content) = std::fs::read_to_string(&path) {
                 let all_lines: Vec<&str> = content.lines().collect();
