@@ -20,7 +20,7 @@ import { useSidekick } from "../context/SidekickContext";
 import { useHost, type HostConnectionStatus } from "../context/HostContext";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { ProjectsProvider } from "../apps/projects/ProjectsProvider";
-import { useProjectsList } from "../apps/projects/ProjectsListContext";
+import { useProjectsList } from "../apps/projects/useProjectsList";
 import { AgentAppProvider } from "../apps/agents/AgentAppProvider";
 import { FeedProvider } from "../apps/feed/FeedProvider";
 import { LeaderboardProvider } from "../apps/leaderboard/LeaderboardContext";

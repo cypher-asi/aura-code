@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Tabs, Text } from "@cypher-asi/zui";
 import { Lane } from "../../components/Lane";
@@ -7,8 +7,7 @@ import { TerminalPanelHeader, TerminalPanelBody } from "../../components/Termina
 import { TerminalPanelProvider } from "../../context/TerminalPanelContext";
 import { useProjectContext } from "../../context/ProjectContext";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
-import { api } from "../../api/client";
-import type { AgentInstance } from "../../types";
+import { useProjectsList } from "./useProjectsList";
 
 const MOBILE_PROJECT_TABS = [
   { id: "chat", label: "Chat" },
@@ -20,41 +19,25 @@ function MobileProjectHeader() {
   const navigate = useNavigate();
   const location = useLocation();
   const { projectId, agentInstanceId } = useParams();
-  const [agents, setAgents] = useState<AgentInstance[]>([]);
-  const [loadingAgents, setLoadingAgents] = useState(true);
+  const { agentsByProject, loadingAgentsByProject, refreshProjectAgents } = useProjectsList();
 
   const project = ctx?.project;
   const isExecutionRoute = location.pathname.endsWith("/execution");
+  const agents = useMemo(
+    () => (projectId ? agentsByProject[projectId] ?? [] : []),
+    [agentsByProject, projectId],
+  );
+  const loadingAgents = projectId ? loadingAgentsByProject[projectId] ?? !(projectId in agentsByProject) : false;
   const hasChatTarget = Boolean(agentInstanceId) || loadingAgents || agents.length > 0;
   const selectedTab = isExecutionRoute ? "execution" : "chat";
   const selectedAgentId = agentInstanceId ?? agents[0]?.agent_instance_id ?? "";
 
   useEffect(() => {
     if (!projectId) return;
-    let cancelled = false;
-    setLoadingAgents(true);
-
-    api.listAgentInstances(projectId)
-      .then((next) => {
-        if (!cancelled) {
-          setAgents(next);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAgents([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoadingAgents(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
+    if (!(projectId in agentsByProject)) {
+      void refreshProjectAgents(projectId);
+    }
+  }, [agentsByProject, projectId, refreshProjectAgents]);
 
   useEffect(() => {
     if (!projectId || isExecutionRoute || agentInstanceId || loadingAgents) return;
@@ -77,10 +60,8 @@ function MobileProjectHeader() {
       return;
     }
 
-    setLoadingAgents(true);
-    api.listAgentInstances(projectId)
+    refreshProjectAgents(projectId)
       .then((next) => {
-        setAgents(next);
         if (next.length > 0) {
           navigate(`/projects/${projectId}/agents/${next[0].agent_instance_id}`);
           return;
@@ -88,11 +69,7 @@ function MobileProjectHeader() {
         navigate(`/projects/${projectId}/execution`);
       })
       .catch(() => {
-        setAgents([]);
         navigate(`/projects/${projectId}/execution`);
-      })
-      .finally(() => {
-        setLoadingAgents(false);
       });
   };
 

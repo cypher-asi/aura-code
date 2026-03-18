@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -12,29 +10,20 @@ import {
 } from "react";
 import { api } from "../../api/client";
 import { useOrg } from "../../context/OrgContext";
-import type { Project } from "../../types";
+import type { AgentInstance, Project } from "../../types";
+import { ProjectsListContext, type ProjectsListContextValue } from "./ProjectsListContext.shared";
 
 const NEW_PROJECT_MODAL_STORAGE_KEY = "aura:new-project-modal-open";
-
-interface ProjectsListContextValue {
-  projects: Project[];
-  loadingProjects: boolean;
-  setProjects: Dispatch<SetStateAction<Project[]>>;
-  refreshProjects: () => Promise<void>;
-  recentProjects: Project[];
-  mostRecentProject: Project | null;
-  newProjectModalOpen: boolean;
-  openNewProjectModal: () => void;
-  closeNewProjectModal: () => void;
-}
-
-const ProjectsListContext = createContext<ProjectsListContextValue | null>(null);
 
 export function ProjectsListProvider({ children }: { children: ReactNode }) {
   const { activeOrg } = useOrg();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [agentsByProjectState, setAgentsByProjectState] = useState<Record<string, AgentInstance[]>>({});
+  const [loadingAgentsByProject, setLoadingAgentsByProject] = useState<Record<string, boolean>>({});
   const [loadingProjects, setLoadingProjects] = useState(true);
   const refreshRequestId = useRef(0);
+  const agentRefreshRequestIds = useRef<Record<string, number>>({});
+  const agentsByProjectRef = useRef<Record<string, AgentInstance[]>>({});
   const [newProjectModalOpen, setNewProjectModalOpen] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.sessionStorage.getItem(NEW_PROJECT_MODAL_STORAGE_KEY) === "1";
@@ -45,16 +34,57 @@ export function ProjectsListProvider({ children }: { children: ReactNode }) {
     setLoadingProjects(true);
     try {
       const nextProjects = await api.listProjects(activeOrg?.org_id);
-      if (refreshRequestId.current !== requestId) return;
-      setProjects(nextProjects);
+      if (refreshRequestId.current === requestId) {
+        setProjects(nextProjects);
+      }
     } catch (error) {
-      if (refreshRequestId.current !== requestId) return;
-      console.error("Failed to load projects", error);
-    } finally {
-      if (refreshRequestId.current !== requestId) return;
+      if (refreshRequestId.current === requestId) {
+        console.error("Failed to load projects", error);
+      }
+    }
+
+    if (refreshRequestId.current === requestId) {
       setLoadingProjects(false);
     }
   }, [activeOrg?.org_id]);
+
+  const setAgentsByProject = useCallback<Dispatch<SetStateAction<Record<string, AgentInstance[]>>>>((update) => {
+    setAgentsByProjectState((prev) => {
+      const next = typeof update === "function"
+        ? update(prev)
+        : update;
+      agentsByProjectRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const refreshProjectAgents = useCallback(async (projectId: string) => {
+    const requestId = (agentRefreshRequestIds.current[projectId] ?? 0) + 1;
+    agentRefreshRequestIds.current[projectId] = requestId;
+    setLoadingAgentsByProject((prev) => ({ ...prev, [projectId]: true }));
+    let result = agentsByProjectRef.current[projectId] ?? [];
+
+    try {
+      const nextAgents = await api.listAgentInstances(projectId);
+      if (agentRefreshRequestIds.current[projectId] !== requestId) {
+        return agentsByProjectRef.current[projectId] ?? result;
+      }
+      setAgentsByProject((prev) => ({ ...prev, [projectId]: nextAgents }));
+      result = nextAgents;
+    } catch (error) {
+      if (agentRefreshRequestIds.current[projectId] === requestId) {
+        console.error("Failed to load project agents", error);
+        setAgentsByProject((prev) => (projectId in prev ? prev : { ...prev, [projectId]: [] }));
+      }
+      result = agentsByProjectRef.current[projectId] ?? [];
+    } finally {
+      if (agentRefreshRequestIds.current[projectId] === requestId) {
+        setLoadingAgentsByProject((prev) => ({ ...prev, [projectId]: false }));
+      }
+    }
+
+    return result;
+  }, [setAgentsByProject]);
 
   useEffect(() => {
     refreshProjects();
@@ -90,6 +120,10 @@ export function ProjectsListProvider({ children }: { children: ReactNode }) {
       loadingProjects,
       setProjects,
       refreshProjects,
+      agentsByProject: agentsByProjectState,
+      loadingAgentsByProject,
+      setAgentsByProject,
+      refreshProjectAgents,
       recentProjects,
       mostRecentProject,
       newProjectModalOpen,
@@ -100,6 +134,10 @@ export function ProjectsListProvider({ children }: { children: ReactNode }) {
       projects,
       loadingProjects,
       refreshProjects,
+      agentsByProjectState,
+      loadingAgentsByProject,
+      setAgentsByProject,
+      refreshProjectAgents,
       recentProjects,
       mostRecentProject,
       newProjectModalOpen,
@@ -113,12 +151,4 @@ export function ProjectsListProvider({ children }: { children: ReactNode }) {
       {children}
     </ProjectsListContext.Provider>
   );
-}
-
-export function useProjectsList() {
-  const context = useContext(ProjectsListContext);
-  if (!context) {
-    throw new Error("useProjectsList must be used within ProjectsListProvider");
-  }
-  return context;
 }

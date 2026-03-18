@@ -13,7 +13,7 @@ import { AgentSelectorModal } from "./AgentSelectorModal";
 import { useEventContext } from "../context/EventContext";
 import { useSidebarSearch } from "../context/SidebarSearchContext";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
-import { useProjectsList } from "../apps/projects/ProjectsListContext";
+import { useProjectsList } from "../apps/projects/useProjectsList";
 import styles from "./ProjectList.module.css";
 
 function filterTree(nodes: ExplorerNode[], q: string): ExplorerNode[] {
@@ -47,30 +47,31 @@ function InlineRenameInput({
 }) {
   const [value, setValue] = useState(target.name);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [rect, setRect] = useState<DOMRect | null>(null);
   const saved = useRef(false);
 
-  const labelRef = useRef<HTMLElement | null>(null);
-
   useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+
     const row = document.getElementById(target.project_id);
     const label = row?.querySelector<HTMLElement>("[class*='label']");
-    if (label) {
-      labelRef.current = label;
-      setRect(label.getBoundingClientRect());
-      label.style.visibility = "hidden";
-    }
+    if (!label) return;
+
+    const rect = label.getBoundingClientRect();
+    input.style.top = `${rect.top}px`;
+    input.style.left = `${rect.left}px`;
+    input.style.width = `${rect.width}px`;
+    input.style.height = `${rect.height}px`;
+    input.style.visibility = "visible";
+    label.style.visibility = "hidden";
+    input.focus();
+    input.select();
+
     return () => {
-      if (labelRef.current) labelRef.current.style.visibility = "";
+      label.style.visibility = "";
+      input.style.visibility = "";
     };
   }, [target.project_id]);
-
-  useEffect(() => {
-    if (inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [rect]);
 
   const commit = useCallback(() => {
     if (saved.current) return;
@@ -83,18 +84,11 @@ function InlineRenameInput({
     }
   }, [value, target.name, onSave, onCancel]);
 
-  if (!rect) return null;
-
   return createPortal(
     <input
       ref={inputRef}
       className={styles.inlineRenameInput}
-      style={{
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-      }}
+      style={{ visibility: "hidden" }}
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
@@ -126,7 +120,6 @@ interface ContextMenuState {
 }
 
 export function ProjectList() {
-  const [agentsByProject, setAgentsByProject] = useState<Record<string, AgentInstance[]>>({});
   const { projectId, agentInstanceId } = useParams();
   const navigate = useNavigate();
   const sidekick = useSidekick();
@@ -135,6 +128,9 @@ export function ProjectList() {
     projects,
     loadingProjects,
     refreshProjects,
+    agentsByProject,
+    setAgentsByProject,
+    refreshProjectAgents,
     mostRecentProject,
     openNewProjectModal,
   } = useProjectsList();
@@ -156,12 +152,6 @@ export function ProjectList() {
 
   const ctxMenuRef = useRef<HTMLDivElement>(null);
 
-  const fetchAgentInstances = useCallback((pid: string) => {
-    api.listAgentInstances(pid).then((agents) => {
-      setAgentsByProject((prev) => ({ ...prev, [pid]: agents }));
-    }).catch(console.error);
-  }, []);
-
   useEffect(() => {
     setAction(
       "projects",
@@ -181,27 +171,27 @@ export function ProjectList() {
   useEffect(() => {
     if (!projectId) return;
     if (!(projectId in agentsByProject)) {
-      fetchAgentInstances(projectId);
+      void refreshProjectAgents(projectId);
       return;
     }
     if (agentInstanceId) {
       const cached = agentsByProject[projectId] ?? [];
       const found = cached.some((s) => s.agent_instance_id === agentInstanceId);
       if (!found) {
-        fetchAgentInstances(projectId);
+        void refreshProjectAgents(projectId);
       }
     }
-  }, [projectId, agentInstanceId]);
+  }, [agentInstanceId, agentsByProject, projectId, refreshProjectAgents]);
 
   useEffect(() => {
     if (!isMobileLayout) return;
 
     projects.forEach((project) => {
       if (!(project.project_id in agentsByProject)) {
-        fetchAgentInstances(project.project_id);
+        void refreshProjectAgents(project.project_id);
       }
     });
-  }, [agentsByProject, fetchAgentInstances, isMobileLayout, projects]);
+  }, [agentsByProject, isMobileLayout, projects, refreshProjectAgents]);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -237,7 +227,7 @@ export function ProjectList() {
         };
       });
     });
-  }, [sidekick]);
+  }, [setAgentsByProject, sidekick]);
 
   agentInstanceIdRef.current = agentInstanceId;
 
@@ -286,6 +276,11 @@ export function ProjectList() {
 
   const { streamingAgentInstanceId } = sidekick;
 
+  const handleAddAgent = useCallback(
+    (pid: string) => setAgentSelectorProjectId(pid),
+    [],
+  );
+
   const explorerData: ExplorerNode[] = useMemo(
     () =>
       projects.filter((p) => p.name.trim()).map((p) => ({
@@ -328,7 +323,7 @@ export function ProjectList() {
               })
             : [{ id: `_load_${p.project_id}`, label: "Loading...", disabled: true }],
       })),
-    [projects, agentsByProject, streamingAgentInstanceId, automatingProjectId, automatingAgentInstanceId, failedIcons],
+    [projects, agentsByProject, streamingAgentInstanceId, automatingProjectId, automatingAgentInstanceId, failedIcons, handleAddAgent],
   );
 
   const filteredExplorerData = useMemo(
@@ -374,10 +369,10 @@ export function ProjectList() {
   const handleExpand = useCallback(
     (nodeId: string, expanded: boolean) => {
       if (expanded && projectMap.has(nodeId) && !(nodeId in agentsByProject)) {
-        fetchAgentInstances(nodeId);
+        void refreshProjectAgents(nodeId);
       }
     },
-    [projectMap, agentsByProject, fetchAgentInstances],
+    [projectMap, agentsByProject, refreshProjectAgents],
   );
 
   const handleKeyDown = useCallback(
@@ -416,18 +411,13 @@ export function ProjectList() {
     [projectMap, agentMeta],
   );
 
-  const handleAddAgent = useCallback(
-    (pid: string) => setAgentSelectorProjectId(pid),
-    [],
-  );
-
   const handleAgentCreated = useCallback(
     (instance: AgentInstance) => {
       const pid = instance.project_id;
-      fetchAgentInstances(pid);
+      void refreshProjectAgents(pid);
       navigate(`/projects/${pid}/agents/${instance.agent_instance_id}`);
     },
-    [fetchAgentInstances, navigate],
+    [navigate, refreshProjectAgents],
   );
 
   const handleMenuAction = (actionId: string) => {
@@ -503,7 +493,7 @@ export function ProjectList() {
         }
       }
       setDeleteAgentTarget(null);
-      fetchAgentInstances(pid);
+      void refreshProjectAgents(pid);
     } catch (err) {
       console.error("Failed to delete agent instance", err);
       if (prevAgents) {

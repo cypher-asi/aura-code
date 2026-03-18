@@ -4,7 +4,7 @@ import { Rocket } from "lucide-react";
 import { useOrg } from "../context/OrgContext";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { getLastAgent } from "../utils/storage";
-import { useProjectsList } from "../apps/projects/ProjectsListContext";
+import { useProjectsList } from "../apps/projects/useProjectsList";
 import styles from "./HomeView.module.css";
 
 function MobileProjectsHome() {
