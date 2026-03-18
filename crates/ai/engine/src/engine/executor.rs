@@ -740,11 +740,12 @@ impl DevLoopEngine {
                 .unwrap_or_default()
         });
 
+        let all_project_tasks = self.store.list_tasks_by_project(project_id).unwrap_or_default();
         let completed_deps: Vec<Task> = task.dependency_ids.iter()
             .filter_map(|dep_id| {
-                self.store.list_tasks_by_project(project_id).ok()
-                    .and_then(|tasks| tasks.into_iter()
-                        .find(|t| t.task_id == *dep_id && t.status == TaskStatus::Done))
+                all_project_tasks.iter()
+                    .find(|t| t.task_id == *dep_id && t.status == TaskStatus::Done)
+                    .cloned()
             })
             .collect();
 
