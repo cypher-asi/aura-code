@@ -234,7 +234,7 @@ fn chat_management_tools() -> Vec<ToolDefinition> {
         ),
         compact_tool(
             "get_spec",
-            "Get a single spec by ID.",
+            "Get a single spec by its UUID spec_id (from list_specs or create_spec output, NOT the title number).",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -257,7 +257,7 @@ fn chat_management_tools() -> Vec<ToolDefinition> {
         ),
         compact_tool(
             "update_spec",
-            "Update an existing spec's title or contents.",
+            "Update an existing spec's title or contents. Use the UUID spec_id from list_specs.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -270,7 +270,7 @@ fn chat_management_tools() -> Vec<ToolDefinition> {
         ),
         compact_tool(
             "delete_spec",
-            "Delete a spec and its tasks from the project.",
+            "Delete a spec and its tasks from the project. Use the UUID spec_id from list_specs.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -282,7 +282,7 @@ fn chat_management_tools() -> Vec<ToolDefinition> {
         // ── Tasks ──────────────────────────────────────────────────────
         compact_tool(
             "list_tasks",
-            "List all tasks in the project, optionally filtered by spec_id.",
+            "List all tasks in the project, optionally filtered by UUID spec_id from list_specs.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -293,7 +293,7 @@ fn chat_management_tools() -> Vec<ToolDefinition> {
         ),
         compact_tool(
             "create_task",
-            "Create a new task under a spec.",
+            "Create a new task under a spec. Use the UUID spec_id from list_specs.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -323,7 +323,7 @@ fn chat_management_tools() -> Vec<ToolDefinition> {
         ),
         compact_tool(
             "delete_task",
-            "Delete a task from the project. Requires task_id and parent spec_id.",
+            "Delete a task from the project. Requires UUID task_id and parent UUID spec_id from list_tasks.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
