@@ -441,9 +441,11 @@ async fn process_tool_calls(
                     tool_use_id: tc.id.clone(),
                     content: serde_json::json!({
                         "error": format!(
-                            "You have called {} on '{}' 3+ times consecutively. \
-                             The file was already written successfully. Use read_file to \
-                             verify the contents, or try a different approach.",
+                            "You have called {} on '{}' 3+ times consecutively without success. \
+                             Your output is likely being truncated due to context pressure. \
+                             Break the file into smaller writes: write a skeleton first with \
+                             function signatures, then use edit_file to fill in one function \
+                             body at a time.",
                             tc.name, path
                         )
                     }).to_string(),
