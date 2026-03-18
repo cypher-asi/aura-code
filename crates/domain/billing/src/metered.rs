@@ -50,7 +50,10 @@ pub struct MeteredLlm {
     store: Arc<RocksStore>,
     credits_exhausted: AtomicBool,
     last_preflight_ok: Mutex<Option<Instant>>,
+    credits_per_usd: f64,
 }
+
+const DEFAULT_CREDITS_PER_USD: f64 = 114_286.0;
 
 impl MeteredLlm {
     pub fn new(
@@ -58,12 +61,17 @@ impl MeteredLlm {
         billing: Arc<BillingClient>,
         store: Arc<RocksStore>,
     ) -> Self {
+        let credits_per_usd: f64 = std::env::var("BILLING_CREDITS_PER_USD")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(DEFAULT_CREDITS_PER_USD);
         Self {
             provider,
             billing,
             store,
             credits_exhausted: AtomicBool::new(false),
             last_preflight_ok: Mutex::new(None),
+            credits_per_usd,
         }
     }
 
@@ -125,7 +133,8 @@ impl MeteredLlm {
     ) -> Result<(), MeteredLlmError> {
         let pricing = PricingService::new(self.store.clone());
         let (inp_rate, out_rate) = pricing.lookup_rate(model);
-        let amount = (input_tokens as f64 * inp_rate + output_tokens as f64 * out_rate).round() as u64;
+        let usd_cost = (input_tokens as f64 * inp_rate + output_tokens as f64 * out_rate) / 1_000_000.0;
+        let amount = (usd_cost * self.credits_per_usd).round() as u64;
         if amount == 0 {
             return Ok(());
         }
