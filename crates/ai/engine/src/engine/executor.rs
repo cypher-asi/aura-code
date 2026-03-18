@@ -329,6 +329,34 @@ impl DevLoopEngine {
             files_changed: execution.file_ops.len() as u32,
         };
 
+        // Post-build stub detection: log any remaining stubs so they appear
+        // in task output even if the agentic loop already attempted fixes.
+        if build_passed {
+            let stub_reports = file_ops::detect_stub_patterns(base_path, &execution.file_ops);
+            if !stub_reports.is_empty() {
+                let stub_summary: Vec<String> = stub_reports.iter()
+                    .map(|r| format!("{}:{} -- {}", r.path, r.line, r.pattern))
+                    .collect();
+                warn!(
+                    task_id = %task.task_id,
+                    stub_count = stub_reports.len(),
+                    "task completed with {} remaining stub(s): {}",
+                    stub_reports.len(),
+                    stub_summary.join("; "),
+                );
+                self.emit(EngineEvent::TaskOutputDelta {
+                    project_id,
+                    agent_instance_id,
+                    task_id: task.task_id,
+                    delta: format!(
+                        "\n[warning] {} stub/placeholder pattern(s) remain in output:\n{}\n",
+                        stub_reports.len(),
+                        stub_summary.join("\n"),
+                    ),
+                });
+            }
+        }
+
         if !build_passed {
             let reason = "build verification failed after all fix attempts".to_string();
             if let Err(e) = self.task_service.fail_task(
@@ -762,6 +790,7 @@ impl DevLoopEngine {
             tracked_file_ops: tracked_file_ops.clone(),
             notes: notes.clone(),
             follow_ups: follow_ups.clone(),
+            stub_fix_attempts: Arc::new(Mutex::new(0)),
         };
 
         let config = ToolLoopConfig {
@@ -1031,6 +1060,8 @@ impl DevLoopEngine {
 // ToolExecutor for the agentic engine loop
 // ---------------------------------------------------------------------------
 
+const MAX_STUB_FIX_ATTEMPTS: u32 = 2;
+
 struct EngineToolLoopExecutor {
     inner: ChatToolExecutor,
     project_id: ProjectId,
@@ -1044,6 +1075,7 @@ struct EngineToolLoopExecutor {
     tracked_file_ops: Arc<Mutex<Vec<FileOp>>>,
     notes: Arc<Mutex<String>>,
     follow_ups: Arc<Mutex<Vec<FollowUpSuggestion>>>,
+    stub_fix_attempts: Arc<Mutex<u32>>,
 }
 
 #[async_trait]
@@ -1108,13 +1140,54 @@ impl ToolExecutor for EngineToolLoopExecutor {
                             });
                         }
                     }
-                    results.push(ToolCallResult {
-                        tool_use_id: tc.id.clone(),
-                        content: r#"{"status":"completed"}"#.to_string(),
-                        is_error: false,
-                        stop_loop: true,
-                    });
-                    stop = true;
+
+                    // Quality gate: check for stub/placeholder patterns before
+                    // accepting completion. If stubs are found and we haven't
+                    // exceeded the max fix attempts, reject task_done and ask
+                    // the agent to fill in the stubs.
+                    let stub_rejected = {
+                        let mut attempts = self.stub_fix_attempts.lock().await;
+                        if *attempts < MAX_STUB_FIX_ATTEMPTS {
+                            let base_path = Path::new(&self.project.linked_folder_path);
+                            let ops = self.tracked_file_ops.lock().await;
+                            let stub_reports = file_ops::detect_stub_patterns(base_path, &ops);
+                            if !stub_reports.is_empty() {
+                                *attempts += 1;
+                                let attempt = *attempts;
+                                let _ = self.engine_event_tx.send(EngineEvent::TaskOutputDelta {
+                                    project_id: self.project_id,
+                                    agent_instance_id: self.agent_instance_id,
+                                    task_id: self.task_id,
+                                    delta: format!(
+                                        "\n[stub detection] found {} stub(s), requesting fix (attempt {}/{})\n",
+                                        stub_reports.len(), attempt, MAX_STUB_FIX_ATTEMPTS,
+                                    ),
+                                });
+                                Some(build_stub_fix_prompt(&stub_reports))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    };
+
+                    if let Some(stub_prompt) = stub_rejected {
+                        results.push(ToolCallResult {
+                            tool_use_id: tc.id.clone(),
+                            content: stub_prompt,
+                            is_error: true,
+                            stop_loop: false,
+                        });
+                    } else {
+                        results.push(ToolCallResult {
+                            tool_use_id: tc.id.clone(),
+                            content: r#"{"status":"completed"}"#.to_string(),
+                            is_error: false,
+                            stop_loop: true,
+                        });
+                        stop = true;
+                    }
                 }
                 "get_task_context" => {
                     let ctx = build_agentic_task_context(

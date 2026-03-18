@@ -3,7 +3,7 @@ use std::path::Path;
 use aura_core::*;
 
 use super::build_fix::{classify_build_errors, error_category_guidance, parse_error_references, BuildFixAttemptRecord};
-use crate::file_ops;
+use crate::file_ops::{self, StubReport};
 
 pub(crate) fn task_execution_system_prompt() -> String {
     format!(r#"
@@ -454,4 +454,31 @@ fn truncate_prompt_output(s: &str, max_chars: usize) -> String {
     let start = &s[..half];
     let end = &s[s.len() - half..];
     format!("{start}\n\n... (truncated {0} bytes) ...\n\n{end}", s.len() - max_chars)
+}
+
+/// Build a prompt that tells the agent to replace stub/placeholder code with
+/// real implementations. Used as a follow-up when stub detection fires after
+/// an otherwise-successful build.
+pub(crate) fn build_stub_fix_prompt(stub_reports: &[StubReport]) -> String {
+    let mut prompt = String::from(
+        "STOP: Your implementation compiles but contains stub/placeholder code that must be \
+         filled in. The following locations have incomplete implementations:\n\n"
+    );
+
+    for report in stub_reports {
+        prompt.push_str(&format!(
+            "- {}:{} -- {}\n  ```\n  {}\n  ```\n\n",
+            report.path, report.line, report.pattern, report.context,
+        ));
+    }
+
+    prompt.push_str(
+        "Replace ALL stubs with real, working implementations. Read the spec and codebase \
+         to understand what each function should do, then implement it fully.\n\
+         Do NOT use todo!(), unimplemented!(), Default::default() as a placeholder, or \
+         ignore function parameters with _ prefixes.\n\
+         After fixing, verify the build still passes, then call task_done.\n"
+    );
+
+    prompt
 }
