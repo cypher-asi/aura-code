@@ -7,7 +7,6 @@ mod store_github;
 mod store_log;
 mod store_messages;
 mod store_org;
-mod store_follow;
 mod store_project;
 
 pub use batch::{BatchOp, ColumnFamilyName};
