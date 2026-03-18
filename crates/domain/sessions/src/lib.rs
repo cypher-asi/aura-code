@@ -21,7 +21,7 @@ impl SessionService {
     pub fn new(store: Arc<RocksStore>) -> Self {
         Self {
             store,
-            rollover_threshold: 0.5,
+            rollover_threshold: 0.8,
             model_context_window: 200_000,
         }
     }
@@ -277,7 +277,7 @@ mod tests {
     fn should_rollover_at_threshold() {
         let tmp = tempfile::TempDir::new().unwrap();
         let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
-        let svc = SessionService::with_threshold(store, 0.5);
+        let svc = SessionService::with_threshold(store, 0.8);
 
         let below = Session {
             session_id: SessionId::new(),
@@ -285,7 +285,7 @@ mod tests {
             project_id: ProjectId::new(),
             active_task_id: None,
             tasks_worked: vec![],
-            context_usage_estimate: 0.49,
+            context_usage_estimate: 0.79,
             total_input_tokens: 0,
             total_output_tokens: 0,
             summary_of_previous_context: String::new(),
@@ -298,13 +298,13 @@ mod tests {
         assert!(!svc.should_rollover(&below));
 
         let at = Session {
-            context_usage_estimate: 0.5,
+            context_usage_estimate: 0.8,
             ..below.clone()
         };
         assert!(svc.should_rollover(&at));
 
         let above = Session {
-            context_usage_estimate: 0.8,
+            context_usage_estimate: 0.95,
             ..below
         };
         assert!(svc.should_rollover(&above));

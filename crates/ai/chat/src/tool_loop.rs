@@ -277,7 +277,7 @@ pub async fn run_tool_loop(
         // stream_result.input_tokens is the exact count for this call.
         if let Some(max_ctx) = config.max_context_tokens {
             let utilization = stream_result.input_tokens as f64 / max_ctx as f64;
-            if utilization > 0.40 {
+            if utilization > 0.60 {
                 info!(
                     input_tokens = stream_result.input_tokens,
                     max_context = max_ctx,
