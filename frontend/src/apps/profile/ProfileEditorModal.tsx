@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Modal, Input, Textarea, Button } from "@cypher-asi/zui";
 import { ImagePlus, X } from "lucide-react";
 import type { UserProfileData } from "./ProfileProvider";
+import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import styles from "../../components/AgentEditorModal.module.css";
 
 interface ProfileEditorModalProps {
@@ -12,6 +13,7 @@ interface ProfileEditorModalProps {
 }
 
 export function ProfileEditorModal({ isOpen, profile, onClose, onSave }: ProfileEditorModalProps) {
+  const { isMobileLayout } = useAuraCapabilities();
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
   const [website, setWebsite] = useState("");
@@ -32,8 +34,8 @@ export function ProfileEditorModal({ isOpen, profile, onClose, onSave }: Profile
   }, [isOpen, profile]);
 
   useEffect(() => {
-    if (isOpen) requestAnimationFrame(() => nameRef.current?.focus());
-  }, [isOpen]);
+    if (isOpen && !isMobileLayout) requestAnimationFrame(() => nameRef.current?.focus());
+  }, [isOpen, isMobileLayout]);
 
   const handleClose = useCallback(() => {
     setNameError("");

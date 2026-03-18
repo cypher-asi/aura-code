@@ -474,6 +474,12 @@
   border-radius: 0;
 }
 
+@media (pointer: coarse), (max-width: 900px) {
+  .textarea {
+    font-size: 16px;
+  }
+}
+
 .textarea::placeholder {
   color: var(--color-text-muted);
 }

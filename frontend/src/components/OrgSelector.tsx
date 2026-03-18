@@ -2,10 +2,12 @@ import { useState, useRef } from "react";
 import { useOrg } from "../context/OrgContext";
 import { Building2, ChevronDown, Plus } from "lucide-react";
 import { Button, Input, Modal } from "@cypher-asi/zui";
+import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { useClickOutside } from "../hooks/use-click-outside";
 import styles from "./OrgSelector.module.css";
 
 export function OrgSelector({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const { isMobileLayout } = useAuraCapabilities();
   const { orgs, activeOrg, switchOrg, createOrg } = useOrg();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -109,7 +111,7 @@ export function OrgSelector({ onOpenSettings }: { onOpenSettings: () => void }) 
             if (e.key === "Enter") handleCreate();
           }}
           placeholder="Team name"
-          autoFocus
+          autoFocus={!isMobileLayout}
         />
       </Modal>
     </div>

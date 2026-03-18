@@ -5,6 +5,7 @@ import { Modal, Input, Button, Spinner, Text } from "@cypher-asi/zui";
 import { PathInput } from "./PathInput";
 import type { GitHubRepo } from "../types";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
+import styles from "./NewProjectModal.module.css";
 
 interface NewProjectModalProps {
   isOpen: boolean;
@@ -67,7 +68,7 @@ async function toImportedFiles(files: ImportCandidate[]) {
 
 export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalProps) {
   const { activeOrg, isLoading: orgLoading } = useOrg();
-  const { supportsDesktopWorkspace } = useAuraCapabilities();
+  const { supportsDesktopWorkspace, isMobileLayout } = useAuraCapabilities();
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(
     supportsDesktopWorkspace ? "linked" : "imported",
   );
@@ -99,10 +100,10 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
   }, [isOpen, activeOrg]);
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !isMobileLayout) {
       requestAnimationFrame(() => nameInputRef.current?.focus());
     }
-  }, [isOpen]);
+  }, [isOpen, isMobileLayout]);
 
   const reset = useCallback(() => {
     setWorkspaceMode(supportsDesktopWorkspace ? "linked" : "imported");
@@ -208,6 +209,8 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
       onClose={handleClose}
       title="New Project"
       size="md"
+      className={isMobileLayout ? styles.mobileModal : undefined}
+      contentClassName={isMobileLayout ? styles.mobileContent : undefined}
       footer={
         <>
           <Button variant="ghost" onClick={handleClose} disabled={loading}>
