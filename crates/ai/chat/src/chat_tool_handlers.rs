@@ -595,6 +595,11 @@ impl ChatToolExecutor {
             .get("max_results")
             .and_then(|v| v.as_u64())
             .unwrap_or(50) as usize;
+        let context_lines = input
+            .get("context_lines")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+            .min(10) as usize;
 
         let regex = match regex::Regex::new(&pattern) {
             Ok(r) => r,
@@ -602,7 +607,7 @@ impl ChatToolExecutor {
         };
 
         let mut matches: Vec<Value> = Vec::new();
-        search_directory(&abs, &abs, &regex, include_glob.as_deref(), max_results, &mut matches);
+        search_directory(&abs, &abs, &regex, include_glob.as_deref(), max_results, context_lines, &mut matches);
 
         ToolExecResult::ok(json!({
             "pattern": pattern,
@@ -723,6 +728,7 @@ fn search_directory(
     regex: &regex::Regex,
     include_glob: Option<&str>,
     max_results: usize,
+    context_lines: usize,
     matches: &mut Vec<Value>,
 ) {
     let entries = match std::fs::read_dir(dir) {
@@ -739,7 +745,7 @@ fn search_directory(
         }
         let path = entry.path();
         if path.is_dir() {
-            search_directory(root, &path, regex, include_glob, max_results, matches);
+            search_directory(root, &path, regex, include_glob, max_results, context_lines, matches);
         } else if path.is_file() {
             if let Some(glob_pat) = include_glob {
                 if let Ok(matcher) = glob::Pattern::new(glob_pat) {
@@ -755,16 +761,36 @@ fn search_directory(
                 .replace('\\', "/");
 
             if let Ok(content) = std::fs::read_to_string(&path) {
-                for (line_num, line) in content.lines().enumerate() {
+                let all_lines: Vec<&str> = content.lines().collect();
+                for (line_num, line) in all_lines.iter().enumerate() {
                     if matches.len() >= max_results {
                         return;
                     }
                     if regex.is_match(line) {
-                        matches.push(json!({
-                            "file": rel,
-                            "line": line_num + 1,
-                            "content": line.chars().take(200).collect::<String>()
-                        }));
+                        if context_lines > 0 {
+                            let start = line_num.saturating_sub(context_lines);
+                            let end = (line_num + context_lines + 1).min(all_lines.len());
+                            let context: Vec<String> = all_lines[start..end]
+                                .iter()
+                                .enumerate()
+                                .map(|(i, l)| {
+                                    let ln = start + i + 1;
+                                    let marker = if start + i == line_num { ">" } else { " " };
+                                    format!("{marker}{ln:>5}| {}", l.chars().take(200).collect::<String>())
+                                })
+                                .collect();
+                            matches.push(json!({
+                                "file": rel,
+                                "line": line_num + 1,
+                                "content": context.join("\n"),
+                            }));
+                        } else {
+                            matches.push(json!({
+                                "file": rel,
+                                "line": line_num + 1,
+                                "content": line.chars().take(200).collect::<String>(),
+                            }));
+                        }
                     }
                 }
             }
