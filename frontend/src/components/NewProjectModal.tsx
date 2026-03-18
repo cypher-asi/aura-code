@@ -209,7 +209,6 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
       onClose={handleClose}
       title="New Project"
       size="md"
-      className={isMobileLayout ? styles.mobileModal : undefined}
       contentClassName={isMobileLayout ? styles.mobileContent : undefined}
       footer={
         <>

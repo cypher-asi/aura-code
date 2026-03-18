@@ -28,30 +28,8 @@ html, body, #root {
 }
 
 @media (pointer: coarse), (max-width: 900px) {
-  input,
-  textarea,
   select {
     font-size: 16px !important;
-  }
-
-  [role="dialog"][aria-modal="true"] {
-    padding: 12px;
-  }
-
-  [role="dialog"][aria-modal="true"] > div {
-    box-sizing: border-box;
-    width: min(32rem, calc(100dvw - 24px)) !important;
-    max-width: calc(100dvw - 24px) !important;
-    max-height: min(88dvh, calc(100dvh - 24px)) !important;
-  }
-
-  [role="dialog"][aria-modal="true"] > div > div:nth-child(3) {
-    flex-wrap: wrap;
-  }
-
-  [role="dialog"][aria-modal="true"] > div > div:nth-child(3) > * {
-    flex: 1 1 140px;
-    justify-content: center;
   }
 }
 
