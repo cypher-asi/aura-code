@@ -118,7 +118,7 @@ pub fn core_tool_definitions() -> Vec<ToolDefinition> {
         // ── Shell ──────────────────────────────────────────────────────
         tool(
             "run_command",
-            "Execute a shell command in the project directory and return stdout/stderr. Use for build, test, git, package manager commands, etc. Commands time out after 60 seconds by default.",
+            "Execute a shell command in the project directory. Use ONLY for build, test, git, and package manager commands. Do NOT use for searching code (use search_code), reading files (use read_file), or finding files (use find_files). Commands time out after 60 seconds by default.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
