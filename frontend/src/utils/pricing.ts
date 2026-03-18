@@ -14,16 +14,23 @@ const DEFAULT_SCHEDULE: FeeScheduleEntry[] = [
 ];
 
 let _cached: FeeScheduleEntry[] | null = null;
+let _pending: Promise<FeeScheduleEntry[]> | null = null;
 
 function getSchedule(): FeeScheduleEntry[] {
   if (_cached) return _cached;
-  api.getFeeSchedule().then((s) => { _cached = s; }).catch(() => {});
+  if (!_pending) {
+    _pending = api.getFeeSchedule()
+      .then((s) => { _cached = s; return s; })
+      .catch(() => DEFAULT_SCHEDULE)
+      .finally(() => { _pending = null; });
+  }
   return DEFAULT_SCHEDULE;
 }
 
 /** Force a fresh load (call after PUT to update the schedule). */
 export function invalidateFeeSchedule(): void {
   _cached = null;
+  _pending = null;
 }
 
 export function lookupRate(
