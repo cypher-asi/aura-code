@@ -115,6 +115,10 @@ pub struct AuthRegisterRequest {
 #[derive(Debug, Serialize)]
 pub struct AuthSessionResponse {
     pub user_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_user_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
     pub display_name: String,
     pub profile_image: String,
     pub primary_zid: String,
@@ -222,8 +226,7 @@ impl From<GitHubRepo> for GitHubRepoResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct FollowRequest {
-    pub target_type: FollowTargetType,
-    pub target_id: String,
+    pub target_profile_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -259,6 +262,8 @@ impl From<ZeroAuthSession> for AuthSessionResponse {
     fn from(s: ZeroAuthSession) -> Self {
         Self {
             user_id: s.user_id,
+            network_user_id: s.network_user_id.map(|id| id.to_string()),
+            profile_id: s.profile_id.map(|id| id.to_string()),
             display_name: s.display_name,
             profile_image: s.profile_image,
             primary_zid: s.primary_zid,

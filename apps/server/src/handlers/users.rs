@@ -3,6 +3,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+use aura_core::ZeroAuthSession;
 use aura_network::{NetworkProfile, NetworkUser};
 
 use crate::error::{map_network_error, ApiResult};
@@ -160,14 +161,23 @@ pub async fn get_profile(
     Ok(Json(ProfileResponse::from(profile)))
 }
 
-/// Fire-and-forget user sync: ensures the user exists in aura-network.
-/// Logs warnings on failure but never blocks the caller.
-pub async fn sync_user_to_network(state: &AppState, access_token: &str) {
+/// Sync user to aura-network: populates `network_user_id` and `profile_id`
+/// on the session and re-persists to RocksDB. Best-effort — logs warnings
+/// on failure but never errors out.
+pub async fn sync_user_to_network(state: &AppState, session: &mut ZeroAuthSession) {
     if let Some(client) = &state.network_client {
-        match client.get_current_user(access_token).await {
+        match client.get_current_user(&session.access_token).await {
             Ok(user) => {
+                session.network_user_id = user.user_id_typed();
+                session.profile_id = user.profile_id_typed();
+
+                if let Ok(bytes) = serde_json::to_vec(&session) {
+                    let _ = state.store.put_setting("zero_auth_session", &bytes);
+                }
+
                 tracing::info!(
                     network_user_id = %user.id,
+                    profile_id = ?user.profile_id,
                     display_name = ?user.display_name,
                     "User synced to aura-network"
                 );

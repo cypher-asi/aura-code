@@ -5,6 +5,8 @@ import { useAuth } from "../../context/AuthContext";
 import { api } from "../../api/client";
 
 export interface UserProfileData {
+  id?: string;
+  networkUserId?: string;
   name: string;
   handle: string;
   bio: string;
@@ -225,6 +227,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
   const [profile, setProfile] = useState<UserProfileData>(() => ({
     ...MOCK_PROFILE,
+    id: user?.profile_id,
+    networkUserId: user?.network_user_id,
     handle: zid ? `@${zid}` : "",
   }));
 
@@ -239,6 +243,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     api.users.me().then((networkUser) => {
       setProfile((prev) => ({
         ...prev,
+        id: networkUser.profile_id ?? prev.id,
+        networkUserId: networkUser.id ?? prev.networkUserId,
         name: networkUser.display_name ?? prev.name,
         bio: networkUser.bio ?? prev.bio,
         avatarUrl: networkUser.avatar_url ?? prev.avatarUrl,

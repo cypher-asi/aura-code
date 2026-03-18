@@ -64,3 +64,5 @@ define_id!(SprintId);
 define_id!(OrgId);
 define_id!(InviteId);
 define_id!(GitHubIntegrationId);
+define_id!(UserId);
+define_id!(ProfileId);

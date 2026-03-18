@@ -265,17 +265,17 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
             "/api/projects/:project_id/sessions",
             get(agents::list_project_sessions),
         )
-        // Follows
+        // Follows (profile-based)
         .route(
             "/api/follows",
             post(follows::follow).get(follows::list_follows),
         )
         .route(
-            "/api/follows/:target_type/:target_id",
+            "/api/follows/:target_profile_id",
             delete(follows::unfollow),
         )
         .route(
-            "/api/follows/check/:target_type/:target_id",
+            "/api/follows/check/:target_profile_id",
             get(follows::check_follow),
         )
         // Log entries

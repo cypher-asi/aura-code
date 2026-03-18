@@ -65,6 +65,7 @@ pub enum InviteStatus {
     Revoked,
 }
 
+#[deprecated(note = "Phase 3b: Follow model is now profile-based (follower_profile_id, target_profile_id). Will be removed after Phase 7.")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FollowTargetType {

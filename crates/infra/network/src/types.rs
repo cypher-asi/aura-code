@@ -1,3 +1,4 @@
+use aura_core::{ProfileId, UserId};
 use serde::{Deserialize, Serialize};
 
 /// Health check response from aura-network `GET /health`.
@@ -27,6 +28,15 @@ pub struct NetworkUser {
     pub updated_at: Option<String>,
 }
 
+impl NetworkUser {
+    pub fn user_id_typed(&self) -> Option<UserId> {
+        self.id.parse().ok().map(UserId::from_uuid)
+    }
+    pub fn profile_id_typed(&self) -> Option<ProfileId> {
+        self.profile_id.as_ref()?.parse().ok().map(ProfileId::from_uuid)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUserRequest {
@@ -52,6 +62,12 @@ pub struct NetworkProfile {
     #[serde(rename = "type")]
     pub profile_type: Option<String>,
     pub entity_id: Option<String>,
+}
+
+impl NetworkProfile {
+    pub fn profile_id_typed(&self) -> Option<ProfileId> {
+        self.id.parse().ok().map(ProfileId::from_uuid)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +186,12 @@ pub struct NetworkAgent {
     pub created_at: Option<String>,
     #[serde(default)]
     pub updated_at: Option<String>,
+}
+
+impl NetworkAgent {
+    pub fn profile_id_typed(&self) -> Option<ProfileId> {
+        self.profile_id.as_ref()?.parse().ok().map(ProfileId::from_uuid)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

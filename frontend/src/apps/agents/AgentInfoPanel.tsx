@@ -64,8 +64,7 @@ export function AgentInfoPanel() {
         nameAction={
           <FollowEditButton
             isOwner={isOwnAgent}
-            targetType="agent"
-            targetName={a.name}
+            targetProfileId={a.profile_id}
             onEdit={() => setShowEditor(true)}
           />
         }

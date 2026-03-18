@@ -47,8 +47,7 @@ function ProfileCard() {
           !isOwnProfile ? (
             <FollowEditButton
               isOwner={false}
-              targetType="user"
-              targetName={profile.name}
+              targetProfileId={profile.id}
             />
           ) : undefined
         }

@@ -9,25 +9,32 @@ use crate::dto::{FollowCheckResponse, FollowRequest};
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 
-fn get_user_id(state: &AppState) -> Result<String, (StatusCode, Json<ApiError>)> {
+fn get_profile_id(state: &AppState) -> Result<ProfileId, (StatusCode, Json<ApiError>)> {
     let session_bytes = state
         .store
         .get_setting("zero_auth_session")
         .map_err(|_| ApiError::unauthorized("not authenticated"))?;
     let session: ZeroAuthSession =
         serde_json::from_slice(&session_bytes).map_err(|e| ApiError::internal(e.to_string()))?;
-    Ok(session.user_id)
+    session
+        .profile_id
+        .ok_or_else(|| ApiError::bad_request("profile not synced to aura-network yet — please re-login"))
 }
 
 pub async fn follow(
     State(state): State<AppState>,
     Json(req): Json<FollowRequest>,
 ) -> ApiResult<(StatusCode, Json<Follow>)> {
-    let user_id = get_user_id(&state)?;
+    let follower_profile_id = get_profile_id(&state)?;
+    let target_profile_id: ProfileId = req
+        .target_profile_id
+        .parse()
+        .map_err(|_| ApiError::bad_request("invalid target_profile_id"))?;
+
     let follow = Follow {
-        follower_user_id: user_id,
-        target_type: req.target_type,
-        target_id: req.target_id,
+        id: ProfileId::new().to_string(),
+        follower_profile_id,
+        target_profile_id,
         created_at: Utc::now(),
     };
     state
@@ -39,37 +46,39 @@ pub async fn follow(
 
 pub async fn unfollow(
     State(state): State<AppState>,
-    Path((target_type, target_id)): Path<(String, String)>,
+    Path(target_profile_id): Path<String>,
 ) -> ApiResult<StatusCode> {
-    let user_id = get_user_id(&state)?;
-    let tt: FollowTargetType = serde_json::from_value(serde_json::Value::String(target_type))
-        .map_err(|_| ApiError::bad_request("invalid target_type, must be 'user' or 'agent'"))?;
+    let follower_profile_id = get_profile_id(&state)?;
+    let target: ProfileId = target_profile_id
+        .parse()
+        .map_err(|_| ApiError::bad_request("invalid target_profile_id"))?;
     state
         .store
-        .delete_follow(&user_id, tt, &target_id)
+        .delete_follow(&follower_profile_id, &target)
         .map_err(|e| ApiError::internal(e.to_string()))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn list_follows(State(state): State<AppState>) -> ApiResult<Json<Vec<Follow>>> {
-    let user_id = get_user_id(&state)?;
+    let profile_id = get_profile_id(&state)?;
     let follows = state
         .store
-        .list_follows_by_user(&user_id)
+        .list_follows_by_profile(&profile_id)
         .map_err(|e| ApiError::internal(e.to_string()))?;
     Ok(Json(follows))
 }
 
 pub async fn check_follow(
     State(state): State<AppState>,
-    Path((target_type, target_id)): Path<(String, String)>,
+    Path(target_profile_id): Path<String>,
 ) -> ApiResult<Json<FollowCheckResponse>> {
-    let user_id = get_user_id(&state)?;
-    let tt: FollowTargetType = serde_json::from_value(serde_json::Value::String(target_type))
-        .map_err(|_| ApiError::bad_request("invalid target_type, must be 'user' or 'agent'"))?;
+    let follower_profile_id = get_profile_id(&state)?;
+    let target: ProfileId = target_profile_id
+        .parse()
+        .map_err(|_| ApiError::bad_request("invalid target_profile_id"))?;
     let following = state
         .store
-        .is_following(&user_id, tt, &target_id)
+        .is_following(&follower_profile_id, &target)
         .map_err(|e| ApiError::internal(e.to_string()))?;
     Ok(Json(FollowCheckResponse { following }))
 }

@@ -41,6 +41,8 @@ impl AgentService {
             system_prompt,
             skills,
             icon,
+            network_agent_id: None,
+            profile_id: None,
             created_at: now,
             updated_at: now,
         };

@@ -2,12 +2,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::enums::{
-    AgentStatus, ChatRole, FollowTargetType, InviteStatus, OrgRole, ProjectStatus, SessionStatus,
-    TaskStatus,
+    AgentStatus, ChatRole, InviteStatus, OrgRole, ProjectStatus, SessionStatus, TaskStatus,
 };
 use crate::ids::{
-    AgentId, AgentInstanceId, GitHubIntegrationId, InviteId, MessageId, OrgId, ProjectId,
-    SessionId, SpecId, SprintId, TaskId,
+    AgentId, AgentInstanceId, GitHubIntegrationId, InviteId, MessageId, OrgId, ProfileId,
+    ProjectId, SessionId, SpecId, SprintId, TaskId, UserId,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -152,6 +151,10 @@ pub struct Agent {
     pub skills: Vec<String>,
     #[serde(default)]
     pub icon: Option<String>,
+    #[serde(default)]
+    pub network_agent_id: Option<String>,
+    #[serde(default)]
+    pub profile_id: Option<ProfileId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -363,15 +366,19 @@ pub struct DebitResponse {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Follow {
-    pub follower_user_id: String,
-    pub target_type: FollowTargetType,
-    pub target_id: String,
+    pub id: String,
+    pub follower_profile_id: ProfileId,
+    pub target_profile_id: ProfileId,
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ZeroAuthSession {
     pub user_id: String,
+    #[serde(default)]
+    pub network_user_id: Option<UserId>,
+    #[serde(default)]
+    pub profile_id: Option<ProfileId>,
     pub display_name: String,
     pub profile_image: String,
     pub primary_zid: String,

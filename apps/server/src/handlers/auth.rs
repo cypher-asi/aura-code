@@ -35,42 +35,30 @@ pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<AuthLoginRequest>,
 ) -> ApiResult<Json<AuthSessionResponse>> {
-    let session = state
+    let mut session = state
         .auth_service
         .login(&req.email, &req.password)
         .await
         .map_err(map_auth_error)?;
 
-    let token = session.access_token.clone();
-    let resp = AuthSessionResponse::from(session);
+    sync_user_to_network(&state, &mut session).await;
 
-    tokio::spawn({
-        let state = state.clone();
-        async move { sync_user_to_network(&state, &token).await }
-    });
-
-    Ok(Json(resp))
+    Ok(Json(AuthSessionResponse::from(session)))
 }
 
 pub async fn register(
     State(state): State<AppState>,
     Json(req): Json<AuthRegisterRequest>,
 ) -> ApiResult<Json<AuthSessionResponse>> {
-    let session = state
+    let mut session = state
         .auth_service
         .register(&req.email, &req.password)
         .await
         .map_err(map_auth_error)?;
 
-    let token = session.access_token.clone();
-    let resp = AuthSessionResponse::from(session);
+    sync_user_to_network(&state, &mut session).await;
 
-    tokio::spawn({
-        let state = state.clone();
-        async move { sync_user_to_network(&state, &token).await }
-    });
-
-    Ok(Json(resp))
+    Ok(Json(AuthSessionResponse::from(session)))
 }
 
 pub async fn get_session(
@@ -88,22 +76,16 @@ pub async fn get_session(
 pub async fn validate(
     State(state): State<AppState>,
 ) -> ApiResult<Json<AuthSessionResponse>> {
-    let session = state
+    let mut session = state
         .auth_service
         .validate()
         .await
         .map_err(map_auth_error)?
         .ok_or_else(|| ApiError::unauthorized("session expired or invalid"))?;
 
-    let token = session.access_token.clone();
-    let resp = AuthSessionResponse::from(session);
+    sync_user_to_network(&state, &mut session).await;
 
-    tokio::spawn({
-        let state = state.clone();
-        async move { sync_user_to_network(&state, &token).await }
-    });
-
-    Ok(Json(resp))
+    Ok(Json(AuthSessionResponse::from(session)))
 }
 
 pub async fn logout(State(state): State<AppState>) -> ApiResult<StatusCode> {

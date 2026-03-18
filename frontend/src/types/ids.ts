@@ -6,3 +6,5 @@ export type AgentId = string;
 export type AgentInstanceId = string;
 export type SessionId = string;
 export type MessageId = string;
+export type UserId = string;
+export type ProfileId = string;

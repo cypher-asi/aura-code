@@ -31,8 +31,7 @@ function ProfilePanel() {
           isOwnProfile ? undefined : (
             <FollowEditButton
               isOwner={false}
-              targetType={isAgent ? "agent" : "user"}
-              targetName={selectedProfile.name}
+              targetProfileId={selectedProfile.profileId}
             />
           )
         }

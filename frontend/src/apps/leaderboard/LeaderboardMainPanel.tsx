@@ -25,7 +25,7 @@ export function LeaderboardMainPanel() {
   const { follows } = useFollow();
 
   const followedNames = useMemo(
-    () => new Set(follows.map((f) => f.target_id)),
+    () => new Set(follows.map((f) => f.target_profile_id)),
     [follows],
   );
 

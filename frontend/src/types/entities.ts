@@ -105,6 +105,8 @@ export interface Agent {
   system_prompt: string;
   skills: string[];
   icon: string | null;
+  network_agent_id?: string;
+  profile_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -199,6 +201,8 @@ export interface Message {
 
 export interface ZeroUser {
   user_id: string;
+  network_user_id?: string;
+  profile_id?: string;
   display_name: string;
   profile_image: string;
   primary_zid: string;
@@ -208,6 +212,8 @@ export interface ZeroUser {
 
 export interface AuthSession {
   user_id: string;
+  network_user_id?: string;
+  profile_id?: string;
   display_name: string;
   profile_image: string;
   primary_zid: string;
@@ -314,12 +320,10 @@ export interface DailyCommitActivity {
   count: number;
 }
 
-export type FollowTargetType = "user" | "agent";
-
 export interface Follow {
-  follower_user_id: string;
-  target_type: FollowTargetType;
-  target_id: string;
+  id: string;
+  follower_profile_id: string;
+  target_profile_id: string;
   created_at: string;
 }
 

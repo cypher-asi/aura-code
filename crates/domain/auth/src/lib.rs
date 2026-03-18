@@ -166,6 +166,8 @@ impl AuthService {
             Ok(user) => {
                 let updated = ZeroAuthSession {
                     user_id: user.id,
+                    network_user_id: session.network_user_id,
+                    profile_id: session.profile_id,
                     display_name: build_display_name(
                         &user.profile_summary,
                         &user.primary_zid,
@@ -251,6 +253,8 @@ impl AuthService {
         let now = Utc::now();
         let session = ZeroAuthSession {
             user_id: user.id,
+            network_user_id: None,
+            profile_id: None,
             display_name: build_display_name(&user.profile_summary, &user.primary_zid),
             profile_image: user
                 .profile_summary

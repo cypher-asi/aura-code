@@ -11,15 +11,7 @@ impl RocksStore {
     }
 
     pub fn put_follow(&self, follow: &Follow) -> StoreResult<()> {
-        let key = format!(
-            "{}:{}:{}",
-            follow.follower_user_id,
-            serde_json::to_value(&follow.target_type)
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            follow.target_id
-        );
+        let key = format!("{}:{}", follow.follower_profile_id, follow.target_profile_id);
         let value = serde_json::to_vec(follow)?;
         self.db.put_cf(&self.cf_follows(), key.as_bytes(), &value)?;
         Ok(())
@@ -27,22 +19,16 @@ impl RocksStore {
 
     pub fn delete_follow(
         &self,
-        follower_user_id: &str,
-        target_type: FollowTargetType,
-        target_id: &str,
+        follower_profile_id: &ProfileId,
+        target_profile_id: &ProfileId,
     ) -> StoreResult<()> {
-        let tt = serde_json::to_value(&target_type)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
-        let key = format!("{follower_user_id}:{tt}:{target_id}");
+        let key = format!("{follower_profile_id}:{target_profile_id}");
         self.db.delete_cf(&self.cf_follows(), key.as_bytes())?;
         Ok(())
     }
 
-    pub fn list_follows_by_user(&self, follower_user_id: &str) -> StoreResult<Vec<Follow>> {
-        let prefix = format!("{follower_user_id}:");
+    pub fn list_follows_by_profile(&self, follower_profile_id: &ProfileId) -> StoreResult<Vec<Follow>> {
+        let prefix = format!("{follower_profile_id}:");
         let mut opts = rocksdb::ReadOptions::default();
         opts.set_total_order_seek(true);
         let iter = self.db.iterator_cf_opt(
@@ -69,16 +55,10 @@ impl RocksStore {
 
     pub fn is_following(
         &self,
-        follower_user_id: &str,
-        target_type: FollowTargetType,
-        target_id: &str,
+        follower_profile_id: &ProfileId,
+        target_profile_id: &ProfileId,
     ) -> StoreResult<bool> {
-        let tt = serde_json::to_value(&target_type)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
-        let key = format!("{follower_user_id}:{tt}:{target_id}");
+        let key = format!("{follower_profile_id}:{target_profile_id}");
         Ok(self
             .db
             .get_cf(&self.cf_follows(), key.as_bytes())?

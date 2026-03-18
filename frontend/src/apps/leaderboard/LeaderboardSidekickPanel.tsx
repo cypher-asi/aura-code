@@ -47,8 +47,7 @@ export function LeaderboardSidekickPanel() {
         isOwnProfile ? undefined : (
           <FollowEditButton
             isOwner={false}
-            targetType={isAgent ? "agent" : "user"}
-            targetName={user.name}
+            targetProfileId={user.profileId}
           />
         )
       }

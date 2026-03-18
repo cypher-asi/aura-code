@@ -31,7 +31,6 @@ import type {
   CheckoutSessionResponse,
   DailyCommitActivity,
   Follow,
-  FollowTargetType,
 } from "../types";
 import {
   generateSprintStream,
@@ -472,18 +471,18 @@ export const api = {
 
   // Follows
   follows: {
-    follow: (targetType: FollowTargetType, targetId: string) =>
+    follow: (targetProfileId: string) =>
       apiFetch<Follow>("/api/follows", {
         method: "POST",
-        body: JSON.stringify({ target_type: targetType, target_id: targetId }),
+        body: JSON.stringify({ target_profile_id: targetProfileId }),
       }),
-    unfollow: (targetType: FollowTargetType, targetId: string) =>
-      apiFetch<void>(`/api/follows/${targetType}/${targetId}`, {
+    unfollow: (targetProfileId: string) =>
+      apiFetch<void>(`/api/follows/${targetProfileId}`, {
         method: "DELETE",
       }),
     list: () => apiFetch<Follow[]>("/api/follows"),
-    check: (targetType: FollowTargetType, targetId: string) =>
-      apiFetch<{ following: boolean }>(`/api/follows/check/${targetType}/${targetId}`),
+    check: (targetProfileId: string) =>
+      apiFetch<{ following: boolean }>(`/api/follows/check/${targetProfileId}`),
   },
 
   // Users (proxied to aura-network)

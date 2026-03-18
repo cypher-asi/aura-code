@@ -31,6 +31,7 @@ export interface FeedSelectedProfile {
   name: string;
   type: "user" | "agent";
   avatarUrl?: string;
+  profileId?: string;
 }
 
 interface FeedContextValue {
@@ -303,7 +304,7 @@ export function FeedProvider({ children }: { children: ReactNode }) {
   const { follows } = useFollow();
 
   const followedNames = useMemo(
-    () => new Set(follows.map((f) => f.target_id)),
+    () => new Set(follows.map((f) => f.target_profile_id)),
     [follows],
   );
 
