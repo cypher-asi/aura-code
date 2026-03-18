@@ -38,6 +38,7 @@ export function TaskList({ searchQuery }: { searchQuery: string }) {
       setLocalTasks((prev) =>
         prev.map((t) => (t.task_id === taskId ? { ...t, ...extra, status: newStatus } : t)),
       );
+      sidekick.patchTask(taskId, { ...extra, status: newStatus });
       sidekick.updatePreviewTask({ task_id: taskId, ...extra, status: newStatus });
     },
     [sidekick],
@@ -87,12 +88,12 @@ export function TaskList({ searchQuery }: { searchQuery: string }) {
   }, [subscribe, updateTaskStatus, refetchTasks]);
 
   const specs = useMemo(
-    () => mergeById(localSpecs, sidekick.specs, "spec_id"),
+    () => mergeById(sidekick.specs, localSpecs, "spec_id"),
     [localSpecs, sidekick.specs],
   );
 
   const tasks = useMemo(
-    () => mergeById(localTasks, sidekick.tasks, "task_id"),
+    () => mergeById(sidekick.tasks, localTasks, "task_id"),
     [localTasks, sidekick.tasks],
   );
 

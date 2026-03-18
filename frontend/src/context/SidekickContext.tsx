@@ -41,6 +41,7 @@ interface PanelActions {
   setStreamingAgentInstanceId: (id: string | null) => void;
   notifyAgentInstanceUpdate: (instance: AgentInstance) => void;
   onAgentInstanceUpdate: (listener: AgentInstanceUpdateListener) => () => void;
+  patchTask: (taskId: string, patch: Partial<Task>) => void;
   updatePreviewTask: (patch: Partial<Task> & { task_id: string }) => void;
   updatePreviewSpecs: (specs: Spec[]) => void;
 }
@@ -158,6 +159,17 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
     return () => { titleListeners.current.delete(listener); };
   }, []);
 
+  const patchTask = useCallback((taskId: string, patch: Partial<Task>) => {
+    setPanel((prev) => {
+      const found = prev.tasks.some((t) => t.task_id === taskId);
+      if (!found) return prev;
+      const tasks = prev.tasks.map((t) =>
+        t.task_id === taskId ? { ...t, ...patch } : t,
+      );
+      return { ...prev, tasks };
+    });
+  }, []);
+
   const updatePreviewTask = useCallback((patch: Partial<Task> & { task_id: string }) => {
     setPanel((prev) => {
       if (prev.previewItem?.kind !== "task") return prev;
@@ -195,6 +207,7 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
         pushSpec,
         removeSpec,
         pushTask,
+        patchTask,
         updatePreviewTask,
         updatePreviewSpecs,
         clearGeneratedArtifacts,
