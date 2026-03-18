@@ -21,12 +21,12 @@ function MobileProjectHeader() {
   const location = useLocation();
   const { projectId, agentInstanceId } = useParams();
   const [agents, setAgents] = useState<AgentInstance[]>([]);
-  const [loadingAgents, setLoadingAgents] = useState(false);
+  const [loadingAgents, setLoadingAgents] = useState(true);
 
   const project = ctx?.project;
   const isExecutionRoute = location.pathname.endsWith("/execution");
-  const hasChatTarget = Boolean(agentInstanceId) || agents.length > 0;
-  const selectedTab = isExecutionRoute ? "execution" : hasChatTarget ? "chat" : "execution";
+  const hasChatTarget = Boolean(agentInstanceId) || loadingAgents || agents.length > 0;
+  const selectedTab = isExecutionRoute ? "execution" : "chat";
   const selectedAgentId = agentInstanceId ?? agents[0]?.agent_instance_id ?? "";
 
   useEffect(() => {
@@ -69,6 +69,33 @@ function MobileProjectHeader() {
 
   const tabs = hasChatTarget ? MOBILE_PROJECT_TABS : MOBILE_PROJECT_TABS.filter((tab) => tab.id === "execution");
 
+  const navigateToChat = () => {
+    if (!projectId) return;
+
+    if (selectedAgentId) {
+      navigate(`/projects/${projectId}/agents/${selectedAgentId}`);
+      return;
+    }
+
+    setLoadingAgents(true);
+    api.listAgentInstances(projectId)
+      .then((next) => {
+        setAgents(next);
+        if (next.length > 0) {
+          navigate(`/projects/${projectId}/agents/${next[0].agent_instance_id}`);
+          return;
+        }
+        navigate(`/projects/${projectId}/execution`);
+      })
+      .catch(() => {
+        setAgents([]);
+        navigate(`/projects/${projectId}/execution`);
+      })
+      .finally(() => {
+        setLoadingAgents(false);
+      });
+  };
+
   return (
     <div
       style={{
@@ -103,9 +130,7 @@ function MobileProjectHeader() {
             navigate(`/projects/${projectId}/execution`);
             return;
           }
-          if (selectedAgentId) {
-            navigate(`/projects/${projectId}/agents/${selectedAgentId}`);
-          }
+          navigateToChat();
         }}
         size="sm"
       />

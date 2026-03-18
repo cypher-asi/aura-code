@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { mockAuthenticatedApp } from "./helpers/mockAuthenticatedApp";
 
+test.describe.configure({ mode: "serial" });
+
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/auth/session", async (route) => {
     await route.fulfill({
@@ -137,16 +139,17 @@ test("mobile login page can open host settings", async ({ page }) => {
 test("mobile project header can switch between execution and chat", async ({ page }) => {
   await mockAuthenticatedMobileApp(page);
 
-  await page.goto("/projects/proj-1/execution");
+  await page.goto("/projects/proj-1/agents/agent-inst-1");
 
   await expect(page.getByText("Demo Project")).toBeVisible();
   await expect(page.getByRole("button", { name: "Chat" })).toBeVisible({ timeout: 10000 });
-  await page.getByRole("button", { name: "Chat" }).click();
-  await expect(page).toHaveURL(/\/projects\/proj-1\/agents\/agent-inst-1$/);
   await expect(page.getByText("Send a message or use a quick action to get started")).toBeVisible();
 
   await page.getByRole("button", { name: "Execution" }).click();
   await expect(page).toHaveURL(/\/projects\/proj-1\/execution$/);
+
+  await page.getByRole("button", { name: "Chat" }).click();
+  await expect(page).toHaveURL(/\/projects\/proj-1\/agents\/agent-inst-1$/);
 });
 
 test("mobile projects route keeps the welcome view and opens project navigation", async ({ page }) => {
@@ -172,6 +175,7 @@ test("mobile drawer exposes team and app settings", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Team settings" })).toBeVisible();
   await expect(page.getByRole("button", { name: "App settings" })).toBeVisible();
   await page.getByRole("button", { name: "App settings" }).dispatchEvent("click");
+  await expect(page.getByRole("dialog").filter({ hasText: "Claude API Key" })).toBeVisible();
   await expect(page.getByText("Claude API Key")).toBeVisible();
 });
 
@@ -181,8 +185,10 @@ test("mobile new project modal defaults to imported workspace mode", async ({ pa
   await page.goto("/projects");
 
   await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(page.getByTitle("New Project")).toBeVisible();
   await page.getByTitle("New Project").click();
 
+  await expect(page.getByRole("dialog").filter({ hasText: "Workspace source" })).toBeVisible();
   await expect(page.getByText("Workspace source")).toBeVisible();
   await expect(page.getByRole("button", { name: "Import snapshot" })).toBeVisible();
   await expect(page.getByText("Uploads files into an Aura-managed workspace on the server.")).toBeVisible();
@@ -197,10 +203,23 @@ test("mobile details selection auto-opens preview", async ({ page }) => {
   await page.goto("/projects/proj-1/execution");
 
   await page.getByRole("button", { name: "Open details" }).click();
-  await page.getByRole("button", { name: "Tasks" }).click();
+  await expect(page.getByRole("treeitem", { name: "Patch auth flow" })).toBeVisible();
   await page.getByRole("treeitem", { name: "Patch auth flow" }).dispatchEvent("click");
 
   await expect(page.getByText("Open changed files from the desktop app.")).toBeVisible();
+});
+
+test("mobile team settings opens above the closed navigation drawer", async ({ page }) => {
+  await mockAuthenticatedMobileApp(page);
+
+  await page.goto("/projects/proj-1/execution");
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(page.getByRole("button", { name: "Team settings" })).toBeVisible();
+  await page.getByRole("button", { name: "Team settings" }).dispatchEvent("click");
+
+  await expect(page.getByRole("dialog").filter({ hasText: "Team Settings" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Team Settings" })).toBeVisible();
 });
 
 test("mobile agent header can switch between agents", async ({ page }) => {

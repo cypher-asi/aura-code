@@ -190,7 +190,7 @@ function MobileShell({
 }: ShellChromeProps & { onOpenSettings: () => void }) {
   const { apps: registeredApps, activeApp } = useAppContext();
   const { status: hostStatus } = useHost();
-  const { previewItem } = useSidekick();
+  const { previewItem, setActiveTab } = useSidekick();
   const navigate = useNavigate();
   const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);
@@ -255,12 +255,19 @@ function MobileShell({
   }, []);
   const openAfterDrawerClose = useCallback((callback: () => void) => {
     closeDrawers();
-    window.setTimeout(callback, 0);
+    window.setTimeout(callback, 180);
   }, [closeDrawers]);
+
+  const handleOpenContext = useCallback(() => {
+    if (activeApp.id === "projects") {
+      setActiveTab("tasks");
+    }
+    setContextOpen(true);
+  }, [activeApp.id, setActiveTab]);
 
   return (
     <>
-      <div className={styles.mobileShell}>
+      <div className={`${styles.mobileShell} ${overlayDrawerOpen ? styles.mobileShellDimmed : ""}`}>
         <Topbar
           className={styles.mobileTopbar}
           icon={
@@ -302,7 +309,7 @@ function MobileShell({
                   iconOnly
                   icon={<Rows3 size={16} />}
                   aria-label="Open details"
-                  onClick={() => setContextOpen(true)}
+                  onClick={handleOpenContext}
                 />
               )}
               {PreviewPanel && previewItem && (
