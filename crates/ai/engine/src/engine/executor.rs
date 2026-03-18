@@ -698,7 +698,8 @@ impl DevLoopEngine {
 
         let workspace_map = file_ops::generate_workspace_map(&project.linked_folder_path)
             .unwrap_or_default();
-        let system_prompt = agentic_execution_system_prompt(&project, agent);
+        let workspace_info = if workspace_map.is_empty() { None } else { Some(workspace_map.as_str()) };
+        let system_prompt = agentic_execution_system_prompt(&project, agent, workspace_info);
 
         let codebase_snapshot = file_ops::read_relevant_files(&project.linked_folder_path, 50_000)?;
 

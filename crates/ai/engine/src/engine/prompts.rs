@@ -104,6 +104,7 @@ Response schema:
 pub(crate) fn agentic_execution_system_prompt(
     project: &Project,
     agent: Option<&AgentInstance>,
+    workspace_info: Option<&str>,
 ) -> String {
     let build_cmd = project.build_command.as_deref().unwrap_or("(not configured)");
     let test_cmd = project.test_command.as_deref().unwrap_or("(not configured)");
@@ -137,7 +138,7 @@ pub(crate) fn agentic_execution_system_prompt(
         }
     }
 
-    format!(
+    let mut prompt = format!(
         r#"{preamble}You are an expert software engineer executing a single implementation task.
 You have tools to explore the codebase, make changes, and verify your work.
 
@@ -170,7 +171,27 @@ SCOPE: Stay strictly on-task.
 - When verifying, prefer scoped commands (e.g. `cargo test -p <crate> --lib <module>`) over workspace-wide commands to avoid noise from pre-existing failures.
 - NEVER output raw JSON with file_ops in your text response. Always use the provided tools (write_file, edit_file, task_done, etc.) to make changes and signal completion.
 "#
-    )
+    );
+
+    if let Some(ws_info) = workspace_info {
+        let crate_count = ws_info.lines()
+            .next()
+            .and_then(|l| l.split_whitespace().nth(1))
+            .unwrap_or("multiple");
+        prompt.push_str(&format!(
+            r#"
+## Workspace Context
+This is a Rust workspace with {crate_count} crate members. Before implementing:
+1. Check the Workspace Structure section in the task context to understand crate dependencies
+2. Read the lib.rs of each dependency crate to understand its public API
+3. NEVER guess type signatures, method names, or struct fields -- verify by reading source
+4. If you declare `pub mod foo;`, create foo.rs in the same set of file operations
+5. Use the codebase snapshot to understand existing patterns before writing new code
+"#
+        ));
+    }
+
+    prompt
 }
 
 pub(crate) fn build_agentic_task_context(
