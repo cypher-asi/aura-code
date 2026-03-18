@@ -304,10 +304,15 @@ pub async fn run_tool_loop(
             });
         }
         for tc in &iter_tool_calls {
+            let input = if tc.name == "write_file" {
+                summarize_write_file_input(&tc.input)
+            } else {
+                tc.input.clone()
+            };
             assistant_blocks.push(ContentBlock::ToolUse {
                 id: tc.id.clone(),
                 name: tc.name.clone(),
-                input: tc.input.clone(),
+                input,
             });
         }
         api_messages.push(RichMessage::assistant_blocks(assistant_blocks));
@@ -424,6 +429,27 @@ pub async fn run_tool_loop(
         insufficient_credits: false,
         llm_error: None,
     }
+}
+
+/// Replace the `content` field in a `write_file` tool_use input with a summary
+/// to prevent large file contents from persisting in conversation history across
+/// subsequent tool loop iterations.
+fn summarize_write_file_input(input: &serde_json::Value) -> serde_json::Value {
+    let path = input.get("path").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let content_len = input
+        .get("content")
+        .and_then(|v| v.as_str())
+        .map(|s| s.len())
+        .unwrap_or(0);
+    let line_count = input
+        .get("content")
+        .and_then(|v| v.as_str())
+        .map(|s| s.lines().count())
+        .unwrap_or(0);
+    serde_json::json!({
+        "path": path,
+        "content": format!("[wrote {line_count} lines, {content_len} chars to {path}]"),
+    })
 }
 
 fn content_hash(content: &str) -> u64 {
