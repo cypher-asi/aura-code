@@ -1110,7 +1110,11 @@ fn detect_hollow_functions(path: &str, lines: &[&str], reports: &mut Vec<StubRep
 
         if !body_trimmed.is_empty() {
             if body_trimmed == "{}" || body_trimmed == "{ }" {
-                if has_return {
+                let has_meaningful_params = !params_str.is_empty()
+                    && params_str != "&self"
+                    && params_str != "&mut self"
+                    && params_str != "self";
+                if has_return || has_meaningful_params {
                     reports.push(StubReport {
                         path: path.to_string(),
                         line: fn_line,
