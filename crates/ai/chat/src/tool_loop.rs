@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use aura_claude::{
     ClaudeStreamEvent, ContentBlock, MessageContent, RichMessage, ThinkingConfig, ToolCall,
@@ -157,6 +157,7 @@ pub async fn run_tool_loop(
 
         let mut iter_text = String::new();
         let mut iter_tool_calls: Vec<ToolCall> = Vec::new();
+        let mut stream_error_forwarded = false;
 
         let iter_timed_out = loop {
             match tokio::time::timeout(config.stream_timeout, claude_rx.recv()).await {
@@ -182,6 +183,7 @@ pub async fn run_tool_loop(
                     }
                     ClaudeStreamEvent::Error(msg) => {
                         let _ = event_tx.send(ToolLoopEvent::Error(msg));
+                        stream_error_forwarded = true;
                     }
                 },
                 Ok(None) => break false,
@@ -213,18 +215,21 @@ pub async fn run_tool_loop(
         let stream_result = match stream_handle.await {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => {
+                error!(iteration, error = %e, "LLM streaming failed");
                 let is_billing = e.is_billing_error();
                 let error_msg = format!("{e}");
-                if e.is_insufficient_credits() {
-                    let _ = event_tx.send(ToolLoopEvent::Error(
-                        "Insufficient credits — please top up to continue.".to_string(),
-                    ));
-                } else if is_billing {
-                    let _ = event_tx.send(ToolLoopEvent::Error(
-                        format!("Billing error — stopping to prevent unbilled usage: {e}"),
-                    ));
-                } else if iter_text.is_empty() && iter_tool_calls.is_empty() {
-                    let _ = event_tx.send(ToolLoopEvent::Error(format!("LLM error: {e}")));
+                if !stream_error_forwarded {
+                    if e.is_insufficient_credits() {
+                        let _ = event_tx.send(ToolLoopEvent::Error(
+                            "Insufficient credits — please top up to continue.".to_string(),
+                        ));
+                    } else if is_billing {
+                        let _ = event_tx.send(ToolLoopEvent::Error(
+                            format!("Billing error — stopping to prevent unbilled usage: {e}"),
+                        ));
+                    } else if iter_text.is_empty() && iter_tool_calls.is_empty() {
+                        let _ = event_tx.send(ToolLoopEvent::Error(error_msg.clone()));
+                    }
                 }
                 append_text(&mut total_text, &iter_text);
                 let llm_error = if is_billing { None } else { Some(error_msg) };
@@ -240,6 +245,7 @@ pub async fn run_tool_loop(
                 };
             }
             Err(e) => {
+                error!(iteration, error = %e, "Stream task panicked or was cancelled");
                 let error_msg = format!("Stream task error: {e}");
                 if iter_text.is_empty() && iter_tool_calls.is_empty() {
                     let _ = event_tx.send(ToolLoopEvent::Error(error_msg.clone()));
