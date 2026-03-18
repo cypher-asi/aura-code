@@ -2,7 +2,7 @@ use std::path::Path as FsPath;
 
 use axum::extract::{Path, State};
 use axum::Json;
-
+use chrono::Utc;
 use serde::Serialize;
 
 use aura_core::{ProjectId, SpecId, Task, TaskId};
@@ -128,6 +128,13 @@ pub async fn get_progress(
                 )
             })
             .sum::<f64>();
+        progress.total_time_seconds = sessions
+            .iter()
+            .map(|s| {
+                let end = s.ended_at.unwrap_or_else(Utc::now);
+                (end - s.started_at).num_seconds().max(0) as u64
+            })
+            .sum();
     }
 
     // Agent instances: include token usage from agent instances
