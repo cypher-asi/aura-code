@@ -52,21 +52,6 @@ impl OrgResponse {
         }
     }
 
-    fn from_local(org: Org) -> Self {
-        Self {
-            org_id: org.org_id.to_string(),
-            name: org.name,
-            owner_user_id: org.owner_user_id,
-            slug: None,
-            description: None,
-            avatar_url: None,
-            billing_email: None,
-            billing: org.billing,
-            github: org.github,
-            created_at: org.created_at.to_rfc3339(),
-            updated_at: org.updated_at.to_rfc3339(),
-        }
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -96,20 +81,6 @@ impl From<NetworkOrgMember> for MemberResponse {
     }
 }
 
-impl From<OrgMember> for MemberResponse {
-    fn from(m: OrgMember) -> Self {
-        Self {
-            org_id: m.org_id.to_string(),
-            user_id: m.user_id,
-            display_name: m.display_name,
-            role: format!("{:?}", m.role).to_lowercase(),
-            avatar_url: None,
-            credit_budget: None,
-            joined_at: m.joined_at.to_rfc3339(),
-        }
-    }
-}
-
 #[derive(Debug, Serialize)]
 pub struct InviteResponse {
     pub invite_id: String,
@@ -135,22 +106,6 @@ impl From<NetworkOrgInvite> for InviteResponse {
             created_at: inv.created_at.unwrap_or_default(),
             expires_at: inv.expires_at.unwrap_or_default(),
             accepted_at: inv.accepted_at,
-        }
-    }
-}
-
-impl From<OrgInvite> for InviteResponse {
-    fn from(inv: OrgInvite) -> Self {
-        Self {
-            invite_id: inv.invite_id.to_string(),
-            org_id: inv.org_id.to_string(),
-            token: inv.token,
-            created_by: inv.created_by,
-            status: format!("{:?}", inv.status).to_lowercase(),
-            accepted_by: inv.accepted_by,
-            created_at: inv.created_at.to_rfc3339(),
-            expires_at: inv.expires_at.to_rfc3339(),
-            accepted_at: inv.accepted_at.map(|dt| dt.to_rfc3339()),
         }
     }
 }
@@ -225,101 +180,75 @@ fn local_billing_github(state: &AppState, net_id: &str) -> (Option<OrgBilling>, 
 // ---------------------------------------------------------------------------
 
 pub async fn list_orgs(State(state): State<AppState>) -> ApiResult<Json<Vec<OrgResponse>>> {
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        let net_orgs = client.list_orgs(&jwt).await.map_err(map_network_error)?;
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    let net_orgs = client.list_orgs(&jwt).await.map_err(map_network_error)?;
 
-        for net in &net_orgs {
-            ensure_local_shadow(&state, net);
-        }
-
-        let responses = net_orgs
-            .iter()
-            .map(|net| {
-                let (billing, github) = local_billing_github(&state, &net.id);
-                OrgResponse::from_network(net, billing, github)
-            })
-            .collect();
-
-        Ok(Json(responses))
-    } else {
-        let (user_id, _) = get_user_id(&state)?;
-        let orgs = state
-            .org_service
-            .list_user_orgs(&user_id)
-            .map_err(map_org_err)?;
-        Ok(Json(orgs.into_iter().map(OrgResponse::from_local).collect()))
+    for net in &net_orgs {
+        ensure_local_shadow(&state, net);
     }
+
+    let responses = net_orgs
+        .iter()
+        .map(|net| {
+            let (billing, github) = local_billing_github(&state, &net.id);
+            OrgResponse::from_network(net, billing, github)
+        })
+        .collect();
+
+    Ok(Json(responses))
 }
 
 pub async fn create_org(
     State(state): State<AppState>,
     Json(req): Json<crate::dto::CreateOrgRequest>,
 ) -> ApiResult<(StatusCode, Json<OrgResponse>)> {
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        let (user_id, display_name) = get_user_id(&state)?;
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    let (user_id, display_name) = get_user_id(&state)?;
 
-        let net_req = aura_network::CreateOrgRequest {
-            name: req.name,
-            description: None,
-            avatar_url: None,
+    let net_req = aura_network::CreateOrgRequest {
+        name: req.name,
+        description: None,
+        avatar_url: None,
+    };
+    let net_org = client
+        .create_org(&jwt, &net_req)
+        .await
+        .map_err(map_network_error)?;
+
+    ensure_local_shadow(&state, &net_org);
+
+    // Create a local OrgMember so permission checks (billing/github) work.
+    if let Ok(org_id) = net_org.id.parse::<OrgId>() {
+        let member = OrgMember {
+            org_id,
+            user_id,
+            display_name,
+            role: OrgRole::Owner,
+            joined_at: Utc::now(),
         };
-        let net_org = client
-            .create_org(&jwt, &net_req)
-            .await
-            .map_err(map_network_error)?;
-
-        ensure_local_shadow(&state, &net_org);
-
-        // Create a local OrgMember so permission checks (billing/github) work.
-        if let Ok(org_id) = net_org.id.parse::<OrgId>() {
-            let member = OrgMember {
-                org_id,
-                user_id,
-                display_name,
-                role: OrgRole::Owner,
-                joined_at: Utc::now(),
-            };
-            let _ = state.store.put_org_member(&member);
-        }
-
-        Ok((StatusCode::CREATED, Json(OrgResponse::from_network(&net_org, None, None))))
-    } else {
-        let (user_id, display_name) = get_user_id(&state)?;
-        let org = state
-            .org_service
-            .create_org(&user_id, &req.name, &display_name)
-            .map_err(map_org_err)?;
-        Ok((StatusCode::CREATED, Json(OrgResponse::from_local(org))))
+        let _ = state.store.put_org_member(&member);
     }
+
+    Ok((StatusCode::CREATED, Json(OrgResponse::from_network(&net_org, None, None))))
 }
 
 pub async fn get_org(
     State(state): State<AppState>,
     Path(org_id): Path<String>,
 ) -> ApiResult<Json<OrgResponse>> {
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        let net_org = client
-            .get_org(&org_id, &jwt)
-            .await
-            .map_err(map_network_error)?;
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    let net_org = client
+        .get_org(&org_id, &jwt)
+        .await
+        .map_err(map_network_error)?;
 
-        ensure_local_shadow(&state, &net_org);
-        let (billing, github) = local_billing_github(&state, &net_org.id);
+    ensure_local_shadow(&state, &net_org);
+    let (billing, github) = local_billing_github(&state, &net_org.id);
 
-        Ok(Json(OrgResponse::from_network(&net_org, billing, github)))
-    } else {
-        let parsed_id: OrgId = org_id
-            .parse()
-            .map_err(|_| ApiError::bad_request("invalid org id"))?;
-        let org = state
-            .org_service
-            .get_org(&parsed_id)
-            .map_err(map_org_err)?;
-        Ok(Json(OrgResponse::from_local(org)))
-    }
+    Ok(Json(OrgResponse::from_network(&net_org, billing, github)))
 }
 
 pub async fn update_org(
@@ -327,40 +256,29 @@ pub async fn update_org(
     Path(org_id): Path<String>,
     Json(req): Json<crate::dto::UpdateOrgRequest>,
 ) -> ApiResult<Json<OrgResponse>> {
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        let net_req = aura_network::UpdateOrgRequest {
-            name: Some(req.name),
-            description: None,
-            avatar_url: None,
-        };
-        let net_org = client
-            .update_org(&org_id, &jwt, &net_req)
-            .await
-            .map_err(map_network_error)?;
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    let net_req = aura_network::UpdateOrgRequest {
+        name: Some(req.name),
+        description: None,
+        avatar_url: None,
+    };
+    let net_org = client
+        .update_org(&org_id, &jwt, &net_req)
+        .await
+        .map_err(map_network_error)?;
 
-        // Update local shadow name
-        if let Ok(parsed_id) = org_id.parse::<OrgId>() {
-            if let Ok(mut local) = state.store.get_org(&parsed_id) {
-                local.name = net_org.name.clone();
-                local.updated_at = Utc::now();
-                let _ = state.store.put_org(&local);
-            }
+    // Update local shadow name
+    if let Ok(parsed_id) = org_id.parse::<OrgId>() {
+        if let Ok(mut local) = state.store.get_org(&parsed_id) {
+            local.name = net_org.name.clone();
+            local.updated_at = Utc::now();
+            let _ = state.store.put_org(&local);
         }
-
-        let (billing, github) = local_billing_github(&state, &net_org.id);
-        Ok(Json(OrgResponse::from_network(&net_org, billing, github)))
-    } else {
-        let parsed_id: OrgId = org_id
-            .parse()
-            .map_err(|_| ApiError::bad_request("invalid org id"))?;
-        let (user_id, _) = get_user_id(&state)?;
-        let org = state
-            .org_service
-            .update_org(&parsed_id, &user_id, &req.name)
-            .map_err(map_org_err)?;
-        Ok(Json(OrgResponse::from_local(org)))
     }
+
+    let (billing, github) = local_billing_github(&state, &net_org.id);
+    Ok(Json(OrgResponse::from_network(&net_org, billing, github)))
 }
 
 // ---------------------------------------------------------------------------
@@ -371,23 +289,13 @@ pub async fn list_members(
     State(state): State<AppState>,
     Path(org_id): Path<String>,
 ) -> ApiResult<Json<Vec<MemberResponse>>> {
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        let members = client
-            .list_org_members(&org_id, &jwt)
-            .await
-            .map_err(map_network_error)?;
-        Ok(Json(members.into_iter().map(MemberResponse::from).collect()))
-    } else {
-        let parsed_id: OrgId = org_id
-            .parse()
-            .map_err(|_| ApiError::bad_request("invalid org id"))?;
-        let members = state
-            .org_service
-            .list_members(&parsed_id)
-            .map_err(map_org_err)?;
-        Ok(Json(members.into_iter().map(MemberResponse::from).collect()))
-    }
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    let members = client
+        .list_org_members(&org_id, &jwt)
+        .await
+        .map_err(map_network_error)?;
+    Ok(Json(members.into_iter().map(MemberResponse::from).collect()))
 }
 
 pub async fn update_member_role(
@@ -395,52 +303,30 @@ pub async fn update_member_role(
     Path((org_id, target_user_id)): Path<(String, String)>,
     Json(req): Json<crate::dto::UpdateMemberRoleRequest>,
 ) -> ApiResult<Json<MemberResponse>> {
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        let net_req = aura_network::UpdateMemberRequest {
-            role: Some(format!("{:?}", req.role).to_lowercase()),
-            credit_budget: None,
-        };
-        let member = client
-            .update_org_member(&org_id, &target_user_id, &jwt, &net_req)
-            .await
-            .map_err(map_network_error)?;
-        Ok(Json(MemberResponse::from(member)))
-    } else {
-        let parsed_id: OrgId = org_id
-            .parse()
-            .map_err(|_| ApiError::bad_request("invalid org id"))?;
-        let (actor_user_id, _) = get_user_id(&state)?;
-        let member = state
-            .org_service
-            .set_role(&parsed_id, &actor_user_id, &target_user_id, req.role)
-            .map_err(map_org_err)?;
-        Ok(Json(MemberResponse::from(member)))
-    }
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    let net_req = aura_network::UpdateMemberRequest {
+        role: Some(format!("{:?}", req.role).to_lowercase()),
+        credit_budget: None,
+    };
+    let member = client
+        .update_org_member(&org_id, &target_user_id, &jwt, &net_req)
+        .await
+        .map_err(map_network_error)?;
+    Ok(Json(MemberResponse::from(member)))
 }
 
 pub async fn remove_member(
     State(state): State<AppState>,
     Path((org_id, target_user_id)): Path<(String, String)>,
 ) -> ApiResult<StatusCode> {
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        client
-            .remove_org_member(&org_id, &target_user_id, &jwt)
-            .await
-            .map_err(map_network_error)?;
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        let parsed_id: OrgId = org_id
-            .parse()
-            .map_err(|_| ApiError::bad_request("invalid org id"))?;
-        let (actor_user_id, _) = get_user_id(&state)?;
-        state
-            .org_service
-            .remove_member(&parsed_id, &actor_user_id, &target_user_id)
-            .map_err(map_org_err)?;
-        Ok(StatusCode::NO_CONTENT)
-    }
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    client
+        .remove_org_member(&org_id, &target_user_id, &jwt)
+        .await
+        .map_err(map_network_error)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ---------------------------------------------------------------------------
@@ -451,99 +337,74 @@ pub async fn create_invite(
     State(state): State<AppState>,
     Path(org_id): Path<String>,
 ) -> ApiResult<(StatusCode, Json<InviteResponse>)> {
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        let net_req = aura_network::CreateInviteRequest {
-            email: None,
-            role: None,
-        };
-        let invite = client
-            .create_invite(&org_id, &jwt, &net_req)
-            .await
-            .map_err(map_network_error)?;
-        Ok((StatusCode::CREATED, Json(InviteResponse::from(invite))))
-    } else {
-        let parsed_id: OrgId = org_id
-            .parse()
-            .map_err(|_| ApiError::bad_request("invalid org id"))?;
-        let (user_id, _) = get_user_id(&state)?;
-        let invite = state
-            .org_service
-            .create_invite(&parsed_id, &user_id)
-            .map_err(map_org_err)?;
-        Ok((StatusCode::CREATED, Json(InviteResponse::from(invite))))
-    }
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    let net_req = aura_network::CreateInviteRequest {
+        email: None,
+        role: None,
+    };
+    let invite = client
+        .create_invite(&org_id, &jwt, &net_req)
+        .await
+        .map_err(map_network_error)?;
+    Ok((StatusCode::CREATED, Json(InviteResponse::from(invite))))
 }
 
 pub async fn list_invites(
     State(state): State<AppState>,
     Path(org_id): Path<String>,
 ) -> ApiResult<Json<Vec<InviteResponse>>> {
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        let invites = client
-            .list_invites(&org_id, &jwt)
-            .await
-            .map_err(map_network_error)?;
-        Ok(Json(invites.into_iter().map(InviteResponse::from).collect()))
-    } else {
-        let parsed_id: OrgId = org_id
-            .parse()
-            .map_err(|_| ApiError::bad_request("invalid org id"))?;
-        let invites = state
-            .org_service
-            .list_invites(&parsed_id)
-            .map_err(map_org_err)?;
-        Ok(Json(invites.into_iter().map(InviteResponse::from).collect()))
-    }
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    let invites = client
+        .list_invites(&org_id, &jwt)
+        .await
+        .map_err(map_network_error)?;
+    Ok(Json(invites.into_iter().map(InviteResponse::from).collect()))
 }
 
 pub async fn revoke_invite(
     State(state): State<AppState>,
     Path((org_id, invite_id)): Path<(String, String)>,
 ) -> ApiResult<StatusCode> {
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        client
-            .revoke_invite(&org_id, &invite_id, &jwt)
-            .await
-            .map_err(map_network_error)?;
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        let parsed_org: OrgId = org_id
-            .parse()
-            .map_err(|_| ApiError::bad_request("invalid org id"))?;
-        let parsed_invite: InviteId = invite_id
-            .parse()
-            .map_err(|_| ApiError::bad_request("invalid invite id"))?;
-        let (user_id, _) = get_user_id(&state)?;
-        state
-            .org_service
-            .revoke_invite(&parsed_org, &parsed_invite, &user_id)
-            .map_err(map_org_err)?;
-        Ok(StatusCode::NO_CONTENT)
-    }
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    client
+        .revoke_invite(&org_id, &invite_id, &jwt)
+        .await
+        .map_err(map_network_error)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn accept_invite(
     State(state): State<AppState>,
     Path(token): Path<String>,
 ) -> ApiResult<Json<MemberResponse>> {
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        let member = client
-            .accept_invite(&token, &jwt)
-            .await
-            .map_err(map_network_error)?;
-        Ok(Json(MemberResponse::from(member)))
-    } else {
-        let (user_id, display_name) = get_user_id(&state)?;
-        let member = state
-            .org_service
-            .accept_invite(&token, &user_id, &display_name)
-            .map_err(map_org_err)?;
-        Ok(Json(MemberResponse::from(member)))
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    let member = client
+        .accept_invite(&token, &jwt)
+        .await
+        .map_err(map_network_error)?;
+
+    // Write a local OrgMember so permission checks (billing/github) work.
+    if let Ok(org_id) = member.org_id.parse::<OrgId>() {
+        let role = match member.role.as_str() {
+            "owner" => OrgRole::Owner,
+            "admin" => OrgRole::Admin,
+            _ => OrgRole::Member,
+        };
+        let local_member = OrgMember {
+            org_id,
+            user_id: member.user_id.clone(),
+            display_name: member.display_name.clone().unwrap_or_default(),
+            role,
+            joined_at: Utc::now(),
+        };
+        let _ = state.store.put_org_member(&local_member);
     }
+
+    Ok(Json(MemberResponse::from(member)))
 }
 
 // ---------------------------------------------------------------------------
