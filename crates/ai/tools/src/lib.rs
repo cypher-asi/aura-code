@@ -57,11 +57,13 @@ pub fn core_tool_definitions() -> Vec<ToolDefinition> {
         // ── Filesystem ─────────────────────────────────────────────────
         tool(
             "read_file",
-            "Read the contents of a file relative to the project folder.",
+            "Read the contents of a file relative to the project folder. Optionally read a specific line range (1-indexed) to avoid truncation in large files.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Relative path from project root" }
+                    "path": { "type": "string", "description": "Relative path from project root" },
+                    "start_line": { "type": "integer", "description": "First line to read (1-indexed, inclusive). Omit to read from the beginning." },
+                    "end_line": { "type": "integer", "description": "Last line to read (1-indexed, inclusive). Omit to read to the end." }
                 },
                 "required": ["path"]
             }),

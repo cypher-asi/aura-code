@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use tokio::sync::mpsc;
-use tracing::warn;
 
 use aura_claude::{ContentBlock, ToolCall};
 use crate::compaction;

@@ -8,6 +8,7 @@ mod chat_tool_executor;
 mod chat_tool_handlers;
 pub mod compaction;
 mod tool_loop_types;
+mod tool_loop_helpers;
 pub mod tool_loop;
 
 pub use error::ChatError;

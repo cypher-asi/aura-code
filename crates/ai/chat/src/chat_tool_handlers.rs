@@ -337,8 +337,38 @@ impl ChatToolExecutor {
             Ok(p) => p,
             Err(e) => return e,
         };
+        let start_line = input.get("start_line").and_then(|v| v.as_u64()).map(|n| n as usize);
+        let end_line = input.get("end_line").and_then(|v| v.as_u64()).map(|n| n as usize);
+
         match std::fs::read_to_string(&abs) {
-            Ok(content) => ToolExecResult::ok(json!({ "path": rel, "content": content })),
+            Ok(content) => {
+                if start_line.is_some() || end_line.is_some() {
+                    let lines: Vec<&str> = content.lines().collect();
+                    let total = lines.len();
+                    let start = start_line.unwrap_or(1).max(1) - 1;
+                    let end = end_line.unwrap_or(total).min(total);
+                    if start >= total {
+                        return ToolExecResult::err(format!(
+                            "start_line {} is beyond end of file ({} lines)",
+                            start + 1, total,
+                        ));
+                    }
+                    let selected: Vec<String> = lines[start..end]
+                        .iter()
+                        .enumerate()
+                        .map(|(i, line)| format!("{:>5}| {}", start + i + 1, line))
+                        .collect();
+                    ToolExecResult::ok(json!({
+                        "path": rel,
+                        "start_line": start + 1,
+                        "end_line": end,
+                        "total_lines": total,
+                        "content": selected.join("\n"),
+                    }))
+                } else {
+                    ToolExecResult::ok(json!({ "path": rel, "content": content }))
+                }
+            }
             Err(e) => ToolExecResult::err(format!("Failed to read {rel}: {e}")),
         }
     }

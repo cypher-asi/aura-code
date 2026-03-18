@@ -459,7 +459,15 @@ impl ChatService {
             }
         }
 
-        self.persist_spec_gen_tokens(project_id, agent_instance_id, spec_input_tokens, spec_output_tokens, tx);
+        info!(
+            %project_id, %agent_instance_id,
+            spec_input_tokens, spec_output_tokens,
+            "Spec gen finished"
+        );
+        self.update_instance_token_usage(
+            project_id, agent_instance_id,
+            spec_input_tokens, spec_output_tokens, tx,
+        );
 
         if !accumulated.is_empty() {
             let assistant_msg = Message {
@@ -477,48 +485,6 @@ impl ChatService {
                 error!(%project_id, error = %e, "Failed to save spec gen assistant message");
             } else {
                 send(ChatStreamEvent::MessageSaved(assistant_msg));
-            }
-        }
-    }
-
-    fn persist_spec_gen_tokens(
-        &self,
-        project_id: &ProjectId,
-        agent_instance_id: &AgentInstanceId,
-        spec_input_tokens: u64,
-        spec_output_tokens: u64,
-        tx: &mpsc::UnboundedSender<ChatStreamEvent>,
-    ) {
-        info!(
-            %project_id, %agent_instance_id,
-            spec_input_tokens, spec_output_tokens,
-            "Spec gen finished, persisting token usage"
-        );
-        if spec_input_tokens == 0 && spec_output_tokens == 0 {
-            return;
-        }
-        match self.store.get_agent_instance(project_id, agent_instance_id) {
-            Ok(mut instance) => {
-                instance.total_input_tokens += spec_input_tokens;
-                instance.total_output_tokens += spec_output_tokens;
-                if instance.model.is_none() {
-                    instance.model = Some(self.llm_config.default_model.clone());
-                }
-                instance.updated_at = Utc::now();
-                if let Err(e) = self.store.put_agent_instance(&instance) {
-                    error!(%project_id, %agent_instance_id, error = %e, "Failed to persist spec-gen tokens on agent instance");
-                } else {
-                    info!(
-                        %project_id, %agent_instance_id,
-                        total_input = instance.total_input_tokens,
-                        total_output = instance.total_output_tokens,
-                        "Spec-gen token usage persisted to agent instance"
-                    );
-                    let _ = tx.send(ChatStreamEvent::AgentInstanceUpdated(instance));
-                }
-            }
-            Err(e) => {
-                error!(%project_id, %agent_instance_id, error = %e, "Failed to load agent instance for spec-gen token persistence");
             }
         }
     }
