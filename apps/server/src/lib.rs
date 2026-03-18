@@ -312,9 +312,7 @@ pub fn build_app_state(db_path: &Path) -> AppState {
     let store = Arc::new(RocksStore::open(db_path).expect("failed to open RocksDB"));
     let org_service = Arc::new(OrgService::new(store.clone()));
     let github_service = Arc::new(GitHubService::new(store.clone(), org_service.clone()));
-    let mut auth_service = AuthService::new(store.clone());
-    auth_service.set_org_service(org_service.clone());
-    let auth_service = Arc::new(auth_service);
+    let auth_service = Arc::new(AuthService::new(store.clone()));
     let settings_service = Arc::new(SettingsService::new(store.clone()));
     let pricing_service = Arc::new(PricingService::new(store.clone()));
     let billing_client = Arc::new(BillingClient::new());
