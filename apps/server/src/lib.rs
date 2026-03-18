@@ -372,11 +372,6 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         }
     }
 
-    seed_default_agents(&store, &agent_service);
-    if let Err(e) = store.dedup_agents_by_user() {
-        warn!(error = %e, "Failed to deduplicate agents");
-    }
-
     let (event_tx, event_rx) = mpsc::unbounded_channel::<EngineEvent>();
     let (event_broadcast, _) = broadcast::channel::<EngineEvent>(4096);
     let task_output_buffers: TaskOutputBuffers =
@@ -395,6 +390,13 @@ pub fn build_app_state(db_path: &Path) -> AppState {
     ));
 
     let network_client = NetworkClient::from_env().map(Arc::new);
+
+    if network_client.is_none() {
+        seed_default_agents(&store, &agent_service);
+        if let Err(e) = store.dedup_agents_by_user() {
+            warn!(error = %e, "Failed to deduplicate agents");
+        }
+    }
 
     if let Some(ref client) = network_client {
         let health_client = client.clone();
