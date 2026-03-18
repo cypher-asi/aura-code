@@ -138,9 +138,22 @@ pub(crate) fn agentic_execution_system_prompt(
         }
     }
 
+    let platform_info = if cfg!(windows) {
+        "Platform: Windows. Shell commands run via `cmd /C`. Use PowerShell or \
+         Windows-compatible syntax. Avoid Unix-only tools (grep, sed, awk, head, \
+         tail, wc, cat). Prefer the built-in tools (search_code, read_file, \
+         find_files, list_files) over shell commands for file exploration."
+    } else if cfg!(target_os = "macos") {
+        "Platform: macOS. Shell commands run via `sh -c`."
+    } else {
+        "Platform: Linux. Shell commands run via `sh -c`."
+    };
+
     let mut prompt = format!(
         r#"{preamble}You are an expert software engineer executing a single implementation task.
 You have tools to explore the codebase, make changes, and verify your work.
+
+{platform_info}
 
 Workflow:
 1. Use get_task_context if you need to review the task details
@@ -163,6 +176,9 @@ Rules:
 - If a build or test compilation fails, read the errors carefully and fix them before calling task_done
 - Do NOT call task_done until the build passes
 - Do NOT use emojis in notes or any text output
+
+TOOL USAGE:
+- Do NOT use run_command for searching code, reading files, or finding files. Always use the dedicated tools: search_code, read_file, find_files, list_files. Reserve run_command for build, test, git, and package manager commands only.
 
 SCOPE: Stay strictly on-task.
 - ONLY implement what the task description asks for. Do NOT fix pre-existing bugs or code issues unrelated to your task.
