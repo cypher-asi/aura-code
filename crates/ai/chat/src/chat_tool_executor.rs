@@ -136,6 +136,45 @@ impl ChatToolExecutor {
         }
     }
 
+    /// Resolve a `spec_id` field that may be a UUID, a title prefix like "01",
+    /// or a numeric order index. Falls back to matching against existing specs
+    /// when UUID parsing fails so the LLM doesn't need to get the format right.
+    fn resolve_spec_id(
+        &self,
+        project_id: &ProjectId,
+        input: &Value,
+    ) -> Result<SpecId, ToolExecResult> {
+        let raw = str_field(input, "spec_id")
+            .ok_or_else(|| ToolExecResult::err("Missing required field: spec_id"))?;
+
+        if let Ok(id) = raw.parse::<SpecId>() {
+            return Ok(id);
+        }
+
+        let specs = self
+            .store
+            .list_specs_by_project(project_id)
+            .map_err(|e| ToolExecResult::err(format!("Failed to list specs: {e}")))?;
+
+        if let Some(spec) = specs.iter().find(|s| s.title.starts_with(&format!("{raw}:"))) {
+            return Ok(spec.spec_id);
+        }
+
+        if let Ok(n) = raw.parse::<u32>() {
+            let idx = if n > 0 { n - 1 } else { n };
+            if let Some(spec) = specs.iter().find(|s| s.order_index == idx) {
+                return Ok(spec.spec_id);
+            }
+            if let Some(spec) = specs.iter().find(|s| s.order_index == n) {
+                return Ok(spec.spec_id);
+            }
+        }
+
+        Err(ToolExecResult::err(format!(
+            "Could not resolve spec_id '{raw}'. Use the UUID returned by list_specs or create_spec."
+        )))
+    }
+
     // -----------------------------------------------------------------------
     // Spec operations
     // -----------------------------------------------------------------------
@@ -160,7 +199,7 @@ impl ChatToolExecutor {
     }
 
     fn get_spec(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
-        let spec_id = match parse_id::<SpecId>(input, "spec_id") {
+        let spec_id = match self.resolve_spec_id(project_id, input) {
             Ok(id) => id,
             Err(e) => return e,
         };
@@ -194,7 +233,7 @@ impl ChatToolExecutor {
     }
 
     fn update_spec(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
-        let spec_id = match parse_id::<SpecId>(input, "spec_id") {
+        let spec_id = match self.resolve_spec_id(project_id, input) {
             Ok(id) => id,
             Err(e) => return e,
         };
@@ -216,7 +255,7 @@ impl ChatToolExecutor {
     }
 
     fn delete_spec(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
-        let spec_id = match parse_id::<SpecId>(input, "spec_id") {
+        let spec_id = match self.resolve_spec_id(project_id, input) {
             Ok(id) => id,
             Err(e) => return e,
         };
@@ -236,11 +275,10 @@ impl ChatToolExecutor {
     // -----------------------------------------------------------------------
 
     fn list_tasks(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
-        let tasks = if let Some(sid) = str_field(input, "spec_id") {
-            if let Ok(spec_id) = sid.parse::<SpecId>() {
-                self.store.list_tasks_by_spec(project_id, &spec_id)
-            } else {
-                return ToolExecResult::err("Invalid spec_id");
+        let tasks = if str_field(input, "spec_id").is_some() {
+            match self.resolve_spec_id(project_id, input) {
+                Ok(spec_id) => self.store.list_tasks_by_spec(project_id, &spec_id),
+                Err(e) => return e,
             }
         } else {
             self.store.list_tasks_by_project(project_id)
@@ -266,7 +304,7 @@ impl ChatToolExecutor {
     }
 
     fn create_task(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
-        let spec_id = match parse_id::<SpecId>(input, "spec_id") {
+        let spec_id = match self.resolve_spec_id(project_id, input) {
             Ok(id) => id,
             Err(e) => return e,
         };
@@ -341,7 +379,7 @@ impl ChatToolExecutor {
             Ok(id) => id,
             Err(e) => return e,
         };
-        let spec_id = match parse_id::<SpecId>(input, "spec_id") {
+        let spec_id = match self.resolve_spec_id(project_id, input) {
             Ok(id) => id,
             Err(e) => return e,
         };
