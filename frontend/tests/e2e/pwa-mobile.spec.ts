@@ -215,6 +215,31 @@ test("mobile file selection keeps the new project modal open", async ({ page, br
   await expect(page.getByText("notes.txt")).toBeVisible();
 });
 
+test("mobile new project modal restores after a reload-like remount", async ({ page, browserName }) => {
+  test.skip(browserName === "webkit", "Headless WebKit is flaky opening the drawer-triggered modal; Chromium covers the local file flow.");
+  await mockAuthenticatedMobileApp(page);
+
+  await page.goto("/projects");
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByTitle("New Project").click({ force: true });
+
+  await page.getByPlaceholder("Project name").fill("Restore me");
+  await page.getByPlaceholder("Description (optional)").fill("Android lifecycle check");
+  await page.locator('input[type="file"]').nth(1).setInputFiles({
+    name: "restore.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("persist me"),
+  });
+
+  await page.reload();
+
+  await expect(page.getByPlaceholder("Project name")).toHaveValue("Restore me");
+  await expect(page.getByPlaceholder("Description (optional)")).toHaveValue("Android lifecycle check");
+  await expect(page.getByText("1 file selected")).toBeVisible();
+  await expect(page.getByText("restore.txt")).toBeVisible();
+});
+
 test("mobile details selection auto-opens preview", async ({ page }) => {
   await mockAuthenticatedMobileApp(page);
 

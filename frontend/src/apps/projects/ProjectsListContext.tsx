@@ -13,6 +13,8 @@ import { api } from "../../api/client";
 import { useOrg } from "../../context/OrgContext";
 import type { Project } from "../../types";
 
+const NEW_PROJECT_MODAL_STORAGE_KEY = "aura:new-project-modal-open";
+
 interface ProjectsListContextValue {
   projects: Project[];
   loadingProjects: boolean;
@@ -31,7 +33,10 @@ export function ProjectsListProvider({ children }: { children: ReactNode }) {
   const { activeOrg } = useOrg();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
-  const [newProjectModalOpen, setNewProjectModalOpen] = useState(false);
+  const [newProjectModalOpen, setNewProjectModalOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.sessionStorage.getItem(NEW_PROJECT_MODAL_STORAGE_KEY) === "1";
+  });
 
   const refreshProjects = useCallback(async () => {
     setLoadingProjects(true);
@@ -49,6 +54,18 @@ export function ProjectsListProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshProjects();
   }, [refreshProjects]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (newProjectModalOpen) {
+      window.sessionStorage.setItem(NEW_PROJECT_MODAL_STORAGE_KEY, "1");
+    } else {
+      window.sessionStorage.removeItem(NEW_PROJECT_MODAL_STORAGE_KEY);
+    }
+  }, [newProjectModalOpen]);
+
+  const openNewProjectModal = useCallback(() => setNewProjectModalOpen(true), []);
+  const closeNewProjectModal = useCallback(() => setNewProjectModalOpen(false), []);
 
   const recentProjects = useMemo(
     () => [...projects]
@@ -71,10 +88,19 @@ export function ProjectsListProvider({ children }: { children: ReactNode }) {
       recentProjects,
       mostRecentProject,
       newProjectModalOpen,
-      openNewProjectModal: () => setNewProjectModalOpen(true),
-      closeNewProjectModal: () => setNewProjectModalOpen(false),
+      openNewProjectModal,
+      closeNewProjectModal,
     }),
-    [projects, loadingProjects, refreshProjects, recentProjects, mostRecentProject, newProjectModalOpen],
+    [
+      projects,
+      loadingProjects,
+      refreshProjects,
+      recentProjects,
+      mostRecentProject,
+      newProjectModalOpen,
+      openNewProjectModal,
+      closeNewProjectModal,
+    ],
   );
 
   return (

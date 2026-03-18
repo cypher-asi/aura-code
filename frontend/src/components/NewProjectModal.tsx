@@ -5,7 +5,14 @@ import { Modal, Input, Button, Spinner, Text } from "@cypher-asi/zui";
 import { PathInput } from "./PathInput";
 import type { GitHubRepo } from "../types";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
+import {
+  clearNewProjectDraftFiles,
+  loadNewProjectDraftFiles,
+  saveNewProjectDraftFiles,
+} from "../lib/new-project-draft";
 import styles from "./NewProjectModal.module.css";
+
+const NEW_PROJECT_DRAFT_STORAGE_KEY = "aura:new-project-draft";
 
 interface NewProjectModalProps {
   isOpen: boolean;
@@ -34,6 +41,42 @@ type DirectoryInput = HTMLInputElement & {
   webkitdirectory?: boolean;
   directory?: boolean;
 };
+
+type NewProjectDraft = {
+  workspaceMode: WorkspaceMode;
+  name: string;
+  description: string;
+  folderPath: string;
+  selectedRepo: string;
+};
+
+function readDraft(): NewProjectDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(NEW_PROJECT_DRAFT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      workspaceMode: parsed.workspaceMode === "linked" ? "linked" : "imported",
+      name: typeof parsed.name === "string" ? parsed.name : "",
+      description: typeof parsed.description === "string" ? parsed.description : "",
+      folderPath: typeof parsed.folderPath === "string" ? parsed.folderPath : "",
+      selectedRepo: typeof parsed.selectedRepo === "string" ? parsed.selectedRepo : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(draft: NewProjectDraft | null) {
+  if (typeof window === "undefined") return;
+  if (!draft) {
+    window.sessionStorage.removeItem(NEW_PROJECT_DRAFT_STORAGE_KEY);
+    return;
+  }
+  window.sessionStorage.setItem(NEW_PROJECT_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+}
 
 function getRelativePath(file: File): string {
   const browserFile = file as BrowserFile;
@@ -69,21 +112,28 @@ async function toImportedFiles(files: ImportCandidate[]) {
 export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalProps) {
   const { activeOrg, isLoading: orgLoading } = useOrg();
   const { supportsDesktopWorkspace, isMobileLayout } = useAuraCapabilities();
+  const storedDraftRef = useRef<NewProjectDraft | null>(null);
+  if (storedDraftRef.current === null) {
+    storedDraftRef.current = readDraft();
+  }
+  const storedDraft = storedDraftRef.current;
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(
-    supportsDesktopWorkspace ? "linked" : "imported",
+    storedDraft?.workspaceMode === "linked" && supportsDesktopWorkspace ? "linked" : "imported",
   );
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [folderPath, setFolderPath] = useState("");
+  const [name, setName] = useState(storedDraft?.name ?? "");
+  const [description, setDescription] = useState(storedDraft?.description ?? "");
+  const [folderPath, setFolderPath] = useState(storedDraft?.folderPath ?? "");
   const [importCandidates, setImportCandidates] = useState<ImportCandidate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [nameError, setNameError] = useState("");
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
-  const [selectedRepo, setSelectedRepo] = useState("");
+  const [selectedRepo, setSelectedRepo] = useState(storedDraft?.selectedRepo ?? "");
   const nameInputRef = useRef<HTMLInputElement>(null);
   const importFolderInputRef = useRef<DirectoryInput>(null);
   const importFilesInputRef = useRef<HTMLInputElement>(null);
+  const restoringImportDraftRef = useRef(false);
+  const userChangedImportSelectionRef = useRef(false);
 
   useEffect(() => {
     if (importFolderInputRef.current) {
@@ -98,6 +148,43 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
     if (!isOpen || !activeOrg) return;
     api.orgs.listGithubRepos(activeOrg.org_id).then(setRepos).catch(() => setRepos([]));
   }, [isOpen, activeOrg]);
+
+  useEffect(() => {
+    if (!isOpen || workspaceMode !== "imported") return;
+    let cancelled = false;
+    userChangedImportSelectionRef.current = false;
+
+    loadNewProjectDraftFiles().then((files) => {
+      if (cancelled || userChangedImportSelectionRef.current) return;
+      restoringImportDraftRef.current = true;
+      setImportCandidates(files);
+      restoringImportDraftRef.current = false;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, workspaceMode]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    writeDraft({
+      workspaceMode,
+      name,
+      description,
+      folderPath,
+      selectedRepo,
+    });
+  }, [description, folderPath, isOpen, name, selectedRepo, workspaceMode]);
+
+  useEffect(() => {
+    if (workspaceMode !== "imported") {
+      void clearNewProjectDraftFiles();
+      return;
+    }
+    if (restoringImportDraftRef.current) return;
+    void saveNewProjectDraftFiles(importCandidates);
+  }, [importCandidates, workspaceMode]);
 
   useEffect(() => {
     if (isOpen && !isMobileLayout) {
@@ -115,6 +202,8 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
     setLoading(false);
     setError("");
     setNameError("");
+    writeDraft(null);
+    void clearNewProjectDraftFiles();
     if (importFolderInputRef.current) importFolderInputRef.current.value = "";
     if (importFilesInputRef.current) importFilesInputRef.current.value = "";
   }, [supportsDesktopWorkspace]);
@@ -184,6 +273,7 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
   }, [importCandidates]);
 
   const handleImportSelection = useCallback((files: FileList | null) => {
+    userChangedImportSelectionRef.current = true;
     const nextCandidates = Array.from(files ?? []).map((file) => ({
       file,
       relativePath: getRelativePath(file),
