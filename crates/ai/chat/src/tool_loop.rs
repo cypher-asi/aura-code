@@ -437,9 +437,9 @@ fn compact_older_tool_results(messages: &mut [RichMessage]) {
     }
 }
 
-const AGGRESSIVE_COMPACT_THRESHOLD: usize = 2_000;
-const AGGRESSIVE_KEEP_HEAD: usize = 800;
-const AGGRESSIVE_KEEP_TAIL: usize = 400;
+const AGGRESSIVE_COMPACT_THRESHOLD: usize = 4_000;
+const AGGRESSIVE_KEEP_HEAD: usize = 1_600;
+const AGGRESSIVE_KEEP_TAIL: usize = 800;
 
 fn aggressive_compact(content: &str) -> String {
     if content.len() <= AGGRESSIVE_COMPACT_THRESHOLD {
@@ -460,9 +460,9 @@ fn aggressive_compact(content: &str) -> String {
     )
 }
 
-const MICROCOMPACT_CHAR_THRESHOLD: usize = 8_000;
-const MICROCOMPACT_KEEP_HEAD: usize = 3_000;
-const MICROCOMPACT_KEEP_TAIL: usize = 1_500;
+const MICROCOMPACT_CHAR_THRESHOLD: usize = 16_000;
+const MICROCOMPACT_KEEP_HEAD: usize = 6_000;
+const MICROCOMPACT_KEEP_TAIL: usize = 3_000;
 
 /// Truncate large tool results to keep the conversation history lean.
 /// The full result is still sent to the UI via events; this only affects
