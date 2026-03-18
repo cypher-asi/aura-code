@@ -32,8 +32,9 @@ function SidekickLane() {
       resizable
       resizePosition="left"
       defaultWidth={320}
+      minWidth={200}
       maxWidth={1200}
-      storageKey="aura-sidekick"
+      storageKey="aura-sidekick-v2"
       header={SidekickTaskbar && <SidekickTaskbar />}
       taskbar={SidekickHeaderComp && <SidekickHeaderComp />}
       style={{ boxShadow: "-1px 0 0 0 var(--color-border)" }}
