@@ -586,38 +586,6 @@ impl ClaudeClient {
         Ok(result.text)
     }
 
-    /// Multi-turn streaming with tool definitions. Returns a `ToolStreamResponse` that
-    /// includes both accumulated text and any tool_use blocks the model requested.
-    pub async fn complete_stream_with_tools(
-        &self,
-        api_key: &str,
-        system_prompt: &str,
-        messages: Vec<RichMessage>,
-        tools: Vec<ToolDefinition>,
-        max_tokens: u32,
-        event_tx: mpsc::UnboundedSender<ClaudeStreamEvent>,
-    ) -> Result<ToolStreamResponse, ClaudeClientError> {
-        self.complete_stream_with_tools_inner(
-            api_key, system_prompt, messages, tools, max_tokens, None, event_tx,
-        ).await
-    }
-
-    /// Multi-turn streaming with tool definitions and optional extended thinking.
-    pub async fn complete_stream_with_tools_thinking(
-        &self,
-        api_key: &str,
-        system_prompt: &str,
-        messages: Vec<RichMessage>,
-        tools: Vec<ToolDefinition>,
-        max_tokens: u32,
-        thinking: ThinkingConfig,
-        event_tx: mpsc::UnboundedSender<ClaudeStreamEvent>,
-    ) -> Result<ToolStreamResponse, ClaudeClientError> {
-        self.complete_stream_with_tools_inner(
-            api_key, system_prompt, messages, tools, max_tokens, Some(thinking), event_tx,
-        ).await
-    }
-
     async fn complete_stream_with_tools_inner(
         &self,
         api_key: &str,

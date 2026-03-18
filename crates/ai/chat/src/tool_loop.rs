@@ -125,34 +125,19 @@ pub async fn run_tool_loop(
         let reason = config.billing_reason;
 
         let stream_handle = tokio::spawn(async move {
-            if let Some(thinking) = thinking {
-                llm_clone
-                    .complete_stream_with_tools_thinking(
-                        &api_key_owned,
-                        &system_owned,
-                        msgs_owned,
-                        tools_owned,
-                        max_tokens,
-                        thinking,
-                        claude_tx,
-                        reason,
-                        None,
-                    )
-                    .await
-            } else {
-                llm_clone
-                    .complete_stream_with_tools(
-                        &api_key_owned,
-                        &system_owned,
-                        msgs_owned,
-                        tools_owned,
-                        max_tokens,
-                        claude_tx,
-                        reason,
-                        None,
-                    )
-                    .await
-            }
+            llm_clone
+                .complete_stream_with_tools(
+                    &api_key_owned,
+                    &system_owned,
+                    msgs_owned,
+                    tools_owned,
+                    max_tokens,
+                    thinking,
+                    claude_tx,
+                    reason,
+                    None,
+                )
+                .await
         });
 
         let mut iter_text = String::new();
@@ -271,9 +256,9 @@ pub async fn run_tool_loop(
             output_tokens: total_output_tokens,
         });
 
-        // Estimate credits for this iteration and accumulate.
+        let billing_model = if stream_result.model_used.is_empty() { aura_claude::DEFAULT_MODEL } else { &stream_result.model_used };
         let iter_credits = llm.estimate_credits(
-            aura_claude::DEFAULT_MODEL,
+            billing_model,
             stream_result.input_tokens,
             stream_result.output_tokens,
         );
@@ -365,7 +350,7 @@ pub async fn run_tool_loop(
         // Check credit budget before starting the next iteration.
         if let Some(budget) = config.credit_budget {
             let next_estimate = llm.estimate_credits(
-                aura_claude::DEFAULT_MODEL,
+                billing_model,
                 stream_result.input_tokens,
                 0,
             );
