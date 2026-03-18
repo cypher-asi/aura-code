@@ -482,7 +482,20 @@ impl ChatToolExecutor {
             }
         }
         match std::fs::write(&abs, &content) {
-            Ok(()) => ToolExecResult::ok(json!({ "path": rel, "bytes_written": content.len() })),
+            Ok(()) => {
+                let line_count = content.lines().count();
+                let preview_head: String = content.lines().take(5).collect::<Vec<_>>().join("\n");
+                let preview_tail: String = content.lines().rev().take(3)
+                    .collect::<Vec<_>>().into_iter().rev()
+                    .collect::<Vec<_>>().join("\n");
+                ToolExecResult::ok(json!({
+                    "path": rel,
+                    "bytes_written": content.len(),
+                    "line_count": line_count,
+                    "preview_head": preview_head,
+                    "preview_tail": preview_tail,
+                }))
+            }
             Err(e) => ToolExecResult::err(format!("Failed to write {rel}: {e}")),
         }
     }
