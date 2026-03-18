@@ -290,12 +290,32 @@ fn check_context_compaction(
 ) {
     if let Some(max_ctx) = config.max_context_tokens {
         let utilization = iteration_input_tokens as f64 / max_ctx as f64;
-        if utilization > 0.60 {
+        if utilization > 0.85 {
             info!(
                 input_tokens = iteration_input_tokens,
                 max_context = max_ctx,
                 utilization_pct = (utilization * 100.0) as u32,
-                "Context utilization elevated, compacting older tool results in-flight"
+                "Context >85% full, emergency compaction (keep last 2)"
+            );
+            compaction::compact_older_tool_results_tiered(
+                api_messages, 2, &compaction::HISTORY,
+            );
+        } else if utilization > 0.70 {
+            info!(
+                input_tokens = iteration_input_tokens,
+                max_context = max_ctx,
+                utilization_pct = (utilization * 100.0) as u32,
+                "Context >70% full, aggressive compaction (keep last 3)"
+            );
+            compaction::compact_older_tool_results_tiered(
+                api_messages, 3, &compaction::AGGRESSIVE,
+            );
+        } else if utilization > 0.50 {
+            info!(
+                input_tokens = iteration_input_tokens,
+                max_context = max_ctx,
+                utilization_pct = (utilization * 100.0) as u32,
+                "Context >50% full, moderate compaction (keep last 4)"
             );
             compaction::compact_older_tool_results(api_messages, 4);
         }
