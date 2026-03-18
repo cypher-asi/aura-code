@@ -16,10 +16,12 @@ use crate::state::AppState;
 #[derive(Debug, Serialize)]
 pub struct UserResponse {
     pub id: String,
-    pub zos_user_id: String,
+    pub zos_user_id: Option<String>,
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
+    pub location: Option<String>,
+    pub website: Option<String>,
     pub profile_id: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -33,6 +35,8 @@ impl From<NetworkUser> for UserResponse {
             display_name: u.display_name,
             avatar_url: u.avatar_url,
             bio: u.bio,
+            location: u.location,
+            website: u.website,
             profile_id: u.profile_id,
             created_at: u.created_at,
             updated_at: u.updated_at,
@@ -72,6 +76,8 @@ pub struct UpdateMeRequest {
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
+    pub location: Option<String>,
+    pub website: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -115,16 +121,29 @@ pub async fn update_me(
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
 
+    let new_avatar = req.avatar_url.clone();
+
     let network_req = aura_network::UpdateUserRequest {
         display_name: req.display_name,
         avatar_url: req.avatar_url,
         bio: req.bio,
+        location: req.location,
+        website: req.website,
     };
 
     let user = client
         .update_current_user(&jwt, &network_req)
         .await
         .map_err(map_network_error)?;
+
+    if let Some(url) = new_avatar {
+        if let Ok(mut session) = state.get_session() {
+            session.profile_image = url;
+            if let Ok(bytes) = serde_json::to_vec(&session) {
+                let _ = state.store.put_setting("zero_auth_session", &bytes);
+            }
+        }
+    }
 
     Ok(Json(UserResponse::from(user)))
 }
@@ -173,6 +192,31 @@ pub async fn sync_user_to_network(state: &AppState, session: &mut ZeroAuthSessio
 
                 if let Ok(bytes) = serde_json::to_vec(&session) {
                     let _ = state.store.put_setting("zero_auth_session", &bytes);
+                }
+
+                let local_name = &session.display_name;
+                let remote_name = user.display_name.as_deref().unwrap_or("");
+                let is_uuid = remote_name.len() == 36
+                    && remote_name.chars().filter(|c| *c == '-').count() == 4;
+                let should_push = !local_name.is_empty()
+                    && local_name != remote_name
+                    && (remote_name.is_empty() || is_uuid);
+
+                if should_push {
+                    let update = aura_network::UpdateUserRequest {
+                        display_name: Some(local_name.clone()),
+                        avatar_url: None,
+                        bio: None,
+                        location: None,
+                        website: None,
+                    };
+                    match client.update_current_user(&session.access_token, &update).await {
+                        Ok(_) => tracing::info!(
+                            display_name = %local_name,
+                            "Pushed display name to aura-network"
+                        ),
+                        Err(e) => warn!(error = %e, "Failed to push display name (non-fatal)"),
+                    }
                 }
 
                 tracing::info!(
