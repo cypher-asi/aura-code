@@ -116,7 +116,7 @@ const projectMenuItems: MenuItem[] = [
 ];
 
 const agentMenuItems: MenuItem[] = [
-  { id: "delete-agent", label: "Delete", icon: <Trash2 size={14} /> },
+  { id: "delete-agent", label: "Remove", icon: <Trash2 size={14} /> },
 ];
 
 interface ContextMenuState {
