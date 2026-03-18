@@ -429,7 +429,7 @@ fn compact_older_tool_results(messages: &mut [RichMessage]) {
             for block in blocks.iter_mut() {
                 if let ContentBlock::ToolResult { content, .. } = block {
                     if content.len() > AGGRESSIVE_COMPACT_THRESHOLD {
-                        *content = aggressive_compact(content);
+                        *content = aggressive_smart_compact(content);
                     }
                 }
             }
@@ -458,6 +458,27 @@ fn aggressive_compact(content: &str) -> String {
     format!(
         "{head}\n[...{omitted} chars omitted...]\n{tail}"
     )
+}
+
+/// Try AST-aware signature extraction for Rust content before falling back
+/// to head/tail truncation.  Used during retroactive compaction of older
+/// tool results so that API surface survives context pressure.
+fn aggressive_smart_compact(content: &str) -> String {
+    if content.len() <= AGGRESSIVE_COMPACT_THRESHOLD {
+        return content.to_string();
+    }
+    if aura_core::rust_signatures::looks_like_rust(content) {
+        let sigs = aura_core::rust_signatures::extract_signatures(content);
+        if !sigs.is_empty() && sigs.len() < content.len() / 2 {
+            return format!(
+                "[Compacted to signatures ({} -> {} chars)]\n{}",
+                content.len(),
+                sigs.len(),
+                sigs,
+            );
+        }
+    }
+    aggressive_compact(content)
 }
 
 const MICROCOMPACT_CHAR_THRESHOLD: usize = 16_000;
