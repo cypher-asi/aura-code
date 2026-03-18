@@ -39,6 +39,8 @@ pub(crate) struct LoopRunContext {
     run_metrics: LoopRunMetrics,
     fee_schedule: Vec<FeeScheduleEntry>,
     pub workspace_cache: WorkspaceCache,
+    cached_test_baseline: Option<HashSet<String>>,
+    baseline_invalidated: bool,
 }
 
 impl LoopRunContext {
@@ -82,7 +84,29 @@ impl LoopRunContext {
             run_metrics,
             fee_schedule,
             workspace_cache,
+            cached_test_baseline: None,
+            baseline_invalidated: false,
         })
+    }
+
+    // ------------------------------------------------------------------
+    // Test baseline caching
+    // ------------------------------------------------------------------
+
+    pub async fn get_or_capture_test_baseline(
+        &mut self,
+        engine: &DevLoopEngine,
+        project: &Project,
+    ) -> HashSet<String> {
+        if let Some(ref baseline) = self.cached_test_baseline {
+            if !self.baseline_invalidated {
+                return baseline.clone();
+            }
+        }
+        let baseline = engine.capture_test_baseline(project).await;
+        self.cached_test_baseline = Some(baseline.clone());
+        self.baseline_invalidated = false;
+        baseline
     }
 
     // ------------------------------------------------------------------
@@ -395,6 +419,16 @@ impl LoopRunContext {
                 | FileOp::SearchReplace { path, .. } => path.as_str(),
             })
             .collect();
+        let touches_tests = changed_files.iter().any(|f| {
+            f.contains("_test.rs")
+                || f.contains("_spec.ts")
+                || f.contains("test_")
+                || f.contains("tests/")
+                || f.contains("tests\\")
+        });
+        if touches_tests {
+            self.baseline_invalidated = true;
+        }
         self.work_log.push(format!(
             "Task (completed): {}\nNotes: {}\nFiles changed: {}",
             task.title,

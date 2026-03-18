@@ -216,7 +216,7 @@ impl DevLoopEngine {
             };
             ctx.begin_task(self, &task)?;
             let project = self.project_service.get_project(&project_id)?;
-            let baseline = self.capture_test_baseline(&project).await;
+            let baseline = ctx.get_or_capture_test_baseline(self, &project).await;
             let task_start = Instant::now();
             let agent = self.agent_instance_service
                 .get_instance(&project_id, &agent_instance_id).ok();
