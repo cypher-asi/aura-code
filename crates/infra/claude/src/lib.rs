@@ -24,12 +24,6 @@ pub fn resolve_model() -> String {
         .unwrap_or_else(|| DEFAULT_MODEL.to_string())
 }
 
-/// Deprecated: use `aura_billing::PricingService::compute_cost` or the pure
-/// functions in `aura_billing` instead. Kept temporarily for backward compat.
-pub fn compute_cost(input_tokens: u64, output_tokens: u64) -> f64 {
-    input_tokens as f64 * 5.0 / 1_000_000.0 + output_tokens as f64 * 25.0 / 1_000_000.0
-}
-
 /// Approximate token count for a text string.
 /// Uses a simple heuristic: ~4 characters per token on average for English text
 /// and code. This is intentionally conservative (overestimates slightly).

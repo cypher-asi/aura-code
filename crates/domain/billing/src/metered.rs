@@ -84,10 +84,15 @@ impl MeteredLlm {
     }
 
     /// Estimate how many credits a call would cost given the estimated token
-    /// counts. Uses the same formula as `debit` but doesn't actually charge.
+    /// counts. Applies a conservative cache discount (assumes 50% of input
+    /// tokens are cache reads at 0.1x cost) to avoid stopping the tool loop
+    /// prematurely when prompt caching is active.
     pub fn estimate_credits(&self, model: &str, estimated_input_tokens: u64, estimated_output_tokens: u64) -> u64 {
         let (inp_rate, out_rate) = self.pricing.lookup_rate(model);
-        let usd_cost = (estimated_input_tokens as f64 * inp_rate
+        let cache_read_fraction = 0.5;
+        let non_cached = estimated_input_tokens as f64 * (1.0 - cache_read_fraction);
+        let cached = estimated_input_tokens as f64 * cache_read_fraction;
+        let usd_cost = (non_cached * inp_rate + cached * inp_rate * 0.1
             + estimated_output_tokens as f64 * out_rate) / 1_000_000.0;
         (usd_cost * self.credits_per_usd).round() as u64
     }
