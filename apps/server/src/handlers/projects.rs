@@ -7,7 +7,7 @@ use tracing::warn;
 
 use aura_core::{OrgId, Project, ProjectId, ProjectStatus};
 use aura_network::NetworkProject;
-use aura_projects::{CreateProjectInput, UpdateProjectInput};
+use aura_projects::UpdateProjectInput;
 
 use crate::dto::{CreateProjectRequest, UpdateProjectRequest};
 use crate::error::{map_network_error, ApiError, ApiResult};
@@ -99,74 +99,53 @@ pub async fn create_project(
     State(state): State<AppState>,
     Json(req): Json<CreateProjectRequest>,
 ) -> ApiResult<(StatusCode, Json<Project>)> {
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
 
-        let net_req = aura_network::CreateProjectRequest {
-            name: req.name.clone(),
-            org_id: req.org_id.to_string(),
-            description: Some(req.description.clone()),
-            folder: folder_name_from_path(&req.linked_folder_path),
-        };
-        let net_project = client
-            .create_project(&jwt, &net_req)
-            .await
-            .map_err(map_network_error)?;
+    let net_req = aura_network::CreateProjectRequest {
+        name: req.name.clone(),
+        org_id: req.org_id.to_string(),
+        description: Some(req.description.clone()),
+        folder: folder_name_from_path(&req.linked_folder_path),
+    };
+    let net_project = client
+        .create_project(&jwt, &net_req)
+        .await
+        .map_err(map_network_error)?;
 
-        let project_id = net_project
-            .id
-            .parse::<ProjectId>()
-            .unwrap_or_else(|_| ProjectId::new());
-        let now = Utc::now();
-        let project = Project {
-            project_id,
-            org_id: req.org_id,
-            name: req.name,
-            description: req.description,
-            linked_folder_path: req.linked_folder_path,
-            requirements_doc_path: None,
-            current_status: ProjectStatus::Active,
-            github_integration_id: req.github_integration_id,
-            github_repo_full_name: req.github_repo_full_name,
-            build_command: req.build_command,
-            test_command: req.test_command,
-            specs_summary: None,
-            specs_title: None,
-            created_at: now,
-            updated_at: now,
-        };
-        ensure_local_shadow(&state, &project);
+    let project_id = net_project
+        .id
+        .parse::<ProjectId>()
+        .unwrap_or_else(|_| ProjectId::new());
+    let now = Utc::now();
+    let project = Project {
+        project_id,
+        org_id: req.org_id,
+        name: req.name,
+        description: req.description,
+        linked_folder_path: req.linked_folder_path,
+        requirements_doc_path: None,
+        current_status: ProjectStatus::Active,
+        github_integration_id: req.github_integration_id,
+        github_repo_full_name: req.github_repo_full_name,
+        build_command: req.build_command,
+        test_command: req.test_command,
+        specs_summary: None,
+        specs_title: None,
+        created_at: now,
+        updated_at: now,
+    };
+    ensure_local_shadow(&state, &project);
 
-        Ok((StatusCode::CREATED, Json(project)))
-    } else {
-        let input = CreateProjectInput {
-            org_id: req.org_id,
-            name: req.name,
-            description: req.description,
-            linked_folder_path: req.linked_folder_path,
-            github_integration_id: req.github_integration_id,
-            github_repo_full_name: req.github_repo_full_name,
-            build_command: req.build_command,
-            test_command: req.test_command,
-        };
-        let project = state
-            .project_service
-            .create_project(input)
-            .map_err(|e| match &e {
-                aura_projects::ProjectError::InvalidInput(msg) => {
-                    ApiError::bad_request(msg.clone())
-                }
-                _ => ApiError::internal(e.to_string()),
-            })?;
-        Ok((StatusCode::CREATED, Json(project)))
-    }
+    Ok((StatusCode::CREATED, Json(project)))
 }
 
 pub async fn list_projects(
     State(state): State<AppState>,
     Query(query): Query<ListProjectsQuery>,
 ) -> ApiResult<Json<Vec<Project>>> {
-    if let (Some(client), Some(ref org_id)) = (&state.network_client, &query.org_id) {
+    if let Some(ref org_id) = query.org_id {
+        let client = state.require_network_client()?;
         let jwt = state.get_jwt()?;
         let net_projects = client
             .list_projects_by_org(&org_id.to_string(), &jwt)
@@ -189,16 +168,11 @@ pub async fn list_projects(
 
         Ok(Json(projects))
     } else {
-        let projects = match query.org_id {
-            Some(org_id) => state
-                .project_service
-                .list_projects_by_org(&org_id)
-                .map_err(|e| ApiError::internal(e.to_string()))?,
-            None => state
-                .project_service
-                .list_projects()
-                .map_err(|e| ApiError::internal(e.to_string()))?,
-        };
+        // No org_id — network API is org-scoped, so fall back to local list.
+        let projects = state
+            .project_service
+            .list_projects()
+            .map_err(|e| ApiError::internal(e.to_string()))?;
         Ok(Json(projects))
     }
 }
@@ -241,23 +215,20 @@ pub async fn update_project(
         })?;
 
     if let Some(client) = &state.network_client {
-        if let Ok(jwt) = state.get_jwt() {
-            let folder = req
-                .linked_folder_path
-                .as_deref()
-                .and_then(folder_name_from_path);
-            let net_req = aura_network::UpdateProjectRequest {
-                name: req.name,
-                description: req.description,
-                folder,
-            };
-            if let Err(e) = client
-                .update_project(&project_id.to_string(), &jwt, &net_req)
-                .await
-            {
-                warn!(%project_id, error = %e, "Failed to sync project update to aura-network");
-            }
-        }
+        let jwt = state.get_jwt()?;
+        let folder = req
+            .linked_folder_path
+            .as_deref()
+            .and_then(folder_name_from_path);
+        let net_req = aura_network::UpdateProjectRequest {
+            name: req.name,
+            description: req.description,
+            folder,
+        };
+        client
+            .update_project(&project_id.to_string(), &jwt, &net_req)
+            .await
+            .map_err(map_network_error)?;
     }
 
     Ok(Json(project))
@@ -276,14 +247,11 @@ pub async fn delete_project(
         })?;
 
     if let Some(client) = &state.network_client {
-        if let Ok(jwt) = state.get_jwt() {
-            if let Err(e) = client
-                .delete_project(&project_id.to_string(), &jwt)
-                .await
-            {
-                warn!(%project_id, error = %e, "Failed to delete project from aura-network");
-            }
-        }
+        let jwt = state.get_jwt()?;
+        client
+            .delete_project(&project_id.to_string(), &jwt)
+            .await
+            .map_err(map_network_error)?;
     }
 
     Ok(StatusCode::NO_CONTENT)
