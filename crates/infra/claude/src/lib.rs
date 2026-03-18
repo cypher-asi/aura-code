@@ -95,6 +95,8 @@ pub struct ToolStreamResponse {
     pub stop_reason: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -265,6 +267,8 @@ pub enum ClaudeStreamEvent {
         stop_reason: String,
         input_tokens: u64,
         output_tokens: u64,
+        cache_creation_input_tokens: u64,
+        cache_read_input_tokens: u64,
     },
     Error(String),
 }
@@ -734,6 +738,8 @@ pub(crate) async fn parse_sse_events(
     let mut accumulated_text = String::new();
     let mut input_tokens: u64 = 0;
     let mut output_tokens: u64 = 0;
+    let mut cache_creation_input_tokens: u64 = 0;
+    let mut cache_read_input_tokens: u64 = 0;
     let mut stop_reason = String::from("end_turn");
 
     let mut tool_calls: Vec<ToolCall> = Vec::new();
@@ -777,10 +783,10 @@ pub(crate) async fn parse_sse_events(
                             if let Some(it) = usage.get("input_tokens").and_then(|v| v.as_u64()) {
                                 input_tokens = it;
                             }
-                            let cache_created = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                            if cache_created > 0 || cache_read > 0 {
-                                info!(cache_created, cache_read, "Prompt cache metrics");
+                            cache_creation_input_tokens = usage.get("cache_creation_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            cache_read_input_tokens = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            if cache_creation_input_tokens > 0 || cache_read_input_tokens > 0 {
+                                info!(cache_creation_input_tokens, cache_read_input_tokens, "Prompt cache metrics");
                             }
                         }
                     }
@@ -891,12 +897,16 @@ pub(crate) async fn parse_sse_events(
         stop_reason: stop_reason.clone(),
         input_tokens,
         output_tokens,
+        cache_creation_input_tokens,
+        cache_read_input_tokens,
     });
 
     info!(
         stop_reason = %stop_reason,
         input_tokens,
         output_tokens,
+        cache_creation_input_tokens,
+        cache_read_input_tokens,
         response_len = accumulated_text.len(),
         tool_call_count = tool_calls.len(),
         elapsed_ms = start.elapsed().as_millis() as u64,
@@ -909,6 +919,8 @@ pub(crate) async fn parse_sse_events(
         stop_reason,
         input_tokens,
         output_tokens,
+        cache_creation_input_tokens,
+        cache_read_input_tokens,
     })
 }
 
@@ -931,13 +943,13 @@ impl Default for ClaudeClient {
 /// the captured `(input_tokens, output_tokens)` once the sender is dropped.
 pub struct TokenCaptureHandle {
     forwarder: tokio::task::JoinHandle<()>,
-    tokens: std::sync::Arc<tokio::sync::Mutex<(u64, u64)>>,
+    tokens: std::sync::Arc<tokio::sync::Mutex<(u64, u64, u64, u64)>>,
 }
 
 impl TokenCaptureHandle {
     /// Wait for the forwarder task to complete, then return accumulated
-    /// `(input_tokens, output_tokens)`.
-    pub async fn finalize(self) -> (u64, u64) {
+    /// `(input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens)`.
+    pub async fn finalize(self) -> (u64, u64, u64, u64) {
         let _ = self.forwarder.await;
         *self.tokens.lock().await
     }
@@ -954,14 +966,19 @@ impl StreamTokenCapture {
         outer: mpsc::UnboundedSender<ClaudeStreamEvent>,
     ) -> (mpsc::UnboundedSender<ClaudeStreamEvent>, TokenCaptureHandle) {
         let (tx, mut rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-        let tokens = std::sync::Arc::new(tokio::sync::Mutex::new((0u64, 0u64)));
+        let tokens = std::sync::Arc::new(tokio::sync::Mutex::new((0u64, 0u64, 0u64, 0u64)));
         let tc = tokens.clone();
         let forwarder = tokio::spawn(async move {
             while let Some(evt) = rx.recv().await {
-                if let ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } = &evt {
+                if let ClaudeStreamEvent::Done {
+                    input_tokens, output_tokens,
+                    cache_creation_input_tokens, cache_read_input_tokens, ..
+                } = &evt {
                     let mut g = tc.lock().await;
                     g.0 = *input_tokens;
                     g.1 = *output_tokens;
+                    g.2 = *cache_creation_input_tokens;
+                    g.3 = *cache_read_input_tokens;
                 }
                 let _ = outer.send(evt);
             }
@@ -973,14 +990,19 @@ impl StreamTokenCapture {
     /// token counts across multiple `Done` events (useful for build-fix loops).
     pub fn sink() -> (mpsc::UnboundedSender<ClaudeStreamEvent>, TokenCaptureHandle) {
         let (tx, mut rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-        let tokens = std::sync::Arc::new(tokio::sync::Mutex::new((0u64, 0u64)));
+        let tokens = std::sync::Arc::new(tokio::sync::Mutex::new((0u64, 0u64, 0u64, 0u64)));
         let tc = tokens.clone();
         let forwarder = tokio::spawn(async move {
             while let Some(evt) = rx.recv().await {
-                if let ClaudeStreamEvent::Done { input_tokens, output_tokens, .. } = &evt {
+                if let ClaudeStreamEvent::Done {
+                    input_tokens, output_tokens,
+                    cache_creation_input_tokens, cache_read_input_tokens, ..
+                } = &evt {
                     let mut g = tc.lock().await;
                     g.0 += *input_tokens;
                     g.1 += *output_tokens;
+                    g.2 += *cache_creation_input_tokens;
+                    g.3 += *cache_read_input_tokens;
                 }
             }
         });

@@ -128,12 +128,20 @@ impl MeteredLlm {
         model: &str,
         input_tokens: u64,
         output_tokens: u64,
+        cache_creation_input_tokens: u64,
+        cache_read_input_tokens: u64,
         reason: &str,
         metadata: Option<serde_json::Value>,
     ) -> Result<(), MeteredLlmError> {
         let pricing = PricingService::new(self.store.clone());
         let (inp_rate, out_rate) = pricing.lookup_rate(model);
-        let usd_cost = (input_tokens as f64 * inp_rate + output_tokens as f64 * out_rate) / 1_000_000.0;
+        let non_cached = input_tokens.saturating_sub(cache_creation_input_tokens + cache_read_input_tokens);
+        let usd_cost = (
+            non_cached as f64 * inp_rate
+            + cache_creation_input_tokens as f64 * inp_rate * 1.25
+            + cache_read_input_tokens as f64 * inp_rate * 0.1
+            + output_tokens as f64 * out_rate
+        ) / 1_000_000.0;
         let amount = (usd_cost * self.credits_per_usd).round() as u64;
         if amount == 0 {
             return Ok(());
@@ -182,7 +190,7 @@ impl MeteredLlm {
     ) -> Result<LlmResponse, MeteredLlmError> {
         self.pre_flight_check().await?;
         let resp = self.provider.complete(api_key, system_prompt, user_message, max_tokens).await?;
-        self.debit(aura_claude::DEFAULT_MODEL, resp.input_tokens, resp.output_tokens, reason, metadata).await?;
+        self.debit(aura_claude::DEFAULT_MODEL, resp.input_tokens, resp.output_tokens, 0, 0, reason, metadata).await?;
         Ok(resp)
     }
 
@@ -200,7 +208,7 @@ impl MeteredLlm {
     ) -> Result<LlmResponse, MeteredLlmError> {
         self.pre_flight_check().await?;
         let resp = self.provider.complete_with_model(model, api_key, system_prompt, user_message, max_tokens).await?;
-        self.debit(model, resp.input_tokens, resp.output_tokens, reason, metadata).await?;
+        self.debit(model, resp.input_tokens, resp.output_tokens, 0, 0, reason, metadata).await?;
         Ok(resp)
     }
 
@@ -219,8 +227,8 @@ impl MeteredLlm {
         let result = self.provider.complete_stream(
             api_key, system_prompt, user_message, max_tokens, tx,
         ).await?;
-        let (inp, out) = handle.finalize().await;
-        self.debit(aura_claude::DEFAULT_MODEL, inp, out, reason, metadata).await?;
+        let (inp, out, cache_create, cache_read) = handle.finalize().await;
+        self.debit(aura_claude::DEFAULT_MODEL, inp, out, cache_create, cache_read, reason, metadata).await?;
         Ok(result)
     }
 
@@ -239,8 +247,8 @@ impl MeteredLlm {
         let result = self.provider.complete_stream_multi(
             api_key, system_prompt, messages, max_tokens, tx,
         ).await?;
-        let (inp, out) = handle.finalize().await;
-        self.debit(aura_claude::DEFAULT_MODEL, inp, out, reason, metadata).await?;
+        let (inp, out, cache_create, cache_read) = handle.finalize().await;
+        self.debit(aura_claude::DEFAULT_MODEL, inp, out, cache_create, cache_read, reason, metadata).await?;
         Ok(result)
     }
 
@@ -259,7 +267,7 @@ impl MeteredLlm {
         let resp = self.provider.complete_stream_with_tools(
             api_key, system_prompt, messages, tools, max_tokens, None, event_tx,
         ).await?;
-        self.debit(aura_claude::DEFAULT_MODEL, resp.input_tokens, resp.output_tokens, reason, metadata).await?;
+        self.debit(aura_claude::DEFAULT_MODEL, resp.input_tokens, resp.output_tokens, resp.cache_creation_input_tokens, resp.cache_read_input_tokens, reason, metadata).await?;
         Ok(resp)
     }
 
@@ -279,7 +287,7 @@ impl MeteredLlm {
         let resp = self.provider.complete_stream_with_tools(
             api_key, system_prompt, messages, tools, max_tokens, Some(thinking), event_tx,
         ).await?;
-        self.debit(aura_claude::DEFAULT_MODEL, resp.input_tokens, resp.output_tokens, reason, metadata).await?;
+        self.debit(aura_claude::DEFAULT_MODEL, resp.input_tokens, resp.output_tokens, resp.cache_creation_input_tokens, resp.cache_read_input_tokens, reason, metadata).await?;
         Ok(resp)
     }
 }

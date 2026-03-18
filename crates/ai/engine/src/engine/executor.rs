@@ -920,7 +920,7 @@ impl DevLoopEngine {
                             None,
                         )
                         .await?;
-                    let (inp, out) = sink_handle.finalize().await;
+                    let (inp, out, _, _) = sink_handle.finalize().await;
                     total_inp += inp;
                     total_out += out;
 
@@ -967,7 +967,7 @@ impl DevLoopEngine {
                             None,
                         )
                         .await?;
-                    let (inp, out) = sink_handle.finalize().await;
+                    let (inp, out, _, _) = sink_handle.finalize().await;
                     total_inp += inp;
                     total_out += out;
 

@@ -619,7 +619,7 @@ impl DevLoopEngine {
                     None,
                 )
                 .await?;
-            let (cap_inp, cap_out) = handle.finalize().await;
+            let (cap_inp, cap_out, _, _) = handle.finalize().await;
             fix_input_tokens += cap_inp;
             fix_output_tokens += cap_out;
 
@@ -872,7 +872,7 @@ impl DevLoopEngine {
                 None,
             )
             .await?;
-        let (test_fix_inp, test_fix_out) = handle.finalize().await;
+        let (test_fix_inp, test_fix_out, _, _) = handle.finalize().await;
 
         match parse_execution_response(&response) {
             Ok(fix_execution) => {
