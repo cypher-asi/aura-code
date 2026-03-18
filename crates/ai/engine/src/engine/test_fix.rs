@@ -65,15 +65,9 @@ impl DevLoopEngine {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn run_and_handle_tests(
-        &self,
-        project: &Project,
-        task: &Task,
-        session: &Session,
-        api_key: &str,
-        initial_execution: &TaskExecution,
-        test_command: &str,
-        base_path: &Path,
-        attempt: u32,
+        &self, project: &Project, task: &Task, session: &Session,
+        api_key: &str, initial_execution: &TaskExecution,
+        test_command: &str, base_path: &Path, attempt: u32,
         all_fix_ops: &mut Vec<FileOp>,
         baseline_test_failures: &HashSet<String>,
         prior_test_attempts: &mut Vec<BuildFixAttemptRecord>,
@@ -87,115 +81,141 @@ impl DevLoopEngine {
         self.persist_test_step(task, TestStepRecord {
             kind: "started".into(),
             command: Some(test_command.to_string()),
-            stderr: None,
-            stdout: None,
+            stderr: None, stdout: None,
             attempt: Some(attempt),
-            tests: vec![],
-            summary: None,
+            tests: vec![], summary: None,
         });
-
         let test_start = Instant::now();
         let test_result = build_verify::run_build_command(base_path, test_command, None).await?;
-        let test_duration_ms = test_start.elapsed().as_millis() as u64;
+        let dur = test_start.elapsed().as_millis() as u64;
         let (tests, summary) = build_verify::parse_test_output(
             &test_result.stdout, &test_result.stderr, test_result.success,
         );
-
         if test_result.success {
-            self.emit(EngineEvent::TestVerificationPassed {
-                project_id: project.project_id,
-                agent_instance_id: session.agent_instance_id,
-                task_id: task.task_id,
-                command: test_command.to_string(),
-                stdout: test_result.stdout.clone(),
-                tests: tests.clone(),
-                summary: summary.clone(),
-                duration_ms: Some(test_duration_ms),
-            });
-            self.persist_test_step(task, TestStepRecord {
-                kind: "passed".into(),
-                command: Some(test_command.to_string()),
-                stderr: None,
-                stdout: Some(test_result.stdout),
-                attempt: Some(attempt),
-                tests,
-                summary: Some(summary),
-            });
+            self.record_test_passed(
+                project, session, task, test_command, &test_result, &tests, &summary, dur, attempt);
             return Ok((true, 0, 0));
         }
-
-        if !baseline_test_failures.is_empty() {
-            let current_failures: HashSet<String> = tests
-                .iter()
-                .filter(|t| t.status == "failed")
-                .map(|t| t.name.clone())
-                .collect();
-            let new_failures: Vec<&String> = current_failures
-                .iter()
-                .filter(|name| !baseline_test_failures.contains(*name))
-                .collect();
-            if new_failures.is_empty() {
-                info!(
-                    task_id = %task.task_id,
-                    pre_existing = current_failures.len(),
-                    "all test failures are pre-existing (baseline), treating as passed"
-                );
-                let adjusted_summary = format!(
-                    "{summary} ({} pre-existing, ignored)",
-                    current_failures.len()
-                );
-                self.emit(EngineEvent::TestVerificationPassed {
-                    project_id: project.project_id,
-                    agent_instance_id: session.agent_instance_id,
-                    task_id: task.task_id,
-                    command: test_command.to_string(),
-                    stdout: test_result.stdout.clone(),
-                    tests: tests.clone(),
-                    summary: adjusted_summary.clone(),
-                    duration_ms: Some(test_duration_ms),
-                });
-                self.persist_test_step(task, TestStepRecord {
-                    kind: "passed_with_baseline_failures".into(),
-                    command: Some(test_command.to_string()),
-                    stderr: Some(test_result.stderr),
-                    stdout: Some(test_result.stdout),
-                    attempt: Some(attempt),
-                    tests,
-                    summary: Some(adjusted_summary),
-                });
-                return Ok((true, 0, 0));
-            }
-            info!(
-                task_id = %task.task_id,
-                new_failures = ?new_failures,
-                pre_existing = current_failures.len() - new_failures.len(),
-                "found {} new test failure(s) beyond baseline",
-                new_failures.len()
-            );
+        if self.check_baseline_failures(
+            project, session, task, test_command, &test_result,
+            &tests, &summary, dur, attempt, baseline_test_failures,
+        ) {
+            return Ok((true, 0, 0));
         }
+        self.record_test_failed(
+            project, session, task, test_command, &test_result, &tests, &summary, dur, attempt);
+        let (response, inp, out) = self.request_test_fix(
+            project, task, session, api_key, initial_execution,
+            test_command, &test_result, prior_test_attempts,
+        ).await?;
+        self.apply_test_fix_response(
+            task, base_path, project, session, &response,
+            attempt, all_fix_ops, &test_result, prior_test_attempts,
+        ).await?;
+        Ok((false, inp, out))
+    }
 
+    #[allow(clippy::too_many_arguments)]
+    fn record_test_passed(
+        &self, project: &Project, session: &Session, task: &Task,
+        test_command: &str, result: &build_verify::BuildResult,
+        tests: &[IndividualTestResult], summary: &str, duration_ms: u64, attempt: u32,
+    ) {
+        self.emit(EngineEvent::TestVerificationPassed {
+            project_id: project.project_id,
+            agent_instance_id: session.agent_instance_id,
+            task_id: task.task_id,
+            command: test_command.to_string(),
+            stdout: result.stdout.clone(),
+            tests: tests.to_vec(),
+            summary: summary.to_string(),
+            duration_ms: Some(duration_ms),
+        });
+        self.persist_test_step(task, TestStepRecord {
+            kind: "passed".into(),
+            command: Some(test_command.to_string()),
+            stderr: None,
+            stdout: Some(result.stdout.clone()),
+            attempt: Some(attempt),
+            tests: tests.to_vec(),
+            summary: Some(summary.to_string()),
+        });
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_baseline_failures(
+        &self, project: &Project, session: &Session, task: &Task,
+        test_command: &str, result: &build_verify::BuildResult,
+        tests: &[IndividualTestResult], summary: &str, duration_ms: u64,
+        attempt: u32, baseline: &HashSet<String>,
+    ) -> bool {
+        if baseline.is_empty() { return false; }
+        let current_failures: HashSet<String> = tests.iter()
+            .filter(|t| t.status == "failed").map(|t| t.name.clone()).collect();
+        let new_failures: Vec<&String> = current_failures.iter()
+            .filter(|name| !baseline.contains(*name)).collect();
+        if !new_failures.is_empty() {
+            info!(
+                task_id = %task.task_id, new_failures = ?new_failures,
+                pre_existing = current_failures.len() - new_failures.len(),
+                "found {} new test failure(s) beyond baseline", new_failures.len()
+            );
+            return false;
+        }
+        info!(
+            task_id = %task.task_id, pre_existing = current_failures.len(),
+            "all test failures are pre-existing (baseline), treating as passed"
+        );
+        let adjusted = format!("{summary} ({} pre-existing, ignored)", current_failures.len());
+        self.emit(EngineEvent::TestVerificationPassed {
+            project_id: project.project_id,
+            agent_instance_id: session.agent_instance_id,
+            task_id: task.task_id,
+            command: test_command.to_string(),
+            stdout: result.stdout.clone(),
+            tests: tests.to_vec(),
+            summary: adjusted.clone(),
+            duration_ms: Some(duration_ms),
+        });
+        self.persist_test_step(task, TestStepRecord {
+            kind: "passed_with_baseline_failures".into(),
+            command: Some(test_command.to_string()),
+            stderr: Some(result.stderr.clone()),
+            stdout: Some(result.stdout.clone()),
+            attempt: Some(attempt),
+            tests: tests.to_vec(),
+            summary: Some(adjusted),
+        });
+        true
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_test_failed(
+        &self, project: &Project, session: &Session, task: &Task,
+        test_command: &str, result: &build_verify::BuildResult,
+        tests: &[IndividualTestResult], summary: &str, duration_ms: u64, attempt: u32,
+    ) {
         self.emit(EngineEvent::TestVerificationFailed {
             project_id: project.project_id,
             agent_instance_id: session.agent_instance_id,
             task_id: task.task_id,
             command: test_command.to_string(),
-            stdout: test_result.stdout.clone(),
-            stderr: test_result.stderr.clone(),
+            stdout: result.stdout.clone(),
+            stderr: result.stderr.clone(),
             attempt,
-            tests: tests.clone(),
-            summary: summary.clone(),
-            duration_ms: Some(test_duration_ms),
+            tests: tests.to_vec(),
+            summary: summary.to_string(),
+            duration_ms: Some(duration_ms),
         });
         self.persist_test_step(task, TestStepRecord {
             kind: "failed".into(),
             command: Some(test_command.to_string()),
-            stderr: Some(test_result.stderr.clone()),
-            stdout: Some(test_result.stdout.clone()),
+            stderr: Some(result.stderr.clone()),
+            stdout: Some(result.stdout.clone()),
             attempt: Some(attempt),
-            tests,
-            summary: Some(summary),
+            tests: tests.to_vec(),
+            summary: Some(summary.to_string()),
         });
-
         self.emit(EngineEvent::TestFixAttempt {
             project_id: project.project_id,
             agent_instance_id: session.agent_instance_id,
@@ -204,53 +224,56 @@ impl DevLoopEngine {
         });
         self.persist_test_step(task, TestStepRecord {
             kind: "fix_attempt".into(),
-            command: None,
-            stderr: None,
-            stdout: None,
+            command: None, stderr: None, stdout: None,
             attempt: Some(attempt),
-            tests: vec![],
-            summary: None,
+            tests: vec![], summary: None,
         });
+    }
 
+    async fn request_test_fix(
+        &self, project: &Project, task: &Task, session: &Session,
+        api_key: &str, initial_execution: &TaskExecution,
+        test_command: &str, test_result: &build_verify::BuildResult,
+        prior_test_attempts: &[BuildFixAttemptRecord],
+    ) -> Result<(String, u64, u64), EngineError> {
         let spec = self.store.get_spec(&task.project_id, &task.spec_id)?;
         let codebase_snapshot =
             file_ops::read_relevant_files(&project.linked_folder_path, BUILD_FIX_SNAPSHOT_BUDGET)?;
-
         let fix_prompt = build_fix_prompt_with_history(
-            project,
-            &spec,
-            task,
-            session,
-            &codebase_snapshot,
-            test_command,
-            &test_result.stderr,
-            &test_result.stdout,
-            &initial_execution.notes,
-            prior_test_attempts,
+            project, &spec, task, session, &codebase_snapshot,
+            test_command, &test_result.stderr, &test_result.stdout,
+            &initial_execution.notes, prior_test_attempts,
         );
-
         let (tx, handle) = StreamTokenCapture::sink();
         let response = self
             .llm
             .complete_stream(
-                api_key,
-                &build_fix_system_prompt(),
-                &fix_prompt,
+                api_key, &build_fix_system_prompt(), &fix_prompt,
                 self.llm_config.task_execution_max_tokens,
-                tx,
-                "aura_build_fix",
-                None,
+                tx, "aura_build_fix", None,
             )
             .await?;
-        let (test_fix_inp, test_fix_out, _, _) = handle.finalize().await;
+        let (inp, out, _, _) = handle.finalize().await;
+        Ok((response, inp, out))
+    }
 
-        match parse_execution_response(&response) {
+    #[allow(clippy::too_many_arguments)]
+    async fn apply_test_fix_response(
+        &self, task: &Task, base_path: &Path,
+        project: &Project, session: &Session, response: &str,
+        attempt: u32, all_fix_ops: &mut Vec<FileOp>,
+        test_result: &build_verify::BuildResult,
+        prior_test_attempts: &mut Vec<BuildFixAttemptRecord>,
+    ) -> Result<(), EngineError> {
+        match parse_execution_response(response) {
             Ok(fix_execution) => {
                 file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await?;
                 if !fix_execution.file_ops.is_empty() {
-                    self.emit_file_ops_applied(project.project_id, session.agent_instance_id, task, &fix_execution.file_ops);
+                    self.emit_file_ops_applied(
+                        project.project_id, session.agent_instance_id,
+                        task, &fix_execution.file_ops,
+                    );
                 }
-
                 let attempt_files: Vec<String> = fix_execution.file_ops.iter().map(|op| {
                     let (op_name, path) = match op {
                         FileOp::Create { path, .. } => ("create", path.as_str()),
@@ -266,19 +289,15 @@ impl DevLoopEngine {
                     error_signature: sig,
                     files_changed: attempt_files,
                 });
-
                 all_fix_ops.extend(fix_execution.file_ops);
             }
             Err(e) => {
                 warn!(
-                    task_id = %task.task_id,
-                    attempt,
-                    error = %e,
+                    task_id = %task.task_id, attempt, error = %e,
                     "failed to parse test-fix response"
                 );
             }
         }
-
-        Ok((false, test_fix_inp, test_fix_out))
+        Ok(())
     }
 }

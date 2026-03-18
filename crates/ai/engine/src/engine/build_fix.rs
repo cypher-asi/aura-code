@@ -108,17 +108,10 @@ impl DevLoopEngine {
         );
     }
 
-    /// Returns (fix_ops, build_passed, attempts_used, duplicate_bailouts, fix_input_tokens, fix_output_tokens).
-    pub(crate) async fn verify_and_fix_build(
-        &self,
-        project: &Project,
-        task: &Task,
-        session: &Session,
-        api_key: &str,
-        initial_execution: &TaskExecution,
-        baseline_test_failures: &HashSet<String>,
-    ) -> Result<(Vec<FileOp>, bool, u32, u32, u64, u64), EngineError> {
-        let mut build_command = match &project.build_command {
+    fn resolve_build_command(
+        &self, project: &Project, session: &Session, task: &Task,
+    ) -> Option<String> {
+        let cmd = match &project.build_command {
             Some(cmd) if !cmd.trim().is_empty() => cmd.clone(),
             _ => {
                 self.emit(EngineEvent::BuildVerificationSkipped {
@@ -134,10 +127,10 @@ impl DevLoopEngine {
                     stdout: Some("no build_command configured on project".into()),
                     attempt: None,
                 });
-                return Ok((vec![], true, 0, 0, 0, 0));
+                return None;
             }
         };
-
+        let mut build_command = cmd;
         if let Some(corrected) = auto_correct_build_command(&build_command) {
             warn!(
                 old = %build_command, new = %corrected,
@@ -152,272 +145,322 @@ impl DevLoopEngine {
             );
             build_command = corrected;
         }
+        Some(build_command)
+    }
 
-        let test_command = project.test_command.as_ref()
-            .filter(|cmd| !cmd.trim().is_empty())
-            .cloned();
+    async fn run_build_with_streaming(
+        &self, project: &Project, session: &Session, task: &Task,
+        base_path: &Path, build_command: &str, attempt: u32,
+    ) -> Result<(build_verify::BuildResult, u64), EngineError> {
+        let build_step_start = Instant::now();
+        self.emit(EngineEvent::BuildVerificationStarted {
+            project_id: project.project_id,
+            agent_instance_id: session.agent_instance_id,
+            task_id: task.task_id,
+            command: build_command.to_string(),
+        });
+        self.persist_build_step(task, BuildStepRecord {
+            kind: "started".into(),
+            command: Some(build_command.to_string()),
+            stderr: None,
+            stdout: None,
+            attempt: Some(attempt),
+        });
+        let (line_tx, mut line_rx) = tokio::sync::mpsc::unbounded_channel();
+        let fwd_event_tx = self.event_tx.clone();
+        let fwd_pid = project.project_id;
+        let fwd_aiid = session.agent_instance_id;
+        let fwd_tid = task.task_id;
+        tokio::spawn(async move {
+            while let Some(line) = line_rx.recv().await {
+                let _ = fwd_event_tx.send(EngineEvent::TaskOutputDelta {
+                    project_id: fwd_pid,
+                    agent_instance_id: fwd_aiid,
+                    task_id: fwd_tid,
+                    delta: line,
+                });
+            }
+        });
+        let build_result = build_verify::run_build_command(
+            base_path, build_command, Some(line_tx),
+        ).await?;
+        let step_duration_ms = build_step_start.elapsed().as_millis() as u64;
+        Ok((build_result, step_duration_ms))
+    }
 
+    fn try_auto_correct_timeout(
+        &self, project: &Project, build_command: &str,
+    ) -> Option<String> {
+        let corrected = auto_correct_build_command(build_command)?;
+        warn!(
+            old = %build_command, new = %corrected,
+            "build command timed out, auto-correcting"
+        );
+        let _ = self.project_service.update_project(
+            &project.project_id,
+            aura_projects::UpdateProjectInput {
+                build_command: Some(corrected.clone()),
+                ..Default::default()
+            },
+        );
+        Some(corrected)
+    }
+
+    fn record_build_passed(
+        &self, project: &Project, session: &Session, task: &Task,
+        build_command: &str, stdout: &str, duration_ms: u64, attempt: u32,
+    ) {
+        self.emit(EngineEvent::BuildVerificationPassed {
+            project_id: project.project_id,
+            agent_instance_id: session.agent_instance_id,
+            task_id: task.task_id,
+            command: build_command.to_string(),
+            stdout: stdout.to_string(),
+            duration_ms: Some(duration_ms),
+        });
+        self.persist_build_step(task, BuildStepRecord {
+            kind: "passed".into(),
+            command: Some(build_command.to_string()),
+            stderr: None,
+            stdout: Some(stdout.to_string()),
+            attempt: Some(attempt),
+        });
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_build_failed(
+        &self, project: &Project, session: &Session, task: &Task,
+        build_command: &str, stdout: &str, stderr: &str,
+        duration_ms: u64, attempt: u32,
+    ) {
+        let error_hash = Some(format!("{:x}", {
+            let mut h = 0u64;
+            for b in stderr.bytes() { h = h.wrapping_mul(31).wrapping_add(b as u64); }
+            h
+        }));
+        self.emit(EngineEvent::BuildVerificationFailed {
+            project_id: project.project_id,
+            agent_instance_id: session.agent_instance_id,
+            task_id: task.task_id,
+            command: build_command.to_string(),
+            stdout: stdout.to_string(),
+            stderr: stderr.to_string(),
+            attempt,
+            duration_ms: Some(duration_ms),
+            error_hash,
+        });
+        self.persist_build_step(task, BuildStepRecord {
+            kind: "failed".into(),
+            command: Some(build_command.to_string()),
+            stderr: Some(stderr.to_string()),
+            stdout: Some(stdout.to_string()),
+            attempt: Some(attempt),
+        });
+    }
+
+    fn check_error_stagnation(
+        &self, task: &Task, stderr: &str,
+        prior_attempts: &[BuildFixAttemptRecord], attempt: u32,
+    ) -> bool {
+        let current_signature = normalize_error_signature(stderr);
+        let consecutive_dupes = prior_attempts
+            .iter()
+            .rev()
+            .take_while(|a| a.error_signature == current_signature)
+            .count();
+        if consecutive_dupes >= 2 {
+            info!(
+                task_id = %task.task_id, attempt,
+                "same error pattern repeated {} times (after normalizing line numbers), aborting fix loop",
+                consecutive_dupes + 1
+            );
+            return true;
+        }
+        false
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn request_build_fix(
+        &self, project: &Project, task: &Task, session: &Session,
+        api_key: &str, initial_execution: &TaskExecution,
+        build_command: &str, build_stderr: &str, build_stdout: &str,
+        prior_attempts: &[BuildFixAttemptRecord], attempt: u32,
+    ) -> Result<(String, u64, u64), EngineError> {
+        self.emit(EngineEvent::BuildFixAttempt {
+            project_id: project.project_id,
+            agent_instance_id: session.agent_instance_id,
+            task_id: task.task_id,
+            attempt,
+        });
+        self.persist_build_step(task, BuildStepRecord {
+            kind: "fix_attempt".into(),
+            command: None,
+            stderr: None,
+            stdout: None,
+            attempt: Some(attempt),
+        });
+        let spec = self.store.get_spec(&task.project_id, &task.spec_id)?;
+        let codebase_snapshot =
+            file_ops::read_relevant_files(&project.linked_folder_path, BUILD_FIX_SNAPSHOT_BUDGET)?;
+        let fix_prompt = build_fix_prompt_with_history(
+            project, &spec, task, session, &codebase_snapshot,
+            build_command, build_stderr, build_stdout,
+            &initial_execution.notes, prior_attempts,
+        );
+        let (tx, handle) = StreamTokenCapture::sink();
+        let response = self
+            .llm
+            .complete_stream(
+                api_key, &build_fix_system_prompt(), &fix_prompt,
+                self.llm_config.task_execution_max_tokens,
+                tx, "aura_build_fix", None,
+            )
+            .await?;
+        let (cap_inp, cap_out, _, _) = handle.finalize().await;
+        Ok((response, cap_inp, cap_out))
+    }
+
+    async fn apply_fix_response(
+        &self, project: &Project, session: &Session, task: &Task,
+        base_path: &Path, response: &str, attempt: u32,
+    ) -> Result<(bool, Vec<String>, Vec<FileOp>), EngineError> {
+        match parse_execution_response(response) {
+            Ok(fix_execution) => {
+                file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await?;
+                let files_changed: Vec<String> = fix_execution.file_ops.iter().map(|op| {
+                    let (op_name, path) = match op {
+                        FileOp::Create { path, .. } => ("create", path.as_str()),
+                        FileOp::Modify { path, .. } => ("modify", path.as_str()),
+                        FileOp::Delete { path } => ("delete", path.as_str()),
+                        FileOp::SearchReplace { path, .. } => ("search_replace", path.as_str()),
+                    };
+                    format!("{op_name} {path}")
+                }).collect();
+                if !fix_execution.file_ops.is_empty() {
+                    self.emit_file_ops_applied(
+                        project.project_id, session.agent_instance_id,
+                        task, &fix_execution.file_ops,
+                    );
+                }
+                Ok((true, files_changed, fix_execution.file_ops))
+            }
+            Err(e) => {
+                warn!(
+                    task_id = %task.task_id, attempt, error = %e,
+                    "failed to parse build-fix response, fix not applied"
+                );
+                Ok((false, vec![], vec![]))
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn handle_build_success(
+        &self, project: &Project, task: &Task, session: &Session,
+        api_key: &str, initial_execution: &TaskExecution,
+        build_command: &str, stdout: &str, duration_ms: u64,
+        attempt: u32, test_command: &Option<String>,
+        base_path: &Path, all_fix_ops: &mut Vec<FileOp>,
+        baseline_test_failures: &HashSet<String>,
+        prior_test_attempts: &mut Vec<BuildFixAttemptRecord>,
+    ) -> Result<(bool, u64, u64), EngineError> {
+        self.record_build_passed(project, session, task, build_command, stdout, duration_ms, attempt);
+        match test_command.as_deref() {
+            Some(test_cmd) => {
+                self.run_and_handle_tests(
+                    project, task, session, api_key, initial_execution,
+                    test_cmd, base_path, attempt, all_fix_ops,
+                    baseline_test_failures, prior_test_attempts,
+                ).await
+            }
+            None => Ok((true, 0, 0)),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn attempt_build_fix(
+        &self, project: &Project, task: &Task, session: &Session,
+        api_key: &str, initial_execution: &TaskExecution,
+        build_command: &str, build_result: &build_verify::BuildResult,
+        base_path: &Path, prior_attempts: &mut Vec<BuildFixAttemptRecord>,
+        all_fix_ops: &mut Vec<FileOp>, attempt: u32,
+    ) -> Result<(u64, u64), EngineError> {
+        let (response, inp, out) = self.request_build_fix(
+            project, task, session, api_key, initial_execution,
+            build_command, &build_result.stderr, &build_result.stdout,
+            prior_attempts, attempt,
+        ).await?;
+        let (fix_applied, files_changed, ops) = self.apply_fix_response(
+            project, session, task, base_path, &response, attempt,
+        ).await?;
+        all_fix_ops.extend(ops);
+        if fix_applied {
+            let sig = normalize_error_signature(&build_result.stderr);
+            prior_attempts.push(BuildFixAttemptRecord {
+                stderr: build_result.stderr.clone(),
+                error_signature: sig,
+                files_changed,
+            });
+        }
+        Ok((inp, out))
+    }
+
+    /// Returns (fix_ops, build_passed, attempts_used, duplicate_bailouts, fix_input_tokens, fix_output_tokens).
+    pub(crate) async fn verify_and_fix_build(
+        &self, project: &Project, task: &Task, session: &Session,
+        api_key: &str, initial_execution: &TaskExecution,
+        baseline_test_failures: &HashSet<String>,
+    ) -> Result<(Vec<FileOp>, bool, u32, u32, u64, u64), EngineError> {
+        let mut build_cmd = match self.resolve_build_command(project, session, task) {
+            Some(cmd) => cmd,
+            None => return Ok((vec![], true, 0, 0, 0, 0)),
+        };
+        let test_cmd = project.test_command.as_ref().filter(|c| !c.trim().is_empty()).cloned();
         let base_path = Path::new(&project.linked_folder_path);
-        let mut all_fix_ops: Vec<FileOp> = Vec::new();
-        let mut prior_attempts: Vec<BuildFixAttemptRecord> = Vec::new();
-        let mut prior_test_attempts: Vec<BuildFixAttemptRecord> = Vec::new();
-        let mut duplicate_bailouts: u32 = 0;
-        let mut fix_input_tokens: u64 = 0;
-        let mut fix_output_tokens: u64 = 0;
+        let mut fix_ops: Vec<FileOp> = Vec::new();
+        let mut prior: Vec<BuildFixAttemptRecord> = Vec::new();
+        let mut test_prior: Vec<BuildFixAttemptRecord> = Vec::new();
+        let (mut dup_bail, mut inp_t, mut out_t) = (0u32, 0u64, 0u64);
 
         for attempt in 1..=self.engine_config.max_build_fix_retries {
-            let build_step_start = Instant::now();
-            self.emit(EngineEvent::BuildVerificationStarted {
-                project_id: project.project_id,
-                agent_instance_id: session.agent_instance_id,
-                task_id: task.task_id,
-                command: build_command.clone(),
-            });
-            self.persist_build_step(task, BuildStepRecord {
-                kind: "started".into(),
-                command: Some(build_command.clone()),
-                stderr: None,
-                stdout: None,
-                attempt: Some(attempt),
-            });
-
-            let (line_tx, mut line_rx) = tokio::sync::mpsc::unbounded_channel();
-            let fwd_event_tx = self.event_tx.clone();
-            let fwd_pid = project.project_id;
-            let fwd_aiid = session.agent_instance_id;
-            let fwd_tid = task.task_id;
-            tokio::spawn(async move {
-                while let Some(line) = line_rx.recv().await {
-                    let _ = fwd_event_tx.send(EngineEvent::TaskOutputDelta {
-                        project_id: fwd_pid,
-                        agent_instance_id: fwd_aiid,
-                        task_id: fwd_tid,
-                        delta: line,
-                    });
-                }
-            });
-            let build_result = build_verify::run_build_command(base_path, &build_command, Some(line_tx)).await?;
-            let step_duration_ms = build_step_start.elapsed().as_millis() as u64;
-
-            if build_result.timed_out {
-                if let Some(corrected) = auto_correct_build_command(&build_command) {
-                    warn!(
-                        old = %build_command, new = %corrected,
-                        "build command timed out, auto-correcting"
-                    );
-                    let _ = self.project_service.update_project(
-                        &project.project_id,
-                        aura_projects::UpdateProjectInput {
-                            build_command: Some(corrected.clone()),
-                            ..Default::default()
-                        },
-                    );
-                    build_command = corrected;
+            let (br, dur) = self.run_build_with_streaming(
+                project, session, task, base_path, &build_cmd, attempt,
+            ).await?;
+            if br.timed_out {
+                if let Some(c) = self.try_auto_correct_timeout(project, &build_cmd) {
+                    build_cmd = c;
                     continue;
                 }
             }
-
-            if build_result.success {
-                self.emit(EngineEvent::BuildVerificationPassed {
-                    project_id: project.project_id,
-                    agent_instance_id: session.agent_instance_id,
-                    task_id: task.task_id,
-                    command: build_command.clone(),
-                    stdout: build_result.stdout.clone(),
-                    duration_ms: Some(step_duration_ms),
-                });
-                self.persist_build_step(task, BuildStepRecord {
-                    kind: "passed".into(),
-                    command: Some(build_command.clone()),
-                    stderr: None,
-                    stdout: Some(build_result.stdout),
-                    attempt: Some(attempt),
-                });
-
-                let test_passed = if let Some(ref test_cmd) = test_command {
-                    let (test_result, test_inp, test_out) = self.run_and_handle_tests(
-                        project, task, session, api_key, initial_execution,
-                        test_cmd, base_path, attempt, &mut all_fix_ops,
-                        baseline_test_failures, &mut prior_test_attempts,
-                    ).await?;
-                    fix_input_tokens += test_inp;
-                    fix_output_tokens += test_out;
-                    test_result
-                } else {
-                    true
-                };
-
-                if test_passed {
-                    return Ok((all_fix_ops, true, attempt, duplicate_bailouts, fix_input_tokens, fix_output_tokens));
-                }
+            if br.success {
+                let (tp, i, o) = self.handle_build_success(
+                    project, task, session, api_key, initial_execution, &build_cmd,
+                    &br.stdout, dur, attempt, &test_cmd, base_path, &mut fix_ops,
+                    baseline_test_failures, &mut test_prior,
+                ).await?;
+                inp_t += i; out_t += o;
+                if tp { return Ok((fix_ops, true, attempt, dup_bail, inp_t, out_t)); }
                 continue;
             }
-
-            let error_hash = Some(format!("{:x}", {
-                let mut h = 0u64;
-                for b in build_result.stderr.bytes() {
-                    h = h.wrapping_mul(31).wrapping_add(b as u64);
-                }
-                h
-            }));
-
-            self.emit(EngineEvent::BuildVerificationFailed {
-                project_id: project.project_id,
-                agent_instance_id: session.agent_instance_id,
-                task_id: task.task_id,
-                command: build_command.clone(),
-                stdout: build_result.stdout.clone(),
-                stderr: build_result.stderr.clone(),
-                attempt,
-                duration_ms: Some(step_duration_ms),
-                error_hash,
-            });
-            self.persist_build_step(task, BuildStepRecord {
-                kind: "failed".into(),
-                command: Some(build_command.clone()),
-                stderr: Some(build_result.stderr.clone()),
-                stdout: Some(build_result.stdout.clone()),
-                attempt: Some(attempt),
-            });
-
+            self.record_build_failed(
+                project, session, task, &build_cmd,
+                &br.stdout, &br.stderr, dur, attempt,
+            );
             if attempt == self.engine_config.max_build_fix_retries {
                 info!(task_id = %task.task_id, "build still failing after max retries");
-                return Ok((all_fix_ops, false, attempt, duplicate_bailouts, fix_input_tokens, fix_output_tokens));
+                return Ok((fix_ops, false, attempt, dup_bail, inp_t, out_t));
             }
-
-            let current_signature = normalize_error_signature(&build_result.stderr);
-            let consecutive_dupes = prior_attempts
-                .iter()
-                .rev()
-                .take_while(|a| a.error_signature == current_signature)
-                .count();
-            if consecutive_dupes >= 2 {
-                info!(
-                    task_id = %task.task_id,
-                    attempt,
-                    "same error pattern repeated {} times (after normalizing line numbers), aborting fix loop",
-                    consecutive_dupes + 1
-                );
-                duplicate_bailouts += 1;
-                return Ok((all_fix_ops, false, attempt, duplicate_bailouts, fix_input_tokens, fix_output_tokens));
+            if self.check_error_stagnation(task, &br.stderr, &prior, attempt) {
+                dup_bail += 1;
+                return Ok((fix_ops, false, attempt, dup_bail, inp_t, out_t));
             }
-
-            self.emit(EngineEvent::BuildFixAttempt {
-                project_id: project.project_id,
-                agent_instance_id: session.agent_instance_id,
-                task_id: task.task_id,
-                attempt,
-            });
-            self.persist_build_step(task, BuildStepRecord {
-                kind: "fix_attempt".into(),
-                command: None,
-                stderr: None,
-                stdout: None,
-                attempt: Some(attempt),
-            });
-
-            let spec = self.store.get_spec(&task.project_id, &task.spec_id)?;
-            let codebase_snapshot =
-                file_ops::read_relevant_files(&project.linked_folder_path, BUILD_FIX_SNAPSHOT_BUDGET)?;
-
-            let fix_prompt = build_fix_prompt_with_history(
-                project,
-                &spec,
-                task,
-                session,
-                &codebase_snapshot,
-                &build_command,
-                &build_result.stderr,
-                &build_result.stdout,
-                &initial_execution.notes,
-                &prior_attempts,
-            );
-
-            let (tx, handle) = StreamTokenCapture::sink();
-            let response = self
-                .llm
-                .complete_stream(
-                    api_key,
-                    &build_fix_system_prompt(),
-                    &fix_prompt,
-                    self.llm_config.task_execution_max_tokens,
-                    tx,
-                    "aura_build_fix",
-                    None,
-                )
-                .await?;
-            let (cap_inp, cap_out, _, _) = handle.finalize().await;
-            fix_input_tokens += cap_inp;
-            fix_output_tokens += cap_out;
-
-            let mut attempt_files_changed: Vec<String> = Vec::new();
-
-            let fix_applied = match parse_execution_response(&response) {
-                Ok(fix_execution) => {
-                    file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await?;
-
-                    let files: Vec<crate::events::FileOpSummary> = fix_execution
-                        .file_ops
-                        .iter()
-                        .map(|op| {
-                            let (op_name, path) = match op {
-                                FileOp::Create { path, .. } => ("create", path.as_str()),
-                                FileOp::Modify { path, .. } => ("modify", path.as_str()),
-                                FileOp::Delete { path } => ("delete", path.as_str()),
-                                FileOp::SearchReplace { path, .. } => ("search_replace", path.as_str()),
-                            };
-                            attempt_files_changed.push(format!("{op_name} {path}"));
-                            crate::events::FileOpSummary {
-                                op: op_name.to_string(),
-                                path: path.to_string(),
-                            }
-                        })
-                        .collect();
-
-                    if !fix_execution.file_ops.is_empty() {
-                        self.emit(EngineEvent::FileOpsApplied {
-                            project_id: project.project_id,
-                            agent_instance_id: session.agent_instance_id,
-                            task_id: task.task_id,
-                            files_written: fix_execution
-                                .file_ops
-                                .iter()
-                                .filter(|op| matches!(op, FileOp::Create { .. } | FileOp::Modify { .. } | FileOp::SearchReplace { .. }))
-                                .count(),
-                            files_deleted: fix_execution
-                                .file_ops
-                                .iter()
-                                .filter(|op| matches!(op, FileOp::Delete { .. }))
-                                .count(),
-                            files,
-                        });
-                    }
-
-                    all_fix_ops.extend(fix_execution.file_ops);
-                    true
-                }
-                Err(e) => {
-                    warn!(
-                        task_id = %task.task_id,
-                        attempt,
-                        error = %e,
-                        "failed to parse build-fix response, fix not applied"
-                    );
-                    false
-                }
-            };
-
-            if fix_applied {
-                let sig = normalize_error_signature(&build_result.stderr);
-                prior_attempts.push(BuildFixAttemptRecord {
-                    stderr: build_result.stderr,
-                    error_signature: sig,
-                    files_changed: attempt_files_changed,
-                });
-            }
+            let (i, o) = self.attempt_build_fix(
+                project, task, session, api_key, initial_execution, &build_cmd,
+                &br, base_path, &mut prior, &mut fix_ops, attempt,
+            ).await?;
+            inp_t += i; out_t += o;
         }
-
-        Ok((all_fix_ops, false, self.engine_config.max_build_fix_retries, duplicate_bailouts, fix_input_tokens, fix_output_tokens))
+        Ok((fix_ops, false, self.engine_config.max_build_fix_retries, dup_bail, inp_t, out_t))
     }
 }
 

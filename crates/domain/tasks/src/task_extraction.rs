@@ -70,11 +70,9 @@ impl TaskExtractionService {
     pub async fn extract_all_tasks(&self, project_id: &ProjectId) -> Result<Vec<Task>, TaskError> {
         let mut specs = self.store.list_specs_by_project(project_id)?;
         specs.sort_by_key(|s| s.order_index);
-
         let api_key = self.settings.get_decrypted_api_key()?;
 
         let mut all_raw: Vec<(RawTaskOutput, ProjectId, SpecId, u32)> = Vec::new();
-
         for spec in &specs {
             let raw_tasks = self.extract_tasks_from_spec(spec, &api_key).await?;
             for (raw, order) in raw_tasks {
@@ -82,16 +80,28 @@ impl TaskExtractionService {
             }
         }
 
+        let mut tasks = Self::build_tasks_from_raw(&all_raw);
+        Self::auto_chain_tasks(&mut tasks);
+        for task in &mut tasks {
+            if task.dependency_ids.is_empty() {
+                task.status = TaskStatus::Ready;
+            }
+        }
+        TaskService::detect_cycles(&tasks)?;
+        self.persist_extracted_tasks(project_id, &tasks)?;
+        Ok(tasks)
+    }
+
+    fn build_tasks_from_raw(all_raw: &[(RawTaskOutput, ProjectId, SpecId, u32)]) -> Vec<Task> {
         let now = Utc::now();
         let mut tasks: Vec<Task> = Vec::new();
         let mut title_to_id: HashMap<String, TaskId> = HashMap::new();
         let mut raw_deps: Vec<Vec<String>> = Vec::new();
 
-        for (raw, pid, sid, order) in &all_raw {
+        for (raw, pid, sid, order) in all_raw {
             let task_id = TaskId::new();
             title_to_id.insert(raw.title.clone(), task_id);
             raw_deps.push(raw.depends_on.clone());
-
             tasks.push(Task {
                 task_id,
                 project_id: *pid,
@@ -120,41 +130,31 @@ impl TaskExtractionService {
         }
 
         for (i, dep_titles) in raw_deps.iter().enumerate() {
-            let mut resolved_deps = Vec::new();
-            for title in dep_titles {
-                if let Some(&dep_id) = title_to_id.get(title) {
-                    resolved_deps.push(dep_id);
+            tasks[i].dependency_ids = dep_titles
+                .iter()
+                .filter_map(|title| title_to_id.get(title).copied())
+                .collect();
+        }
+        tasks
+    }
+
+    fn auto_chain_tasks(tasks: &mut [Task]) {
+        let mut last_in_spec: HashMap<SpecId, TaskId> = HashMap::new();
+        for task in tasks.iter_mut() {
+            if let Some(&prev_id) = last_in_spec.get(&task.spec_id) {
+                if task.dependency_ids.is_empty() {
+                    task.dependency_ids.push(prev_id);
                 }
             }
-            tasks[i].dependency_ids = resolved_deps;
+            last_in_spec.insert(task.spec_id, task.task_id);
         }
+    }
 
-        // Auto-chain tasks within each spec: if task[i] has no dependencies
-        // and the previous task in the same spec exists, make it depend on
-        // that predecessor.
-        {
-            let mut last_in_spec: HashMap<SpecId, TaskId> = HashMap::new();
-            for task in &mut tasks {
-                if let Some(&prev_id) = last_in_spec.get(&task.spec_id) {
-                    if task.dependency_ids.is_empty() {
-                        task.dependency_ids.push(prev_id);
-                    }
-                }
-                last_in_spec.insert(task.spec_id, task.task_id);
-            }
-        }
-
-        for task in &mut tasks {
-            if task.dependency_ids.is_empty() {
-                task.status = TaskStatus::Ready;
-            }
-        }
-
-        TaskService::detect_cycles(&tasks)?;
-
+    fn persist_extracted_tasks(
+        &self, project_id: &ProjectId, tasks: &[Task],
+    ) -> Result<(), TaskError> {
         let existing_tasks = self.store.list_tasks_by_project(project_id)?;
         let mut ops: Vec<BatchOp> = Vec::new();
-
         for old_task in &existing_tasks {
             ops.push(BatchOp::Delete {
                 cf: ColumnFamilyName::Tasks,
@@ -164,8 +164,7 @@ impl TaskExtractionService {
                 ),
             });
         }
-
-        for task in &tasks {
+        for task in tasks {
             ops.push(BatchOp::Put {
                 cf: ColumnFamilyName::Tasks,
                 key: format!("{}:{}:{}", task.project_id, task.spec_id, task.task_id),
@@ -173,10 +172,8 @@ impl TaskExtractionService {
                     .map_err(|e| TaskError::ParseError(e.to_string()))?,
             });
         }
-
         self.store.write_batch(ops)?;
-
-        Ok(tasks)
+        Ok(())
     }
 
     fn parse_extraction_response(response: &str) -> Result<Vec<RawTaskOutput>, TaskError> {
