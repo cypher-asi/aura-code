@@ -187,6 +187,27 @@ pub struct Session {
     pub ended_at: Option<DateTime<Utc>>,
 }
 
+impl Session {
+    pub fn dummy(project_id: ProjectId) -> Self {
+        Self {
+            session_id: SessionId::new(),
+            agent_instance_id: AgentInstanceId::new(),
+            project_id,
+            active_task_id: None,
+            tasks_worked: vec![],
+            context_usage_estimate: 0.0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            summary_of_previous_context: String::new(),
+            status: SessionStatus::Active,
+            user_id: None,
+            model: None,
+            started_at: chrono::Utc::now(),
+            ended_at: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Message {
     pub message_id: MessageId,
