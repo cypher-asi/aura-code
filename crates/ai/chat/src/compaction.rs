@@ -62,7 +62,7 @@ pub fn microcompact(content: &str) -> String {
         .collect();
     let omitted = content.len() - MICRO.keep_head - MICRO.keep_tail;
     format!(
-        "{head}\n\n[... {omitted} characters omitted — re-read the file or re-run the command if you need the full output ...]\n\n{tail}"
+        "{head}\n\n[... {omitted} characters omitted — use read_file with start_line/end_line for specific sections, or re-run the command if you need the full output ...]\n\n{tail}"
     )
 }
 
@@ -88,7 +88,7 @@ fn smart_compact_inner(tool_name: &str, content: &str, is_error: bool) -> String
         let sigs = aura_core::rust_signatures::extract_signatures(content);
         if !sigs.is_empty() && sigs.len() < content.len() / 2 {
             return format!(
-                "[Compacted to signatures only ({} -> {} chars) -- re-read for full content]\n{}",
+                "[Compacted to signatures only ({} -> {} chars) -- use read_file with start_line/end_line to read specific sections]\n{}",
                 content.len(),
                 sigs.len(),
                 sigs,
