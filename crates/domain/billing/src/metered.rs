@@ -81,10 +81,11 @@ impl MeteredLlm {
 
     /// Estimate how many credits a call would cost given the estimated token
     /// counts. Uses the same formula as `debit` but doesn't actually charge.
-    pub fn estimate_credits(&self, model: &str, estimated_input_tokens: u64) -> u64 {
+    pub fn estimate_credits(&self, model: &str, estimated_input_tokens: u64, estimated_output_tokens: u64) -> u64 {
         let pricing = PricingService::new(self.store.clone());
-        let (inp_rate, _out_rate) = pricing.lookup_rate(model);
-        let usd_cost = estimated_input_tokens as f64 * inp_rate / 1_000_000.0;
+        let (inp_rate, out_rate) = pricing.lookup_rate(model);
+        let usd_cost = (estimated_input_tokens as f64 * inp_rate
+            + estimated_output_tokens as f64 * out_rate) / 1_000_000.0;
         (usd_cost * self.credits_per_usd).round() as u64
     }
 
@@ -283,7 +284,7 @@ impl MeteredLlm {
     ) -> Result<ToolStreamResponse, MeteredLlmError> {
         let estimated_input: u64 = aura_claude::estimate_tokens(system_prompt)
             + messages.iter().map(aura_claude::estimate_message_tokens).sum::<u64>();
-        let estimated_credits = self.estimate_credits(aura_claude::DEFAULT_MODEL, estimated_input);
+        let estimated_credits = self.estimate_credits(aura_claude::DEFAULT_MODEL, estimated_input, 0);
         self.pre_flight_check_for(estimated_credits).await?;
         let resp = self.provider.complete_stream_with_tools(
             api_key, system_prompt, messages, tools, max_tokens, None, event_tx,
@@ -306,7 +307,7 @@ impl MeteredLlm {
     ) -> Result<ToolStreamResponse, MeteredLlmError> {
         let estimated_input: u64 = aura_claude::estimate_tokens(system_prompt)
             + messages.iter().map(aura_claude::estimate_message_tokens).sum::<u64>();
-        let estimated_credits = self.estimate_credits(aura_claude::DEFAULT_MODEL, estimated_input);
+        let estimated_credits = self.estimate_credits(aura_claude::DEFAULT_MODEL, estimated_input, 0);
         self.pre_flight_check_for(estimated_credits).await?;
         let resp = self.provider.complete_stream_with_tools(
             api_key, system_prompt, messages, tools, max_tokens, Some(thinking), event_tx,

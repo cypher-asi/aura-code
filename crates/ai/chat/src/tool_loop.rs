@@ -268,7 +268,8 @@ pub async fn run_tool_loop(
         // Estimate credits for this iteration and accumulate.
         let iter_credits = llm.estimate_credits(
             aura_claude::DEFAULT_MODEL,
-            stream_result.input_tokens + stream_result.output_tokens,
+            stream_result.input_tokens,
+            stream_result.output_tokens,
         );
         cumulative_credits += iter_credits;
 
@@ -360,6 +361,7 @@ pub async fn run_tool_loop(
             let next_estimate = llm.estimate_credits(
                 aura_claude::DEFAULT_MODEL,
                 stream_result.input_tokens,
+                0,
             );
             if cumulative_credits + next_estimate > budget {
                 warn!(
