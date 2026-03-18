@@ -156,6 +156,12 @@ impl AuthService {
         debug!("Validating stored auth token against zOS-api");
         match self.fetch_user_info(&session.access_token).await {
             Ok(user) => {
+                let zos_image = user
+                    .profile_summary
+                    .as_ref()
+                    .and_then(|p| p.profile_image.clone())
+                    .unwrap_or_default();
+
                 let updated = ZeroAuthSession {
                     user_id: user.id,
                     network_user_id: session.network_user_id,
@@ -164,11 +170,11 @@ impl AuthService {
                         &user.profile_summary,
                         &user.primary_zid,
                     ),
-                    profile_image: user
-                        .profile_summary
-                        .as_ref()
-                        .and_then(|p| p.profile_image.clone())
-                        .unwrap_or_default(),
+                    profile_image: if session.profile_image.starts_with("http") {
+                        session.profile_image.clone()
+                    } else {
+                        zos_image
+                    },
                     primary_zid: user.primary_zid.unwrap_or_default(),
                     zero_wallet: user.primary_wallet_address.unwrap_or_default(),
                     wallets: user
