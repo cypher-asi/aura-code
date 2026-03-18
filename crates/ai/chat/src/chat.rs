@@ -682,6 +682,7 @@ impl ChatService {
             stream_timeout: std::time::Duration::from_secs(300),
             billing_reason: "aura_chat",
             max_context_tokens: Some(self.llm_config.max_context_tokens),
+            credit_budget: Some(500_000),
         };
 
         let thinking_start = std::time::Instant::now();
@@ -847,6 +848,7 @@ impl ChatService {
             stream_timeout: std::time::Duration::from_secs(300),
             billing_reason: "aura_chat",
             max_context_tokens: Some(self.llm_config.max_context_tokens),
+            credit_budget: Some(500_000),
         };
 
         let thinking_start = std::time::Instant::now();

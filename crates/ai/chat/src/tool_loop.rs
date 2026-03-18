@@ -25,6 +25,9 @@ pub struct ToolLoopConfig {
     /// heuristic) to detect context window pressure and retroactively compact
     /// older tool results before the next iteration.
     pub max_context_tokens: Option<u64>,
+    /// Maximum credits to spend in this tool loop. The loop stops gracefully
+    /// when cumulative debited credits approach this limit. `None` means no cap.
+    pub credit_budget: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +110,7 @@ pub async fn run_tool_loop(
     let mut total_thinking = String::new();
     let mut total_input_tokens: u64 = 0;
     let mut total_output_tokens: u64 = 0;
+    let mut cumulative_credits: u64 = 0;
 
     for iteration in 0..config.max_iterations {
         let (claude_tx, mut claude_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
@@ -261,6 +265,13 @@ pub async fn run_tool_loop(
             output_tokens: total_output_tokens,
         });
 
+        // Estimate credits for this iteration and accumulate.
+        let iter_credits = llm.estimate_credits(
+            aura_claude::DEFAULT_MODEL,
+            stream_result.input_tokens + stream_result.output_tokens,
+        );
+        cumulative_credits += iter_credits;
+
         // Use API-reported input_tokens to detect context window pressure.
         // stream_result.input_tokens is the exact count for this call.
         if let Some(max_ctx) = config.max_context_tokens {
@@ -342,6 +353,35 @@ pub async fn run_tool_loop(
                 insufficient_credits: false,
                 llm_error: None,
             };
+        }
+
+        // Check credit budget before starting the next iteration.
+        if let Some(budget) = config.credit_budget {
+            let next_estimate = llm.estimate_credits(
+                aura_claude::DEFAULT_MODEL,
+                stream_result.input_tokens,
+            );
+            if cumulative_credits + next_estimate > budget {
+                warn!(
+                    cumulative_credits,
+                    next_estimate,
+                    budget,
+                    "Credit budget would be exceeded, stopping tool loop"
+                );
+                let _ = event_tx.send(ToolLoopEvent::Error(
+                    "Stopping: credit budget for this session would be exceeded.".to_string(),
+                ));
+                return ToolLoopResult {
+                    text: total_text,
+                    thinking: total_thinking,
+                    total_input_tokens,
+                    total_output_tokens,
+                    iterations_run: iteration + 1,
+                    timed_out: false,
+                    insufficient_credits: true,
+                    llm_error: None,
+                };
+            }
         }
 
         if iteration + 1 >= config.max_iterations {
@@ -521,6 +561,7 @@ mod tests {
             stream_timeout: Duration::from_secs(30),
             billing_reason: "test",
             max_context_tokens: None,
+            credit_budget: None,
         }
     }
 

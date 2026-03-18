@@ -79,6 +79,15 @@ impl MeteredLlm {
         self.credits_exhausted.load(Ordering::SeqCst)
     }
 
+    /// Estimate how many credits a call would cost given the estimated token
+    /// counts. Uses the same formula as `debit` but doesn't actually charge.
+    pub fn estimate_credits(&self, model: &str, estimated_input_tokens: u64) -> u64 {
+        let pricing = PricingService::new(self.store.clone());
+        let (inp_rate, _out_rate) = pricing.lookup_rate(model);
+        let usd_cost = estimated_input_tokens as f64 * inp_rate / 1_000_000.0;
+        (usd_cost * self.credits_per_usd).round() as u64
+    }
+
     fn access_token(&self) -> Option<String> {
         self.store
             .get_setting("zero_auth_session")
