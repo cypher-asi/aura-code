@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import { FileText } from "lucide-react";
-import type { ToolCallEntry } from "../hooks/use-chat-stream";
+import type { ToolCallEntry, ArtifactRef } from "../hooks/use-chat-stream";
 import styles from "./ChatView.module.css";
 import toolStyles from "./ToolCallBlock.module.css";
 import { ResponseBlock } from "./ResponseBlock";
@@ -23,6 +23,7 @@ interface DisplayMessage {
   role: "user" | "assistant" | "system";
   content: string;
   toolCalls?: ToolCallEntry[];
+  artifactRefs?: ArtifactRef[];
   contentBlocks?: DisplayContentBlockUnion[];
   thinkingText?: string;
   thinkingDurationMs?: number | null;
@@ -123,6 +124,27 @@ function ToolCallsList({ entries }: { entries: ToolCallEntry[] }) {
       </div>
       {entries.map((tc) => (
         <ToolCallBlock key={tc.id} entry={tc} />
+      ))}
+    </div>
+  );
+}
+
+function ArtifactRefsList({ refs }: { refs: ArtifactRef[] }) {
+  const tasks = refs.filter((r) => r.kind === "task");
+  const specs = refs.filter((r) => r.kind === "spec");
+  return (
+    <div className={toolStyles.artifactRefs}>
+      {specs.map((ref) => (
+        <div key={ref.id} className={toolStyles.artifactRef}>
+          <span className={toolStyles.artifactRefIcon}>spec</span>
+          <span className={toolStyles.artifactRefTitle}>{ref.title}</span>
+        </div>
+      ))}
+      {tasks.map((ref) => (
+        <div key={ref.id} className={toolStyles.artifactRef}>
+          <span className={toolStyles.artifactRefIcon}>task</span>
+          <span className={toolStyles.artifactRefTitle}>{ref.title}</span>
+        </div>
       ))}
     </div>
   );
@@ -238,10 +260,11 @@ function ThinkingBlock({ text, isStreaming, durationMs }: ThinkingBlockProps) {
 export function MessageBubble({ message }: Props) {
   const hasContent = message.content && message.content.trim().length > 0;
   const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
+  const hasArtifactRefs = message.artifactRefs && message.artifactRefs.length > 0;
   const hasContentBlocks = message.contentBlocks && message.contentBlocks.length > 0;
   const hasThinking = message.thinkingText && message.thinkingText.length > 0;
 
-  if (!hasContent && !hasToolCalls && !hasContentBlocks && !hasThinking) return null;
+  if (!hasContent && !hasToolCalls && !hasContentBlocks && !hasThinking && !hasArtifactRefs) return null;
 
   const renderUserContent = () => {
     if (hasContentBlocks) {
@@ -293,6 +316,9 @@ export function MessageBubble({ message }: Props) {
             )}
             {hasToolCalls && (
               <ToolCallsList entries={message.toolCalls!} />
+            )}
+            {hasArtifactRefs && (
+              <ArtifactRefsList refs={message.artifactRefs!} />
             )}
             {hasContent && (
               <ReactMarkdown

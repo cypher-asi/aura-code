@@ -37,6 +37,7 @@ interface PanelActions {
   pushSpec: (spec: Spec) => void;
   removeSpec: (specId: string) => void;
   pushTask: (task: Task) => void;
+  removeTask: (taskId: string) => void;
   clearGeneratedArtifacts: () => void;
   setStreamingAgentInstanceId: (id: string | null) => void;
   notifyAgentInstanceUpdate: (instance: AgentInstance) => void;
@@ -142,6 +143,13 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const removeTask = useCallback((taskId: string) => {
+    setPanel((prev) => ({
+      ...prev,
+      tasks: prev.tasks.filter((t) => t.task_id !== taskId),
+    }));
+  }, []);
+
   const clearGeneratedArtifacts = useCallback(() => {
     setPanel((prev) => ({ ...prev, specs: [], tasks: [] }));
   }, []);
@@ -207,6 +215,7 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
         pushSpec,
         removeSpec,
         pushTask,
+        removeTask,
         patchTask,
         updatePreviewTask,
         updatePreviewSpecs,

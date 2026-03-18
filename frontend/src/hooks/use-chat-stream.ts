@@ -17,11 +17,18 @@ export interface DisplayImageBlock {
 
 export type DisplayContentBlockUnion = DisplayContentBlock | DisplayImageBlock;
 
+export interface ArtifactRef {
+  kind: "task" | "spec";
+  id: string;
+  title: string;
+}
+
 export interface DisplayMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   toolCalls?: ToolCallEntry[];
+  artifactRefs?: ArtifactRef[];
   contentBlocks?: DisplayContentBlockUnion[];
   thinkingText?: string;
   thinkingDurationMs?: number | null;
