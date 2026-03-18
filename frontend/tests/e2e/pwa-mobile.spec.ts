@@ -172,9 +172,23 @@ test("mobile drawer exposes team and app settings", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Team settings" })).toBeVisible();
   await expect(page.getByRole("button", { name: "App settings" })).toBeVisible();
   await page.getByRole("button", { name: "App settings" }).dispatchEvent("click");
-  await expect(page.getByRole("dialog").filter({ hasText: "Claude API Key" })).toBeVisible();
-  await expect(page.getByText("Claude API Key")).toBeVisible();
-  await expect(page.getByText("Updates")).toHaveCount(0);
+  const settingsDialog = page.getByRole("dialog").filter({ hasText: "Claude API Key" });
+  await expect(settingsDialog).toBeVisible();
+  await expect(settingsDialog.getByText("Claude API Key")).toBeVisible();
+  await expect(settingsDialog.getByRole("heading", { name: "Updates" })).toHaveCount(0);
+});
+
+test("mobile feed exposes inline filter controls", async ({ page }) => {
+  await mockAuthenticatedMobileApp(page);
+
+  await page.goto("/feed");
+
+  await expect(page.getByText("Feed scope")).toBeVisible();
+  await expect(page.getByRole("button", { name: "My Agents" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Organization" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Following" }).click();
+  await expect(page.getByRole("button", { name: "Following" })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("mobile new project modal presents local file actions", async ({ page, browserName }) => {

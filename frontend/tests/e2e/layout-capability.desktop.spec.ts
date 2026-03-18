@@ -59,6 +59,16 @@ test("desktop browser agents route keeps desktop layout without mobile switcher"
   await expect(page.getByRole("button", { name: "Open navigation" })).toHaveCount(0);
 });
 
+test("desktop browser feed keeps desktop filter rail without mobile chip bar", async ({ page }) => {
+  await mockAuthenticatedApp(page);
+
+  await page.goto("/feed");
+
+  await expect(page.getByRole("treeitem", { name: "My Agents" })).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: "Organization" })).toBeVisible();
+  await expect(page.getByText("Feed scope")).toHaveCount(0);
+});
+
 test("desktop imported projects hide file browsing even with a desktop bridge", async ({ page }) => {
   await page.addInitScript(() => {
     (window as Window & { ipc?: { postMessage: (message: unknown) => void } }).ipc = {
