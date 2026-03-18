@@ -633,4 +633,116 @@ For more information about this error, try `rustc --explain E0425`
         assert!(errors.contains(&ErrorCategory::RustMissingMethod));
         assert!(errors.contains(&ErrorCategory::RustBorrowCheck));
     }
+
+    // -----------------------------------------------------------------------
+    // normalize_error_signature – stagnation detection
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn normalize_same_error_different_lines_produces_same_sig() {
+        let stderr_v1 = "\
+error[E0308]: mismatched types
+  --> src/main.rs:10:5
+   |
+10 |     let x: i32 = \"hello\";
+   |                  ^^^^^^^ expected `i32`, found `&str`
+";
+        let stderr_v2 = "\
+error[E0308]: mismatched types
+  --> src/main.rs:42:5
+   |
+42 |     let x: i32 = \"hello\";
+   |                  ^^^^^^^ expected `i32`, found `&str`
+";
+        assert_eq!(
+            normalize_error_signature(stderr_v1),
+            normalize_error_signature(stderr_v2),
+        );
+    }
+
+    #[test]
+    fn normalize_different_errors_produce_different_sigs() {
+        let sig_a = normalize_error_signature("error[E0308]: mismatched types\n");
+        let sig_b = normalize_error_signature("error[E0599]: no method named `foo`\n");
+        assert_ne!(sig_a, sig_b);
+    }
+
+    #[test]
+    fn stagnation_detected_after_three_consecutive_identical_sigs() {
+        let sig = normalize_error_signature("error[E0308]: mismatched types\n  --> src/lib.rs:1:1\n");
+        let prior = vec![
+            BuildFixAttemptRecord { stderr: String::new(), error_signature: sig.clone(), files_changed: vec![] },
+            BuildFixAttemptRecord { stderr: String::new(), error_signature: sig.clone(), files_changed: vec![] },
+        ];
+        let consecutive = prior.iter().rev().take_while(|a| a.error_signature == sig).count();
+        assert!(consecutive >= 2, "should detect stagnation (3 total: 2 prior + current)");
+    }
+
+    #[test]
+    fn stagnation_not_triggered_with_interleaved_different_error() {
+        let sig_a = normalize_error_signature("error[E0308]: mismatched types\n");
+        let sig_b = normalize_error_signature("error[E0599]: no method named `foo`\n");
+        let prior = vec![
+            BuildFixAttemptRecord { stderr: String::new(), error_signature: sig_a.clone(), files_changed: vec![] },
+            BuildFixAttemptRecord { stderr: String::new(), error_signature: sig_b.clone(), files_changed: vec![] },
+        ];
+        let consecutive = prior.iter().rev().take_while(|a| a.error_signature == sig_a).count();
+        assert_eq!(consecutive, 0, "different last error breaks the streak");
+    }
+
+    // -----------------------------------------------------------------------
+    // parse_error_references
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parse_refs_extracts_type_names() {
+        let stderr = "error[E0599]: no method named `foo` found for struct `MyStruct`";
+        let refs = parse_error_references(stderr);
+        assert!(refs.types_referenced.contains(&"MyStruct".to_string()));
+    }
+
+    #[test]
+    fn parse_refs_extracts_missing_fields() {
+        let stderr = "error[E0063]: missing field `name` in initializer of `aura_core::Task`";
+        let refs = parse_error_references(stderr);
+        assert!(refs.missing_fields.iter().any(|(t, f)| t == "Task" && f == "name"));
+    }
+
+    #[test]
+    fn parse_refs_extracts_methods_not_found() {
+        let stderr = "error[E0599]: no method named `do_thing` found for struct `MyService`";
+        let refs = parse_error_references(stderr);
+        assert!(refs.methods_not_found.iter().any(|(t, m)| t == "MyService" && m == "do_thing"));
+    }
+
+    #[test]
+    fn parse_refs_extracts_source_locations() {
+        let stderr = "\
+error[E0308]: mismatched types
+  --> src/main.rs:42:5
+error[E0308]: mismatched types
+  --> src/lib.rs:10:12
+";
+        let refs = parse_error_references(stderr);
+        assert!(refs.source_locations.contains(&("src/main.rs".into(), 42)));
+        assert!(refs.source_locations.contains(&("src/lib.rs".into(), 10)));
+    }
+
+    #[test]
+    fn parse_refs_extracts_wrong_arg_counts() {
+        let stderr = "error[E0061]: this function takes 2 arguments but 3 arguments were supplied";
+        let refs = parse_error_references(stderr);
+        assert!(!refs.wrong_arg_counts.is_empty());
+        assert!(refs.wrong_arg_counts[0].contains("expected 2"));
+    }
+
+    #[test]
+    fn parse_refs_empty_stderr() {
+        let refs = parse_error_references("");
+        assert!(refs.types_referenced.is_empty());
+        assert!(refs.missing_fields.is_empty());
+        assert!(refs.methods_not_found.is_empty());
+        assert!(refs.source_locations.is_empty());
+        assert!(refs.wrong_arg_counts.is_empty());
+    }
 }
