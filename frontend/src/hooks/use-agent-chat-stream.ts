@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback } from "react";
 import { api, isInsufficientCreditsError, dispatchInsufficientCredits } from "../api/client";
 import type { ToolCallInfo, ToolResultInfo } from "../api/streams";
+import type { Spec, Task } from "../types";
 import type {
   DisplayMessage,
   ToolCallEntry,
@@ -8,9 +9,11 @@ import type {
 
 interface UseAgentChatStreamOptions {
   agentId: string | undefined;
+  onTaskSaved?: (task: Task) => void;
+  onSpecSaved?: (spec: Spec) => void;
 }
 
-export function useAgentChatStream({ agentId }: UseAgentChatStreamOptions) {
+export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAgentChatStreamOptions) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
@@ -117,6 +120,12 @@ export function useAgentChatStream({ agentId }: UseAgentChatStreamOptions) {
             );
             setActiveToolCalls([...toolCallsRef.current]);
             needsSeparatorRef.current = true;
+          },
+          onSpecSaved(spec) {
+            onSpecSaved?.(spec);
+          },
+          onTaskSaved(task) {
+            onTaskSaved?.(task);
           },
           onMessageSaved(msg) {
             const finalToolCalls = toolCallsRef.current.length > 0
