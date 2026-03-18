@@ -1,18 +1,39 @@
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Text, Explorer } from "@cypher-asi/zui";
+import { Explorer, ButtonPlus } from "@cypher-asi/zui";
 import type { ExplorerNode } from "@cypher-asi/zui";
 import { Bot, Loader2 } from "lucide-react";
+import { EmptyState } from "../../components/EmptyState";
+import { AgentEditorModal } from "../../components/AgentEditorModal";
 import { useAgentApp } from "./AgentAppProvider";
 import { useSidebarSearch } from "../../context/SidebarSearchContext";
+import type { Agent } from "../../types";
 import styles from "./AgentList.module.css";
 
 export function AgentList() {
-  const { agents, loading } = useAgentApp();
-  const { query: searchQuery } = useSidebarSearch();
+  const { agents, loading, refresh } = useAgentApp();
+  const { query: searchQuery, setAction } = useSidebarSearch();
   const navigate = useNavigate();
   const { agentId } = useParams();
   const [failedIcons, setFailedIcons] = useState<Set<string>>(new Set());
+  const [showEditor, setShowEditor] = useState(false);
+
+  useEffect(() => {
+    setAction(
+      "agents",
+      <ButtonPlus onClick={() => setShowEditor(true)} size="sm" title="New Agent" />,
+    );
+    return () => setAction("agents", null);
+  }, [setAction]);
+
+  const handleAgentSaved = useCallback(
+    (agent: Agent) => {
+      setShowEditor(false);
+      refresh();
+      navigate(`/agents/${agent.agent_id}`);
+    },
+    [refresh, navigate],
+  );
 
   const data: ExplorerNode[] = useMemo(
     () =>
@@ -60,9 +81,14 @@ export function AgentList() {
 
   if (agents.length === 0) {
     return (
-      <div className={styles.empty}>
-        <Text variant="muted" size="sm">No agents yet</Text>
-      </div>
+      <>
+        <EmptyState>No agents yet</EmptyState>
+        <AgentEditorModal
+          isOpen={showEditor}
+          onClose={() => setShowEditor(false)}
+          onSaved={handleAgentSaved}
+        />
+      </>
     );
   }
 
@@ -74,6 +100,11 @@ export function AgentList() {
         enableMultiSelect={false}
         defaultSelectedIds={defaultSelectedIds}
         onSelect={handleSelect}
+      />
+      <AgentEditorModal
+        isOpen={showEditor}
+        onClose={() => setShowEditor(false)}
+        onSaved={handleAgentSaved}
       />
     </div>
   );

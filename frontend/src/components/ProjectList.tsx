@@ -7,6 +7,7 @@ import { useOrg } from "../context/OrgContext";
 import { clearLastAgentIf } from "../utils/storage";
 import type { Project, AgentInstance } from "../types";
 import { ButtonPlus, Explorer, Menu } from "@cypher-asi/zui";
+import { EmptyState } from "./EmptyState";
 import type { ExplorerNode, MenuItem } from "@cypher-asi/zui";
 import { Bot, Pencil, Trash2, Loader2 } from "lucide-react";
 import { NewProjectModal } from "./NewProjectModal";
@@ -167,9 +168,10 @@ export function ProjectList() {
 
   useEffect(() => {
     setAction(
+      "projects",
       <ButtonPlus onClick={() => setShowNewProject(true)} size="sm" title="New Project" />,
     );
-    return () => setAction(null);
+    return () => setAction("projects", null);
   }, [setAction]);
 
   const prevProjectIdRef = useRef(projectId);
@@ -514,6 +516,19 @@ export function ProjectList() {
       setDeleteAgentLoading(false);
     }
   };
+
+  if (projects.length === 0) {
+    return (
+      <div className={styles.root}>
+        <EmptyState>No projects yet</EmptyState>
+        <NewProjectModal
+          isOpen={showNewProject}
+          onClose={handleNewProjectClose}
+          onCreated={handleNewProjectCreated}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className={styles.root}>
