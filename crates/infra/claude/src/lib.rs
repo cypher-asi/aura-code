@@ -882,7 +882,8 @@ pub(crate) async fn parse_sse_events(
         })?;
         chunks_received += 1;
 
-        line_buf.push_str(&String::from_utf8_lossy(&chunk));
+        let chunk_str = String::from_utf8_lossy(&chunk);
+        line_buf.push_str(&chunk_str.replace('\r', ""));
 
         while let Some(double_newline_pos) = line_buf.find("\n\n") {
             let frame = line_buf[..double_newline_pos].to_string();
