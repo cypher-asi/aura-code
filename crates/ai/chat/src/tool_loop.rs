@@ -27,6 +27,7 @@ struct LoopState {
     file_read_cache: HashMap<String, u64>,
     consecutive_write_tracker: HashMap<String, usize>,
     consecutive_cmd_failures: usize,
+    total_read_results: usize,
 }
 
 impl LoopState {
@@ -84,6 +85,7 @@ pub async fn run_tool_loop(
         file_read_cache: HashMap::new(),
         consecutive_write_tracker: HashMap::new(),
         consecutive_cmd_failures: 0,
+        total_read_results: 0,
     };
 
     for iteration in 0..config.max_iterations {
@@ -471,6 +473,21 @@ async fn process_tool_calls(
         results,
         &mut state.consecutive_cmd_failures,
     );
+
+    let read_count = iter.iter_tool_calls
+        .iter()
+        .zip(results.iter())
+        .filter(|(tc, r)| tc.name == "read_file" && !r.is_error)
+        .count();
+    state.total_read_results += read_count;
+
+    if state.total_read_results >= 8 {
+        info!(
+            total_reads = state.total_read_results,
+            "High read accumulation, proactively compacting older tool results"
+        );
+        compaction::compact_older_tool_results(&mut state.api_messages, 4);
+    }
 
     let (result_blocks, should_stop) = build_tool_result_blocks(
         &iter.iter_tool_calls, &results, &mut state.file_read_cache, event_tx,
