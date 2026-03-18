@@ -125,6 +125,10 @@ fn ensure_local_shadow(state: &AppState, net: &NetworkOrg) {
         Ok(id) => id,
         Err(_) => return,
     };
+    let owner_user_id: UserId = match net.owner_user_id.parse() {
+        Ok(id) => id,
+        Err(_) => return,
+    };
     if state.store.get_org(&org_id).is_ok() {
         return;
     }
@@ -137,7 +141,7 @@ fn ensure_local_shadow(state: &AppState, net: &NetworkOrg) {
     let local = Org {
         org_id,
         name: net.name.clone(),
-        owner_user_id: net.owner_user_id.clone(),
+        owner_user_id,
         billing: None,
         created_at: now,
         updated_at: now,
@@ -204,12 +208,13 @@ pub async fn create_org(
 
 pub async fn get_org(
     State(state): State<AppState>,
-    Path(org_id): Path<String>,
+    Path(org_id): Path<OrgId>,
 ) -> ApiResult<Json<OrgResponse>> {
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
+    let org_id_str = org_id.to_string();
     let net_org = client
-        .get_org(&org_id, &jwt)
+        .get_org(&org_id_str, &jwt)
         .await
         .map_err(map_network_error)?;
 
@@ -221,28 +226,26 @@ pub async fn get_org(
 
 pub async fn update_org(
     State(state): State<AppState>,
-    Path(org_id): Path<String>,
+    Path(org_id): Path<OrgId>,
     Json(req): Json<crate::dto::UpdateOrgRequest>,
 ) -> ApiResult<Json<OrgResponse>> {
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
+    let org_id_str = org_id.to_string();
     let net_req = aura_network::UpdateOrgRequest {
         name: Some(req.name),
         description: None,
         avatar_url: None,
     };
     let net_org = client
-        .update_org(&org_id, &jwt, &net_req)
+        .update_org(&org_id_str, &jwt, &net_req)
         .await
         .map_err(map_network_error)?;
 
-    // Update local shadow name
-    if let Ok(parsed_id) = org_id.parse::<OrgId>() {
-        if let Ok(mut local) = state.store.get_org(&parsed_id) {
-            local.name = net_org.name.clone();
-            local.updated_at = Utc::now();
-            let _ = state.store.put_org(&local);
-        }
+    if let Ok(mut local) = state.store.get_org(&org_id) {
+        local.name = net_org.name.clone();
+        local.updated_at = Utc::now();
+        let _ = state.store.put_org(&local);
     }
 
     let billing = local_billing(&state, &net_org.id);
@@ -255,13 +258,14 @@ pub async fn update_org(
 
 pub async fn list_members(
     State(state): State<AppState>,
-    Path(org_id): Path<String>,
+    Path(org_id): Path<OrgId>,
 ) -> ApiResult<Json<Vec<MemberResponse>>> {
     let client = state.require_network_client()?;
     let session = state.get_session()?;
     let jwt = session.access_token.clone();
+    let org_id_str = org_id.to_string();
     let members = client
-        .list_org_members(&org_id, &jwt)
+        .list_org_members(&org_id_str, &jwt)
         .await
         .map_err(map_network_error)?;
 
@@ -307,17 +311,18 @@ pub async fn list_members(
 
 pub async fn update_member_role(
     State(state): State<AppState>,
-    Path((org_id, target_user_id)): Path<(String, String)>,
+    Path((org_id, target_user_id)): Path<(OrgId, String)>,
     Json(req): Json<crate::dto::UpdateMemberRoleRequest>,
 ) -> ApiResult<Json<MemberResponse>> {
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
+    let org_id_str = org_id.to_string();
     let net_req = aura_network::UpdateMemberRequest {
         role: Some(format!("{:?}", req.role).to_lowercase()),
         credit_budget: None,
     };
     let member = client
-        .update_org_member(&org_id, &target_user_id, &jwt, &net_req)
+        .update_org_member(&org_id_str, &target_user_id, &jwt, &net_req)
         .await
         .map_err(map_network_error)?;
     Ok(Json(MemberResponse::from(member)))
@@ -325,12 +330,13 @@ pub async fn update_member_role(
 
 pub async fn remove_member(
     State(state): State<AppState>,
-    Path((org_id, target_user_id)): Path<(String, String)>,
+    Path((org_id, target_user_id)): Path<(OrgId, String)>,
 ) -> ApiResult<StatusCode> {
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
+    let org_id_str = org_id.to_string();
     client
-        .remove_org_member(&org_id, &target_user_id, &jwt)
+        .remove_org_member(&org_id_str, &target_user_id, &jwt)
         .await
         .map_err(map_network_error)?;
     Ok(StatusCode::NO_CONTENT)
@@ -342,16 +348,17 @@ pub async fn remove_member(
 
 pub async fn create_invite(
     State(state): State<AppState>,
-    Path(org_id): Path<String>,
+    Path(org_id): Path<OrgId>,
 ) -> ApiResult<(StatusCode, Json<InviteResponse>)> {
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
+    let org_id_str = org_id.to_string();
     let net_req = aura_network::CreateInviteRequest {
         email: None,
         role: None,
     };
     let invite = client
-        .create_invite(&org_id, &jwt, &net_req)
+        .create_invite(&org_id_str, &jwt, &net_req)
         .await
         .map_err(map_network_error)?;
     Ok((StatusCode::CREATED, Json(InviteResponse::from(invite))))
@@ -359,12 +366,13 @@ pub async fn create_invite(
 
 pub async fn list_invites(
     State(state): State<AppState>,
-    Path(org_id): Path<String>,
+    Path(org_id): Path<OrgId>,
 ) -> ApiResult<Json<Vec<InviteResponse>>> {
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
+    let org_id_str = org_id.to_string();
     let invites = client
-        .list_invites(&org_id, &jwt)
+        .list_invites(&org_id_str, &jwt)
         .await
         .map_err(map_network_error)?;
     Ok(Json(invites.into_iter().map(InviteResponse::from).collect()))
@@ -372,12 +380,13 @@ pub async fn list_invites(
 
 pub async fn revoke_invite(
     State(state): State<AppState>,
-    Path((org_id, invite_id)): Path<(String, String)>,
+    Path((org_id, invite_id)): Path<(OrgId, String)>,
 ) -> ApiResult<StatusCode> {
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
+    let org_id_str = org_id.to_string();
     client
-        .revoke_invite(&org_id, &invite_id, &jwt)
+        .revoke_invite(&org_id_str, &invite_id, &jwt)
         .await
         .map_err(map_network_error)?;
     Ok(StatusCode::NO_CONTENT)

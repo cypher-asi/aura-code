@@ -131,7 +131,7 @@ pub struct Agent {
     #[serde(default)]
     pub icon: Option<String>,
     #[serde(default)]
-    pub network_agent_id: Option<String>,
+    pub network_agent_id: Option<AgentId>,
     #[serde(default)]
     pub profile_id: Option<ProfileId>,
     pub created_at: DateTime<Utc>,
@@ -259,7 +259,7 @@ pub enum ChatContentBlock {
 pub struct Org {
     pub org_id: OrgId,
     pub name: String,
-    pub owner_user_id: String,
+    pub owner_user_id: UserId,
     pub billing: Option<OrgBilling>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
