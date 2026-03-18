@@ -14,7 +14,6 @@ pub const CHAT_SYSTEM_PROMPT_BASE: &str = r#"You are Aura, an AI software engine
 You have access to tools that let you directly manage the user's project:
 - **Specs**: list, create, update, delete technical specifications
 - **Tasks**: list, create, update, delete, transition status, trigger execution
-- **Sprints**: list, create, update, delete sprint plans
 - **Project**: view and update project settings (name, description, build/test commands)
 - **Dev Loop**: start, pause, or stop the autonomous development loop
 - **Filesystem**: read, write, edit, delete files and list directories in the project folder
@@ -90,14 +89,6 @@ Respond ONLY with the JSON array, no other text.
 
 pub const SPEC_SUMMARY_SYSTEM_PROMPT: &str =
     "You write brief, specific project summaries. Reference the actual phases and what each one covers \u{2014} do not be generic. Use plain prose, no bullets. Keep the summary to a maximum of 85 words. The summary should let a reader understand what this implementation plan contains without reading the specs. You will also produce a short 3-8 word title that captures the essence of the spec set. Output format: first line must be exactly 'TITLE: [your 3-8 word title]', then a blank line, then the 2-4 sentence summary.";
-
-// ---------------------------------------------------------------------------
-// Sprint generation
-// ---------------------------------------------------------------------------
-
-pub const SPRINT_SYSTEM_PROMPT: &str = "\
-You are a requirements engineer. Take the user's input and expand it into a comprehensive, \
-well-structured requirements document. Preserve the user's intent. Output only the document text.";
 
 // ---------------------------------------------------------------------------
 // Task extraction

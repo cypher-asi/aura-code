@@ -44,10 +44,6 @@ const TOOL_LABELS: Record<string, string> = {
   delete_task: "Delete task",
   transition_task: "Transition task",
   run_task: "Run task",
-  list_sprints: "List sprints",
-  create_sprint: "Create sprint",
-  update_sprint: "Update sprint",
-  delete_sprint: "Delete sprint",
   get_project: "Get project",
   update_project: "Update project",
   start_dev_loop: "Start dev loop",
@@ -142,7 +138,6 @@ function summarizeInput(name: string, input: Record<string, unknown>): string {
       return (input.path as string) || ".";
     case "create_spec":
     case "create_task":
-    case "create_sprint":
       return (input.title as string) || "";
     case "get_spec":
       return (input.spec_id as string)?.slice(0, 8) || "";

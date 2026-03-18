@@ -9,7 +9,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 
-use crate::handlers::{agents, auth, billing, dev_loop, feed, follows, leaderboard, log, orgs, pricing, projects, settings, specs, sprints, tasks, terminal, users, ws};
+use crate::handlers::{agents, auth, billing, dev_loop, feed, follows, leaderboard, log, orgs, pricing, projects, settings, specs, tasks, terminal, users, ws};
 use crate::state::AppState;
 
 pub fn create_router(state: AppState) -> Router {
@@ -104,29 +104,6 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
         .route(
             "/api/projects/:project_id/archive",
             post(projects::archive_project),
-        )
-        // Sprints
-        .route(
-            "/api/projects/:project_id/sprints",
-            get(sprints::list_sprints).post(sprints::create_sprint),
-        )
-        .route(
-            "/api/projects/:project_id/sprints/reorder",
-            put(sprints::reorder_sprints),
-        )
-        .route(
-            "/api/projects/:project_id/sprints/:sprint_id",
-            get(sprints::get_sprint)
-                .put(sprints::update_sprint)
-                .delete(sprints::delete_sprint),
-        )
-        .route(
-            "/api/projects/:project_id/sprints/:sprint_id/generate",
-            post(sprints::generate_sprint),
-        )
-        .route(
-            "/api/projects/:project_id/sprints/:sprint_id/generate/stream",
-            post(sprints::generate_sprint_stream),
         )
         // Specs
         .route("/api/projects/:project_id/specs", get(specs::list_specs))

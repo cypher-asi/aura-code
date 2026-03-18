@@ -1,7 +1,5 @@
 import type {
   ProjectId,
-  SprintId,
-  Sprint,
   Spec,
   Task,
   AgentInstance,
@@ -20,13 +18,6 @@ export interface SpecGenStreamCallbacks {
   onSpecSaved: (spec: Spec) => void;
   onTaskSaved: (task: Task) => void;
   onComplete: (specs: Spec[]) => void;
-  onError: (message: string) => void;
-}
-
-export interface SprintStreamCallbacks {
-  onDelta: (text: string) => void;
-  onGenerating: (inputTokens: number, outputTokens: number) => void;
-  onDone: (sprint: Sprint) => void;
   onError: (message: string) => void;
 }
 
@@ -80,28 +71,6 @@ function createSSEHandler<E extends string>(
       onError(err.message);
     },
   };
-}
-
-export function generateSprintStream(
-  projectId: ProjectId,
-  sprintId: SprintId,
-  cb: SprintStreamCallbacks,
-  signal?: AbortSignal,
-) {
-  return streamSSE<"delta" | "generating" | "done" | "error">(
-    `${BASE_URL}/api/projects/${projectId}/sprints/${sprintId}/generate/stream`,
-    { method: "POST" },
-    createSSEHandler(
-      {
-        delta: (d) => cb.onDelta(d.text as string),
-        generating: (d) => cb.onGenerating(d.input_tokens as number, d.output_tokens as number),
-        done: (d) => cb.onDone(d.sprint as Sprint),
-        error: (d) => cb.onError(d.message as string),
-      },
-      cb.onError,
-    ),
-    signal,
-  );
 }
 
 export function generateSpecsStream(

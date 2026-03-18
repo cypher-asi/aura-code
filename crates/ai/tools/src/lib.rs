@@ -250,8 +250,7 @@ fn chat_management_tools() -> Vec<ToolDefinition> {
                 "type": "object",
                 "properties": {
                     "title": { "type": "string" },
-                    "markdown_contents": { "type": "string" },
-                    "sprint_id": { "type": "string" }
+                    "markdown_contents": { "type": "string" }
                 },
                 "required": ["title", "markdown_contents"]
             }),
@@ -358,52 +357,6 @@ fn chat_management_tools() -> Vec<ToolDefinition> {
                     "task_id": { "type": "string" }
                 },
                 "required": ["task_id"]
-            }),
-        ),
-        // ── Sprints ────────────────────────────────────────────────────
-        compact_tool(
-            "list_sprints",
-            "List all sprints in the current project.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        ),
-        compact_tool(
-            "create_sprint",
-            "Create a new sprint with a title and prompt describing what it should accomplish.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "title": { "type": "string" },
-                    "prompt": { "type": "string" }
-                },
-                "required": ["title", "prompt"]
-            }),
-        ),
-        compact_tool(
-            "update_sprint",
-            "Update a sprint's title or prompt.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "sprint_id": { "type": "string" },
-                    "title": { "type": "string" },
-                    "prompt": { "type": "string" }
-                },
-                "required": ["sprint_id"]
-            }),
-        ),
-        compact_tool(
-            "delete_sprint",
-            "Delete a sprint from the project.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "sprint_id": { "type": "string" }
-                },
-                "required": ["sprint_id"]
             }),
         ),
         // ── Project ────────────────────────────────────────────────────

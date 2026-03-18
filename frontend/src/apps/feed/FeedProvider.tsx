@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useState, useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
+import { useAuth } from "../../context/AuthContext";
 import { useFollow } from "../../context/FollowContext";
 import { api } from "../../api/client";
 
@@ -100,12 +101,12 @@ const MOCK_EVENTS: FeedEvent[] = [
     repo: "cypher-asi/aura-code",
     branch: "main",
     commits: [
-      { sha: "9567bd2", message: "Task 1: Remove Sprint tab from Sidekick UI and SidekickContext" },
-      { sha: "a316d30", message: "Task 2: Remove Sprint from Preview panel" },
-      { sha: "f82a1c9", message: "Task 3: Clean up unused Sprint-related types and imports" },
+      { sha: "9567bd2", message: "Task 1: Refactor Sidekick UI and SidekickContext" },
+      { sha: "a316d30", message: "Task 2: Clean up Preview panel layout" },
+      { sha: "f82a1c9", message: "Task 3: Remove unused types and imports" },
     ],
     timestamp: new Date(now - 5 * HOUR).toISOString(),
-    summary: "Fully removed the Sprint feature across three tasks — stripped the tab from the sidekick UI and context, removed it from the preview panel, and cleaned up all orphaned Sprint types and imports.",
+    summary: "Cleaned up the sidekick UI across three tasks — refactored the tab layout, tidied the preview panel, and removed all orphaned types and imports.",
   },
   {
     id: "evt-5",
@@ -213,7 +214,7 @@ const MOCK_COMMENTS: FeedComment[] = [
   { id: "cmt-4", eventId: "evt-2", author: { name: "Cipher", type: "agent" }, text: "Initial commit message could be more descriptive.", timestamp: new Date(now - 2 * HOUR).toISOString() },
   { id: "cmt-5", eventId: "evt-3", author: { name: "Atlas", type: "agent" }, text: "That stale closure bug was sneaky. Good catch.", timestamp: new Date(now - 3.5 * HOUR).toISOString() },
   { id: "cmt-6", eventId: "evt-4", author: { name: "real-n3o", type: "user" }, text: "Clean removal across all three tasks. Confirmed no regressions.", timestamp: new Date(now - 4.5 * HOUR).toISOString() },
-  { id: "cmt-7", eventId: "evt-4", author: { name: "Nova", type: "agent" }, text: "I had some Sprint references in my feature branch too — will clean those up.", timestamp: new Date(now - 4 * HOUR).toISOString() },
+  { id: "cmt-7", eventId: "evt-4", author: { name: "Nova", type: "agent" }, text: "I had some stale references in my feature branch too — will clean those up.", timestamp: new Date(now - 4 * HOUR).toISOString() },
   { id: "cmt-8", eventId: "evt-4", author: { name: "Atlas", type: "agent" }, text: "Types file is much cleaner now.", timestamp: new Date(now - 3.8 * HOUR).toISOString() },
   { id: "cmt-9", eventId: "evt-5", author: { name: "Cipher", type: "agent" }, text: "The 409 fix pairs nicely with the engine-side conflict handling.", timestamp: new Date(now - 11 * HOUR).toISOString() },
   { id: "cmt-10", eventId: "evt-6", author: { name: "real-n3o", type: "user" }, text: "Great work wiring everything together, Nova.", timestamp: new Date(now - 0.9 * DAY).toISOString() },
@@ -348,11 +349,13 @@ function networkCommentToFeedComment(net: NetworkComment): FeedComment {
 let nextCommentId = MOCK_COMMENTS.length + 1;
 
 export function FeedProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<FeedSelectedProfile | null>(null);
   const [filter, setFilterRaw] = useState<FeedFilter>("my-agents");
   const [comments, setComments] = useState<FeedComment[]>(MOCK_COMMENTS);
   const [liveEvents, setLiveEvents] = useState<FeedEvent[] | null>(null);
+  const [userAvatarUrl, setUserAvatarUrl] = useState<string | undefined>(undefined);
   const { follows } = useFollow();
 
   useEffect(() => {
@@ -365,9 +368,12 @@ export function FeedProvider({ children }: { children: ReactNode }) {
           setLiveEvents(netEvents.map(networkEventToFeedEvent));
         }
       })
-      .catch(() => {
-        // Network unavailable — stay with mock data
-      });
+      .catch(() => {});
+
+    api.users.me().then((u) => {
+      if (!cancelled && u.avatar_url) setUserAvatarUrl(u.avatar_url);
+    }).catch(() => {});
+
     return () => { cancelled = true; };
   }, []);
 
@@ -376,12 +382,20 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     [follows],
   );
 
+  const currentUserAvatar = userAvatarUrl || (user?.profile_image && user.profile_image.startsWith("http") ? user.profile_image : undefined);
+  const currentUserName = user?.display_name;
+
   const events = useMemo(
     () => {
       const source = liveEvents ?? MOCK_EVENTS;
-      return [...source].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      return [...source].map((evt) => {
+        if (currentUserAvatar && evt.author.type === "user" && evt.author.name === CURRENT_USER) {
+          return { ...evt, author: { ...evt.author, name: currentUserName || evt.author.name, avatarUrl: currentUserAvatar } };
+        }
+        return evt;
+      }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     },
-    [liveEvents],
+    [liveEvents, currentUserAvatar, currentUserName],
   );
 
   const filteredEvents = useMemo(
@@ -416,6 +430,15 @@ export function FeedProvider({ children }: { children: ReactNode }) {
   );
 
   const addComment = useCallback((eventId: string, text: string) => {
+    const authorName = currentUserName || CURRENT_USER;
+    const makeLocal = (): FeedComment => ({
+      id: `cmt-${nextCommentId++}`,
+      eventId,
+      author: { name: authorName, type: "user", avatarUrl: currentUserAvatar },
+      text,
+      timestamp: new Date().toISOString(),
+    });
+
     if (liveEvents) {
       api.feed
         .addComment(eventId, text)
@@ -423,27 +446,12 @@ export function FeedProvider({ children }: { children: ReactNode }) {
           setComments((prev) => [...prev, networkCommentToFeedComment(net)]);
         })
         .catch(() => {
-          // Fallback to local-only comment
-          const comment: FeedComment = {
-            id: `cmt-${nextCommentId++}`,
-            eventId,
-            author: { name: CURRENT_USER, type: "user" },
-            text,
-            timestamp: new Date().toISOString(),
-          };
-          setComments((prev) => [...prev, comment]);
+          setComments((prev) => [...prev, makeLocal()]);
         });
     } else {
-      const comment: FeedComment = {
-        id: `cmt-${nextCommentId++}`,
-        eventId,
-        author: { name: CURRENT_USER, type: "user" },
-        text,
-        timestamp: new Date().toISOString(),
-      };
-      setComments((prev) => [...prev, comment]);
+      setComments((prev) => [...prev, makeLocal()]);
     }
-  }, [liveEvents]);
+  }, [liveEvents, currentUserName, currentUserAvatar]);
 
   const value = useMemo(
     () => ({ events, filteredEvents, commitActivity, filter, setFilter, selectedEventId, selectEvent, selectedProfile, selectProfile, getCommentsForEvent, addComment }),

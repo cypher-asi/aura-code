@@ -334,11 +334,6 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         task_output_buffers.clone(),
     );
 
-    let sprint_gen = Arc::new(aura_specs::SprintGenerationService::new(
-        llm.clone(),
-        store.clone(),
-    ));
-
     let network_client = NetworkClient::from_env().map(Arc::new);
 
     if let Some(ref client) = network_client {
@@ -381,7 +376,6 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         agent_instance_service,
         session_service,
         chat_service,
-        sprint_gen,
         llm,
         event_tx,
         event_broadcast,

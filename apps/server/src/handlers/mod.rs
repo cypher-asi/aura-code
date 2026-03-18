@@ -11,7 +11,6 @@ pub mod pricing;
 pub mod projects;
 pub mod settings;
 pub mod specs;
-pub mod sprints;
 pub mod tasks;
 pub mod terminal;
 pub mod users;

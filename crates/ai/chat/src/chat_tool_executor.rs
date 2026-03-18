@@ -111,11 +111,6 @@ impl ChatToolExecutor {
             "run_task" => ToolExecResult::ok(json!({
                 "note": "run_task is handled at the handler level; this is a no-op inside the executor."
             })),
-            // ── Sprints ────────────────────────────────────────────
-            "list_sprints" => self.list_sprints(project_id),
-            "create_sprint" => self.create_sprint(project_id, &input),
-            "update_sprint" => self.update_sprint(project_id, &input),
-            "delete_sprint" => self.delete_sprint(project_id, &input),
             // ── Project ────────────────────────────────────────────
             "get_project" => self.get_project(project_id),
             "update_project" => self.update_project(project_id, &input),
@@ -155,7 +150,6 @@ impl ChatToolExecutor {
                             "spec_id": s.spec_id.to_string(),
                             "title": s.title,
                             "order_index": s.order_index,
-                            "sprint_id": s.sprint_id.map(|id| id.to_string()),
                         })
                     })
                     .collect();
@@ -179,8 +173,6 @@ impl ChatToolExecutor {
     fn create_spec(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
         let title = str_field(input, "title").unwrap_or_default();
         let markdown = str_field(input, "markdown_contents").unwrap_or_default();
-        let sprint_id = str_field(input, "sprint_id")
-            .and_then(|s| s.parse::<SprintId>().ok());
 
         let existing = self.store.list_specs_by_project(project_id).unwrap_or_default();
         let order = existing.iter().map(|s| s.order_index).max().unwrap_or(0) + 1;
@@ -192,7 +184,6 @@ impl ChatToolExecutor {
             title,
             order_index: order,
             markdown_contents: markdown,
-            sprint_id,
             created_at: now,
             updated_at: now,
         };
@@ -380,87 +371,6 @@ impl ChatToolExecutor {
         match self.task_service.transition_task(project_id, &task.spec_id, &task_id, new_status) {
             Ok(t) => ToolExecResult::ok(json!(t)),
             Err(e) => ToolExecResult::err(format!("{e:?}")),
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Sprint operations
-    // -----------------------------------------------------------------------
-
-    fn list_sprints(&self, project_id: &ProjectId) -> ToolExecResult {
-        match self.store.list_sprints_by_project(project_id) {
-            Ok(sprints) => {
-                let summaries: Vec<Value> = sprints
-                    .iter()
-                    .map(|s| {
-                        json!({
-                            "sprint_id": s.sprint_id.to_string(),
-                            "title": s.title,
-                            "prompt": s.prompt,
-                            "order_index": s.order_index,
-                        })
-                    })
-                    .collect();
-                ToolExecResult::ok(json!({ "sprints": summaries }))
-            }
-            Err(e) => ToolExecResult::err(e),
-        }
-    }
-
-    fn create_sprint(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
-        let title = str_field(input, "title").unwrap_or_default();
-        let prompt = str_field(input, "prompt").unwrap_or_default();
-
-        let existing = self.store.list_sprints_by_project(project_id).unwrap_or_default();
-        let order = existing.iter().map(|s| s.order_index).max().unwrap_or(0) + 1;
-
-        let now = Utc::now();
-        let sprint = Sprint {
-            sprint_id: SprintId::new(),
-            project_id: *project_id,
-            title,
-            prompt,
-            order_index: order,
-            generated_at: None,
-            created_at: now,
-            updated_at: now,
-        };
-        match self.store.put_sprint(&sprint) {
-            Ok(()) => ToolExecResult::ok(json!(sprint)),
-            Err(e) => ToolExecResult::err(e),
-        }
-    }
-
-    fn update_sprint(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
-        let sprint_id = match parse_id::<SprintId>(input, "sprint_id") {
-            Ok(id) => id,
-            Err(e) => return e,
-        };
-        let mut sprint = match self.store.get_sprint(project_id, &sprint_id) {
-            Ok(s) => s,
-            Err(e) => return ToolExecResult::err(e),
-        };
-        if let Some(t) = str_field(input, "title") {
-            sprint.title = t;
-        }
-        if let Some(p) = str_field(input, "prompt") {
-            sprint.prompt = p;
-        }
-        sprint.updated_at = Utc::now();
-        match self.store.put_sprint(&sprint) {
-            Ok(()) => ToolExecResult::ok(json!(sprint)),
-            Err(e) => ToolExecResult::err(e),
-        }
-    }
-
-    fn delete_sprint(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
-        let sprint_id = match parse_id::<SprintId>(input, "sprint_id") {
-            Ok(id) => id,
-            Err(e) => return e,
-        };
-        match self.store.delete_sprint(project_id, &sprint_id) {
-            Ok(()) => ToolExecResult::ok(json!({ "deleted": sprint_id.to_string() })),
-            Err(e) => ToolExecResult::err(e),
         }
     }
 

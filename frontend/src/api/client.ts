@@ -1,13 +1,11 @@
 import type {
   ProjectId,
-  SprintId,
   SpecId,
   TaskId,
   AgentId,
   AgentInstanceId,
   TaskStatus,
   Project,
-  Sprint,
   Spec,
   Task,
   Agent,
@@ -30,7 +28,6 @@ import type {
   Follow,
 } from "../types";
 import {
-  generateSprintStream,
   generateSpecsStream,
   sendMessageStream,
   sendAgentMessageStream,
@@ -38,7 +35,6 @@ import {
 
 export type {
   SpecGenStreamCallbacks,
-  SprintStreamCallbacks,
   ChatStreamCallbacks,
 } from "./streams";
 
@@ -225,36 +221,6 @@ export const api = {
     apiFetch<void>(`/api/projects/${id}`, { method: "DELETE" }),
   archiveProject: (id: ProjectId) =>
     apiFetch<Project>(`/api/projects/${id}/archive`, { method: "POST" }),
-
-  // Sprints
-  listSprints: (projectId: ProjectId) =>
-    apiFetch<Sprint[]>(`/api/projects/${projectId}/sprints`),
-  createSprint: (projectId: ProjectId, title: string, prompt?: string) =>
-    apiFetch<Sprint>(`/api/projects/${projectId}/sprints`, {
-      method: "POST",
-      body: JSON.stringify({ title, prompt: prompt ?? "" }),
-    }),
-  getSprint: (projectId: ProjectId, sprintId: SprintId) =>
-    apiFetch<Sprint>(`/api/projects/${projectId}/sprints/${sprintId}`),
-  updateSprint: (projectId: ProjectId, sprintId: SprintId, data: { title?: string; prompt?: string }) =>
-    apiFetch<Sprint>(`/api/projects/${projectId}/sprints/${sprintId}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
-  deleteSprint: (projectId: ProjectId, sprintId: SprintId) =>
-    apiFetch<void>(`/api/projects/${projectId}/sprints/${sprintId}`, {
-      method: "DELETE",
-    }),
-  reorderSprints: (projectId: ProjectId, sprintIds: SprintId[]) =>
-    apiFetch<Sprint[]>(`/api/projects/${projectId}/sprints/reorder`, {
-      method: "PUT",
-      body: JSON.stringify({ sprint_ids: sprintIds }),
-    }),
-  generateSprint: (projectId: ProjectId, sprintId: SprintId) =>
-    apiFetch<Sprint>(`/api/projects/${projectId}/sprints/${sprintId}/generate`, {
-      method: "POST",
-    }),
-  generateSprintStream,
 
   // Specs
   listSpecs: (projectId: ProjectId) =>
@@ -455,31 +421,37 @@ export const api = {
   users: {
     me: () => apiFetch<{
       id: string;
-      zos_user_id: string;
+      zos_user_id: string | null;
       display_name: string | null;
       avatar_url: string | null;
       bio: string | null;
+      location: string | null;
+      website: string | null;
       profile_id: string | null;
       created_at: string | null;
       updated_at: string | null;
     }>("/api/users/me"),
     get: (userId: string) => apiFetch<{
       id: string;
-      zos_user_id: string;
+      zos_user_id: string | null;
       display_name: string | null;
       avatar_url: string | null;
       bio: string | null;
+      location: string | null;
+      website: string | null;
       profile_id: string | null;
       created_at: string | null;
       updated_at: string | null;
     }>(`/api/users/${userId}`),
-    updateMe: (data: { display_name?: string; avatar_url?: string; bio?: string }) =>
+    updateMe: (data: { display_name?: string; avatar_url?: string; bio?: string; location?: string; website?: string }) =>
       apiFetch<{
         id: string;
-        zos_user_id: string;
+        zos_user_id: string | null;
         display_name: string | null;
         avatar_url: string | null;
         bio: string | null;
+        location: string | null;
+        website: string | null;
         profile_id: string | null;
         created_at: string | null;
         updated_at: string | null;

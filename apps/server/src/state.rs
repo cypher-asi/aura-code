@@ -16,7 +16,7 @@ use aura_orgs::OrgService;
 use aura_billing::{BillingClient, MeteredLlm, PricingService};
 use aura_projects::ProjectService;
 use aura_sessions::SessionService;
-use aura_specs::{SpecGenerationService, SprintGenerationService};
+use aura_specs::SpecGenerationService;
 use aura_tasks::{TaskExtractionService, TaskService};
 use aura_settings::SettingsService;
 use aura_store::RocksStore;
@@ -44,7 +44,6 @@ pub struct AppState {
     pub agent_instance_service: Arc<AgentInstanceService>,
     pub session_service: Arc<SessionService>,
     pub chat_service: Arc<ChatService>,
-    pub sprint_gen: Arc<SprintGenerationService>,
     pub llm: Arc<MeteredLlm>,
     pub event_tx: mpsc::UnboundedSender<EngineEvent>,
     pub event_broadcast: broadcast::Sender<EngineEvent>,
@@ -57,15 +56,18 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Extract the JWT access token from the stored zOS session.
-    pub fn get_jwt(&self) -> Result<String, (StatusCode, Json<ApiError>)> {
+    /// Load the full zOS auth session from storage.
+    pub fn get_session(&self) -> Result<ZeroAuthSession, (StatusCode, Json<ApiError>)> {
         let bytes = self
             .store
             .get_setting("zero_auth_session")
             .map_err(|_| ApiError::unauthorized("no active session"))?;
-        let session: ZeroAuthSession =
-            serde_json::from_slice(&bytes).map_err(|e| ApiError::internal(e.to_string()))?;
-        Ok(session.access_token)
+        serde_json::from_slice(&bytes).map_err(|e| ApiError::internal(e.to_string()))
+    }
+
+    /// Extract the JWT access token from the stored zOS session.
+    pub fn get_jwt(&self) -> Result<String, (StatusCode, Json<ApiError>)> {
+        self.get_session().map(|s| s.access_token)
     }
 
     /// Get the network client, returning 503 if not configured.

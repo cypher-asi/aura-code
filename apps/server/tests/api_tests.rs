@@ -305,7 +305,6 @@ async fn task_list_and_progress() {
         title: "Spec 1".into(),
         order_index: 0,
         markdown_contents: "content".into(),
-        sprint_id: None,
         created_at: now,
         updated_at: now,
     };

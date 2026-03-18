@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::enums::{AgentStatus, ChatRole, ProjectStatus, SessionStatus, TaskStatus};
 use crate::ids::{
     AgentId, AgentInstanceId, MessageId, OrgId, ProfileId, ProjectId,
-    SessionId, SpecId, SprintId, TaskId, UserId,
+    SessionId, SpecId, TaskId, UserId,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -30,27 +30,12 @@ pub struct Project {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Sprint {
-    pub sprint_id: SprintId,
-    pub project_id: ProjectId,
-    pub title: String,
-    pub prompt: String,
-    pub order_index: u32,
-    #[serde(default)]
-    pub generated_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Spec {
     pub spec_id: SpecId,
     pub project_id: ProjectId,
     pub title: String,
     pub order_index: u32,
     pub markdown_contents: String,
-    #[serde(default)]
-    pub sprint_id: Option<SprintId>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
