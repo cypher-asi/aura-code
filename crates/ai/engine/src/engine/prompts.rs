@@ -169,6 +169,7 @@ Test command: {test_cmd}
 Rules:
 - Always verify your changes compile before calling task_done
 - Use edit_file for targeted changes to existing files, write_file for new files or full rewrites
+- For new files longer than ~80-100 lines, do NOT write the entire file in one write_file call. Write a short skeleton first (e.g. module doc, imports, one small function or test), then use edit_file repeatedly to add the rest in logical chunks (one test or section at a time). This avoids output truncation.
 - Search before writing to understand existing code patterns
 - Never use non-ASCII characters (em dashes, smart quotes, ellipsis) in source code
 - For Rust: use raw string literals for multi-line strings, prefer serde_json::json!() for JSON in tests
