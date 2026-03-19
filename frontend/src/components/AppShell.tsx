@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { Topbar, Drawer, Badge, Button } from "@cypher-asi/zui";
 import { Building2, Eye, Menu, Rows3, Server, Settings } from "lucide-react";
 import { Lane } from "./Lane";
@@ -274,6 +274,7 @@ function ResponsiveShell({
   const { features, isMobileLayout } = useAuraCapabilities();
   const { status: hostStatus } = useHost();
   const { previewItem, setActiveTab } = useSidekick();
+  const routeContent = useOutlet();
   const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
@@ -460,7 +461,9 @@ function ResponsiveShell({
                 </div>
               )}
               <div className={styles.mobileMainPanel}>
-                <MainPanel key={`${activeApp.id}-main-panel`} />
+                <MainPanel key={`${activeApp.id}-main-panel`}>
+                  {routeContent}
+                </MainPanel>
               </div>
             </div>
 
@@ -499,7 +502,7 @@ function ResponsiveShell({
               />
             </div>
 
-            <MainPanel />
+            <MainPanel>{routeContent}</MainPanel>
             <SidekickLane />
             {PreviewPanel && <PreviewLane />}
           </div>

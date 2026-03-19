@@ -104,6 +104,7 @@ test("projects execution uses shared project navigation with capability-driven d
 
   await expect(page.getByText("Demo Project")).toBeVisible({ timeout: 10000 });
   await expect(page.getByRole("treeitem", { name: "Execution" })).toBeVisible({ timeout: 10000 });
+  await expect(page.locator("main").getByRole("button", { name: "Start" }).first()).toBeVisible({ timeout: 10000 });
 
   if (factor === "desktop") {
     await expect(page.getByRole("button", { name: "Open navigation" })).toHaveCount(0);
