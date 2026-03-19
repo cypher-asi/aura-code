@@ -300,6 +300,7 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         spec_gen_service.clone(),
         project_service.clone(),
         task_service.clone(),
+        storage_client.clone(),
     ));
 
     // Reset any tasks left InProgress from a previous unclean shutdown

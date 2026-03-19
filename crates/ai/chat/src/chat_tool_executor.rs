@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 use tracing::info;
 
 use aura_core::*;
+use aura_storage::StorageClient;
 use aura_store::RocksStore;
 
 use aura_projects::ProjectService;
@@ -13,6 +14,7 @@ const MAX_TOOL_ITERATIONS: usize = 25;
 
 pub struct ChatToolExecutor {
     pub(crate) store: Arc<RocksStore>,
+    pub(crate) storage_client: Option<Arc<StorageClient>>,
     pub(crate) project_service: Arc<ProjectService>,
     pub(crate) task_service: Arc<TaskService>,
 }
@@ -72,11 +74,13 @@ impl ToolExecResult {
 impl ChatToolExecutor {
     pub fn new(
         store: Arc<RocksStore>,
+        storage_client: Option<Arc<StorageClient>>,
         project_service: Arc<ProjectService>,
         task_service: Arc<TaskService>,
     ) -> Self {
         Self {
             store,
+            storage_client,
             project_service,
             task_service,
         }
@@ -95,16 +99,16 @@ impl ChatToolExecutor {
         info!(%project_id, tool_name, "Executing chat tool");
         match tool_name {
             // ── Specs ──────────────────────────────────────────────
-            "list_specs" => self.list_specs(project_id),
-            "get_spec" => self.get_spec(project_id, &input),
-            "create_spec" => self.create_spec(project_id, &input),
-            "update_spec" => self.update_spec(project_id, &input),
-            "delete_spec" => self.delete_spec(project_id, &input),
+            "list_specs" => self.list_specs(project_id).await,
+            "get_spec" => self.get_spec(project_id, &input).await,
+            "create_spec" => self.create_spec(project_id, &input).await,
+            "update_spec" => self.update_spec(project_id, &input).await,
+            "delete_spec" => self.delete_spec(project_id, &input).await,
             // ── Tasks ──────────────────────────────────────────────
-            "list_tasks" => self.list_tasks(project_id, &input),
-            "create_task" => self.create_task(project_id, &input),
+            "list_tasks" => self.list_tasks(project_id, &input).await,
+            "create_task" => self.create_task(project_id, &input).await,
             "update_task" => self.update_task(project_id, &input),
-            "delete_task" => self.delete_task(project_id, &input),
+            "delete_task" => self.delete_task(project_id, &input).await,
             "transition_task" => self.transition_task(project_id, &input),
             "run_task" => ToolExecResult::ok(json!({
                 "note": "run_task is handled at the handler level; this is a no-op inside the executor."

@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 use aura_core::*;
 use aura_billing::MeteredLlm;
 use aura_settings::SettingsService;
+use aura_storage::StorageClient;
 use aura_store::RocksStore;
 
 use aura_claude::{
@@ -219,6 +220,7 @@ pub struct ChatService {
     pub(crate) spec_gen: Arc<SpecGenerationService>,
     pub(crate) project_service: Arc<ProjectService>,
     pub(crate) task_service: Arc<TaskService>,
+    pub(crate) storage_client: Option<Arc<StorageClient>>,
     pub(crate) llm_config: LlmConfig,
 }
 
@@ -230,8 +232,9 @@ impl ChatService {
         spec_gen: Arc<SpecGenerationService>,
         project_service: Arc<ProjectService>,
         task_service: Arc<TaskService>,
+        storage_client: Option<Arc<StorageClient>>,
     ) -> Self {
-        Self::with_config(store, settings, llm, spec_gen, project_service, task_service, LlmConfig::from_env())
+        Self::with_config(store, settings, llm, spec_gen, project_service, task_service, storage_client, LlmConfig::from_env())
     }
 
     pub fn with_config(
@@ -241,6 +244,7 @@ impl ChatService {
         spec_gen: Arc<SpecGenerationService>,
         project_service: Arc<ProjectService>,
         task_service: Arc<TaskService>,
+        storage_client: Option<Arc<StorageClient>>,
         llm_config: LlmConfig,
     ) -> Self {
         Self {
@@ -250,6 +254,7 @@ impl ChatService {
             spec_gen,
             project_service,
             task_service,
+            storage_client,
             llm_config,
         }
     }

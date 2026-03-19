@@ -4,11 +4,14 @@ use std::time::Instant;
 use tokio::sync::{mpsc, watch};
 use tracing::{error, info, warn};
 
+use chrono::{DateTime, Utc};
+
 use aura_core::*;
 use aura_agents::AgentInstanceService;
 use aura_billing::{MeteredLlm, PricingService};
 use aura_projects::ProjectService;
 use aura_sessions::SessionService;
+use aura_storage::StorageClient;
 use aura_tasks::TaskService;
 use aura_settings::SettingsService;
 use aura_store::RocksStore;
@@ -20,6 +23,29 @@ use super::write_coordinator::ProjectWriteCoordinator;
 use crate::error::EngineError;
 use crate::events::EngineEvent;
 use crate::file_ops::FileOp;
+
+fn storage_spec_to_core(s: aura_storage::StorageSpec) -> Result<Spec, String> {
+    let parse_dt = |v: &Option<String>| -> DateTime<Utc> {
+        v.as_deref()
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(Utc::now)
+    };
+    Ok(Spec {
+        spec_id: s.id.parse().map_err(|e| format!("invalid spec id: {e}"))?,
+        project_id: s
+            .project_id
+            .as_deref()
+            .unwrap_or("")
+            .parse()
+            .map_err(|e| format!("invalid project id: {e}"))?,
+        title: s.title.unwrap_or_default(),
+        order_index: s.order_index.unwrap_or(0) as u32,
+        markdown_contents: s.markdown_contents.unwrap_or_default(),
+        created_at: parse_dt(&s.created_at),
+        updated_at: parse_dt(&s.updated_at),
+    })
+}
 
 pub struct LoopHandle {
     pub project_id: ProjectId,
@@ -61,6 +87,7 @@ pub struct DevLoopEngine {
     pub(crate) engine_config: EngineConfig,
     pub(crate) llm_config: LlmConfig,
     pub(crate) pricing_service: PricingService,
+    pub(crate) storage_client: Option<Arc<StorageClient>>,
 }
 
 impl DevLoopEngine {
@@ -89,7 +116,40 @@ impl DevLoopEngine {
             engine_config: EngineConfig::from_env(),
             llm_config: LlmConfig::from_env(),
             pricing_service,
+            storage_client: None,
         }
+    }
+
+    pub fn with_storage_client(mut self, client: Option<Arc<StorageClient>>) -> Self {
+        self.storage_client = client;
+        self
+    }
+
+    /// Load a spec from aura-storage (if configured), falling back to local RocksDB.
+    pub(crate) async fn load_spec(
+        &self,
+        project_id: &ProjectId,
+        spec_id: &SpecId,
+    ) -> Result<Spec, EngineError> {
+        if let Some(ref storage) = self.storage_client {
+            let jwt = self.get_jwt_for_storage()?;
+            let ss = storage
+                .get_spec(&spec_id.to_string(), &jwt)
+                .await?;
+            return storage_spec_to_core(ss)
+                .map_err(|e| EngineError::Parse(format!("spec conversion: {e}")));
+        }
+        Ok(self.store.get_spec(project_id, spec_id)?)
+    }
+
+    fn get_jwt_for_storage(&self) -> Result<String, EngineError> {
+        let bytes = self
+            .store
+            .get_setting("zero_auth_session")
+            .map_err(|_| EngineError::Parse("no active session for aura-storage".into()))?;
+        let session: ZeroAuthSession =
+            serde_json::from_slice(&bytes).map_err(|e| EngineError::Parse(e.to_string()))?;
+        Ok(session.access_token)
     }
 
     pub fn with_write_coordinator(mut self, coordinator: ProjectWriteCoordinator) -> Self {

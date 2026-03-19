@@ -100,7 +100,8 @@ impl AppState {
                 self.session_service.clone(),
                 self.event_tx.clone(),
             )
-            .with_write_coordinator(self.write_coordinator.clone()),
+            .with_write_coordinator(self.write_coordinator.clone())
+            .with_storage_client(self.storage_client.clone()),
         )
     }
 

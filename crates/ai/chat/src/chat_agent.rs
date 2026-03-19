@@ -171,6 +171,7 @@ impl ChatService {
         let executor = AgentToolLoopExecutor {
             inner: ChatToolExecutor::new(
                 self.store.clone(),
+                self.storage_client.clone(),
                 self.project_service.clone(),
                 self.task_service.clone(),
             ),
