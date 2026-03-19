@@ -404,38 +404,40 @@ function MobileShell({
         defaultSize={340}
         maxSize={420}
       >
-        <div className={styles.mobileDrawerContent}>
-          <div className={styles.mobileDrawerSearch}>
-            <SidebarSearchInput />
-          </div>
-          <div className={styles.mobileDrawerBody}>
-            <activeApp.LeftPanel />
-          </div>
-          <div className={styles.mobileDrawerFooter}>
-            <OrgSelector onOpenSettings={onOpenOrgSettings} variant="drawer" />
-            <CreditsBadge onClick={onBuyCredits} />
-            <div className={styles.mobileDrawerActions}>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={<Building2 size={14} />}
-                className={styles.mobileDrawerAction}
-                onClick={() => openAfterDrawerClose(onOpenOrgSettings)}
-              >
-                Team settings
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={<Settings size={14} />}
-                className={styles.mobileDrawerAction}
-                onClick={() => openAfterDrawerClose(onOpenSettings)}
-              >
-                App settings
-              </Button>
+        {navOpen && (
+          <div className={styles.mobileDrawerContent}>
+            <div className={styles.mobileDrawerSearch}>
+              <SidebarSearchInput />
+            </div>
+            <div className={styles.mobileDrawerBody}>
+              <activeApp.LeftPanel />
+            </div>
+            <div className={styles.mobileDrawerFooter}>
+              <OrgSelector onOpenSettings={onOpenOrgSettings} variant="drawer" />
+              <CreditsBadge onClick={onBuyCredits} />
+              <div className={styles.mobileDrawerActions}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<Building2 size={14} />}
+                  className={styles.mobileDrawerAction}
+                  onClick={() => openAfterDrawerClose(onOpenOrgSettings)}
+                >
+                  Team settings
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<Settings size={14} />}
+                  className={styles.mobileDrawerAction}
+                  onClick={() => openAfterDrawerClose(onOpenSettings)}
+                >
+                  App settings
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </Drawer>
 
       {SidekickPanel && (

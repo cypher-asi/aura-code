@@ -74,21 +74,21 @@ test("feed, leaderboard, and profile reuse sidebar selectors across form factors
   }
 });
 
-test("projects execution uses one responsive shell with capability-driven details access", async ({ page }, testInfo) => {
+test("projects execution uses shared project navigation with capability-driven details access", async ({ page }, testInfo) => {
   const factor = formFactor(testInfo.project.name);
 
   await mockAuthenticatedApp(page);
   await page.goto("/projects/proj-1/execution");
 
   await expect(page.getByText("Demo Project")).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: "Execution" })).toBeVisible();
 
   if (factor === "desktop") {
-    await expect(page.getByRole("button", { name: "Chat" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open navigation" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Tasks" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Open details" })).toHaveCount(0);
   } else {
-    await expect(page.getByRole("button", { name: "Chat" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Execution" })).toBeVisible();
+    await expect(page.getByRole("treeitem", { name: "Builder Bot" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Open details" })).toBeVisible();
   }
 });

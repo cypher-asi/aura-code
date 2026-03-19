@@ -1,18 +1,17 @@
 import { useEffect, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useParams, useNavigate } from "react-router-dom";
+import { useLocation, useParams, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { clearLastAgentIf } from "../utils/storage";
 import type { Project, AgentInstance } from "../types";
 import { ButtonPlus, Explorer, Menu, PageEmptyState } from "@cypher-asi/zui";
 import type { ExplorerNode, MenuItem } from "@cypher-asi/zui";
-import { Bot, FolderGit2, Pencil, Trash2, Loader2 } from "lucide-react";
+import { Bot, FolderGit2, Gauge, Pencil, Trash2, Loader2 } from "lucide-react";
 import { DeleteProjectModal, DeleteAgentInstanceModal } from "./ProjectModals";
 import { AgentSelectorModal } from "./AgentSelectorModal";
 import { useEventContext } from "../context/EventContext";
 import { useSidebarSearch } from "../context/SidebarSearchContext";
-import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { useProjectsList } from "../apps/projects/useProjectsList";
 import styles from "./ProjectList.module.css";
 
@@ -119,11 +118,15 @@ interface ContextMenuState {
   agent?: AgentInstance;
 }
 
+function executionNodeId(projectId: string) {
+  return `execution:${projectId}`;
+}
+
 export function ProjectList() {
   const { projectId, agentInstanceId } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const sidekick = useSidekick();
-  const { isMobileLayout } = useAuraCapabilities();
   const {
     projects,
     loadingProjects,
@@ -183,16 +186,6 @@ export function ProjectList() {
   }, [agentInstanceId, agentsByProject, projectId, refreshProjectAgents]);
 
   useEffect(() => {
-    if (!isMobileLayout) return;
-
-    projects.forEach((project) => {
-      if (!(project.project_id in agentsByProject)) {
-        void refreshProjectAgents(project.project_id);
-      }
-    });
-  }, [agentsByProject, isMobileLayout, projects, refreshProjectAgents]);
-
-  useEffect(() => {
     if (!ctxMenu) return;
 
     const handleMouseDown = (e: MouseEvent) => {
@@ -250,13 +243,20 @@ export function ProjectList() {
   }, [subscribe]);
 
   useEffect(() => {
-    if (projectId && !agentInstanceId) {
+    if (!projectId || agentInstanceId || location.pathname.endsWith("/execution")) {
+      return;
+    }
+
+    if (projectId in agentsByProject) {
       const agents = agentsByProject[projectId];
       if (agents && agents.length > 0) {
         navigate(`/projects/${projectId}/agents/${agents[0].agent_instance_id}`, { replace: true });
+        return;
       }
+
+      navigate(`/projects/${projectId}/execution`, { replace: true });
     }
-  }, [projectId, agentInstanceId, agentsByProject, navigate]);
+  }, [agentInstanceId, agentsByProject, location.pathname, navigate, projectId]);
 
   const projectMap = useMemo(
     () => new Map(projects.map((p) => [p.project_id, p])),
@@ -282,46 +282,59 @@ export function ProjectList() {
 
   const explorerData: ExplorerNode[] = useMemo(
     () =>
-      projects.filter((p) => p.name.trim()).map((p) => ({
-        id: p.project_id,
-        label: p.name,
-        suffix: (
-          <span className={styles.projectSuffix}>
-            <span onClick={(e) => e.stopPropagation()} className={styles.newChatWrap}>
-              <ButtonPlus
-                onClick={() => handleAddAgent(p.project_id)}
-                size="sm"
-                title="Add Agent"
-              />
+      projects.filter((p) => p.name.trim()).map((p) => {
+        const projectAgents = agentsByProject[p.project_id];
+        const childNodes =
+          projectAgents !== undefined
+            ? [
+                {
+                  id: executionNodeId(p.project_id),
+                  label: "Execution",
+                  icon: <Gauge size={16} />,
+                  metadata: { type: "execution", projectId: p.project_id },
+                },
+                ...projectAgents.map((s) => {
+                  const isAutomating = automatingProjectId === p.project_id && automatingAgentInstanceId === s.agent_instance_id;
+                  return {
+                    id: s.agent_instance_id,
+                    label: s.name,
+                    icon: s.icon && !failedIcons.has(s.agent_instance_id)
+                      ? <img
+                          src={s.icon}
+                          alt=""
+                          className={styles.agentAvatar}
+                          onError={() => setFailedIcons((prev) => new Set(prev).add(s.agent_instance_id))}
+                        />
+                      : <Bot size={16} />,
+                    suffix: isAutomating
+                      ? <span className={styles.sessionIndicator}><Loader2 size={10} className={styles.automationSpinner} /></span>
+                      : streamingAgentInstanceId === s.agent_instance_id
+                        ? <span className={styles.sessionIndicator}><span className={styles.streamingDot} /></span>
+                        : undefined,
+                    metadata: { type: "agent", projectId: p.project_id },
+                  };
+                }),
+              ]
+            : [{ id: `_load_${p.project_id}`, label: "Loading...", disabled: true }];
+
+        return {
+          id: p.project_id,
+          label: p.name,
+          suffix: (
+            <span className={styles.projectSuffix}>
+              <span onClick={(e) => e.stopPropagation()} className={styles.newChatWrap}>
+                <ButtonPlus
+                  onClick={() => handleAddAgent(p.project_id)}
+                  size="sm"
+                  title="Add Agent"
+                />
+              </span>
             </span>
-          </span>
-        ),
-        metadata: { type: "project" },
-        children:
-          agentsByProject[p.project_id] !== undefined
-            ? agentsByProject[p.project_id].map((s) => {
-                const isAutomating = automatingProjectId === p.project_id && automatingAgentInstanceId === s.agent_instance_id;
-                return {
-                  id: s.agent_instance_id,
-                  label: s.name,
-                  icon: s.icon && !failedIcons.has(s.agent_instance_id)
-                    ? <img
-                        src={s.icon}
-                        alt=""
-                        className={styles.agentAvatar}
-                        onError={() => setFailedIcons((prev) => new Set(prev).add(s.agent_instance_id))}
-                      />
-                    : <Bot size={16} />,
-                  suffix: isAutomating
-                    ? <span className={styles.sessionIndicator}><Loader2 size={10} className={styles.automationSpinner} /></span>
-                    : streamingAgentInstanceId === s.agent_instance_id
-                      ? <span className={styles.sessionIndicator}><span className={styles.streamingDot} /></span>
-                      : undefined,
-                  metadata: { type: "agent", projectId: p.project_id },
-                };
-              })
-            : [{ id: `_load_${p.project_id}`, label: "Loading...", disabled: true }],
-      })),
+          ),
+          metadata: { type: "project" },
+          children: childNodes,
+        };
+      }),
     [projects, agentsByProject, streamingAgentInstanceId, automatingProjectId, automatingAgentInstanceId, failedIcons, handleAddAgent],
   );
 
@@ -330,15 +343,18 @@ export function ProjectList() {
     [explorerData, searchQuery],
   );
   const defaultExpandedIds = useMemo(
-    () => (projectId ? [projectId] : isMobileLayout ? projects.map((project) => project.project_id) : []),
-    [isMobileLayout, projectId, projects],
+    () => (projectId ? [projectId] : []),
+    [projectId],
   );
 
   const defaultSelectedIds = useMemo(() => {
     if (agentInstanceId) return [agentInstanceId];
+    if (projectId && location.pathname.endsWith("/execution")) {
+      return [executionNodeId(projectId)];
+    }
     if (projectId) return [projectId];
     return [];
-  }, [projectId, agentInstanceId]);
+  }, [agentInstanceId, location.pathname, projectId]);
 
   const handleSelect = useCallback(
     (ids: string[]) => {
@@ -350,8 +366,12 @@ export function ProjectList() {
         if (agents && agents.length > 0) {
           navigate(`/projects/${id}/agents/${agents[0].agent_instance_id}`);
         } else {
-          navigate(`/projects/${id}`);
+          navigate(`/projects/${id}/execution`);
         }
+      } else if (id.startsWith("execution:")) {
+        const pid = id.slice("execution:".length);
+        if (pid !== projectId) sidekick.closePreview();
+        navigate(`/projects/${pid}/execution`);
       } else if (agentMeta.has(id)) {
         const { projectId: pid } = agentMeta.get(id)!;
         if (pid !== projectId) sidekick.closePreview();

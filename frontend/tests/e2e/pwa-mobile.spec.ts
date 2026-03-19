@@ -136,17 +136,21 @@ test("mobile login page can open host settings", async ({ page }) => {
   await expect(page.getByPlaceholder("192.168.1.20:5173")).toBeVisible();
 });
 
-test("mobile project header can switch between execution and chat", async ({ page }) => {
+test("mobile projects route reuses shared project navigation for execution and chat", async ({ page }) => {
   await mockAuthenticatedMobileApp(page);
 
   await page.goto("/projects/proj-1/agents/agent-inst-1");
 
   await expect(page.getByText("Demo Project")).toBeVisible({ timeout: 10000 });
-  await expect(page.getByRole("button", { name: "Chat" })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole("treeitem", { name: "Execution" })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole("treeitem", { name: "Builder Bot" })).toBeVisible({ timeout: 10000 });
   await expect(page.getByText("Send a message or use a quick action to get started")).toBeVisible();
 
-  await page.getByRole("button", { name: "Execution" }).click();
+  await page.getByRole("treeitem", { name: "Execution" }).dispatchEvent("click");
   await expect(page).toHaveURL(/\/projects\/proj-1\/execution$/);
+
+  await page.getByRole("treeitem", { name: "Builder Bot" }).dispatchEvent("click");
+  await expect(page).toHaveURL(/\/projects\/proj-1\/agents\/agent-inst-1$/);
 });
 
 test("mobile projects route keeps the welcome view and opens project navigation", async ({ page }) => {
@@ -157,7 +161,7 @@ test("mobile projects route keeps the welcome view and opens project navigation"
   await expect(page.getByRole("treeitem", { name: "Demo Project" })).toBeVisible();
   await expect(page.getByText("Welcome to AURA")).toBeVisible();
   await expect(page.getByText("Select a project from navigation or create a new one to get started.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Execution" })).toHaveCount(0);
+  await expect(page.getByRole("treeitem", { name: "Execution" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.getByPlaceholder("Search Projects...")).toBeVisible();
