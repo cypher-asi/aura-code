@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { api } from "../api/client";
+import { api, type OrbitRepo } from "../api/client";
 import { useOrg } from "../context/OrgContext";
 import { useAuth } from "../context/AuthContext";
 import { Modal, Input, Button, Spinner, Text } from "@cypher-asi/zui";
@@ -27,6 +27,9 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
   const [folderPath, setFolderPath] = useState("");
   const [orbitRepoName, setOrbitRepoName] = useState("");
   const [useExistingRepo, setUseExistingRepo] = useState(false);
+  const [orbitRepos, setOrbitRepos] = useState<OrbitRepo[]>([]);
+  const [orbitReposLoading, setOrbitReposLoading] = useState(false);
+  const [selectedOrbitRepo, setSelectedOrbitRepo] = useState<OrbitRepo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [nameError, setNameError] = useState("");
@@ -48,10 +51,22 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
     setFolderPath("");
     setOrbitRepoName("");
     setUseExistingRepo(false);
+    setOrbitRepos([]);
+    setSelectedOrbitRepo(null);
     setLoading(false);
     setError("");
     setNameError("");
   }, []);
+
+  useEffect(() => {
+    if (!isOpen || !useExistingRepo || !isAuthenticated) return;
+    setOrbitReposLoading(true);
+    api
+      .listOrbitRepos()
+      .then(setOrbitRepos)
+      .catch(() => setOrbitRepos([]))
+      .finally(() => setOrbitReposLoading(false));
+  }, [isOpen, useExistingRepo, isAuthenticated]);
 
   const handleClose = useCallback(() => {
     reset();
@@ -63,21 +78,35 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
       setNameError("Project name is required");
       return;
     }
+    if (useExistingRepo && !selectedOrbitRepo) {
+      setError("Please select an existing repo");
+      return;
+    }
     setNameError("");
-    setLoading(true);
     setError("");
+    setLoading(true);
     try {
       if (!activeOrg) return;
       const repoSlug = orbitRepoName.trim() || slugFromName(name) || "my-project";
-      const project = await api.createProject({
+      const payload = {
         org_id: activeOrg.org_id,
         name: name.trim(),
         description: description.trim(),
         linked_folder_path: folderPath.trim(),
-        git_branch: "main",
-        orbit_owner: orbitOwner ?? undefined,
-        orbit_repo: !useExistingRepo ? repoSlug : undefined,
-      });
+        git_branch: "main" as const,
+        orbit_owner: undefined as string | undefined,
+        orbit_repo: undefined as string | undefined,
+        git_repo_url: undefined as string | undefined,
+      };
+      if (useExistingRepo && selectedOrbitRepo) {
+        payload.git_repo_url = selectedOrbitRepo.clone_url ?? `${selectedOrbitRepo.owner}/${selectedOrbitRepo.name}`;
+        payload.orbit_owner = selectedOrbitRepo.owner;
+        payload.orbit_repo = selectedOrbitRepo.name;
+      } else {
+        payload.orbit_owner = orbitOwner ?? undefined;
+        payload.orbit_repo = repoSlug;
+      }
+      const project = await api.createProject(payload);
       reset();
       onCreated(project);
     } catch (err) {
@@ -98,7 +127,16 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
           <Button variant="ghost" onClick={handleClose} disabled={loading}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleSubmit} disabled={loading || orgLoading || !activeOrg}>
+          <Button
+            variant="primary"
+            onClick={handleSubmit}
+            disabled={
+              loading ||
+              orgLoading ||
+              !activeOrg ||
+              (useExistingRepo && !selectedOrbitRepo)
+            }
+          >
             {loading ? <><Spinner size="sm" /> Creating...</> : "Create Project"}
           </Button>
         </>
@@ -164,9 +202,43 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
                 <span>Use existing repo</span>
               </label>
               {useExistingRepo && (
-                <Text variant="muted" size="sm" style={{ paddingLeft: "var(--space-6)" }}>
-                  Search existing repos will be available in a future update.
-                </Text>
+                <div style={{ paddingLeft: "var(--space-6)" }}>
+                  {orbitReposLoading ? (
+                    <Spinner size="sm" />
+                  ) : orbitRepos.length === 0 ? (
+                    <Text variant="muted" size="sm">
+                      No repos found. Create a new repo instead or check Orbit configuration.
+                    </Text>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+                      <Text variant="muted" size="sm">
+                        Select a repo to link:
+                      </Text>
+                      <select
+                        value={selectedOrbitRepo ? `${selectedOrbitRepo.owner}/${selectedOrbitRepo.name}` : ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const repo = orbitRepos.find(
+                            (r) => `${r.owner}/${r.name}` === val
+                          );
+                          setSelectedOrbitRepo(repo ?? null);
+                        }}
+                        style={{
+                          padding: "var(--space-2)",
+                          borderRadius: "var(--radius-md)",
+                          border: "1px solid var(--color-border)",
+                        }}
+                      >
+                        <option value="">— Select repo —</option>
+                        {orbitRepos.map((r) => (
+                          <option key={`${r.owner}/${r.name}`} value={`${r.owner}/${r.name}`}>
+                            {r.owner}/{r.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
               )}
             </>
           )}

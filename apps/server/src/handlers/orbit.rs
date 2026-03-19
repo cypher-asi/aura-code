@@ -11,6 +11,7 @@ pub struct ListOrbitReposQuery {
 
 /// GET /api/orbit/repos?q=...
 /// Returns repos the current user can use (JWT auth). Requires ORBIT_BASE_URL to be set.
+/// Each repo includes a resolved clone_url for Git operations.
 pub async fn list_orbit_repos(
     State(state): State<AppState>,
     Query(query): Query<ListOrbitReposQuery>,
@@ -27,5 +28,20 @@ pub async fn list_orbit_repos(
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
 
-    Ok(axum::Json(repos))
+    let repos_with_url: Vec<aura_orbit::OrbitRepo> = repos
+        .into_iter()
+        .map(|r| {
+            let clone_url = Some(r.clone_url_or(base_url));
+            aura_orbit::OrbitRepo {
+                id: r.id,
+                name: r.name,
+                owner: r.owner,
+                full_name: r.full_name,
+                clone_url,
+                git_url: r.git_url,
+            }
+        })
+        .collect();
+
+    Ok(axum::Json(repos_with_url))
 }
