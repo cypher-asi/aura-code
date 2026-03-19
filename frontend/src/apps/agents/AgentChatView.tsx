@@ -130,7 +130,7 @@ export function AgentChatView() {
           <div className={styles.messageContent}>
             {!hasMessages ? (
               <EmptyState icon={<MessageSquare size={40} />}>
-                Send a message to chat with {agentName ?? "this agent"} across all linked projects
+                Send a message.
               </EmptyState>
             ) : (
               <>

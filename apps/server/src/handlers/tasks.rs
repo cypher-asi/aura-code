@@ -78,10 +78,11 @@ pub async fn list_tasks(
         .list_tasks(&project_id.to_string(), &jwt)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
-    let tasks: Vec<Task> = storage_tasks
+    let mut tasks: Vec<Task> = storage_tasks
         .into_iter()
         .filter_map(|s| storage_task_to_task(s).ok())
         .collect();
+    tasks.sort_by_key(|t| t.order_index);
     Ok(Json(tasks))
 }
 
@@ -95,11 +96,12 @@ pub async fn list_tasks_by_spec(
         .list_tasks(&project_id.to_string(), &jwt)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
-    let tasks: Vec<Task> = storage_tasks
+    let mut tasks: Vec<Task> = storage_tasks
         .into_iter()
         .filter_map(|s| storage_task_to_task(s).ok())
         .filter(|t| t.spec_id == spec_id)
         .collect();
+    tasks.sort_by_key(|t| t.order_index);
     Ok(Json(tasks))
 }
 

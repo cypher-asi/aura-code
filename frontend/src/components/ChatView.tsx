@@ -128,7 +128,7 @@ export function ChatView() {
           <div className={styles.messageContent}>
             {!hasMessages ? (
               <EmptyState icon={<MessageSquare size={40} />}>
-                Send a message or use a quick action to get started
+                Send a message.
               </EmptyState>
             ) : (
               <>

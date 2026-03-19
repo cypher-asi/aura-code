@@ -7,7 +7,7 @@ use aura_core::*;
 use aura_claude::ClaudeStreamEvent;
 
 use crate::SpecGenError;
-use super::parser::{IncrementalSpecParser, RawSpecOutput, parse_claude_response, parse_tasks_from_markdown, raw_to_specs};
+use super::parser::{IncrementalSpecParser, RawSpecOutput, order_index_from_spec_title, parse_claude_response, parse_tasks_from_markdown, raw_to_specs};
 use super::{SpecGenerationService, SpecStreamEvent, SPEC_OVERVIEW_MAX_TOKENS, SPEC_SUMMARY_MAX_TOKENS, SPEC_SUMMARY_MAX_WORDS, MAX_TOKENS};
 
 /// Parses "TITLE: ...\n\nsummary" format. Returns (title, summary).
@@ -178,11 +178,13 @@ impl SpecGenerationService {
                     }
                     for json_obj in parser.feed(&text) {
                         if let Ok(raw) = serde_json::from_str::<RawSpecOutput>(&json_obj) {
+                            let order_index =
+                                order_index_from_spec_title(&raw.title).unwrap_or(spec_index);
                             let spec = Spec {
                                 spec_id: SpecId::new(),
                                 project_id: *project_id,
                                 title: raw.title,
-                                order_index: spec_index,
+                                order_index,
                                 markdown_contents: format!(
                                     "## Purpose\n\n{}\n\n{}", raw.purpose, raw.markdown
                                 ),

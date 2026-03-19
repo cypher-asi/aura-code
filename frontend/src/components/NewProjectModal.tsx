@@ -183,7 +183,10 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
               {!useExistingRepo && (
                 <div style={{ paddingLeft: "var(--space-6)" }}>
                   <Text variant="muted" size="sm">
-                    {orbitOwner}/{displayRepoName}
+                    orbit/{orbitOwner}/{displayRepoName}
+                  </Text>
+                  <Text variant="muted" size="xs" style={{ opacity: 0.85, marginTop: "var(--space-1)" }}>
+                    Format: orbit/UUID/name
                   </Text>
                   <Input
                     value={orbitRepoName}

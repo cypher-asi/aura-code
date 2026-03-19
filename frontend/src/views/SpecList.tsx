@@ -97,10 +97,10 @@ export function SpecList({ searchQuery }: { searchQuery: string }) {
     () => [
       {
         id: "__specs_root__",
-        label: ctx?.project?.specs_title ?? "",
+        label: ctx?.project?.specs_title || "Spec",
         children: mergedSpecs.map((spec) => ({
           id: spec.spec_id,
-          label: spec.title,
+          label: spec.title || "Spec",
           metadata: { type: "spec" },
         })),
       },
