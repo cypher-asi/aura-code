@@ -164,7 +164,7 @@ test("navigation drawer remains settings access on smaller form factors only", a
   await expect(page.getByRole("button", { name: "App settings" })).toBeVisible();
 });
 
-test("modal flows lock the background document across form factors", async ({ page }, testInfo) => {
+test("modal flows lock the background document across form factors", async ({ page }) => {
   await mockAuthenticatedApp(page);
   await page.goto("/projects");
 
