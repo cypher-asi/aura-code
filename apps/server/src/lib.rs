@@ -1,6 +1,7 @@
 pub mod dto;
 pub mod error;
 pub mod handlers;
+pub mod loop_log;
 pub mod router;
 pub mod session_init;
 pub mod state;
@@ -9,13 +10,14 @@ pub use router::{create_router, create_router_with_frontend};
 pub use state::AppState;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio::time::{interval, Duration};
 use tracing::{debug, info, warn};
 
+use crate::loop_log::LoopLogWriter;
 use crate::state::TaskOutputBuffers;
 
 use aura_core::ZeroAuthSession;
@@ -139,12 +141,14 @@ fn spawn_event_rebroadcast(
     store: Arc<RocksStore>,
     storage_client: Option<Arc<StorageClient>>,
     task_output_buffers: TaskOutputBuffers,
+    loop_log: Arc<LoopLogWriter>,
 ) {
     tokio::spawn(async move {
         let mut delta_count: u64 = 0;
         let mut delta_broadcast_buf: HashMap<aura_core::TaskId, (aura_core::ProjectId, aura_core::AgentInstanceId, String)> = HashMap::new();
         let mut flush_interval = interval(Duration::from_millis(DELTA_BROADCAST_INTERVAL_MS));
         flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut task_output_for_log: Option<(aura_core::TaskId, String)> = None;
 
         loop {
             tokio::select! {
@@ -165,6 +169,12 @@ fn spawn_event_rebroadcast(
                         }
                         EngineEvent::TaskCompleted { task_id, .. }
                         | EngineEvent::TaskFailed { task_id, .. } => {
+                            let output = if let Ok(mut bufs) = task_output_buffers.lock() {
+                                bufs.remove(task_id).unwrap_or_default()
+                            } else {
+                                String::new()
+                            };
+                            task_output_for_log = Some((*task_id, output));
                             finalize_live_output(&store, &task_output_buffers, task_id);
                         }
                         EngineEvent::LoopStopped { .. } | EngineEvent::LoopFinished { .. } => {
@@ -175,6 +185,27 @@ fn spawn_event_rebroadcast(
 
                     if matches!(event, EngineEvent::TaskOutputDelta { .. }) {
                         continue;
+                    }
+
+                    // Loop log: write event and lifecycle hooks
+                    loop_log.on_event(&event).await;
+                    match &event {
+                        EngineEvent::LoopStarted { project_id, agent_instance_id, .. } => {
+                            loop_log.on_loop_started(*project_id, *agent_instance_id).await;
+                        }
+                        EngineEvent::TaskStarted { project_id, agent_instance_id, task_id, .. } => {
+                            loop_log.on_task_started(*project_id, *agent_instance_id, *task_id).await;
+                        }
+                        EngineEvent::TaskCompleted { .. } | EngineEvent::TaskFailed { .. } => {
+                            if let Some((tid, ref out)) = task_output_for_log.take() {
+                                loop_log.on_task_end(tid, out).await;
+                            }
+                        }
+                        EngineEvent::LoopFinished { project_id, agent_instance_id, .. }
+                        | EngineEvent::LoopStopped { project_id, agent_instance_id, .. } => {
+                            loop_log.on_loop_ended(*project_id, *agent_instance_id).await;
+                        }
+                        _ => {}
                     }
 
                     // Write to aura-storage
@@ -400,12 +431,21 @@ pub fn build_app_state(db_path: &Path) -> AppState {
     let task_output_buffers: TaskOutputBuffers =
         Arc::new(std::sync::Mutex::new(HashMap::new()));
 
+    let data_dir = db_path.parent().unwrap_or(Path::new("."));
+    let loop_log_dir = std::env::var("AURA_LOOP_LOG_DIR")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| data_dir.join("loop-logs"));
+    let loop_log = Arc::new(LoopLogWriter::new(loop_log_dir));
+
     spawn_event_rebroadcast(
         event_rx,
         event_broadcast.clone(),
         store.clone(),
         storage_client.clone(),
         task_output_buffers.clone(),
+        loop_log,
     );
 
     let orbit_client = Arc::new(OrbitClient::new());
