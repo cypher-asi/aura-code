@@ -31,7 +31,7 @@ impl DevLoopEngine {
 
         let workspace_map = &workspace_cache.workspace_map_text;
         let workspace_info = if workspace_map.is_empty() { None } else { Some(workspace_map.as_str()) };
-        let mut system_prompt = agentic_execution_system_prompt(&project, agent, workspace_info);
+        let system_prompt = agentic_execution_system_prompt(&project, agent, workspace_info);
 
         let codebase_snapshot = match file_ops::retrieve_task_relevant_files_cached(
             &project.linked_folder_path,
@@ -45,21 +45,17 @@ impl DevLoopEngine {
                 .unwrap_or_default(),
         };
 
-        if !codebase_snapshot.is_empty() {
-            system_prompt.push_str(&format!("\n\n# Current Codebase Files\n{}\n", codebase_snapshot));
-        }
-        if !workspace_map.is_empty() {
-            let dep_api_context = file_ops::resolve_task_dep_api_context_cached(
+        let dep_api_context = if !workspace_map.is_empty() {
+            file_ops::resolve_task_dep_api_context_cached(
                 &project.linked_folder_path,
                 &task.title,
                 &task.description,
                 15_000,
                 workspace_cache,
-            ).await.unwrap_or_default();
-            if !dep_api_context.is_empty() {
-                system_prompt.push_str(&format!("\n\n# Dependency API Surface\n{}\n", dep_api_context));
-            }
-        }
+            ).await.unwrap_or_default()
+        } else {
+            String::new()
+        };
 
         let completed_deps: Vec<Task> = if task.dependency_ids.is_empty() {
             Vec::new()
@@ -81,6 +77,12 @@ impl DevLoopEngine {
         );
         if !workspace_map.is_empty() {
             task_context.push_str(&format!("\n# Workspace Structure\n{}\n", workspace_map));
+        }
+        if !codebase_snapshot.is_empty() {
+            task_context.push_str(&format!("\n# Current Codebase Files\n{}\n", codebase_snapshot));
+        }
+        if !dep_api_context.is_empty() {
+            task_context.push_str(&format!("\n# Dependency API Surface\n{}\n", dep_api_context));
         }
 
         let tools = engine_tool_definitions();
