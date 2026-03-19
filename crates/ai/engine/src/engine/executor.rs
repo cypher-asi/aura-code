@@ -188,7 +188,7 @@ impl DevLoopEngine {
         self.emit_file_ops_applied(project_id, agent_instance_id, task, &execution.file_ops);
 
         let build_start = Instant::now();
-        let (_, build_passed, build_attempts, dup_bailouts, fix_inp, fix_out) = self
+        let (_, build_passed, build_attempts, dup_bailouts, fix_inp, fix_out, last_build_stderr) = self
             .verify_and_fix_build(
                 &project, task, session, api_key, &execution, baseline_test_failures,
                 workspace_cache,
@@ -221,6 +221,7 @@ impl DevLoopEngine {
             return Ok(self.handle_build_failure(
                 project_id, agent_instance_id, task, session, model,
                 &execution, total_input, total_output, timings,
+                &last_build_stderr,
             ).await);
         }
 
@@ -345,8 +346,28 @@ impl DevLoopEngine {
         total_input: u64,
         total_output: u64,
         timings: TaskTimings,
+        last_build_stderr: &str,
     ) -> TaskOutcome {
-        let reason = "build verification failed after all fix attempts".to_string();
+        // Store the actual build errors in execution_notes so they're visible
+        // when the task is retried via "Notes from Prior Attempts".
+        let reason = if last_build_stderr.is_empty() {
+            "build verification failed after all fix attempts".to_string()
+        } else {
+            let truncated = if last_build_stderr.len() > 4000 {
+                format!(
+                    "{}...\n(truncated {} bytes)",
+                    &last_build_stderr[..4000],
+                    last_build_stderr.len() - 4000
+                )
+            } else {
+                last_build_stderr.to_string()
+            };
+            format!(
+                "build verification failed after all fix attempts\n\n\
+                 # Last Build Errors\n```\n{}\n```",
+                truncated
+            )
+        };
         if let Err(e) = self.task_service.fail_task(&project_id, &task.spec_id, &task.task_id, &reason).await {
             warn!(task_id = %task.task_id, error = %e, "failed to mark task as failed");
         }

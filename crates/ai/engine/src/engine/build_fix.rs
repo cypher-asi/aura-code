@@ -476,16 +476,16 @@ impl DevLoopEngine {
         Ok((inp, out))
     }
 
-    /// Returns (fix_ops, build_passed, attempts_used, duplicate_bailouts, fix_input_tokens, fix_output_tokens).
+    /// Returns (fix_ops, build_passed, attempts_used, duplicate_bailouts, fix_input_tokens, fix_output_tokens, last_stderr).
     pub(crate) async fn verify_and_fix_build(
         &self, project: &Project, task: &Task, session: &Session,
         api_key: &str, initial_execution: &TaskExecution,
         baseline_test_failures: &HashSet<String>,
         workspace_cache: &WorkspaceCache,
-    ) -> Result<(Vec<FileOp>, bool, u32, u32, u64, u64), EngineError> {
+    ) -> Result<(Vec<FileOp>, bool, u32, u32, u64, u64, String), EngineError> {
         let mut build_cmd = match self.resolve_build_command(project, session, task).await {
             Some(cmd) => cmd,
-            None => return Ok((vec![], true, 0, 0, 0, 0)),
+            None => return Ok((vec![], true, 0, 0, 0, 0, String::new())),
         };
         let test_cmd = project.test_command.as_ref().filter(|c| !c.trim().is_empty()).cloned();
         let base_path = Path::new(&project.linked_folder_path);
@@ -493,6 +493,7 @@ impl DevLoopEngine {
         let mut prior: Vec<BuildFixAttemptRecord> = Vec::new();
         let mut test_prior: Vec<BuildFixAttemptRecord> = Vec::new();
         let (mut dup_bail, mut inp_t, mut out_t) = (0u32, 0u64, 0u64);
+        let mut last_stderr = String::new();
 
         for attempt in 1..=self.engine_config.max_build_fix_retries {
             let (br, dur) = self.run_build_with_streaming(
@@ -511,20 +512,21 @@ impl DevLoopEngine {
                     baseline_test_failures, &mut test_prior, workspace_cache,
                 ).await?;
                 inp_t += i; out_t += o;
-                if tp { return Ok((fix_ops, true, attempt, dup_bail, inp_t, out_t)); }
+                if tp { return Ok((fix_ops, true, attempt, dup_bail, inp_t, out_t, String::new())); }
                 continue;
             }
+            last_stderr = br.stderr.clone();
             self.record_build_failed(
                 project, session, task, &build_cmd,
                 &br.stdout, &br.stderr, dur, attempt,
             );
             if attempt == self.engine_config.max_build_fix_retries {
                 info!(task_id = %task.task_id, "build still failing after max retries");
-                return Ok((fix_ops, false, attempt, dup_bail, inp_t, out_t));
+                return Ok((fix_ops, false, attempt, dup_bail, inp_t, out_t, last_stderr));
             }
             if self.check_error_stagnation(task, &br.stderr, &prior, attempt) {
                 dup_bail += 1;
-                return Ok((fix_ops, false, attempt, dup_bail, inp_t, out_t));
+                return Ok((fix_ops, false, attempt, dup_bail, inp_t, out_t, last_stderr));
             }
             let (i, o) = self.attempt_build_fix(
                 project, task, session, api_key, initial_execution, &build_cmd,
@@ -532,7 +534,7 @@ impl DevLoopEngine {
             ).await?;
             inp_t += i; out_t += o;
         }
-        Ok((fix_ops, false, self.engine_config.max_build_fix_retries, dup_bail, inp_t, out_t))
+        Ok((fix_ops, false, self.engine_config.max_build_fix_retries, dup_bail, inp_t, out_t, last_stderr))
     }
 }
 
