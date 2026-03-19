@@ -29,9 +29,15 @@ impl DevLoopEngine {
         let project = self.project_service.get_project_async(project_id).await?;
         let spec = self.load_spec(project_id, &task.spec_id).await?;
 
+        let exploration_allowance = compute_exploration_allowance(
+            &task.title,
+            &task.description,
+            workspace_cache.member_count,
+        );
+
         let workspace_map = &workspace_cache.workspace_map_text;
         let workspace_info = if workspace_map.is_empty() { None } else { Some(workspace_map.as_str()) };
-        let system_prompt = agentic_execution_system_prompt(&project, agent, workspace_info);
+        let system_prompt = agentic_execution_system_prompt(&project, agent, workspace_info, exploration_allowance);
 
         let codebase_snapshot = match file_ops::retrieve_task_relevant_files_cached(
             &project.linked_folder_path,
@@ -81,7 +87,7 @@ impl DevLoopEngine {
         let work_log_summary = build_work_log_summary(work_log);
 
         let mut task_context = build_agentic_task_context(
-            &project, &spec, task, session, &completed_deps, &work_log_summary,
+            &project, &spec, task, session, &completed_deps, &work_log_summary, exploration_allowance,
         );
         if !workspace_map.is_empty() {
             task_context.push_str(&format!("\n# Workspace Structure\n{}\n", workspace_map));
@@ -128,6 +134,7 @@ impl DevLoopEngine {
             stub_fix_attempts: Arc::new(Mutex::new(0)),
             completed_deps,
             work_log_summary,
+            exploration_allowance,
         };
 
         let thinking_budget = compute_thinking_budget(
@@ -143,6 +150,7 @@ impl DevLoopEngine {
             billing_reason: "aura_task",
             max_context_tokens: Some(self.llm_config.max_context_tokens),
             credit_budget: self.engine_config.max_task_credits,
+            exploration_allowance: Some(exploration_allowance),
         };
 
         let (loop_tx, mut loop_rx) = mpsc::unbounded_channel::<ToolLoopEvent>();
@@ -238,6 +246,28 @@ fn compute_thinking_budget(base: u32, member_count: usize) -> u32 {
         base.max(16_000)
     } else if member_count >= 8 {
         base.max(10_000)
+    } else {
+        base
+    }
+}
+
+fn compute_exploration_allowance(
+    task_title: &str,
+    task_description: &str,
+    member_count: usize,
+) -> usize {
+    let combined = format!("{} {}", task_title, task_description).to_lowercase();
+    let is_test_task = combined.contains("integration test")
+        || combined.contains("end-to-end")
+        || combined.contains("e2e test")
+        || (combined.contains("test") && combined.contains("pipeline"));
+
+    let base: usize = if is_test_task { 18 } else { 12 };
+
+    if member_count >= 15 {
+        base + 4
+    } else if member_count >= 8 {
+        base + 2
     } else {
         base
     }

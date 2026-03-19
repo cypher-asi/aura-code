@@ -18,6 +18,7 @@ fn default_config(max_iterations: usize) -> ToolLoopConfig {
         billing_reason: "test",
         max_context_tokens: None,
         credit_budget: None,
+        exploration_allowance: None,
     }
 }
 

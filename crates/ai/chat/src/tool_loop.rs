@@ -101,7 +101,7 @@ pub async fn run_tool_loop(
         consecutive_cmd_failures: 0,
         file_read_counts: HashMap::new(),
         total_exploration_calls: 0,
-        exploration_allowance: 12,
+        exploration_allowance: config.exploration_allowance.unwrap_or(12),
         exploration_warning_8_sent: false,
         exploration_warning_10_sent: false,
         budget_warning_30_sent: false,
@@ -167,23 +167,26 @@ pub async fn run_tool_loop(
             return state.build_result(iteration + 1, false, false, None);
         }
 
-        if state.total_exploration_calls >= 10 && !state.exploration_warning_10_sent {
+        let strong_threshold = state.exploration_allowance.saturating_sub(2);
+        let mild_threshold = state.exploration_allowance.saturating_sub(4);
+
+        if state.total_exploration_calls >= strong_threshold && !state.exploration_warning_10_sent {
             state.exploration_warning_10_sent = true;
             let warning = format!(
-                "[EXPLORATION WARNING] {} exploration calls. Further reads will be limited. \
+                "[EXPLORATION WARNING] {} of ~{} exploration calls used. Further reads will be limited. \
                  Begin writing immediately.",
-                state.total_exploration_calls,
+                state.total_exploration_calls, state.exploration_allowance,
             );
-            info!(total_exploration = state.total_exploration_calls, "Injecting strong exploration warning");
+            info!(total_exploration = state.total_exploration_calls, allowance = state.exploration_allowance, "Injecting strong exploration warning");
             state.api_messages.push(RichMessage::user(&warning));
-        } else if state.total_exploration_calls >= 8 && !state.exploration_warning_8_sent {
+        } else if state.total_exploration_calls >= mild_threshold && !state.exploration_warning_8_sent {
             state.exploration_warning_8_sent = true;
             let warning = format!(
-                "[EXPLORATION WARNING] You have done {} exploration calls. \
+                "[EXPLORATION WARNING] You have done {} of ~{} exploration calls. \
                  Start implementing now.",
-                state.total_exploration_calls,
+                state.total_exploration_calls, state.exploration_allowance,
             );
-            info!(total_exploration = state.total_exploration_calls, "Injecting exploration warning");
+            info!(total_exploration = state.total_exploration_calls, allowance = state.exploration_allowance, "Injecting exploration warning");
             state.api_messages.push(RichMessage::user(&warning));
         }
 
@@ -746,9 +749,11 @@ async fn process_tool_calls(
         state.exploration_allowance = state.total_exploration_calls + 4;
     }
 
-    if state.total_exploration_calls >= 8 {
+    let compaction_threshold = (state.exploration_allowance * 2) / 3;
+    if state.total_exploration_calls >= compaction_threshold {
         info!(
             total_exploration = state.total_exploration_calls,
+            threshold = compaction_threshold,
             "High exploration accumulation, proactively compacting older tool results"
         );
         compaction::compact_older_tool_results(&mut state.api_messages, 4);

@@ -183,6 +183,7 @@ impl ChatService {
             billing_reason: "aura_chat",
             max_context_tokens: Some(self.llm_config.max_context_tokens),
             credit_budget,
+            exploration_allowance: None,
         };
 
         let thinking_start = std::time::Instant::now();

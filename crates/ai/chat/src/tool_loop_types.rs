@@ -20,6 +20,9 @@ pub struct ToolLoopConfig {
     /// Maximum credits to spend in this tool loop. The loop stops gracefully
     /// when cumulative debited credits approach this limit. `None` means no cap.
     pub credit_budget: Option<u64>,
+    /// Base exploration allowance (read_file, search_code, find_files,
+    /// list_files calls before blocking). Defaults to 12 when `None`.
+    pub exploration_allowance: Option<usize>,
 }
 
 // ---------------------------------------------------------------------------

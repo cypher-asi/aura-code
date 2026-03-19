@@ -130,6 +130,7 @@ impl ChatService {
             billing_reason: "aura_chat",
             max_context_tokens: Some(self.llm_config.max_context_tokens),
             credit_budget,
+            exploration_allowance: None,
         };
 
         let thinking_start = std::time::Instant::now();
@@ -336,6 +337,15 @@ impl ChatService {
             )
             .await;
 
+            if let Some(sid) = active_session_id {
+                self.update_session_context_usage(
+                    sid,
+                    result.total_input_tokens,
+                    result.total_output_tokens,
+                )
+                .await;
+            }
+
             if !assistant_reply.is_empty() {
                 self.maybe_generate_title(
                     project_id, agent_instance_id, agent_instance,
@@ -486,6 +496,11 @@ impl ChatService {
                 active_session_id,
             )
             .await;
+
+            if let Some(sid) = active_session_id {
+                self.update_session_context_usage(sid, spec_input_tokens, spec_output_tokens)
+                    .await;
+            }
         }
     }
 }

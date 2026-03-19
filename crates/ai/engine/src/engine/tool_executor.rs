@@ -33,6 +33,7 @@ pub(crate) struct EngineToolLoopExecutor {
     pub stub_fix_attempts: Arc<Mutex<u32>>,
     pub completed_deps: Vec<Task>,
     pub work_log_summary: String,
+    pub exploration_allowance: usize,
 }
 
 #[async_trait]
@@ -168,6 +169,7 @@ impl EngineToolLoopExecutor {
             &self.session,
             &self.completed_deps,
             &self.work_log_summary,
+            self.exploration_allowance,
         );
         results.push(ToolCallResult {
             tool_use_id: tc.id.clone(),
