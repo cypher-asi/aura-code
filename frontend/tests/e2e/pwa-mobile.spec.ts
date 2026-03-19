@@ -60,7 +60,10 @@ const specs = [
       },
 ];
 
-async function mockAuthenticatedMobileApp(page: import("@playwright/test").Page) {
+async function mockAuthenticatedMobileApp(
+  page: import("@playwright/test").Page,
+  options: { orgsUnavailable?: boolean } = {},
+) {
   const agentInstance = {
     agent_instance_id: "agent-inst-1",
     project_id: "proj-1",
@@ -112,6 +115,7 @@ async function mockAuthenticatedMobileApp(page: import("@playwright/test").Page)
     agents,
     tasks,
     specs,
+    orgsUnavailable: options.orgsUnavailable,
   });
 }
 
@@ -324,10 +328,24 @@ test("mobile team settings opens above the closed navigation drawer", async ({ p
 
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.getByRole("button", { name: "Team settings" })).toBeVisible();
-  await page.getByRole("button", { name: "Team settings" }).dispatchEvent("click");
+  await page.getByRole("button", { name: "Team settings" }).click();
 
   await expect(page.getByRole("dialog").filter({ hasText: "Team Settings" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Team Settings" })).toBeVisible();
+});
+
+test("mobile team settings shows an unavailable state when org loading fails", async ({ page }) => {
+  await mockAuthenticatedMobileApp(page, { orgsUnavailable: true });
+
+  await page.goto("/projects/proj-1/execution");
+
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("button", { name: "Team settings" }).click();
+
+  const dialog = page.getByRole("dialog").filter({ hasText: "Team Settings" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("Team settings are currently unavailable.")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Retry" })).toBeVisible();
 });
 
 test("mobile agents route reuses the shared agent list", async ({ page }) => {
