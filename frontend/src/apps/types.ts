@@ -8,6 +8,7 @@ export interface AuraApp {
   basePath: string;
   LeftPanel: ComponentType;
   MainPanel: ComponentType;
+  ResponsiveControls?: ComponentType;
   SidekickPanel?: ComponentType;
   /** Rendered in the sidekick Lane's `header` slot (e.g. tab bar). */
   SidekickTaskbar?: ComponentType;

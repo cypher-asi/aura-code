@@ -131,7 +131,6 @@ export function ProjectList() {
     agentsByProject,
     setAgentsByProject,
     refreshProjectAgents,
-    mostRecentProject,
     openNewProjectModal,
   } = useProjectsList();
 
@@ -330,10 +329,6 @@ export function ProjectList() {
     () => filterTree(explorerData, searchQuery),
     [explorerData, searchQuery],
   );
-  const totalLinkedAgents = useMemo(
-    () => Object.values(agentsByProject).reduce((sum, agents) => sum + agents.length, 0),
-    [agentsByProject],
-  );
   const defaultExpandedIds = useMemo(
     () => (projectId ? [projectId] : isMobileLayout ? projects.map((project) => project.project_id) : []),
     [isMobileLayout, projectId, projects],
@@ -505,20 +500,6 @@ export function ProjectList() {
   };
 
   if (!loadingProjects && projects.length === 0) {
-    if (isMobileLayout) {
-      return (
-        <div className={styles.root}>
-          <div className={styles.mobileEmptyState}>
-            <div className={styles.mobileEmptyBadge}>Projects</div>
-            <div className={styles.mobileEmptyTitle}>No linked projects yet</div>
-            <p className={styles.mobileEmptyCopy}>
-              Start with the new project button above, or connect a linked desktop workspace so this drawer becomes your launchpad.
-            </p>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className={styles.root}>
         <PageEmptyState
@@ -544,30 +525,6 @@ export function ProjectList() {
           onExpand={handleExpand}
         />
       </div>
-
-      {isMobileLayout && projects.length > 0 && (
-        <div className={styles.mobileSummaryCard}>
-          <div className={styles.mobileSummaryHeader}>
-            <span className={styles.mobileSummaryEyebrow}>Project drawer</span>
-            <span className={styles.mobileSummaryTitle}>
-              {mostRecentProject ? `Jump back into ${mostRecentProject.name}` : "Pick a project to continue"}
-            </span>
-          </div>
-          <div className={styles.mobileSummaryMetrics}>
-            <div className={styles.mobileSummaryMetric}>
-              <span className={styles.mobileSummaryMetricLabel}>Projects</span>
-              <span className={styles.mobileSummaryMetricValue}>{projects.length}</span>
-            </div>
-            <div className={styles.mobileSummaryMetric}>
-              <span className={styles.mobileSummaryMetricLabel}>Agents</span>
-              <span className={styles.mobileSummaryMetricValue}>{totalLinkedAgents}</span>
-            </div>
-          </div>
-          <p className={styles.mobileSummaryCopy}>
-            Open a project for chat or execution. Use the plus button next to a project to add a new agent quickly.
-          </p>
-        </div>
-      )}
 
       {ctxMenu &&
         createPortal(

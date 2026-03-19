@@ -139,7 +139,7 @@ interface ShellChromeProps {
 
 function DesktopShell({ onOpenOrgSettings, onBuyCredits, onOpenHostSettings }: ShellChromeProps) {
   const { activeApp } = useAppContext();
-  const { supportsHostRetargeting } = useAuraCapabilities();
+  const { features } = useAuraCapabilities();
   const { MainPanel } = activeApp;
   const leftPanelRef = useRef<HTMLDivElement>(null);
 
@@ -163,7 +163,7 @@ function DesktopShell({ onOpenOrgSettings, onBuyCredits, onOpenHostSettings }: S
         title={<span className="titlebar-center"><Link to="/projects" style={{ color: "inherit", textDecoration: "none" }}>AURA</Link></span>}
         actions={(
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-            {supportsHostRetargeting && (
+            {features.hostRetargeting && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -221,16 +221,23 @@ function MobileShell({
   onOpenSettings,
   onBuyCredits,
 }: Omit<ShellChromeProps, "onOpenHostSettings"> & { onOpenSettings: () => void }) {
-  const { apps: registeredApps, activeApp } = useAppContext();
+  const { activeApp } = useAppContext();
   const { status: hostStatus } = useHost();
   const { previewItem, setActiveTab } = useSidekick();
-  const navigate = useNavigate();
   const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
-  const { MainPanel, SidekickPanel, SidekickTaskbar, SidekickHeader: SidekickHeaderComp, PreviewPanel, PreviewHeader: PreviewHeaderComp } = activeApp;
+  const {
+    MainPanel,
+    ResponsiveControls,
+    SidekickPanel,
+    SidekickTaskbar,
+    SidekickHeader: SidekickHeaderComp,
+    PreviewPanel,
+    PreviewHeader: PreviewHeaderComp,
+  } = activeApp;
   const lastPreviewKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -317,10 +324,9 @@ function MobileShell({
             </div>
           }
           title={(
-            <div className={styles.mobileTitleBlock}>
-              <span className={styles.mobileEyebrow}>Aura Companion</span>
-              <span className={styles.mobileTitle}>{activeApp.label}</span>
-            </div>
+            <span className={styles.mobileTopbarTitle}>
+              <Link to="/projects" className={styles.mobileTopbarTitleLink}>AURA</Link>
+            </span>
           )}
           actions={(
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
@@ -362,24 +368,20 @@ function MobileShell({
         <UpdateBanner />
 
         <div className={styles.mobileMain}>
-          <MainPanel />
+          {ResponsiveControls && (
+            <div className={styles.mobileResponsiveControls}>
+              <ResponsiveControls />
+            </div>
+          )}
+          <div className={styles.mobileMainPanel}>
+            <MainPanel />
+          </div>
         </div>
 
         {!drawerOpen && (
-          <nav className={styles.mobileBottomNav} aria-label="Primary navigation">
-            {registeredApps.map((app) => (
-              <button
-                key={app.id}
-                type="button"
-                className={`${styles.mobileNavButton} ${activeApp.id === app.id ? styles.mobileNavButtonActive : ""}`}
-                onClick={() => navigate(app.basePath)}
-                aria-current={activeApp.id === app.id ? "page" : undefined}
-              >
-                <app.icon size={18} />
-                <span className={styles.mobileNavLabel}>{app.label}</span>
-              </button>
-            ))}
-          </nav>
+          <div className={styles.mobileBottomNav}>
+            <AppNavRail layout="bar" />
+          </div>
         )}
       </div>
 
@@ -410,7 +412,7 @@ function MobileShell({
             <activeApp.LeftPanel />
           </div>
           <div className={styles.mobileDrawerFooter}>
-            <OrgSelector onOpenSettings={onOpenOrgSettings} />
+            <OrgSelector onOpenSettings={onOpenOrgSettings} variant="drawer" />
             <CreditsBadge onClick={onBuyCredits} />
             <div className={styles.mobileDrawerActions}>
               <Button

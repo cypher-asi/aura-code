@@ -12,6 +12,7 @@
   padding: var(--space-4) var(--space-5);
   width: 100%;
   box-sizing: border-box;
+  padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
 }
 
 .commitGridWrapper {
@@ -34,3 +35,31 @@
   gap: var(--space-1);
 }
 
+@media (max-width: 900px) {
+  .scrollArea {
+    padding: var(--space-3);
+    padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
+  }
+
+  .commitGridWrapper,
+  .feedList {
+    max-width: 560px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .scrollArea {
+    padding: 12px;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+
+  .commitGridWrapper {
+    padding: 12px 12px 8px;
+  }
+
+  .feedList {
+    gap: 2px;
+  }
+}

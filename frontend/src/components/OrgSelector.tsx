@@ -6,7 +6,13 @@ import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { useClickOutside } from "../hooks/use-click-outside";
 import styles from "./OrgSelector.module.css";
 
-export function OrgSelector({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function OrgSelector({
+  onOpenSettings,
+  variant = "default",
+}: {
+  onOpenSettings: () => void;
+  variant?: "default" | "drawer";
+}) {
   const { isMobileLayout } = useAuraCapabilities();
   const { orgs, activeOrg, switchOrg, createOrg } = useOrg();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -33,12 +39,16 @@ export function OrgSelector({ onOpenSettings }: { onOpenSettings: () => void }) 
   };
 
   return (
-    <div className={styles.container} ref={dropdownRef}>
+    <div
+      className={`${styles.container} ${variant === "drawer" ? styles.drawerContainer : ""}`}
+      ref={dropdownRef}
+    >
       <button
         type="button"
-        className={styles.trigger}
+        className={`${styles.trigger} ${variant === "drawer" ? styles.drawerTrigger : ""}`}
         onClick={() => setDropdownOpen((v) => !v)}
       >
+        {variant === "drawer" && <Building2 size={14} className={styles.triggerIcon} />}
         <span className={styles.name}>{activeOrg?.name ?? "My Team"}</span>
         <ChevronDown size={12} className={styles.chevron} />
       </button>

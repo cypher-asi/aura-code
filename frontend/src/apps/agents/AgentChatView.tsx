@@ -4,7 +4,6 @@ import { Text } from "@cypher-asi/zui";
 import { MessageSquare } from "lucide-react";
 import { api } from "../../api/client";
 import { useAgentChatStream } from "../../hooks/use-agent-chat-stream";
-import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import { useAutoScroll } from "../../hooks/use-auto-scroll";
 import { useAgentApp } from "./AgentAppProvider";
 import { MessageBubble, StreamingBubble } from "../../components/MessageBubble";
@@ -34,7 +33,6 @@ export function AgentChatView() {
 
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
-  const { isMobileLayout } = useAuraCapabilities();
 
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const inputBarRef = useRef<ChatInputBarHandle>(null);
@@ -43,9 +41,7 @@ export function AgentChatView() {
   useEffect(() => {
     if (agentId) {
       localStorage.setItem("aura:lastAgentId", agentId);
-      if (!isMobileLayout) {
-        requestAnimationFrame(() => inputBarRef.current?.focus());
-      }
+      requestAnimationFrame(() => inputBarRef.current?.focus());
       const cachedAgent = agents.find((agent) => agent.agent_id === agentId);
       if (cachedAgent) {
         selectAgent(cachedAgent);
@@ -54,7 +50,7 @@ export function AgentChatView() {
         selectAgent(a);
       }).catch(() => {});
     }
-  }, [agentId, agents, isMobileLayout, selectAgent]);
+  }, [agentId, agents, selectAgent]);
 
   useEffect(() => {
     if (!agentId) {
@@ -126,11 +122,6 @@ export function AgentChatView() {
 
   const agentName = selectedAgent?.name;
   const hasMessages = messages.length > 0 || isStreaming || streamingText || thinkingText;
-  const starterPrompts = [
-    `Catch me up on ${agentName ?? "this agent"}'s current priorities`,
-    `What should we tackle next across my linked projects?`,
-    `Give me a short status update and call out blockers`,
-  ];
 
   return (
     <div className={styles.container}>
@@ -142,44 +133,11 @@ export function AgentChatView() {
         >
           <div className={styles.messageContent}>
             {!hasMessages ? (
-              <div className={`${styles.emptyState} ${isMobileLayout ? styles.emptyStateMobile : ""}`}>
-                {isMobileLayout ? (
-                  <>
-                    <div className={styles.mobileEmptyIntro}>
-                      <MessageSquare size={28} className={styles.emptyIcon} />
-                      <div className={styles.emptyStateCopy}>
-                        <Text size="sm" weight="medium" className={styles.emptyStateTitle}>
-                          Chat with {agentName ?? "this agent"}
-                        </Text>
-                        <Text variant="muted" size="sm">
-                          Ask for status, unblock work, or plan the next step across all linked projects.
-                        </Text>
-                      </div>
-                    </div>
-                    <div className={styles.quickPromptGrid}>
-                      {starterPrompts.map((prompt) => (
-                        <button
-                          key={prompt}
-                          type="button"
-                          className={styles.quickPrompt}
-                          onClick={() => {
-                            setInput(prompt);
-                            requestAnimationFrame(() => inputBarRef.current?.focus());
-                          }}
-                        >
-                          {prompt}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <MessageSquare size={40} className={styles.emptyIcon} />
-                    <Text variant="muted" size="sm">
-                      Send a message to chat with {agentName ?? "this agent"} across all linked projects
-                    </Text>
-                  </>
-                )}
+              <div className={styles.emptyState}>
+                <MessageSquare size={40} className={styles.emptyIcon} />
+                <Text variant="muted" size="sm">
+                  Send a message to chat with {agentName ?? "this agent"} across all linked projects
+                </Text>
               </div>
             ) : (
               <>

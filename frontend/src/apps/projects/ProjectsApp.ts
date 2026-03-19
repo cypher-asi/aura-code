@@ -1,6 +1,7 @@
 import { FolderOpen } from "lucide-react";
 import { ProjectList } from "../../components/ProjectList";
 import { ProjectMainPanel } from "./ProjectMainPanel";
+import { ProjectsResponsiveControls } from "./ProjectsResponsiveControls";
 import {
   SidekickContent,
   SidekickTaskbar,
@@ -17,6 +18,7 @@ export const ProjectsApp: AuraApp = {
   basePath: "/projects",
   LeftPanel: ProjectList,
   MainPanel: ProjectMainPanel,
+  ResponsiveControls: ProjectsResponsiveControls,
   SidekickPanel: SidekickContent,
   SidekickTaskbar: SidekickTaskbar,
   SidekickHeader: SidekickHeader,
