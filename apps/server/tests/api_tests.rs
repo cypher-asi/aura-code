@@ -91,6 +91,7 @@ fn build_test_app() -> (Router, AppState, tempfile::TempDir) {
         terminal_manager: Arc::new(aura_terminal::TerminalManager::new()),
         network_client: None,
         storage_client: None,
+        runtime_agent_state: Arc::new(Mutex::new(HashMap::new())),
     };
 
     let app = aura_server::create_router(state.clone());

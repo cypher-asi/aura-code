@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::Json;
 use tokio::sync::{broadcast, mpsc, Mutex};
 
-use aura_core::{AgentInstanceId, ProjectId, TaskId, ZeroAuthSession};
+use aura_core::{AgentInstanceId, ProjectId, SessionId, TaskId, ZeroAuthSession};
 use aura_engine::{DevLoopEngine, EngineEvent, LoopHandle, ProjectWriteCoordinator};
 use aura_network::NetworkClient;
 use aura_storage::StorageClient;
@@ -28,6 +28,16 @@ pub type TaskOutputBuffers = Arc<std::sync::Mutex<HashMap<TaskId, String>>>;
 
 /// Tracks all active agent loops across projects.
 pub type LoopRegistry = Arc<Mutex<HashMap<AgentInstanceId, LoopHandle>>>;
+
+/// Volatile per-agent-instance state that lives only in memory (lost on restart).
+/// `close_stale_sessions` cleans up on the next startup, so this is safe.
+#[derive(Debug, Clone, Default)]
+pub struct RuntimeAgentState {
+    pub current_task_id: Option<TaskId>,
+    pub current_session_id: Option<SessionId>,
+}
+
+pub type RuntimeAgentStateMap = Arc<Mutex<HashMap<AgentInstanceId, RuntimeAgentState>>>;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -56,6 +66,8 @@ pub struct AppState {
     pub network_client: Option<Arc<NetworkClient>>,
     /// Optional aura-storage client. `None` when `AURA_STORAGE_URL` is not set.
     pub storage_client: Option<Arc<StorageClient>>,
+    /// In-memory runtime state for agent instances (current_task_id, current_session_id).
+    pub runtime_agent_state: RuntimeAgentStateMap,
 }
 
 impl AppState {

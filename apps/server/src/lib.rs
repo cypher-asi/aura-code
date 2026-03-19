@@ -404,5 +404,6 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         terminal_manager: Arc::new(TerminalManager::new()),
         network_client,
         storage_client,
+        runtime_agent_state: Arc::new(Mutex::new(HashMap::new())),
     }
 }
