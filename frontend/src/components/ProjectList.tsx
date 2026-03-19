@@ -80,7 +80,11 @@ export function ProjectList() {
   const ctxMenuRef = useRef<HTMLDivElement>(null);
 
   const fetchProjects = useCallback(() => {
-    api.listProjects(activeOrg?.org_id).then(setProjects).catch(console.error);
+    if (!activeOrg?.org_id) {
+      setProjects([]);
+      return;
+    }
+    api.listProjects(activeOrg.org_id).then(setProjects).catch(console.error);
   }, [activeOrg?.org_id]);
 
   const fetchAgentInstances = useCallback((pid: string) => {
@@ -445,6 +449,19 @@ export function ProjectList() {
       setDeleteAgentLoading(false);
     }
   };
+
+  if (!activeOrg) {
+    return (
+      <div className={styles.root}>
+        <EmptyState>Select an org to view projects</EmptyState>
+        <NewProjectModal
+          isOpen={showNewProject}
+          onClose={handleNewProjectClose}
+          onCreated={handleNewProjectCreated}
+        />
+      </div>
+    );
+  }
 
   if (projects.length === 0) {
     return (
