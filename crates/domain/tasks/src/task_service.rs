@@ -47,6 +47,8 @@ impl TaskService {
     }
 
     pub fn validate_transition(current: TaskStatus, target: TaskStatus) -> Result<(), TaskError> {
+        // Matches aura-storage's authoritative state machine.
+        // Done -> Ready intentionally removed: aura-storage does not allow it.
         let legal = matches!(
             (current, target),
             (TaskStatus::Pending, TaskStatus::Ready)
@@ -57,7 +59,6 @@ impl TaskService {
                 | (TaskStatus::InProgress, TaskStatus::Ready)
                 | (TaskStatus::Failed, TaskStatus::Ready)
                 | (TaskStatus::Blocked, TaskStatus::Ready)
-                | (TaskStatus::Done, TaskStatus::Ready)
         );
         if legal {
             Ok(())
