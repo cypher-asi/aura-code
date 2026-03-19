@@ -13,9 +13,10 @@ use tracing::{info, warn};
 use axum::http::StatusCode;
 
 use aura_core::{
-    Agent, AgentId, AgentInstance, AgentInstanceId, AgentStatus, Message, ProfileId, ProjectId,
+    Agent, AgentId, AgentInstance, AgentInstanceId, Message, ProfileId, ProjectId,
     RuntimeAgentState, Session, SessionId, Task, ZeroAuthSession,
 };
+use aura_agents::{merge_agent_instance, AgentInstanceService};
 use aura_chat::ChatStreamEvent;
 use aura_engine::EngineEvent;
 use aura_network::NetworkAgent;
@@ -198,84 +199,8 @@ pub async fn delete_agent(
 }
 
 // ---------------------------------------------------------------------------
-// StorageProjectAgent -> AgentInstance conversion
+// StorageProjectAgent -> AgentInstance conversion (uses aura_agents::merge_agent_instance)
 // ---------------------------------------------------------------------------
-
-fn parse_dt_opt(s: &Option<String>) -> DateTime<Utc> {
-    s.as_deref()
-        .and_then(|v| DateTime::parse_from_rfc3339(v).ok())
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(Utc::now)
-}
-
-fn parse_agent_status(s: &str) -> AgentStatus {
-    match s {
-        "idle" => AgentStatus::Idle,
-        "working" => AgentStatus::Working,
-        "blocked" => AgentStatus::Blocked,
-        "stopped" => AgentStatus::Stopped,
-        "error" => AgentStatus::Error,
-        _ => AgentStatus::Idle,
-    }
-}
-
-/// Merge three sources into a single `AgentInstance`:
-/// - `spa`: execution state from aura-storage (status, model, tokens, timestamps)
-/// - `agent`: config from aura-network Agent (name, role, personality, etc.) -- falls back to storage fields if the network Agent is unavailable
-/// - `runtime`: volatile runtime state from in-memory map (current_task_id, current_session_id)
-fn merge_agent_instance(
-    spa: &aura_storage::StorageProjectAgent,
-    agent: Option<&Agent>,
-    runtime: Option<&RuntimeAgentState>,
-) -> AgentInstance {
-    AgentInstance {
-        agent_instance_id: spa.id.parse().unwrap_or_else(|_| AgentInstanceId::new()),
-        project_id: spa
-            .project_id
-            .as_deref()
-            .unwrap_or("")
-            .parse()
-            .unwrap_or_else(|_| ProjectId::new()),
-        agent_id: agent
-            .map(|a| a.agent_id)
-            .or_else(|| {
-                spa.agent_id
-                    .as_deref()
-                    .and_then(|s| s.parse().ok())
-            })
-            .unwrap_or_else(AgentId::new),
-        name: agent
-            .map(|a| a.name.clone())
-            .unwrap_or_else(|| spa.name.clone().unwrap_or_default()),
-        role: agent
-            .map(|a| a.role.clone())
-            .unwrap_or_else(|| spa.role.clone().unwrap_or_default()),
-        personality: agent
-            .map(|a| a.personality.clone())
-            .unwrap_or_else(|| spa.personality.clone().unwrap_or_default()),
-        system_prompt: agent
-            .map(|a| a.system_prompt.clone())
-            .unwrap_or_else(|| spa.system_prompt.clone().unwrap_or_default()),
-        skills: agent
-            .map(|a| a.skills.clone())
-            .unwrap_or_else(|| spa.skills.clone().unwrap_or_default()),
-        icon: agent
-            .and_then(|a| a.icon.clone())
-            .or_else(|| spa.icon.clone()),
-        status: spa
-            .status
-            .as_deref()
-            .map(parse_agent_status)
-            .unwrap_or(AgentStatus::Idle),
-        current_task_id: runtime.and_then(|r| r.current_task_id),
-        current_session_id: runtime.and_then(|r| r.current_session_id),
-        total_input_tokens: spa.total_input_tokens.unwrap_or(0),
-        total_output_tokens: spa.total_output_tokens.unwrap_or(0),
-        model: spa.model.clone(),
-        created_at: parse_dt_opt(&spa.created_at),
-        updated_at: parse_dt_opt(&spa.updated_at),
-    }
-}
 
 /// Fetch all agents from the network, returning a map by network agent ID.
 /// Falls back to an empty map if the network is unavailable.
@@ -427,9 +352,24 @@ pub async fn update_agent_instance(
     let storage = state.require_storage_client()?;
     let jwt = state.get_jwt()?;
 
-    if let Some(ref status) = body.status {
+    if let Some(ref status_str) = body.status {
+        let target = aura_agents::parse_agent_status(status_str);
+
+        let current_spa = storage
+            .get_project_agent(&agent_instance_id.to_string(), &jwt)
+            .await
+            .map_err(map_storage_error)?;
+        let current = current_spa
+            .status
+            .as_deref()
+            .map(aura_agents::parse_agent_status)
+            .unwrap_or(AgentStatus::Idle);
+
+        AgentInstanceService::validate_transition(current, target)
+            .map_err(|e| ApiError::bad_request(e.to_string()))?;
+
         let req = aura_storage::UpdateProjectAgentRequest {
-            status: status.clone(),
+            status: status_str.clone(),
         };
         storage
             .update_project_agent_status(&agent_instance_id.to_string(), &jwt, &req)

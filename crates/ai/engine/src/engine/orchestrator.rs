@@ -238,7 +238,7 @@ impl DevLoopEngine {
                 error!(error = %e, "run_loop exited with error, emitting LoopFinished");
 
                 // Reset any tasks stuck in InProgress so the UI doesn't show stale spinners
-                if let Ok(orphaned) = engine.task_service.reset_in_progress_tasks(&project_id) {
+                if let Ok(orphaned) = engine.task_service.reset_in_progress_tasks(&project_id).await {
                     for t in &orphaned {
                         engine.emit(EngineEvent::TaskBecameReady {
                             project_id,
@@ -285,16 +285,16 @@ impl DevLoopEngine {
         mut stop_rx: watch::Receiver<LoopCommand>,
     ) -> Result<LoopOutcome, EngineError> {
         let mut ctx = LoopRunContext::new(self, project_id, agent_instance_id, session).await?;
-        ctx.reset_and_promote_tasks(self)?;
+        ctx.reset_and_promote_tasks(self).await?;
         loop {
             if let Some(out) = ctx.check_command(self, &stop_rx).await { return Ok(out); }
             let task = match self.task_service.claim_next_task(
                 &project_id, &agent_instance_id, Some(ctx.session.session_id),
-            )? {
+            ).await? {
                 Some(t) => t,
                 None => {
-                    if ctx.try_retry_failed(self)? { continue; }
-                    return ctx.handle_no_more_tasks(self);
+                    if ctx.try_retry_failed(self).await? { continue; }
+                    return ctx.handle_no_more_tasks(self).await;
                 }
             };
             ctx.begin_task(self, &task).await?;
@@ -322,7 +322,7 @@ impl DevLoopEngine {
                 &ctx.session.user_id, &ctx.session.model, task_start, &baseline, result,
                 &ctx.workspace_cache,
             ).await?;
-            let failed = ctx.process_outcome(self, &task, outcome)?;
+            let failed = ctx.process_outcome(self, &task, outcome).await?;
             self.agent_instance_service.finish_working(&project_id, &agent_instance_id).await?;
             if self.llm.is_credits_exhausted() { return Ok(ctx.handle_credits_exhausted(self)); }
             if failed { continue; }
@@ -363,6 +363,11 @@ impl DevLoopEngine {
         input_tokens: u64,
         output_tokens: u64,
     ) {
+        // aura-storage's StorageTask doesn't store token tracking fields.
+        // When storage is active, token tracking lives on agent instances / sessions.
+        if self.storage_client.is_some() {
+            return;
+        }
         let uid = user_id.clone();
         let m = model.clone();
         if let Err(e) = self.store.atomic_update_task(

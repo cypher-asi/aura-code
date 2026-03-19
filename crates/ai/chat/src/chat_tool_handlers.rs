@@ -347,6 +347,16 @@ impl ChatToolExecutor {
             Ok(id) => id,
             Err(e) => return e,
         };
+        if let Some(ref storage) = self.storage_client {
+            let jwt = match self.get_jwt() {
+                Ok(j) => j,
+                Err(e) => return e,
+            };
+            match storage.delete_task(&task_id.to_string(), &jwt).await {
+                Ok(()) => return ToolExecResult::ok(json!({ "deleted": task_id.to_string() })),
+                Err(e) => return ToolExecResult::err(format!("{e}")),
+            }
+        }
         let spec_id = match self.resolve_spec_id(project_id, input).await {
             Ok(id) => id,
             Err(e) => return e,
@@ -357,7 +367,7 @@ impl ChatToolExecutor {
         }
     }
 
-    pub(crate) fn transition_task(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
+    pub(crate) async fn transition_task(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
         let task_id = match parse_id::<TaskId>(input, "task_id") {
             Ok(id) => id,
             Err(e) => return e,
@@ -368,13 +378,16 @@ impl ChatToolExecutor {
             Err(_) => return ToolExecResult::err(format!("Invalid status: {status_str}")),
         };
 
-        let tasks = self.store.list_tasks_by_project(project_id).unwrap_or_default();
+        let tasks = match self.task_service.list_tasks(project_id).await {
+            Ok(t) => t,
+            Err(e) => return ToolExecResult::err(format!("{e:?}")),
+        };
         let task = match tasks.iter().find(|t| t.task_id == task_id) {
             Some(t) => t,
             None => return ToolExecResult::err("Task not found"),
         };
 
-        match self.task_service.transition_task(project_id, &task.spec_id, &task_id, new_status) {
+        match self.task_service.transition_task(project_id, &task.spec_id, &task_id, new_status).await {
             Ok(t) => ToolExecResult::ok(json!(t)),
             Err(e) => ToolExecResult::err(format!("{e:?}")),
         }
@@ -795,8 +808,8 @@ impl ChatToolExecutor {
     // Progress
     // -----------------------------------------------------------------------
 
-    pub(crate) fn get_progress(&self, project_id: &ProjectId) -> ToolExecResult {
-        match self.task_service.get_project_progress(project_id) {
+    pub(crate) async fn get_progress(&self, project_id: &ProjectId) -> ToolExecResult {
+        match self.task_service.get_project_progress(project_id).await {
             Ok(p) => ToolExecResult::ok(json!(p)),
             Err(e) => ToolExecResult::err(format!("{e:?}")),
         }

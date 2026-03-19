@@ -267,9 +267,15 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         llm.clone(),
         storage_client.clone(),
     ));
-    let task_service = Arc::new(TaskService::new(store.clone()));
+    let task_service = Arc::new(TaskService::new(store.clone(), storage_client.clone()));
     let agent_service = Arc::new(AgentService::new(store.clone()));
-    let agent_instance_service = Arc::new(AgentInstanceService::new(store.clone(), storage_client.clone()));
+    let runtime_agent_state: crate::state::RuntimeAgentStateMap =
+        Arc::new(Mutex::new(HashMap::new()));
+    let agent_instance_service = Arc::new(AgentInstanceService::new(
+        store.clone(),
+        storage_client.clone(),
+        runtime_agent_state.clone(),
+    ));
     let llm_config = aura_core::LlmConfig::from_env();
     let session_service = Arc::new(SessionService::new(store.clone(), llm_config.context_rollover_threshold, llm_config.max_context_tokens));
     let chat_service = Arc::new(ChatService::new(
@@ -282,27 +288,34 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         storage_client.clone(),
     ));
 
-    // Reset any tasks left InProgress from a previous unclean shutdown
-    if let Ok(projects) = project_service.list_projects() {
-        for project in &projects {
-            match task_service.reset_in_progress_tasks(&project.project_id) {
-                Ok(reset) if !reset.is_empty() => {
-                    info!(
-                        project_id = %project.project_id,
-                        count = reset.len(),
-                        "Reset orphaned InProgress tasks on startup"
-                    );
+    // Reset any tasks left InProgress from a previous unclean shutdown.
+    // This is async (StorageClient), so defer to a spawned task.
+    {
+        let ts = task_service.clone();
+        let ps = project_service.clone();
+        tokio::spawn(async move {
+            if let Ok(projects) = ps.list_projects() {
+                for project in &projects {
+                    match ts.reset_in_progress_tasks(&project.project_id).await {
+                        Ok(reset) if !reset.is_empty() => {
+                            info!(
+                                project_id = %project.project_id,
+                                count = reset.len(),
+                                "Reset orphaned InProgress tasks on startup"
+                            );
+                        }
+                        Err(e) => {
+                            warn!(
+                                project_id = %project.project_id,
+                                error = %e,
+                                "Failed to reset orphaned tasks on startup"
+                            );
+                        }
+                        _ => {}
+                    }
                 }
-                Err(e) => {
-                    warn!(
-                        project_id = %project.project_id,
-                        error = %e,
-                        "Failed to reset orphaned tasks on startup"
-                    );
-                }
-                _ => {}
             }
-        }
+        });
     }
 
     let (event_tx, event_rx) = mpsc::unbounded_channel::<EngineEvent>();
@@ -383,6 +396,6 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         terminal_manager: Arc::new(TerminalManager::new()),
         network_client,
         storage_client,
-        runtime_agent_state: Arc::new(Mutex::new(HashMap::new())),
+        runtime_agent_state,
     }
 }

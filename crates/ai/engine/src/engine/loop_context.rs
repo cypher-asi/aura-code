@@ -111,15 +111,15 @@ impl LoopRunContext {
     // Bootstrap
     // ------------------------------------------------------------------
 
-    pub fn reset_and_promote_tasks(&self, engine: &DevLoopEngine) -> Result<(), EngineError> {
-        for t in &engine.task_service.reset_in_progress_tasks(&self.project_id)? {
+    pub async fn reset_and_promote_tasks(&self, engine: &DevLoopEngine) -> Result<(), EngineError> {
+        for t in &engine.task_service.reset_in_progress_tasks(&self.project_id).await? {
             engine.emit(EngineEvent::TaskBecameReady {
                 project_id: self.project_id,
                 agent_instance_id: self.agent_instance_id,
                 task_id: t.task_id,
             });
         }
-        for t in &engine.task_service.resolve_initial_readiness(&self.project_id)? {
+        for t in &engine.task_service.resolve_initial_readiness(&self.project_id).await? {
             engine.emit(EngineEvent::TaskBecameReady {
                 project_id: self.project_id,
                 agent_instance_id: self.agent_instance_id,
@@ -216,6 +216,7 @@ impl LoopRunContext {
             engine
                 .task_service
                 .reset_task_to_ready(&self.project_id, &task.spec_id, &task.task_id)
+                .await
         {
             warn!(error = %e, "failed to reset task to ready after interruption");
         }
@@ -314,7 +315,7 @@ impl LoopRunContext {
         Ok(())
     }
 
-    pub fn process_outcome(
+    pub async fn process_outcome(
         &mut self,
         engine: &DevLoopEngine,
         task: &Task,
@@ -334,7 +335,7 @@ impl LoopRunContext {
         );
         match outcome {
             TaskOutcome::Completed { notes, follow_up_tasks, file_ops, .. } => {
-                self.process_completed(engine, task, &notes, &follow_up_tasks, &file_ops, task_metrics)?;
+                self.process_completed(engine, task, &notes, &follow_up_tasks, &file_ops, task_metrics).await?;
                 Ok(false)
             }
             TaskOutcome::Failed { reason, credit_failure, .. } => {
@@ -344,7 +345,7 @@ impl LoopRunContext {
         }
     }
 
-    fn process_completed(
+    async fn process_completed(
         &mut self,
         engine: &DevLoopEngine,
         task: &Task,
@@ -374,7 +375,7 @@ impl LoopRunContext {
                 follow_up.title.clone(),
                 follow_up.description.clone(),
                 vec![],
-            ) {
+            ).await {
                 Ok(new_task) => {
                     self.follow_up_count += 1;
                     engine.emit(EngineEvent::FollowUpTaskCreated {
@@ -440,8 +441,8 @@ impl LoopRunContext {
     // No-more-tasks / retry / credits-exhausted
     // ------------------------------------------------------------------
 
-    pub fn try_retry_failed(&mut self, engine: &DevLoopEngine) -> Result<bool, EngineError> {
-        let all_tasks = engine.store.list_tasks_by_project(&self.project_id)?;
+    pub async fn try_retry_failed(&mut self, engine: &DevLoopEngine) -> Result<bool, EngineError> {
+        let all_tasks = engine.task_service.list_tasks(&self.project_id).await?;
         let retryable: Vec<&Task> = all_tasks
             .iter()
             .filter(|t| {
@@ -463,6 +464,7 @@ impl LoopRunContext {
                 engine
                     .task_service
                     .retry_task(&self.project_id, &t.spec_id, &t.task_id)
+                    .await
             {
                 warn!(task_id = %t.task_id, error = %e, "retry_task failed, skipping");
                 continue;
@@ -476,11 +478,11 @@ impl LoopRunContext {
         Ok(true)
     }
 
-    pub fn handle_no_more_tasks(
+    pub async fn handle_no_more_tasks(
         &mut self,
         engine: &DevLoopEngine,
     ) -> Result<LoopOutcome, EngineError> {
-        let progress = engine.task_service.get_project_progress(&self.project_id)?;
+        let progress = engine.task_service.get_project_progress(&self.project_id).await?;
         let outcome_str = if progress.blocked_tasks > 0 || progress.failed_tasks > 0 {
             "all_tasks_blocked"
         } else {

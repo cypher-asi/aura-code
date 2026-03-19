@@ -24,7 +24,7 @@ impl DevLoopEngine {
     ) -> Result<(), EngineError> {
         let api_key = self.settings.get_decrypted_api_key()?;
 
-        let all_tasks = self.store.list_tasks_by_project(&project_id)?;
+        let all_tasks = self.task_service.list_tasks(&project_id).await?;
         let mut task = all_tasks
             .into_iter()
             .find(|t| t.task_id == task_id)
@@ -33,7 +33,8 @@ impl DevLoopEngine {
         if task.status == TaskStatus::Failed {
             task = self
                 .task_service
-                .retry_task(&project_id, &task.spec_id, &task.task_id)?;
+                .retry_task(&project_id, &task.spec_id, &task.task_id)
+                .await?;
         }
         if task.status != TaskStatus::Ready {
             return Err(EngineError::Parse(format!(
@@ -78,7 +79,7 @@ impl DevLoopEngine {
         self.task_service.assign_task(
             &project_id, &task.spec_id, &task.task_id,
             &agent.agent_instance_id, Some(session.session_id),
-        )?;
+        ).await?;
         self.session_service.record_task_worked(
             &project_id, &agent.agent_instance_id, &session.session_id, task.task_id,
         )?;
@@ -122,7 +123,7 @@ impl DevLoopEngine {
         self.record_single_task_metrics(
             &task, &outcome, &project_root, &project_id, &model_name, &fee_schedule,
         );
-        self.create_follow_ups_if_completed(&task, &outcome, project_id, aiid);
+        self.create_follow_ups_if_completed(&task, &outcome, project_id, aiid).await;
 
         let end_status = if outcome.is_completed() { SessionStatus::Completed } else { SessionStatus::Failed };
         if let Err(e) = self.session_service.end_session(&project_id, &aiid, &session.session_id, end_status) {
@@ -153,7 +154,7 @@ impl DevLoopEngine {
             Err(e) => {
                 return Ok(self.handle_execution_error(
                     project_id, agent_instance_id, task, model, task_start, e,
-                ));
+                ).await);
             }
         };
 
@@ -180,7 +181,7 @@ impl DevLoopEngine {
                 return Ok(self.handle_file_ops_failure(
                     project_id, agent_instance_id, task, session, model,
                     task_start, llm_duration_ms, &execution, e,
-                ));
+                ).await);
             }
         }
         let file_ops_duration_ms = file_ops_start.elapsed().as_millis() as u64;
@@ -220,14 +221,14 @@ impl DevLoopEngine {
             return Ok(self.handle_build_failure(
                 project_id, agent_instance_id, task, session, model,
                 &execution, total_input, total_output, timings,
-            ));
+            ).await);
         }
 
         self.emit_completion(
             project_id, agent_instance_id, task, session, model,
             &execution, &file_changes, total_input, total_output,
             task_duration_ms, llm_duration_ms, build_verify_duration_ms, build_attempts,
-        );
+        ).await;
 
         Ok(TaskOutcome::Completed {
             notes: execution.notes,
@@ -237,7 +238,7 @@ impl DevLoopEngine {
         })
     }
 
-    fn handle_execution_error(
+    async fn handle_execution_error(
         &self,
         project_id: ProjectId,
         agent_instance_id: AgentInstanceId,
@@ -249,7 +250,7 @@ impl DevLoopEngine {
         let credit_failure = matches!(e, EngineError::InsufficientCredits);
         let reason = format!("execution error: {e}");
         let task_dur = task_start.elapsed().as_millis() as u64;
-        if let Err(e2) = self.task_service.fail_task(&project_id, &task.spec_id, &task.task_id, &reason) {
+        if let Err(e2) = self.task_service.fail_task(&project_id, &task.spec_id, &task.task_id, &reason).await {
             warn!(task_id = %task.task_id, error = %e2, "failed to mark task as failed");
         }
         let phase = if credit_failure { "insufficient_credits" } else { "execution" };
@@ -265,7 +266,7 @@ impl DevLoopEngine {
         }
     }
 
-    fn handle_file_ops_failure(
+    async fn handle_file_ops_failure(
         &self,
         project_id: ProjectId,
         agent_instance_id: AgentInstanceId,
@@ -279,7 +280,7 @@ impl DevLoopEngine {
     ) -> TaskOutcome {
         let reason = format!("file operation failed: {e}");
         let task_dur = task_start.elapsed().as_millis() as u64;
-        if let Err(e2) = self.task_service.fail_task(&project_id, &task.spec_id, &task.task_id, &reason) {
+        if let Err(e2) = self.task_service.fail_task(&project_id, &task.spec_id, &task.task_id, &reason).await {
             warn!(task_id = %task.task_id, error = %e2, "failed to mark task as failed");
         }
         self.emit(EngineEvent::TaskFailed {
@@ -333,7 +334,7 @@ impl DevLoopEngine {
         });
     }
 
-    fn handle_build_failure(
+    async fn handle_build_failure(
         &self,
         project_id: ProjectId,
         agent_instance_id: AgentInstanceId,
@@ -346,7 +347,7 @@ impl DevLoopEngine {
         timings: TaskTimings,
     ) -> TaskOutcome {
         let reason = "build verification failed after all fix attempts".to_string();
-        if let Err(e) = self.task_service.fail_task(&project_id, &task.spec_id, &task.task_id, &reason) {
+        if let Err(e) = self.task_service.fail_task(&project_id, &task.spec_id, &task.task_id, &reason).await {
             warn!(task_id = %task.task_id, error = %e, "failed to mark task as failed");
         }
         self.emit(EngineEvent::TaskFailed {
@@ -365,7 +366,7 @@ impl DevLoopEngine {
         }
     }
 
-    fn emit_completion(
+    async fn emit_completion(
         &self,
         project_id: ProjectId,
         agent_instance_id: AgentInstanceId,
@@ -384,7 +385,7 @@ impl DevLoopEngine {
         if let Err(e) = self.task_service.complete_task(
             &project_id, &task.spec_id, &task.task_id,
             &execution.notes, file_changes.to_vec(),
-        ) { warn!(task_id = %task.task_id, error = %e, "failed to mark task as completed"); }
+        ).await { warn!(task_id = %task.task_id, error = %e, "failed to mark task as completed"); }
 
         let cost_usd = {
             Some(self.pricing_service.compute_cost(
@@ -406,6 +407,7 @@ impl DevLoopEngine {
 
         let newly_ready = self.task_service
             .resolve_dependencies_after_completion(&project_id, &task.task_id)
+            .await
             .unwrap_or_default();
         for t in &newly_ready {
             self.emit(EngineEvent::TaskBecameReady {
@@ -437,7 +439,7 @@ impl DevLoopEngine {
         );
     }
 
-    fn create_follow_ups_if_completed(
+    async fn create_follow_ups_if_completed(
         &self,
         task: &Task,
         outcome: &TaskOutcome,
@@ -448,7 +450,7 @@ impl DevLoopEngine {
             for follow_up in follow_up_tasks {
                 if let Ok(new_task) = self.task_service.create_follow_up_task(
                     task, follow_up.title.clone(), follow_up.description.clone(), vec![],
-                ) {
+                ).await {
                     self.emit(EngineEvent::FollowUpTaskCreated {
                         project_id, agent_instance_id: aiid, task_id: new_task.task_id,
                     });

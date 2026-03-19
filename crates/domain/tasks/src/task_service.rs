@@ -3,11 +3,23 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use chrono::Utc;
 
 use aura_core::*;
+use aura_storage::TransitionTaskRequest as StorageTransitionReq;
 
 use crate::error::TaskError;
 use crate::TaskService;
 
+fn task_status_str(s: TaskStatus) -> String {
+    serde_json::to_value(s)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| "pending".to_string())
+}
+
 impl TaskService {
+    // ------------------------------------------------------------------
+    // Local-only helpers (sync, used when storage_client is None / tests)
+    // ------------------------------------------------------------------
+
     fn with_task_mut<F>(
         &self,
         project_id: &ProjectId,
@@ -32,18 +44,44 @@ impl TaskService {
         Ok(task)
     }
 
-    pub fn transition_task(
+    // ------------------------------------------------------------------
+    // Transition (async, StorageClient-aware)
+    // ------------------------------------------------------------------
+
+    pub async fn transition_task(
         &self,
         project_id: &ProjectId,
         spec_id: &SpecId,
         task_id: &TaskId,
         new_status: TaskStatus,
     ) -> Result<Task, TaskError> {
+        if let Some(ref storage) = self.storage_client {
+            Self::validate_transition_preflight(new_status)?;
+            let jwt = self.get_jwt()?;
+            storage
+                .transition_task(
+                    &task_id.to_string(),
+                    &jwt,
+                    &StorageTransitionReq { status: task_status_str(new_status) },
+                )
+                .await?;
+            let st = storage.get_task(&task_id.to_string(), &jwt).await?;
+            return crate::storage_task_to_task(st).map_err(|e| TaskError::ParseError(e));
+        }
         self.with_task_mut(project_id, spec_id, task_id, |task| {
             Self::validate_transition(task.status, new_status)?;
             task.status = new_status;
             Ok(())
         })
+    }
+
+    fn validate_transition_preflight(target: TaskStatus) -> Result<(), TaskError> {
+        // Lightweight client-side check: Done->Ready not allowed by storage.
+        // Full from/to validation happens server-side.
+        if target == TaskStatus::Done {
+            // can't validate "from" without a fetch; skip.
+        }
+        Ok(())
     }
 
     pub fn validate_transition(current: TaskStatus, target: TaskStatus) -> Result<(), TaskError> {
@@ -67,27 +105,17 @@ impl TaskService {
         }
     }
 
-    /// Reset a single in-progress task back to `Ready`, clearing its agent
-    /// assignment. Used when a task is interrupted by pause/stop mid-execution.
-    pub fn reset_task_to_ready(
+    pub async fn reset_task_to_ready(
         &self,
         project_id: &ProjectId,
         spec_id: &SpecId,
         task_id: &TaskId,
     ) -> Result<Task, TaskError> {
-        self.with_task_mut(project_id, spec_id, task_id, |task| {
-            Self::validate_transition(task.status, TaskStatus::Ready)?;
-            task.status = TaskStatus::Ready;
-            task.assigned_agent_instance_id = None;
-            task.session_id = None;
-            Ok(())
-        })
+        self.transition_task(project_id, spec_id, task_id, TaskStatus::Ready).await
     }
 
-    /// Reset any orphaned `InProgress` tasks back to `Ready`.
-    /// Called on loop start to recover from crashes or unclean shutdowns.
-    pub fn reset_in_progress_tasks(&self, project_id: &ProjectId) -> Result<Vec<Task>, TaskError> {
-        let all_tasks = self.store.list_tasks_by_project(project_id)?;
+    pub async fn reset_in_progress_tasks(&self, project_id: &ProjectId) -> Result<Vec<Task>, TaskError> {
+        let all_tasks = self.list_tasks(project_id).await?;
         let mut reset = Vec::new();
         for task in &all_tasks {
             if task.status == TaskStatus::InProgress {
@@ -96,14 +124,14 @@ impl TaskService {
                     &task.spec_id,
                     &task.task_id,
                     TaskStatus::Ready,
-                )?;
+                ).await?;
                 reset.push(ready_task);
             }
         }
         Ok(reset)
     }
 
-    pub fn assign_task(
+    pub async fn assign_task(
         &self,
         project_id: &ProjectId,
         spec_id: &SpecId,
@@ -111,6 +139,15 @@ impl TaskService {
         agent_instance_id: &AgentInstanceId,
         session_id: Option<SessionId>,
     ) -> Result<Task, TaskError> {
+        if self.has_storage() {
+            let mut task = self.transition_task(
+                project_id, spec_id, task_id, TaskStatus::InProgress,
+            ).await?;
+            // Patch local fields that aren't stored in aura-storage.
+            task.assigned_agent_instance_id = Some(*agent_instance_id);
+            task.session_id = session_id;
+            return Ok(task);
+        }
         self.with_task_mut(project_id, spec_id, task_id, |task| {
             Self::validate_transition(task.status, TaskStatus::InProgress)?;
             task.status = TaskStatus::InProgress;
@@ -120,7 +157,7 @@ impl TaskService {
         })
     }
 
-    pub fn complete_task(
+    pub async fn complete_task(
         &self,
         project_id: &ProjectId,
         spec_id: &SpecId,
@@ -128,6 +165,15 @@ impl TaskService {
         notes: &str,
         files_changed: Vec<FileChangeSummary>,
     ) -> Result<Task, TaskError> {
+        if self.has_storage() {
+            let mut task = self.transition_task(
+                project_id, spec_id, task_id, TaskStatus::Done,
+            ).await?;
+            task.completed_by_agent_instance_id = task.assigned_agent_instance_id;
+            task.execution_notes = notes.to_string();
+            task.files_changed = files_changed;
+            return Ok(task);
+        }
         self.with_task_mut(project_id, spec_id, task_id, |task| {
             Self::validate_transition(task.status, TaskStatus::Done)?;
             task.status = TaskStatus::Done;
@@ -138,13 +184,20 @@ impl TaskService {
         })
     }
 
-    pub fn fail_task(
+    pub async fn fail_task(
         &self,
         project_id: &ProjectId,
         spec_id: &SpecId,
         task_id: &TaskId,
         reason: &str,
     ) -> Result<Task, TaskError> {
+        if self.has_storage() {
+            let mut task = self.transition_task(
+                project_id, spec_id, task_id, TaskStatus::Failed,
+            ).await?;
+            task.execution_notes = reason.to_string();
+            return Ok(task);
+        }
         self.with_task_mut(project_id, spec_id, task_id, |task| {
             Self::validate_transition(task.status, TaskStatus::Failed)?;
             task.status = TaskStatus::Failed;
@@ -153,12 +206,20 @@ impl TaskService {
         })
     }
 
-    pub fn retry_task(
+    pub async fn retry_task(
         &self,
         project_id: &ProjectId,
         spec_id: &SpecId,
         task_id: &TaskId,
     ) -> Result<Task, TaskError> {
+        if self.has_storage() {
+            // Already ready? No-op.
+            let task = self.get_task(project_id, spec_id, task_id).await?;
+            if task.status == TaskStatus::Ready {
+                return Ok(task);
+            }
+            return self.transition_task(project_id, spec_id, task_id, TaskStatus::Ready).await;
+        }
         self.with_task_mut(project_id, spec_id, task_id, |task| {
             if task.status == TaskStatus::Ready {
                 return Ok(());
@@ -176,18 +237,16 @@ impl TaskService {
 
     // -- Dependency resolution --
 
-    pub fn resolve_dependencies_after_completion(
+    pub async fn resolve_dependencies_after_completion(
         &self,
         project_id: &ProjectId,
         completed_task_id: &TaskId,
     ) -> Result<Vec<Task>, TaskError> {
-        let all_tasks = self.store.list_tasks_by_project(project_id)?;
-        self.resolve_dependencies_with_tasks(project_id, completed_task_id, &all_tasks)
+        let all_tasks = self.list_tasks(project_id).await?;
+        self.resolve_dependencies_with_tasks(project_id, completed_task_id, &all_tasks).await
     }
 
-    /// Like `resolve_dependencies_after_completion` but uses a pre-fetched task
-    /// list to avoid an extra store scan when the caller already has one.
-    pub fn resolve_dependencies_with_tasks(
+    pub async fn resolve_dependencies_with_tasks(
         &self,
         project_id: &ProjectId,
         completed_task_id: &TaskId,
@@ -213,14 +272,13 @@ impl TaskService {
                     &task.spec_id,
                     &task.task_id,
                     TaskStatus::Ready,
-                )?;
+                ).await?;
                 newly_ready.push(ready_task);
             }
         }
         Ok(newly_ready)
     }
 
-    /// Detect cycles using Kahn's algorithm. Returns error if a cycle exists.
     pub fn detect_cycles(tasks: &[Task]) -> Result<(), TaskError> {
         let task_ids: HashSet<TaskId> = tasks.iter().map(|t| t.task_id).collect();
         let mut in_degree: HashMap<TaskId, usize> = HashMap::new();
@@ -266,11 +324,8 @@ impl TaskService {
         }
     }
 
-    /// Promote any Pending tasks with no (or all-done) dependencies to Ready.
-    /// Called at loop start to fix tasks that were stored as Pending without
-    /// an initial readiness pass.
-    pub fn resolve_initial_readiness(&self, project_id: &ProjectId) -> Result<Vec<Task>, TaskError> {
-        let all_tasks = self.store.list_tasks_by_project(project_id)?;
+    pub async fn resolve_initial_readiness(&self, project_id: &ProjectId) -> Result<Vec<Task>, TaskError> {
+        let all_tasks = self.list_tasks(project_id).await?;
         let done_ids: HashSet<TaskId> = all_tasks
             .iter()
             .filter(|t| t.status == TaskStatus::Done)
@@ -290,7 +345,7 @@ impl TaskService {
                     &task.spec_id,
                     &task.task_id,
                     TaskStatus::Ready,
-                )?;
+                ).await?;
                 promoted.push(ready_task);
             }
         }
@@ -299,20 +354,32 @@ impl TaskService {
 
     // -- Next-task selection --
 
-    pub fn select_next_task(&self, project_id: &ProjectId) -> Result<Option<Task>, TaskError> {
-        let all_tasks = self.store.list_tasks_by_project(project_id)?;
-        self.select_next_task_from(project_id, &all_tasks)
+    pub async fn select_next_task(&self, project_id: &ProjectId) -> Result<Option<Task>, TaskError> {
+        let all_tasks = self.list_tasks(project_id).await?;
+        self.select_next_task_from(project_id, &all_tasks).await
     }
 
-    /// Like `select_next_task` but uses a pre-fetched task list.
-    pub fn select_next_task_from(
+    pub async fn select_next_task_from(
         &self,
         project_id: &ProjectId,
         all_tasks: &[Task],
     ) -> Result<Option<Task>, TaskError> {
-        let specs = self.store.list_specs_by_project(project_id)?;
-        let spec_order: HashMap<SpecId, u32> =
-            specs.iter().map(|s| (s.spec_id, s.order_index)).collect();
+        let specs = if let Some(ref storage) = self.storage_client {
+            let jwt = self.get_jwt()?;
+            let storage_specs = storage
+                .list_specs(&project_id.to_string(), &jwt)
+                .await?;
+            storage_specs
+                .into_iter()
+                .filter_map(|s| {
+                    let sid: SpecId = s.id.parse().ok()?;
+                    Some((sid, s.order_index.unwrap_or(0) as u32))
+                })
+                .collect::<HashMap<SpecId, u32>>()
+        } else {
+            let specs = self.store.list_specs_by_project(project_id)?;
+            specs.iter().map(|s| (s.spec_id, s.order_index)).collect()
+        };
 
         let mut ready: Vec<&Task> = all_tasks
             .iter()
@@ -320,8 +387,8 @@ impl TaskService {
             .collect();
 
         ready.sort_by(|a, b| {
-            let spec_ord_a = spec_order.get(&a.spec_id).copied().unwrap_or(u32::MAX);
-            let spec_ord_b = spec_order.get(&b.spec_id).copied().unwrap_or(u32::MAX);
+            let spec_ord_a = specs.get(&a.spec_id).copied().unwrap_or(u32::MAX);
+            let spec_ord_b = specs.get(&b.spec_id).copied().unwrap_or(u32::MAX);
             spec_ord_a
                 .cmp(&spec_ord_b)
                 .then(a.order_index.cmp(&b.order_index))
@@ -330,22 +397,20 @@ impl TaskService {
         Ok(ready.first().cloned().cloned())
     }
 
-    /// Atomically select the next ready task and assign it to an agent.
-    /// Uses a per-project mutex so two agents can never claim the same task.
-    pub fn claim_next_task(
+    pub async fn claim_next_task(
         &self,
         project_id: &ProjectId,
         agent_instance_id: &AgentInstanceId,
         session_id: Option<SessionId>,
     ) -> Result<Option<Task>, TaskError> {
-        let lock = self.project_claim_lock(project_id);
-        let _guard = lock.lock().unwrap();
+        let lock = self.project_claim_lock(project_id).await;
+        let _guard = lock.lock().await;
 
-        let all_tasks = self.store.list_tasks_by_project(project_id)?;
-        let task = self.select_next_task_from(project_id, &all_tasks)?;
+        let all_tasks = self.list_tasks(project_id).await?;
+        let task = self.select_next_task_from(project_id, &all_tasks).await?;
         match task {
             Some(t) => {
-                let assigned = self.assign_task(project_id, &t.spec_id, &t.task_id, agent_instance_id, session_id)?;
+                let assigned = self.assign_task(project_id, &t.spec_id, &t.task_id, agent_instance_id, session_id).await?;
                 Ok(Some(assigned))
             }
             None => Ok(None),
@@ -354,13 +419,40 @@ impl TaskService {
 
     // -- Follow-up task creation --
 
-    pub fn create_follow_up_task(
+    pub async fn create_follow_up_task(
         &self,
         originating_task: &Task,
         title: String,
         description: String,
         dependency_ids: Vec<TaskId>,
     ) -> Result<Task, TaskError> {
+        if let Some(ref storage) = self.storage_client {
+            let jwt = self.get_jwt()?;
+            let pid = originating_task.project_id.to_string();
+
+            let existing = storage.list_tasks(&pid, &jwt).await?;
+            let norm_title = title.trim().to_lowercase();
+            if existing.iter().any(|t| {
+                t.title.as_deref().unwrap_or("").trim().to_lowercase() == norm_title
+            }) {
+                return Err(TaskError::DuplicateFollowUp);
+            }
+
+            let status = if dependency_ids.is_empty() { "ready" } else { "pending" };
+            let dep_ids: Vec<String> = dependency_ids.iter().map(|d| d.to_string()).collect();
+
+            let req = aura_storage::CreateTaskRequest {
+                spec_id: originating_task.spec_id.to_string(),
+                title: title.clone(),
+                description: Some(description),
+                status: Some(status.to_string()),
+                order_index: Some((originating_task.order_index + 1) as i32),
+                dependency_ids: if dep_ids.is_empty() { None } else { Some(dep_ids) },
+            };
+            let created = storage.create_task(&pid, &jwt, &req).await?;
+            return crate::storage_task_to_task(created).map_err(|e| TaskError::ParseError(e));
+        }
+
         let existing = self
             .store
             .list_tasks_by_spec(&originating_task.project_id, &originating_task.spec_id)?;

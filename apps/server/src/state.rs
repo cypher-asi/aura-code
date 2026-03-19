@@ -5,12 +5,13 @@ use axum::http::StatusCode;
 use axum::Json;
 use tokio::sync::{broadcast, mpsc, Mutex};
 
-use aura_core::{AgentInstanceId, ProjectId, RuntimeAgentState, TaskId, ZeroAuthSession};
+use aura_core::{AgentInstanceId, ProjectId, TaskId, ZeroAuthSession};
 use aura_engine::{DevLoopEngine, EngineEvent, LoopHandle, ProjectWriteCoordinator};
 use aura_network::NetworkClient;
 use aura_storage::StorageClient;
 use aura_terminal::TerminalManager;
 use aura_agents::{AgentService, AgentInstanceService};
+pub use aura_agents::RuntimeAgentStateMap;
 use aura_auth::AuthService;
 use aura_chat::ChatService;
 use aura_orgs::OrgService;
@@ -28,8 +29,6 @@ pub type TaskOutputBuffers = Arc<std::sync::Mutex<HashMap<TaskId, String>>>;
 
 /// Tracks all active agent loops across projects.
 pub type LoopRegistry = Arc<Mutex<HashMap<AgentInstanceId, LoopHandle>>>;
-
-pub type RuntimeAgentStateMap = Arc<Mutex<HashMap<AgentInstanceId, RuntimeAgentState>>>;
 
 #[derive(Clone)]
 pub struct AppState {

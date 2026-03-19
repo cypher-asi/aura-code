@@ -109,7 +109,7 @@ impl ChatToolExecutor {
             "create_task" => self.create_task(project_id, &input).await,
             "update_task" => self.update_task(project_id, &input),
             "delete_task" => self.delete_task(project_id, &input).await,
-            "transition_task" => self.transition_task(project_id, &input),
+            "transition_task" => self.transition_task(project_id, &input).await,
             "run_task" => ToolExecResult::ok(json!({
                 "note": "run_task is handled at the handler level; this is a no-op inside the executor."
             })),
@@ -133,7 +133,7 @@ impl ChatToolExecutor {
             "search_code" => self.search_code(project_id, &input),
             "find_files" => self.find_files(project_id, &input),
             // ── Progress ───────────────────────────────────────────
-            "get_progress" => self.get_progress(project_id),
+            "get_progress" => self.get_progress(project_id).await,
             _ => ToolExecResult::err(format!("Unknown tool: {tool_name}")),
         }
     }
