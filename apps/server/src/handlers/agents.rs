@@ -404,16 +404,6 @@ pub async fn delete_agent_instance(
             aura_storage::StorageError::Server { status: 404, .. } => {
                 ApiError::not_found("agent instance not found")
             }
-            aura_storage::StorageError::Server { status: 500, body } => {
-                tracing::warn!(
-                    agent_instance_id = %agent_instance_id,
-                    storage_body = %body,
-                    "storage delete_project_agent returned 500 (often due to existing sessions/messages)"
-                );
-                ApiError::conflict(
-                    "Cannot remove agent: it has existing conversations. The storage service cannot delete agents with history yet.",
-                )
-            }
             _ => map_storage_error(e),
         })?;
     Ok(Json(()))

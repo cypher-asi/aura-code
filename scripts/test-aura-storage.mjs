@@ -915,10 +915,6 @@ async function run() {
   await test("DELETE /api/project-agents/:id", async () => {
     if (!state.projectAgent?.id) return { skip: "no project agent" };
     const res = await request("DELETE", `/api/project-agents/${state.projectAgent.id}`);
-    if (res.status === 500) {
-      // Known aura-storage issue: cascade delete fails when sessions/messages exist
-      return { detail: "500 (known server-side cascade issue — not a test bug)" };
-    }
     assert(res.status === 200 || res.status === 204, `Expected 200|204, got ${res.status}: ${res.text?.slice(0, 200)}`);
     return { detail: "deleted" };
   });
