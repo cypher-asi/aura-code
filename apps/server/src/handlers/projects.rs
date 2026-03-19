@@ -114,12 +114,14 @@ pub async fn create_project(
     let (git_repo_url, git_branch, orbit_base_url, orbit_owner, orbit_repo) =
         if let (Some(ref owner), Some(ref repo)) = (&req.orbit_owner, &req.orbit_repo) {
             if let Some(ref base_url) = state.orbit_base_url {
+                tracing::debug!(%base_url, %owner, %repo, "creating Orbit repo");
                 match state
                     .orbit_client
                     .create_repo(base_url, owner, repo, &jwt)
                     .await
                 {
                     Ok(created) => {
+                        tracing::debug!("Orbit repo created");
                         let url = orbit_create_repo_url(base_url, owner, repo, &created);
                         (
                             Some(url),
@@ -130,10 +132,8 @@ pub async fn create_project(
                         )
                     }
                     Err(e) => {
-                        return Err(ApiError::internal(format!(
-                            "Failed to create Orbit repo: {}",
-                            e
-                        )));
+                        tracing::error!(error = %e, "Orbit create_repo failed");
+                        return Err(ApiError::internal(e.message_for_api()));
                     }
                 }
             } else {
@@ -166,10 +166,14 @@ pub async fn create_project(
         orbit_owner: orbit_owner.clone(),
         orbit_repo: orbit_repo.clone(),
     };
+    tracing::debug!(name = %req.name, org_id = %req.org_id, "calling aura-network create_project");
     let net_project = client
         .create_project(&jwt, &net_req)
         .await
-        .map_err(map_network_error)?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "aura-network create_project failed");
+            map_network_error(e)
+        })?;
 
     let project_id = net_project
         .id

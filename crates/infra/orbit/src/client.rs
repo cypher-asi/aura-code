@@ -1,9 +1,13 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use tracing::debug;
 
 use crate::error::OrbitError;
 use crate::types::{CreateRepoResponse, OrbitCollaborator, OrbitRepo};
+
+/// Default timeout for Orbit API calls (e.g. create_repo can be slow if Orbit's DB is busy).
+const ORBIT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// HTTP client for Orbit REST API.
 /// Uses JWT (Bearer) for auth; owner is always org_id or user_id (UUID).
@@ -14,8 +18,12 @@ pub struct OrbitClient {
 
 impl OrbitClient {
     pub fn new() -> Self {
+        let http = reqwest::Client::builder()
+            .timeout(ORBIT_REQUEST_TIMEOUT)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         Self {
-            http: Arc::new(reqwest::Client::new()),
+            http: Arc::new(http),
         }
     }
 

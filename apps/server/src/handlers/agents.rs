@@ -400,11 +400,26 @@ pub async fn delete_agent_instance(
     storage
         .delete_project_agent(&agent_instance_id.to_string(), &jwt)
         .await
-        .map_err(|e| match &e {
-            aura_storage::StorageError::Server { status: 404, .. } => {
-                ApiError::not_found("agent instance not found")
+        .map_err(|e| {
+            if let aura_storage::StorageError::Server { status, body } = &e {
+                let url = format!(
+                    "{}/api/project-agents/{}",
+                    storage.base_url(),
+                    agent_instance_id
+                );
+                tracing::error!(
+                    request_url = %url,
+                    storage_status = %status,
+                    storage_body = %body,
+                    "aura-storage DELETE /api/project-agents/:id failed — full remote error above"
+                );
             }
-            _ => map_storage_error(e),
+            match &e {
+                aura_storage::StorageError::Server { status: 404, .. } => {
+                    ApiError::not_found("agent instance not found")
+                }
+                _ => map_storage_error(e),
+            }
         })?;
     Ok(Json(()))
 }
