@@ -197,6 +197,62 @@ fn test_detect_blocked_writes_blocks_second_attempt_same_file() {
 }
 
 #[test]
+fn test_detect_write_file_cooldowns_blocks_write_only() {
+    let mut cooldowns: HashMap<String, usize> = HashMap::new();
+    cooldowns.insert("src/lib.rs".into(), 2);
+    let calls = vec![
+        ToolCall {
+            id: "w1".into(),
+            name: "write_file".into(),
+            input: serde_json::json!({"path": "src/lib.rs"}),
+        },
+        ToolCall {
+            id: "e1".into(),
+            name: "edit_file".into(),
+            input: serde_json::json!({"path": "src/lib.rs"}),
+        },
+    ];
+
+    let blocked = detect_write_file_cooldowns(&calls, &cooldowns);
+    assert_eq!(blocked, vec![0], "cooldown should block write_file but not edit_file");
+}
+
+#[test]
+fn test_decrement_write_file_cooldowns_removes_expired_entries() {
+    let mut cooldowns: HashMap<String, usize> = HashMap::new();
+    cooldowns.insert("a.rs".into(), 1);
+    cooldowns.insert("b.rs".into(), 3);
+
+    decrement_write_file_cooldowns(&mut cooldowns);
+    assert!(!cooldowns.contains_key("a.rs"));
+    assert_eq!(cooldowns.get("b.rs"), Some(&2));
+}
+
+#[test]
+fn test_collect_duplicate_write_paths_deduplicates_paths() {
+    let calls = vec![
+        ToolCall {
+            id: "w1".into(),
+            name: "write_file".into(),
+            input: serde_json::json!({"path": "x.rs"}),
+        },
+        ToolCall {
+            id: "e1".into(),
+            name: "edit_file".into(),
+            input: serde_json::json!({"path": "x.rs"}),
+        },
+        ToolCall {
+            id: "w2".into(),
+            name: "write_file".into(),
+            input: serde_json::json!({"path": "y.rs"}),
+        },
+    ];
+
+    let paths = collect_duplicate_write_paths(&calls, &[0, 1, 2]);
+    assert_eq!(paths, vec!["x.rs".to_string(), "y.rs".to_string()]);
+}
+
+#[test]
 fn test_detect_blocked_reads_blocks_third() {
     let mut counts: HashMap<String, usize> = HashMap::new();
     let calls = vec![

@@ -37,6 +37,7 @@ struct LoopState {
     exploration_warning_10_sent: bool,
     budget_warning_30_sent: bool,
     budget_warning_60_sent: bool,
+    write_file_cooldowns: HashMap<String, usize>,
 }
 
 impl LoopState {
@@ -102,9 +103,11 @@ pub async fn run_tool_loop(
         exploration_warning_10_sent: false,
         budget_warning_30_sent: false,
         budget_warning_60_sent: false,
+        write_file_cooldowns: HashMap::new(),
     };
 
     for iteration in 0..config.max_iterations {
+        decrement_write_file_cooldowns(&mut state.write_file_cooldowns);
         let iter = match run_single_iteration(
             &llm, api_key, system_prompt, &tools, config, event_tx, &mut state, iteration,
         ).await {
@@ -454,6 +457,8 @@ async fn process_tool_calls(
     event_tx: &mpsc::UnboundedSender<ToolLoopEvent>,
     state: &mut LoopState,
 ) -> bool {
+    const FULL_REWRITE_BLOCK_ITERS: usize = 3;
+
     let mut assistant_blocks: Vec<ContentBlock> = Vec::new();
     if !iter.iter_text.is_empty() {
         assistant_blocks.push(ContentBlock::Text { text: iter.iter_text.clone() });
@@ -473,6 +478,7 @@ async fn process_tool_calls(
     state.api_messages.push(RichMessage::assistant_blocks(assistant_blocks));
 
     let blocked_indices = detect_blocked_writes(&iter.iter_tool_calls, &mut state.consecutive_write_tracker);
+    let rewrite_blocked_indices = detect_write_file_cooldowns(&iter.iter_tool_calls, &state.write_file_cooldowns);
     let write_fail_blocked = detect_blocked_write_failures(&iter.iter_tool_calls, &state.file_write_failures);
     let cmd_blocked_indices = detect_blocked_commands(&iter.iter_tool_calls, state.consecutive_cmd_failures);
     let read_blocked_indices = detect_blocked_reads(&iter.iter_tool_calls, &mut state.file_read_counts);
@@ -482,6 +488,7 @@ async fn process_tool_calls(
     let all_blocked: Vec<usize> = {
         let mut v = blocked_indices.clone();
         for i in write_fail_blocked.iter()
+            .chain(rewrite_blocked_indices.iter())
             .chain(cmd_blocked_indices.iter())
             .chain(read_blocked_indices.iter())
             .chain(exploration_blocked_indices.iter())
@@ -492,6 +499,19 @@ async fn process_tool_calls(
         }
         v
     };
+
+    let duplicate_paths = collect_duplicate_write_paths(&iter.iter_tool_calls, &blocked_indices);
+    for path in duplicate_paths {
+        state.write_file_cooldowns.insert(path.clone(), FULL_REWRITE_BLOCK_ITERS);
+        let recovery = format!(
+            "[STALL RECOVERY] Repeated write/edit attempts detected for '{path}'. \
+             For the next {FULL_REWRITE_BLOCK_ITERS} iterations, write_file is blocked for this path. \
+             Use this exact strategy: (1) read_file with a line range, (2) edit_file for one small \
+             section/function at a time, (3) verify before the next edit. Do NOT rewrite the full file."
+        );
+        info!(path, "Injecting adaptive rewrite recovery instruction");
+        state.api_messages.push(RichMessage::user(&recovery));
+    }
 
     let allowed_calls: Vec<ToolCall> = iter.iter_tool_calls
         .iter()
@@ -508,12 +528,12 @@ async fn process_tool_calls(
         .map(|(i, tc)| {
             if blocked_indices.contains(&i) {
                 let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("unknown");
-                warn!(path, tool = %tc.name, "Blocked consecutive duplicate write/edit (3+ in a row)");
+                warn!(path, tool = %tc.name, "Blocked consecutive duplicate write/edit (2+ in a row)");
                 ToolCallResult {
                     tool_use_id: tc.id.clone(),
                     content: serde_json::json!({
                         "error": format!(
-                            "You have called {} on '{}' 3+ times consecutively without success. \
+                            "You have called {} on '{}' repeatedly without success. \
                              Your output is likely being truncated due to context pressure. \
                              Break the file into smaller writes: write a skeleton first with \
                              function signatures, then use edit_file to fill in one function \
@@ -534,6 +554,20 @@ async fn process_tool_calls(
                         "Writes to '{path}' blocked after {count} failures. STOP trying to write this file. \
                          Run `git checkout -- {path}` to restore it, then read_file to see the recovered content, \
                          and try a fundamentally different approach with small targeted edits."
+                    ),
+                    is_error: true,
+                    stop_loop: false,
+                }
+            } else if rewrite_blocked_indices.contains(&i) {
+                let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let remaining = state.write_file_cooldowns.get(path).copied().unwrap_or(0);
+                warn!(path, remaining, "Blocked write_file during adaptive cooldown");
+                ToolCallResult {
+                    tool_use_id: tc.id.clone(),
+                    content: format!(
+                        "write_file on '{path}' is temporarily blocked for {remaining} more iterations \
+                         due to repeated rewrite stalls. Use edit_file with small, targeted chunks instead \
+                         of rewriting the full file."
                     ),
                     is_error: true,
                     stop_loop: false,
@@ -644,6 +678,53 @@ fn append_text(total: &mut String, new: &str) {
         }
         total.push_str(new);
     }
+}
+
+fn detect_write_file_cooldowns(
+    tool_calls: &[ToolCall],
+    cooldowns: &HashMap<String, usize>,
+) -> Vec<usize> {
+    tool_calls
+        .iter()
+        .enumerate()
+        .filter_map(|(i, tc)| {
+            if tc.name != "write_file" {
+                return None;
+            }
+            let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            if cooldowns.get(path).copied().unwrap_or(0) > 0 {
+                Some(i)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn collect_duplicate_write_paths(tool_calls: &[ToolCall], blocked_indices: &[usize]) -> Vec<String> {
+    let mut paths: Vec<String> = Vec::new();
+    for i in blocked_indices {
+        if let Some(tc) = tool_calls.get(*i) {
+            if matches!(tc.name.as_str(), "write_file" | "edit_file") {
+                if let Some(path) = tc.input.get("path").and_then(|v| v.as_str()) {
+                    if !paths.contains(&path.to_string()) {
+                        paths.push(path.to_string());
+                    }
+                }
+            }
+        }
+    }
+    paths
+}
+
+fn decrement_write_file_cooldowns(cooldowns: &mut HashMap<String, usize>) {
+    cooldowns.retain(|_, remaining| {
+        if *remaining == 0 {
+            return false;
+        }
+        *remaining -= 1;
+        *remaining > 0
+    });
 }
 
 #[cfg(test)]
