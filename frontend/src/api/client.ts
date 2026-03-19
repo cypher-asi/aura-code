@@ -118,6 +118,15 @@ export interface UpdateProjectRequest {
   orbit_repo?: string;
 }
 
+export interface OrbitRepo {
+  id?: string;
+  name: string;
+  owner: string;
+  full_name?: string;
+  clone_url?: string;
+  git_url?: string;
+}
+
 export interface DirEntry {
   name: string;
   path: string;
@@ -213,15 +222,17 @@ export const api = {
       }),
   },
 
-  // Projects
-  listProjects: (orgId?: string) =>
-    apiFetch<Project[]>(orgId ? `/api/projects?org_id=${orgId}` : "/api/projects"),
+  // Projects (org-scoped; orgId required)
+  listProjects: (orgId: string) =>
+    apiFetch<Project[]>(`/api/projects?org_id=${orgId}`),
   createProject: (data: CreateProjectRequest) =>
     apiFetch<Project>("/api/projects", {
       method: "POST",
       body: JSON.stringify(data),
     }),
   getProject: (id: ProjectId) => apiFetch<Project>(`/api/projects/${id}`),
+  listOrbitRepos: (q?: string) =>
+    apiFetch<OrbitRepo[]>(q ? `/api/orbit/repos?q=${encodeURIComponent(q)}` : "/api/orbit/repos"),
   updateProject: (id: ProjectId, data: UpdateProjectRequest) =>
     apiFetch<Project>(`/api/projects/${id}`, {
       method: "PUT",
