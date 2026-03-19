@@ -18,6 +18,16 @@ function stripEmojis(text: string): string {
     .replace(/ {2,}/g, " ");
 }
 
+/** Collapse double newlines that split a single sentence (e.g. "No\n\nexisting specs") into a space so markdown doesn't render two paragraphs. */
+function normalizeMidSentenceBreaks(text: string): string {
+  return text.replace(/\n\n+/g, (match, offset) => {
+    const before = text.slice(0, offset).split("\n");
+    const lastLine = before[before.length - 1]?.trimEnd() ?? "";
+    const looksLikeSentenceEnd = /[.!?]\s*$/.test(lastLine);
+    return looksLikeSentenceEnd ? match : " ";
+  });
+}
+
 interface DisplayMessage {
   id: string;
   role: "user" | "assistant" | "system";
@@ -325,7 +335,7 @@ export function MessageBubble({ message }: Props) {
                 remarkPlugins={[remarkGfm, remarkBreaks]}
                 rehypePlugins={[rehypeHighlight]}
               >
-                {stripEmojis(message.content)}
+                {normalizeMidSentenceBreaks(stripEmojis(message.content))}
               </ReactMarkdown>
             )}
           </div>
@@ -381,7 +391,7 @@ export function StreamingBubble({ text, toolCalls, thinkingText, thinkingDuratio
               remarkPlugins={[remarkGfm, remarkBreaks]}
               rehypePlugins={[rehypeHighlight]}
             >
-              {stripEmojis(text)}
+              {normalizeMidSentenceBreaks(stripEmojis(text))}
             </ReactMarkdown>
           )}
           <StreamingIndicator text={text} thinkingText={thinkingText} toolCalls={toolCalls} />
