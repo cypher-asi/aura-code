@@ -97,18 +97,18 @@ impl DevLoopEngine {
 
         let task_start = Instant::now();
         let model_name = model.clone();
-        let project_root = self.project_service.get_project(&project_id)?
+        let project_root = self.project_service.get_project_async(&project_id).await?
             .linked_folder_path.clone();
         let workspace_cache = WorkspaceCache::build_async(&project_root).await?;
         let fee_schedule = self.pricing_service.get_fee_schedule();
 
         let baseline_test_failures = {
-            let project = self.project_service.get_project(&project_id)?;
+            let project = self.project_service.get_project_async(&project_id).await?;
             self.capture_test_baseline(&project).await
         };
 
         let execution_result = if let Some(cmd) = shell::extract_shell_command(&task) {
-            let project = self.project_service.get_project(&project_id)?;
+            let project = self.project_service.get_project_async(&project_id).await?;
             self.execute_shell_task(&project, &task, &cmd, aiid).await
         } else {
             self.execute_task_agentic(&project_id, &task, &session, &api_key, Some(&agent), &[], &workspace_cache).await
@@ -159,7 +159,7 @@ impl DevLoopEngine {
         };
 
         let llm_duration_ms = task_start.elapsed().as_millis() as u64;
-        let project = self.project_service.get_project(&project_id)?;
+        let project = self.project_service.get_project_async(&project_id).await?;
         let base_path = Path::new(&project.linked_folder_path);
 
         let file_changes = if execution.files_already_applied {

@@ -3,11 +3,9 @@ use axum::http::StatusCode;
 use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use tracing::warn;
 
 use aura_core::{OrgId, Project, ProjectId, ProjectStatus};
 use aura_network::NetworkProject;
-use aura_projects::UpdateProjectInput;
 
 use crate::dto::{CreateProjectRequest, UpdateProjectRequest};
 use crate::error::{map_network_error, ApiError, ApiResult};
@@ -85,12 +83,6 @@ fn project_from_network(net: &NetworkProject, local: Option<&Project>) -> Projec
             orbit_owner: net.orbit_owner.clone(),
             orbit_repo: net.orbit_repo.clone(),
         }
-    }
-}
-
-fn ensure_local_shadow(state: &AppState, project: &Project) {
-    if let Err(e) = state.store.put_project(project) {
-        warn!(project_id = %project.project_id, error = %e, "Failed to save local project shadow");
     }
 }
 
@@ -229,8 +221,6 @@ pub async fn create_project(
         orbit_owner,
         orbit_repo,
     };
-    ensure_local_shadow(&state, &project);
-
     Ok((StatusCode::CREATED, Json(project)))
 }
 
@@ -277,49 +267,27 @@ pub async fn update_project(
     Path(project_id): Path<ProjectId>,
     Json(req): Json<UpdateProjectRequest>,
 ) -> ApiResult<Json<Project>> {
-    let input = UpdateProjectInput {
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    let folder = req
+        .linked_folder_path
+        .as_deref()
+        .and_then(folder_name_from_path);
+    let net_req = aura_network::UpdateProjectRequest {
         name: req.name.clone(),
         description: req.description.clone(),
-        linked_folder_path: req.linked_folder_path.clone(),
-        build_command: req.build_command.clone(),
-        test_command: req.test_command.clone(),
+        folder,
         git_repo_url: req.git_repo_url.clone(),
         git_branch: req.git_branch.clone(),
         orbit_base_url: req.orbit_base_url.clone(),
         orbit_owner: req.orbit_owner.clone(),
         orbit_repo: req.orbit_repo.clone(),
     };
-    let project = state
-        .project_service
-        .update_project(&project_id, input)
-        .map_err(|e| match &e {
-            aura_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
-            aura_projects::ProjectError::InvalidInput(msg) => ApiError::bad_request(msg.clone()),
-            _ => ApiError::internal(e.to_string()),
-        })?;
-
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        let folder = req
-            .linked_folder_path
-            .as_deref()
-            .and_then(folder_name_from_path);
-        let net_req = aura_network::UpdateProjectRequest {
-            name: req.name,
-            description: req.description,
-            folder,
-            git_repo_url: req.git_repo_url.clone(),
-            git_branch: req.git_branch.clone(),
-            orbit_base_url: req.orbit_base_url.clone(),
-            orbit_owner: req.orbit_owner.clone(),
-            orbit_repo: req.orbit_repo.clone(),
-        };
-        client
-            .update_project(&project_id.to_string(), &jwt, &net_req)
-            .await
-            .map_err(map_network_error)?;
-    }
-
+    let net_project = client
+        .update_project(&project_id.to_string(), &jwt, &net_req)
+        .await
+        .map_err(map_network_error)?;
+    let project = project_from_network(&net_project, None);
     Ok(Json(project))
 }
 
@@ -327,22 +295,12 @@ pub async fn delete_project(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
 ) -> ApiResult<StatusCode> {
-    state
-        .project_service
-        .delete_project(&project_id)
-        .map_err(|e| match &e {
-            aura_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
-            _ => ApiError::internal(e.to_string()),
-        })?;
-
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-        client
-            .delete_project(&project_id.to_string(), &jwt)
-            .await
-            .map_err(map_network_error)?;
-    }
-
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    client
+        .delete_project(&project_id.to_string(), &jwt)
+        .await
+        .map_err(map_network_error)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -352,7 +310,8 @@ pub async fn archive_project(
 ) -> ApiResult<Json<Project>> {
     let project = state
         .project_service
-        .archive_project(&project_id)
+        .get_project_async(&project_id)
+        .await
         .map_err(|e| match &e {
             aura_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
             _ => ApiError::internal(e.to_string()),

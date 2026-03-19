@@ -161,7 +161,7 @@ impl DevLoopEngine {
         project_id: ProjectId,
         agent_instance_id: Option<AgentInstanceId>,
     ) -> Result<LoopHandle, EngineError> {
-        let _project = self.project_service.get_project(&project_id)?;
+        let _project = self.project_service.get_project_async(&project_id).await?;
 
         let stale = self.session_service.close_stale_sessions(&project_id).await?;
         if !stale.is_empty() {
@@ -297,7 +297,7 @@ impl DevLoopEngine {
                 }
             };
             ctx.begin_task(self, &task).await?;
-            let project = self.project_service.get_project(&project_id)?;
+            let project = self.project_service.get_project_async(&project_id).await?;
             let baseline = ctx.get_or_capture_test_baseline(self, &project).await;
             let task_start = Instant::now();
             let agent = self.agent_instance_service

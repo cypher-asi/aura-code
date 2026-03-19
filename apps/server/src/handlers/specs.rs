@@ -71,7 +71,8 @@ pub async fn generate_specs_summary(
         .map_err(|e| ApiError::internal(e.to_string()))?;
     let project = state
         .project_service
-        .get_project(&project_id)
+        .get_project_async(&project_id)
+        .await
         .map_err(|_e| ApiError::not_found("project not found"))?;
     Ok(Json(project))
 }

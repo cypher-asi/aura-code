@@ -182,7 +182,7 @@ impl ChatService {
         };
 
         let custom_prompt = &agent_instance.system_prompt;
-        let system = match self.store.get_project(project_id) {
+        let system = match self.project_service.get_project_async(project_id).await {
             Ok(p) => build_chat_system_prompt(&p, custom_prompt),
             Err(_) => {
                 if custom_prompt.is_empty() {

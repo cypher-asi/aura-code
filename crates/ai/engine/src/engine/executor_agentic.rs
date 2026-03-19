@@ -26,7 +26,7 @@ impl DevLoopEngine {
         work_log: &[String],
         workspace_cache: &WorkspaceCache,
     ) -> Result<TaskExecution, EngineError> {
-        let project = self.project_service.get_project(project_id)?;
+        let project = self.project_service.get_project_async(project_id).await?;
         let spec = self.load_spec(project_id, &task.spec_id).await?;
 
         let workspace_map = &workspace_cache.workspace_map_text;

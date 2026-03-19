@@ -494,9 +494,12 @@ name = "aura-projects"
 version = "0.1.0"
 dependencies = [
  "aura-core",
+ "aura-network",
  "aura-store",
  "chrono",
+ "serde_json",
  "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -581,6 +584,7 @@ dependencies = [
  "aura-billing",
  "aura-claude",
  "aura-core",
+ "aura-projects",
  "aura-settings",
  "aura-storage",
  "aura-store",

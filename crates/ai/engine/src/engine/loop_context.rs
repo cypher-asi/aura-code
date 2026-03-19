@@ -51,7 +51,8 @@ impl LoopRunContext {
         let api_key = engine.settings.get_decrypted_api_key()?;
         let project_root = engine
             .project_service
-            .get_project(&project_id)?
+            .get_project_async(&project_id)
+            .await?
             .linked_folder_path
             .clone();
         let workspace_cache = WorkspaceCache::build_async(&project_root).await?;
@@ -524,7 +525,7 @@ impl LoopRunContext {
         if !engine.session_service.should_rollover(&current_session) {
             return Ok(None);
         }
-        let project = engine.project_service.get_project(&self.project_id)?;
+        let project = engine.project_service.get_project_async(&self.project_id).await?;
         let mut raw_log = self.work_log.join("\n\n---\n\n");
         const MAX_WORK_LOG_CHARS: usize = 20_000;
         if raw_log.len() > MAX_WORK_LOG_CHARS {

@@ -1,6 +1,7 @@
 use aura_billing::MeteredLlmError;
 use aura_claude::ClaudeClientError;
 use aura_core::ProjectId;
+use aura_projects::ProjectError;
 use aura_settings::SettingsError;
 use aura_storage::StorageError;
 use aura_store::StoreError;
@@ -25,6 +26,15 @@ pub enum SpecGenError {
     ParseError(String),
     #[error("insufficient credits")]
     InsufficientCredits,
+}
+
+impl From<ProjectError> for SpecGenError {
+    fn from(e: ProjectError) -> Self {
+        match e {
+            ProjectError::NotFound(id) => SpecGenError::ProjectNotFound(id),
+            _ => SpecGenError::ParseError(e.to_string()),
+        }
+    }
 }
 
 impl From<MeteredLlmError> for SpecGenError {

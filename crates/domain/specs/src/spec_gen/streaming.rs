@@ -106,10 +106,8 @@ impl SpecGenerationService {
                 raw_overview.chars().take(200).collect::<String>()
             )));
         }
-        let mut project = self.store.get_project(project_id).map_err(SpecGenError::Store)?;
-        project.specs_title = Some(title.clone());
-        project.specs_summary = Some(summary.clone());
-        self.store.put_project(&project).map_err(SpecGenError::Store)?;
+        // Project from network; specs_title/specs_summary not persisted locally
+        let _project = self.project_service.get_project_async(project_id).await?;
         Ok((title, summary))
     }
 
@@ -121,7 +119,7 @@ impl SpecGenerationService {
         let send = |evt: SpecStreamEvent| { let _ = tx.send(evt); };
 
         let (requirements_content, api_key) =
-            match self.load_project_and_key(project_id, &send) {
+            match self.load_project_and_key(project_id, &tx).await {
                 Some(v) => v,
                 None => return,
             };
@@ -279,35 +277,28 @@ impl SpecGenerationService {
         if summary.is_empty() {
             return Err(SpecGenError::ParseError("LLM produced empty summary".to_string()));
         }
-        let mut project = self.store.get_project(project_id).map_err(SpecGenError::Store)?;
-        project.specs_title = Some(title.clone());
-        project.specs_summary = Some(summary.clone());
-        self.store.put_project(&project).map_err(SpecGenError::Store)?;
+        let _project = self.project_service.get_project_async(project_id).await?;
         info!(%project_id, %title, "Specs summary regenerated");
         Ok((title, summary))
     }
 
-    fn load_project_and_key(
+    async fn load_project_and_key(
         &self,
         project_id: &ProjectId,
-        send: &dyn Fn(SpecStreamEvent),
+        tx: &mpsc::UnboundedSender<SpecStreamEvent>,
     ) -> Option<(String, String)> {
-        send(SpecStreamEvent::Progress("Loading project".into()));
+        let _ = tx.send(SpecStreamEvent::Progress("Loading project".into()));
         info!(%project_id, "Loading project for streaming spec generation");
 
-        let project = match self.store.get_project(project_id) {
+        let project = match self.project_service.get_project_async(project_id).await {
             Ok(p) => p,
-            Err(aura_store::StoreError::NotFound(_)) => {
-                send(SpecStreamEvent::Error(format!("Project not found: {project_id}")));
-                return None;
-            }
-            Err(e) => {
-                send(SpecStreamEvent::Error(format!("Store error: {e}")));
+            Err(_) => {
+                let _ = tx.send(SpecStreamEvent::Error(format!("Project not found: {project_id}")));
                 return None;
             }
         };
 
-        send(SpecStreamEvent::Progress("Reading requirements document".into()));
+        let _ = tx.send(SpecStreamEvent::Progress("Reading requirements document".into()));
 
         let req_path = project.requirements_doc_path.as_deref().unwrap_or("");
         if req_path.is_empty() || !std::path::Path::new(req_path).is_file() {
@@ -316,23 +307,23 @@ impl SpecGenerationService {
             } else {
                 format!("Requirements file not found: {req_path}")
             };
-            send(SpecStreamEvent::Error(msg));
+            let _ = tx.send(SpecStreamEvent::Error(msg));
             return None;
         }
         let requirements_content = match std::fs::read_to_string(req_path) {
             Ok(c) => c,
             Err(e) => {
-                send(SpecStreamEvent::Error(format!("Failed to read requirements: {e}")));
+                let _ = tx.send(SpecStreamEvent::Error(format!("Failed to read requirements: {e}")));
                 return None;
             }
         };
 
-        send(SpecStreamEvent::Progress("Decrypting API key".into()));
+        let _ = tx.send(SpecStreamEvent::Progress("Decrypting API key".into()));
 
         let api_key = match self.settings.get_decrypted_api_key() {
             Ok(k) => k,
             Err(e) => {
-                send(SpecStreamEvent::Error(format!("API key error: {e}")));
+                let _ = tx.send(SpecStreamEvent::Error(format!("API key error: {e}")));
                 return None;
             }
         };

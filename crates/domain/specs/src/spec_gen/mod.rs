@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 use aura_core::*;
+use aura_projects::ProjectService;
 use aura_settings::SettingsService;
 use aura_store::RocksStore;
 use aura_storage::StorageClient;
@@ -67,6 +68,7 @@ pub(crate) const SPEC_SUMMARY_MAX_WORDS: usize = 85;
 
 pub struct SpecGenerationService {
     pub(crate) store: Arc<RocksStore>,
+    pub(crate) project_service: Arc<ProjectService>,
     pub(crate) settings: Arc<SettingsService>,
     pub(crate) llm: Arc<MeteredLlm>,
     pub(crate) storage_client: Option<Arc<StorageClient>>,
@@ -75,12 +77,14 @@ pub struct SpecGenerationService {
 impl SpecGenerationService {
     pub fn new(
         store: Arc<RocksStore>,
+        project_service: Arc<ProjectService>,
         settings: Arc<SettingsService>,
         llm: Arc<MeteredLlm>,
         storage_client: Option<Arc<StorageClient>>,
     ) -> Self {
         Self {
             store,
+            project_service,
             settings,
             llm,
             storage_client,
@@ -121,15 +125,9 @@ impl SpecGenerationService {
         Self::emit(&progress, "Loading project");
         info!(%project_id, "Loading project for spec generation");
 
-        let project = self.store.get_project(project_id).map_err(|e| match e {
-            aura_store::StoreError::NotFound(_) => {
-                error!(%project_id, "Project not found");
-                SpecGenError::ProjectNotFound(*project_id)
-            }
-            other => {
-                error!(%project_id, error = %other, "Store error loading project");
-                SpecGenError::Store(other)
-            }
+        let project = self.project_service.get_project_async(project_id).await.map_err(|e| {
+            error!(%project_id, error = %e, "Failed to load project from network");
+            e
         })?;
 
         Self::emit(&progress, "Reading requirements document");
@@ -214,11 +212,7 @@ impl SpecGenerationService {
             }
         }
 
-        if let Ok(mut project) = self.store.get_project(project_id) {
-            project.specs_summary = None;
-            project.specs_title = None;
-            let _ = self.store.put_project(&project);
-        }
+        // specs_summary / specs_title no longer persisted locally (network-only projects)
         Ok(())
     }
 

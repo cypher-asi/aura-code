@@ -114,24 +114,24 @@ impl ChatToolExecutor {
                 "note": "run_task is handled at the handler level; this is a no-op inside the executor."
             })),
             // ── Project ────────────────────────────────────────────
-            "get_project" => self.get_project(project_id),
-            "update_project" => self.update_project(project_id, &input),
+            "get_project" => self.get_project(project_id).await,
+            "update_project" => self.update_project(project_id, &input).await,
             // ── Dev loop (handled at handler level) ────────────────
             "start_dev_loop" | "pause_dev_loop" | "stop_dev_loop" => ToolExecResult::ok(json!({
                 "note": "Loop control is handled at the handler level."
             })),
             // ── Filesystem ─────────────────────────────────────────
-            "read_file" => self.read_file(project_id, &input),
-            "write_file" => self.write_file(project_id, &input),
-            "delete_file" => self.delete_file(project_id, &input),
-            "list_files" => self.list_files(project_id, &input),
+            "read_file" => self.read_file(project_id, &input).await,
+            "write_file" => self.write_file(project_id, &input).await,
+            "delete_file" => self.delete_file(project_id, &input).await,
+            "list_files" => self.list_files(project_id, &input).await,
             // ── Targeted editing ───────────────────────────────────
-            "edit_file" => self.edit_file(project_id, &input),
+            "edit_file" => self.edit_file(project_id, &input).await,
             // ── Shell ──────────────────────────────────────────────
             "run_command" => self.run_command(project_id, &input).await,
             // ── Search ─────────────────────────────────────────────
-            "search_code" => self.search_code(project_id, &input),
-            "find_files" => self.find_files(project_id, &input),
+            "search_code" => self.search_code(project_id, &input).await,
+            "find_files" => self.find_files(project_id, &input).await,
             // ── Progress ───────────────────────────────────────────
             "get_progress" => self.get_progress(project_id).await,
             _ => ToolExecResult::err(format!("Unknown tool: {tool_name}")),

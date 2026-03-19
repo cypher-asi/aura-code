@@ -348,11 +348,12 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         billing_client.clone(),
         store.clone(),
     ));
-    let project_service = Arc::new(ProjectService::new(store.clone()));
-    project_service.cleanup_empty_projects();
+    let network_client = NetworkClient::from_env().map(Arc::new);
+    let project_service = Arc::new(ProjectService::new(network_client.clone(), store.clone()));
     let storage_client = StorageClient::from_env().map(Arc::new);
     let spec_gen_service = Arc::new(SpecGenerationService::new(
         store.clone(),
+        project_service.clone(),
         settings_service.clone(),
         llm.clone(),
         storage_client.clone(),
@@ -403,7 +404,6 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         task_output_buffers.clone(),
     );
 
-    let network_client = NetworkClient::from_env().map(Arc::new);
     let orbit_client = Arc::new(OrbitClient::new());
     let orbit_base_url = std::env::var("ORBIT_BASE_URL")
         .ok()

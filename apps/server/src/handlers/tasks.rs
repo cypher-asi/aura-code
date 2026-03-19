@@ -421,7 +421,7 @@ async fn aggregate_repo_metrics(
     project_id: &ProjectId,
     progress: &mut ProjectProgress,
 ) {
-    let Ok(project) = state.project_service.get_project(project_id) else {
+    let Ok(project) = state.project_service.get_project_async(project_id).await else {
         return;
     };
     let folder = &project.linked_folder_path;

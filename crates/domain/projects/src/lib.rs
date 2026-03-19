@@ -1,71 +1,57 @@
 mod error;
 pub use error::ProjectError;
 
-use std::path::Path;
 use std::sync::Arc;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use aura_core::*;
+use aura_network::NetworkClient;
 use aura_store::RocksStore;
 
-/// Strip trailing natural language that LLMs sometimes append to shell commands.
-/// e.g. "cargo build --workspace to confirm compilation" → "cargo build --workspace"
-fn sanitize_shell_command(cmd: &str) -> String {
-    let trimmed = cmd.trim();
-    if trimmed.is_empty() {
-        return trimmed.to_string();
+/// Convert NetworkProject to core Project (no local shadow).
+fn network_project_to_core(net: &aura_network::NetworkProject) -> Project {
+    let project_id = net
+        .id
+        .parse::<ProjectId>()
+        .unwrap_or_else(|_| ProjectId::new());
+    let org_id = net
+        .org_id
+        .parse::<OrgId>()
+        .unwrap_or_else(|_| OrgId::new());
+    let created_at = net
+        .created_at
+        .as_deref()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(Utc::now);
+    let updated_at = net
+        .updated_at
+        .as_deref()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(Utc::now);
+
+    Project {
+        project_id,
+        org_id,
+        name: net.name.clone(),
+        description: net.description.clone().unwrap_or_default(),
+        linked_folder_path: net.folder.clone().unwrap_or_default(),
+        requirements_doc_path: None,
+        current_status: ProjectStatus::Active,
+        build_command: None,
+        test_command: None,
+        specs_summary: None,
+        specs_title: None,
+        created_at,
+        updated_at,
+        git_repo_url: net.git_repo_url.clone(),
+        git_branch: net.git_branch.clone(),
+        orbit_base_url: net.orbit_base_url.clone(),
+        orbit_owner: net.orbit_owner.clone(),
+        orbit_repo: net.orbit_repo.clone(),
     }
-
-    let trailing_phrases: &[&str] = &[
-        " in order to ", " so that ", " which will ", " that will ",
-        " to confirm ", " to verify ", " to check ", " to ensure ",
-        " to validate ", " to test ", " to see ", " to make sure ",
-        " to run ", " to build ", " to compile ",
-        " for confirming ", " for verifying ", " for checking ",
-    ];
-
-    let lower = trimmed.to_lowercase();
-    for phrase in trailing_phrases {
-        if let Some(idx) = lower.find(phrase) {
-            return trimmed[..idx].trim_end().to_string();
-        }
-    }
-
-    // Catch generic " to <verb>" at end: "cargo build --workspace to confirm compilation"
-    if let Some(idx) = lower.rfind(" to ") {
-        let after = &lower[idx + 4..];
-        let first_word = after.split_whitespace().next().unwrap_or("");
-        let non_command_verbs = [
-            "confirm", "verify", "check", "ensure", "validate", "test",
-            "see", "make", "run", "build", "compile", "show", "prove",
-            "demonstrate", "try", "attempt",
-        ];
-        if non_command_verbs.contains(&first_word) {
-            return trimmed[..idx].trim_end().to_string();
-        }
-    }
-
-    trimmed.to_string()
-}
-
-fn rewrite_server_commands(cmd: &str) -> String {
-    let trimmed = cmd.trim();
-    if trimmed == "cargo run" || trimmed.starts_with("cargo run ") {
-        return trimmed.replacen("cargo run", "cargo build", 1);
-    }
-    if trimmed == "npm start" {
-        return "npm run build".to_string();
-    }
-    trimmed.to_string()
-}
-
-fn sanitize_command_option(cmd: Option<String>) -> Option<String> {
-    cmd.map(|c| {
-        let sanitized = sanitize_shell_command(&c);
-        let sanitized = if sanitized.is_empty() { c } else { sanitized };
-        rewrite_server_commands(&sanitized)
-    })
 }
 
 #[derive(Debug, Clone)]
@@ -98,44 +84,76 @@ pub struct UpdateProjectInput {
 }
 
 pub struct ProjectService {
+    network_client: Option<Arc<NetworkClient>>,
     store: Arc<RocksStore>,
 }
 
 impl ProjectService {
-    pub fn new(store: Arc<RocksStore>) -> Self {
-        Self { store }
+    pub fn new(network_client: Option<Arc<NetworkClient>>, store: Arc<RocksStore>) -> Self {
+        Self {
+            network_client,
+            store,
+        }
     }
 
-    pub fn create_project(&self, input: CreateProjectInput) -> Result<Project, ProjectError> {
-        if input.name.trim().is_empty() {
-            return Err(ProjectError::InvalidInput(
-                "project name must not be empty".into(),
-            ));
+    fn get_jwt(&self) -> Result<String, ProjectError> {
+        let bytes = self
+            .store
+            .get_setting("zero_auth_session")
+            .map_err(|_| ProjectError::NoSession)?;
+        let session: ZeroAuthSession =
+            serde_json::from_slice(&bytes).map_err(|_| ProjectError::NoSession)?;
+        Ok(session.access_token)
+    }
+
+    /// Get project from aura-network only. Returns error if network is not configured or project not found.
+    pub async fn get_project_async(&self, id: &ProjectId) -> Result<Project, ProjectError> {
+        let client = self
+            .network_client
+            .as_ref()
+            .ok_or(ProjectError::NetworkNotConfigured)?;
+        let jwt = self.get_jwt()?;
+        let net = client
+            .get_project(&id.to_string(), &jwt)
+            .await
+            .map_err(|e| match &e {
+                aura_network::NetworkError::Server { status: 404, .. } => ProjectError::NotFound(*id),
+                _ => ProjectError::Network(e),
+            })?;
+        Ok(network_project_to_core(&net))
+    }
+
+    /// Update project on aura-network only.
+    pub async fn update_project_async(
+        &self,
+        id: &ProjectId,
+        input: UpdateProjectInput,
+    ) -> Result<Project, ProjectError> {
+        let client = self
+            .network_client
+            .as_ref()
+            .ok_or(ProjectError::NetworkNotConfigured)?;
+        let jwt = self.get_jwt()?;
+
+        if let Some(ref name) = input.name {
+            if name.trim().is_empty() {
+                return Err(ProjectError::InvalidInput(
+                    "project name must not be empty".into(),
+                ));
+            }
         }
 
-        let folder = Path::new(&input.linked_folder_path);
-        if !folder.is_dir() {
-            return Err(ProjectError::InvalidInput(format!(
-                "linked folder path does not exist or is not a directory: {}",
-                input.linked_folder_path
-            )));
-        }
+        let folder = input
+            .linked_folder_path
+            .as_ref()
+            .and_then(|p| std::path::Path::new(p).file_name())
+            .and_then(|n| n.to_str())
+            .map(String::from);
 
-        let now = Utc::now();
-        let project = Project {
-            project_id: ProjectId::new(),
-            org_id: input.org_id,
+        let net_req = aura_network::UpdateProjectRequest {
             name: input.name,
             description: input.description,
-            linked_folder_path: input.linked_folder_path,
-            requirements_doc_path: None,
-            current_status: ProjectStatus::Planning,
-            build_command: sanitize_command_option(input.build_command),
-            test_command: sanitize_command_option(input.test_command),
-            specs_summary: None,
-            specs_title: None,
-            created_at: now,
-            updated_at: now,
+            folder,
             git_repo_url: input.git_repo_url,
             git_branch: input.git_branch,
             orbit_base_url: input.orbit_base_url,
@@ -143,102 +161,10 @@ impl ProjectService {
             orbit_repo: input.orbit_repo,
         };
 
-        self.store.put_project(&project)?;
-        Ok(project)
-    }
-
-    pub fn get_project(&self, id: &ProjectId) -> Result<Project, ProjectError> {
-        self.store.get_project(id).map_err(|e| match e {
-            aura_store::StoreError::NotFound(_) => ProjectError::NotFound(*id),
-            other => ProjectError::Store(other),
-        })
-    }
-
-    pub fn list_projects(&self) -> Result<Vec<Project>, ProjectError> {
-        let all = self.store.list_projects()?;
-        Ok(all
-            .into_iter()
-            .filter(|p| p.current_status != ProjectStatus::Archived)
-            .collect())
-    }
-
-    pub fn list_projects_by_org(&self, org_id: &OrgId) -> Result<Vec<Project>, ProjectError> {
-        let all = self.store.list_projects()?;
-        Ok(all
-            .into_iter()
-            .filter(|p| p.org_id == *org_id && p.current_status != ProjectStatus::Archived)
-            .collect())
-    }
-
-    pub fn update_project(
-        &self,
-        id: &ProjectId,
-        input: UpdateProjectInput,
-    ) -> Result<Project, ProjectError> {
-        let mut project = self.get_project(id)?;
-
-        if let Some(name) = input.name {
-            if name.trim().is_empty() {
-                return Err(ProjectError::InvalidInput(
-                    "project name must not be empty".into(),
-                ));
-            }
-            project.name = name;
-        }
-        if let Some(desc) = input.description {
-            project.description = desc;
-        }
-        if let Some(path) = input.linked_folder_path {
-            project.linked_folder_path = path;
-        }
-        if input.build_command.is_some() {
-            project.build_command = sanitize_command_option(input.build_command);
-        }
-        if input.test_command.is_some() {
-            project.test_command = sanitize_command_option(input.test_command);
-        }
-        if let Some(v) = input.git_repo_url {
-            project.git_repo_url = Some(v);
-        }
-        if let Some(v) = input.git_branch {
-            project.git_branch = Some(v);
-        }
-        if let Some(v) = input.orbit_base_url {
-            project.orbit_base_url = Some(v);
-        }
-        if let Some(v) = input.orbit_owner {
-            project.orbit_owner = Some(v);
-        }
-        if let Some(v) = input.orbit_repo {
-            project.orbit_repo = Some(v);
-        }
-
-        project.updated_at = Utc::now();
-        self.store.put_project(&project)?;
-        Ok(project)
-    }
-
-    pub fn delete_project(&self, id: &ProjectId) -> Result<(), ProjectError> {
-        self.get_project(id)?;
-        self.store.delete_project(id)?;
-        Ok(())
-    }
-
-    pub fn cleanup_empty_projects(&self) {
-        if let Ok(all) = self.store.list_projects() {
-            for p in all {
-                if p.name.trim().is_empty() {
-                    let _ = self.store.delete_project(&p.project_id);
-                }
-            }
-        }
-    }
-
-    pub fn archive_project(&self, id: &ProjectId) -> Result<Project, ProjectError> {
-        let mut project = self.get_project(id)?;
-        project.current_status = ProjectStatus::Archived;
-        project.updated_at = Utc::now();
-        self.store.put_project(&project)?;
-        Ok(project)
+        let net = client
+            .update_project(&id.to_string(), &jwt, &net_req)
+            .await
+            .map_err(ProjectError::Network)?;
+        Ok(network_project_to_core(&net))
     }
 }

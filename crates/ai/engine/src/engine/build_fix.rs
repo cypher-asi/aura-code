@@ -105,7 +105,7 @@ impl DevLoopEngine {
         // build_steps are not stored in aura-storage
     }
 
-    fn resolve_build_command(
+    async fn resolve_build_command(
         &self, project: &Project, session: &Session, task: &Task,
     ) -> Option<String> {
         let cmd = match &project.build_command {
@@ -133,13 +133,13 @@ impl DevLoopEngine {
                 old = %build_command, new = %corrected,
                 "eagerly rewriting server-starting build command"
             );
-            let _ = self.project_service.update_project(
+            let _ = self.project_service.update_project_async(
                 &project.project_id,
                 aura_projects::UpdateProjectInput {
                     build_command: Some(corrected.clone()),
                     ..Default::default()
                 },
-            );
+            ).await;
             build_command = corrected;
         }
         Some(build_command)
@@ -185,7 +185,7 @@ impl DevLoopEngine {
         Ok((build_result, step_duration_ms))
     }
 
-    fn try_auto_correct_timeout(
+    async fn try_auto_correct_timeout(
         &self, project: &Project, build_command: &str,
     ) -> Option<String> {
         let corrected = auto_correct_build_command(build_command)?;
@@ -193,13 +193,13 @@ impl DevLoopEngine {
             old = %build_command, new = %corrected,
             "build command timed out, auto-correcting"
         );
-        let _ = self.project_service.update_project(
+        let _ = self.project_service.update_project_async(
             &project.project_id,
             aura_projects::UpdateProjectInput {
                 build_command: Some(corrected.clone()),
                 ..Default::default()
             },
-        );
+        ).await;
         Some(corrected)
     }
 
@@ -418,7 +418,7 @@ impl DevLoopEngine {
         baseline_test_failures: &HashSet<String>,
         workspace_cache: &WorkspaceCache,
     ) -> Result<(Vec<FileOp>, bool, u32, u32, u64, u64), EngineError> {
-        let mut build_cmd = match self.resolve_build_command(project, session, task) {
+        let mut build_cmd = match self.resolve_build_command(project, session, task).await {
             Some(cmd) => cmd,
             None => return Ok((vec![], true, 0, 0, 0, 0)),
         };
@@ -434,7 +434,7 @@ impl DevLoopEngine {
                 project, session, task, base_path, &build_cmd, attempt,
             ).await?;
             if br.timed_out {
-                if let Some(c) = self.try_auto_correct_timeout(project, &build_cmd) {
+                if let Some(c) = self.try_auto_correct_timeout(project, &build_cmd).await {
                     build_cmd = c;
                     continue;
                 }

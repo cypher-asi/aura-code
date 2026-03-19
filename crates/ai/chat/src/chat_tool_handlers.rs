@@ -393,14 +393,14 @@ impl ChatToolExecutor {
     // Project operations
     // -----------------------------------------------------------------------
 
-    pub(crate) fn get_project(&self, project_id: &ProjectId) -> ToolExecResult {
-        match self.project_service.get_project(project_id) {
+    pub(crate) async fn get_project(&self, project_id: &ProjectId) -> ToolExecResult {
+        match self.project_service.get_project_async(project_id).await {
             Ok(p) => ToolExecResult::ok(json!(p)),
             Err(e) => ToolExecResult::err(format!("{e:?}")),
         }
     }
 
-    pub(crate) fn update_project(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
+    pub(crate) async fn update_project(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
         let update = UpdateProjectInput {
             name: str_field(input, "name"),
             description: str_field(input, "description"),
@@ -409,7 +409,7 @@ impl ChatToolExecutor {
             test_command: str_field(input, "test_command"),
             ..Default::default()
         };
-        match self.project_service.update_project(project_id, update) {
+        match self.project_service.update_project_async(project_id, update).await {
             Ok(p) => ToolExecResult::ok(json!(p)),
             Err(e) => ToolExecResult::err(format!("{e:?}")),
         }
@@ -419,8 +419,8 @@ impl ChatToolExecutor {
     // Filesystem operations (sandboxed to project folder)
     // -----------------------------------------------------------------------
 
-    fn resolve_project_path(&self, project_id: &ProjectId, rel: &str) -> Result<std::path::PathBuf, ToolExecResult> {
-        let project = self.project_service.get_project(project_id)
+    async fn resolve_project_path(&self, project_id: &ProjectId, rel: &str) -> Result<std::path::PathBuf, ToolExecResult> {
+        let project = self.project_service.get_project_async(project_id).await
             .map_err(|e| ToolExecResult::err(format!("Project not found: {e:?}")))?;
         let base = Path::new(&project.linked_folder_path);
         let target = base.join(rel);
@@ -435,9 +435,9 @@ impl ChatToolExecutor {
         Ok(norm_target)
     }
 
-    pub(crate) fn read_file(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
+    pub(crate) async fn read_file(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
         let rel = str_field(input, "path").unwrap_or_default();
-        let abs = match self.resolve_project_path(project_id, &rel) {
+        let abs = match self.resolve_project_path(project_id, &rel).await {
             Ok(p) => p,
             Err(e) => return e,
         };
@@ -484,10 +484,10 @@ impl ChatToolExecutor {
         }
     }
 
-    pub(crate) fn write_file(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
+    pub(crate) async fn write_file(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
         let rel = str_field(input, "path").unwrap_or_default();
         let content = str_field(input, "content").unwrap_or_default();
-        let abs = match self.resolve_project_path(project_id, &rel) {
+        let abs = match self.resolve_project_path(project_id, &rel).await {
             Ok(p) => p,
             Err(e) => return e,
         };
@@ -539,9 +539,9 @@ impl ChatToolExecutor {
         }
     }
 
-    pub(crate) fn delete_file(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
+    pub(crate) async fn delete_file(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
         let rel = str_field(input, "path").unwrap_or_default();
-        let abs = match self.resolve_project_path(project_id, &rel) {
+        let abs = match self.resolve_project_path(project_id, &rel).await {
             Ok(p) => p,
             Err(e) => return e,
         };
@@ -551,9 +551,9 @@ impl ChatToolExecutor {
         }
     }
 
-    pub(crate) fn list_files(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
+    pub(crate) async fn list_files(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
         let rel = str_field(input, "path").unwrap_or_else(|| ".".to_string());
-        let abs = match self.resolve_project_path(project_id, &rel) {
+        let abs = match self.resolve_project_path(project_id, &rel).await {
             Ok(p) => p,
             Err(e) => return e,
         };
@@ -584,7 +584,7 @@ impl ChatToolExecutor {
     // Targeted editing
     // -----------------------------------------------------------------------
 
-    pub(crate) fn edit_file(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
+    pub(crate) async fn edit_file(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
         let rel = str_field(input, "path").unwrap_or_default();
         let old_text = str_field(input, "old_text").unwrap_or_default();
         let new_text = str_field(input, "new_text").unwrap_or_default();
@@ -600,7 +600,7 @@ impl ChatToolExecutor {
             return ToolExecResult::err("Missing required field: old_text");
         }
 
-        let abs = match self.resolve_project_path(project_id, &rel) {
+        let abs = match self.resolve_project_path(project_id, &rel).await {
             Ok(p) => p,
             Err(e) => return e,
         };
@@ -666,7 +666,7 @@ impl ChatToolExecutor {
         };
 
         let working_dir_rel = str_field(input, "working_dir").unwrap_or_else(|| ".".to_string());
-        let abs_dir = match self.resolve_project_path(project_id, &working_dir_rel) {
+        let abs_dir = match self.resolve_project_path(project_id, &working_dir_rel).await {
             Ok(p) => p,
             Err(e) => return e,
         };
@@ -729,13 +729,13 @@ impl ChatToolExecutor {
     // Search operations
     // -----------------------------------------------------------------------
 
-    pub(crate) fn search_code(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
+    pub(crate) async fn search_code(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
         let pattern = str_field(input, "pattern").unwrap_or_default();
         if pattern.is_empty() {
             return ToolExecResult::err("Missing required field: pattern");
         }
         let rel = str_field(input, "path").unwrap_or_else(|| ".".to_string());
-        let abs = match self.resolve_project_path(project_id, &rel) {
+        let abs = match self.resolve_project_path(project_id, &rel).await {
             Ok(p) => p,
             Err(e) => return e,
         };
@@ -766,13 +766,13 @@ impl ChatToolExecutor {
         }))
     }
 
-    pub(crate) fn find_files(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
+    pub(crate) async fn find_files(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
         let pattern = str_field(input, "pattern").unwrap_or_default();
         if pattern.is_empty() {
             return ToolExecResult::err("Missing required field: pattern");
         }
         let rel = str_field(input, "path").unwrap_or_else(|| ".".to_string());
-        let abs = match self.resolve_project_path(project_id, &rel) {
+        let abs = match self.resolve_project_path(project_id, &rel).await {
             Ok(p) => p,
             Err(e) => return e,
         };
