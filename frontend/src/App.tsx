@@ -14,6 +14,7 @@ import { InviteAcceptView } from "./views/InviteAcceptView";
 import { AgentChatView } from "./apps/agents/AgentChatView";
 import { AgentIndexRedirect } from "./apps/agents/AgentIndexRedirect";
 import { IdeView } from "./views/IdeView";
+import { ProjectEmptyView } from "./views/ProjectEmptyView";
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
                 <Route path="projects" element={<HomeView />} />
                 <Route path="projects/settings" element={<SettingsView />} />
                 <Route path="projects/:projectId" element={<ProjectLayout />}>
+                  <Route index element={<ProjectEmptyView />} />
                   <Route path="agents/:agentInstanceId" element={<ChatView />} />
                   <Route path="execution" element={<ExecutionView />} />
                 </Route>
