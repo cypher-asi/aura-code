@@ -253,6 +253,58 @@ fn test_collect_duplicate_write_paths_deduplicates_paths() {
 }
 
 #[test]
+fn test_detect_same_target_stall_triggers_after_three_no_progress_rounds() {
+    let calls = vec![ToolCall {
+        id: "e1".into(),
+        name: "edit_file".into(),
+        input: serde_json::json!({"path": "src/lib.rs"}),
+    }];
+    let results = vec![ToolCallResult {
+        tool_use_id: "e1".into(),
+        content: "failed".into(),
+        is_error: true,
+        stop_loop: false,
+    }];
+    let mut signature = None;
+    let mut streak = 0usize;
+
+    assert!(!detect_same_target_stall(&calls, &results, &mut signature, &mut streak));
+    assert_eq!(streak, 1);
+    assert!(!detect_same_target_stall(&calls, &results, &mut signature, &mut streak));
+    assert_eq!(streak, 2);
+    assert!(detect_same_target_stall(&calls, &results, &mut signature, &mut streak));
+    assert_eq!(streak, 3);
+}
+
+#[test]
+fn test_detect_same_target_stall_resets_on_success() {
+    let calls = vec![ToolCall {
+        id: "e1".into(),
+        name: "edit_file".into(),
+        input: serde_json::json!({"path": "src/lib.rs"}),
+    }];
+    let fail = vec![ToolCallResult {
+        tool_use_id: "e1".into(),
+        content: "failed".into(),
+        is_error: true,
+        stop_loop: false,
+    }];
+    let ok = vec![ToolCallResult {
+        tool_use_id: "e1".into(),
+        content: "ok".into(),
+        is_error: false,
+        stop_loop: false,
+    }];
+    let mut signature = None;
+    let mut streak = 0usize;
+
+    assert!(!detect_same_target_stall(&calls, &fail, &mut signature, &mut streak));
+    assert_eq!(streak, 1);
+    assert!(!detect_same_target_stall(&calls, &ok, &mut signature, &mut streak));
+    assert_eq!(streak, 0, "successful write should reset stall tracking");
+}
+
+#[test]
 fn test_detect_blocked_reads_blocks_third() {
     let mut counts: HashMap<String, usize> = HashMap::new();
     let calls = vec![

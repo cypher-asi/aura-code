@@ -38,6 +38,8 @@ struct LoopState {
     budget_warning_30_sent: bool,
     budget_warning_60_sent: bool,
     write_file_cooldowns: HashMap<String, usize>,
+    last_write_target_signature: Option<String>,
+    same_target_no_progress_streak: usize,
 }
 
 impl LoopState {
@@ -104,6 +106,8 @@ pub async fn run_tool_loop(
         budget_warning_30_sent: false,
         budget_warning_60_sent: false,
         write_file_cooldowns: HashMap::new(),
+        last_write_target_signature: None,
+        same_target_no_progress_streak: 0,
     };
 
     for iteration in 0..config.max_iterations {
@@ -492,6 +496,7 @@ async fn process_tool_calls(
     state: &mut LoopState,
 ) -> bool {
     const FULL_REWRITE_BLOCK_ITERS: usize = 3;
+    const STALL_FAIL_FAST_STREAK: usize = 3;
 
     let mut assistant_blocks: Vec<ContentBlock> = Vec::new();
     if !iter.iter_text.is_empty() {
@@ -669,6 +674,29 @@ async fn process_tool_calls(
         &mut state.consecutive_cmd_failures,
     );
 
+    let fail_fast_stall = detect_same_target_stall(
+        &iter.iter_tool_calls,
+        &results,
+        &mut state.last_write_target_signature,
+        &mut state.same_target_no_progress_streak,
+    );
+    if fail_fast_stall && state.same_target_no_progress_streak >= STALL_FAIL_FAST_STREAK {
+        let recovery = format!(
+            "[STALL FAIL-FAST] Repeated write/edit attempts are targeting the same file set \
+             without successful progress for {} iterations. Stop this loop now and restart with \
+             a recovery strategy: (1) read a narrow line range, (2) apply a single small edit_file \
+             change, (3) verify, then continue incrementally.",
+            state.same_target_no_progress_streak
+        );
+        warn!(
+            streak = state.same_target_no_progress_streak,
+            "Fail-fast triggered due to same-target no-progress stall"
+        );
+        let _ = event_tx.send(ToolLoopEvent::Error(recovery.clone()));
+        state.api_messages.push(RichMessage::user(&recovery));
+        return true;
+    }
+
     let exploration_count = iter.iter_tool_calls
         .iter()
         .enumerate()
@@ -764,6 +792,46 @@ fn decrement_write_file_cooldowns(cooldowns: &mut HashMap<String, usize>) {
         *remaining -= 1;
         *remaining > 0
     });
+}
+
+fn detect_same_target_stall(
+    tool_calls: &[ToolCall],
+    results: &[ToolCallResult],
+    last_signature: &mut Option<String>,
+    no_progress_streak: &mut usize,
+) -> bool {
+    let mut write_paths: Vec<String> = Vec::new();
+    let mut had_write_success = false;
+
+    for (tc, result) in tool_calls.iter().zip(results.iter()) {
+        if matches!(tc.name.as_str(), "write_file" | "edit_file") {
+            if let Some(path) = tc.input.get("path").and_then(|v| v.as_str()) {
+                write_paths.push(path.to_string());
+            }
+            if !result.is_error {
+                had_write_success = true;
+            }
+        }
+    }
+
+    if write_paths.is_empty() || had_write_success {
+        *last_signature = None;
+        *no_progress_streak = 0;
+        return false;
+    }
+
+    write_paths.sort();
+    write_paths.dedup();
+    let signature = write_paths.join("|");
+
+    if last_signature.as_deref() == Some(signature.as_str()) {
+        *no_progress_streak += 1;
+    } else {
+        *last_signature = Some(signature);
+        *no_progress_streak = 1;
+    }
+
+    *no_progress_streak >= 3
 }
 
 #[cfg(test)]
