@@ -13,10 +13,10 @@ use tracing::{info, warn};
 use axum::http::StatusCode;
 
 use aura_core::{
-    Agent, AgentId, AgentInstance, AgentInstanceId, AgentStatus, Message, ProfileId, ProjectId,
-    Session, SessionId, SessionStatus, Task, ZeroAuthSession,
+    Agent, AgentId, AgentInstance, AgentInstanceId, AgentStatus, ChatRole, Message, MessageId,
+    ProfileId, ProjectId, Session, SessionId, SessionStatus, Task, ZeroAuthSession,
 };
-use aura_storage::StorageSession;
+use aura_storage::{StorageMessage, StorageSession};
 use aura_agents::{merge_agent_instance, AgentInstanceService};
 use aura_chat::ChatStreamEvent;
 use aura_engine::EngineEvent;
@@ -254,6 +254,39 @@ fn parse_dt(v: &Option<String>) -> DateTime<Utc> {
         .unwrap_or_else(Utc::now)
 }
 
+fn storage_message_to_message(sm: &StorageMessage) -> Message {
+    let message_id = sm
+        .id
+        .parse::<MessageId>()
+        .unwrap_or_else(|_| MessageId::new());
+    let agent_instance_id = sm
+        .project_agent_id
+        .as_deref()
+        .and_then(|s| s.parse::<AgentInstanceId>().ok())
+        .unwrap_or_else(AgentInstanceId::nil);
+    let project_id = sm
+        .project_id
+        .as_deref()
+        .and_then(|s| s.parse::<ProjectId>().ok())
+        .unwrap_or_else(ProjectId::nil);
+    let role = match sm.role.as_deref() {
+        Some("user") => ChatRole::User,
+        Some("assistant") => ChatRole::Assistant,
+        _ => ChatRole::User,
+    };
+    Message {
+        message_id,
+        agent_instance_id,
+        project_id,
+        role,
+        content: sm.content.clone().unwrap_or_default(),
+        content_blocks: None,
+        thinking: None,
+        thinking_duration_ms: None,
+        created_at: parse_dt(&sm.created_at),
+    }
+}
+
 fn storage_session_to_session(s: StorageSession) -> Result<Session, String> {
     Ok(Session {
         session_id: s.id.parse().map_err(|e| format!("invalid session id: {e}"))?,
@@ -468,10 +501,52 @@ pub async fn list_agent_messages(
     State(state): State<AppState>,
     Path(agent_id): Path<AgentId>,
 ) -> ApiResult<Json<Vec<Message>>> {
-    let messages = state
-        .chat_service
+    // Aggregate messages across all project agents matching this agent_id
+    if let (Some(ref storage), Ok(jwt)) = (&state.storage_client, state.get_jwt()) {
+        let all_projects = state.project_service.list_projects().unwrap_or_default();
+        let agent_id_str = agent_id.to_string();
+        let mut messages = Vec::new();
+
+        for project in &all_projects {
+            let pid = project.project_id.to_string();
+            let agents = storage
+                .list_project_agents(&pid, &jwt)
+                .await
+                .unwrap_or_default();
+
+            for pa in agents
+                .iter()
+                .filter(|a| a.agent_id.as_deref() == Some(&agent_id_str))
+            {
+                let sessions = storage
+                    .list_sessions(&pa.id, &jwt)
+                    .await
+                    .unwrap_or_default();
+
+                for session in &sessions {
+                    if let Ok(session_msgs) =
+                        storage.list_messages(&session.id, &jwt, None, None).await
+                    {
+                        for sm in &session_msgs {
+                            messages.push(storage_message_to_message(sm));
+                        }
+                    }
+                }
+            }
+        }
+
+        if !messages.is_empty() {
+            messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+            return Ok(Json(messages));
+        }
+    }
+
+    // Fallback: local agent-level messages (deprecated, removed in Phase 9)
+    let mut messages = state
+        .store
         .list_agent_messages(&agent_id)
         .map_err(|e| ApiError::internal(e.to_string()))?;
+    messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
     Ok(Json(messages))
 }
 
@@ -643,12 +718,27 @@ pub async fn send_agent_message_stream(
 
 pub async fn list_messages(
     State(state): State<AppState>,
-    Path((project_id, agent_instance_id)): Path<(ProjectId, AgentInstanceId)>,
+    Path((_project_id, agent_instance_id)): Path<(ProjectId, AgentInstanceId)>,
 ) -> ApiResult<Json<Vec<Message>>> {
-    let messages = state
-        .chat_service
-        .list_messages(&project_id, &agent_instance_id)
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let storage = state.require_storage_client()?;
+    let jwt = state.get_jwt()?;
+
+    let sessions = storage
+        .list_sessions(&agent_instance_id.to_string(), &jwt)
+        .await
+        .unwrap_or_default();
+
+    let mut messages = Vec::new();
+    for session in &sessions {
+        if let Ok(session_msgs) =
+            storage.list_messages(&session.id, &jwt, None, None).await
+        {
+            for sm in &session_msgs {
+                messages.push(storage_message_to_message(sm));
+            }
+        }
+    }
+    messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
     Ok(Json(messages))
 }
 

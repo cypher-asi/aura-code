@@ -219,7 +219,7 @@ impl DevLoopEngine {
             String::new(),
             self.current_user_id(),
             Some(self.llm_config.default_model.clone()),
-        )?;
+        ).await?;
 
         let (stop_tx, stop_rx) = watch::channel(LoopCommand::Continue);
 
@@ -324,7 +324,7 @@ impl DevLoopEngine {
             ).await?;
             let failed = ctx.process_outcome(self, &task, outcome).await?;
             self.agent_instance_service.finish_working(&project_id, &agent_instance_id).await?;
-            if self.llm.is_credits_exhausted() { return Ok(ctx.handle_credits_exhausted(self)); }
+            if self.llm.is_credits_exhausted() { return Ok(ctx.handle_credits_exhausted(self).await); }
             if failed { continue; }
             if let Some(out) = ctx.try_session_rollover(self, &mut stop_rx).await? {
                 return Ok(out);

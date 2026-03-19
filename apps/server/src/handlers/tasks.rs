@@ -236,8 +236,25 @@ pub async fn get_progress(
     aggregate_session_metrics(&state, &project_id, &mut progress).await;
     aggregate_agent_instance_metrics(&state, &project_id, &mut progress).await;
 
-    if let Ok(count) = state.store.count_messages_by_project(&project_id) {
-        progress.total_messages = count as u64;
+    // Count messages from aura-storage (aggregate across agent sessions)
+    if let (Some(ref storage), Ok(jwt)) = (&state.storage_client, state.get_jwt()) {
+        let agents = storage
+            .list_project_agents(&project_id.to_string(), &jwt)
+            .await
+            .unwrap_or_default();
+        let mut msg_count: u64 = 0;
+        for agent in &agents {
+            let sessions = storage
+                .list_sessions(&agent.id, &jwt)
+                .await
+                .unwrap_or_default();
+            for session in &sessions {
+                if let Ok(msgs) = storage.list_messages(&session.id, &jwt, None, None).await {
+                    msg_count += msgs.len() as u64;
+                }
+            }
+        }
+        progress.total_messages = msg_count;
     }
 
     aggregate_repo_metrics(&state, &project_id, &mut progress).await;

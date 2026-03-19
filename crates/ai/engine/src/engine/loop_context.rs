@@ -133,13 +133,13 @@ impl LoopRunContext {
     // Stop / pause plumbing
     // ------------------------------------------------------------------
 
-    fn end_session(&self, engine: &DevLoopEngine) {
+    async fn end_session(&self, engine: &DevLoopEngine) {
         if let Err(e) = engine.session_service.end_session(
             &self.project_id,
             &self.agent_instance_id,
             &self.session.session_id,
             SessionStatus::Completed,
-        ) {
+        ).await {
             warn!(error = %e, "failed to end session");
         }
     }
@@ -154,8 +154,8 @@ impl LoopRunContext {
         }
     }
 
-    fn handle_pause(&mut self, engine: &DevLoopEngine) -> LoopOutcome {
-        self.end_session(engine);
+    async fn handle_pause(&mut self, engine: &DevLoopEngine) -> LoopOutcome {
+        self.end_session(engine).await;
         engine.emit(EngineEvent::LoopPaused {
             project_id: self.project_id,
             agent_instance_id: self.agent_instance_id,
@@ -165,8 +165,8 @@ impl LoopRunContext {
         LoopOutcome::Paused { completed_count: self.completed_count }
     }
 
-    fn handle_stop(&mut self, engine: &DevLoopEngine) -> LoopOutcome {
-        self.end_session(engine);
+    async fn handle_stop(&mut self, engine: &DevLoopEngine) -> LoopOutcome {
+        self.end_session(engine).await;
         engine.emit(EngineEvent::LoopStopped {
             project_id: self.project_id,
             agent_instance_id: self.agent_instance_id,
@@ -176,14 +176,15 @@ impl LoopRunContext {
         LoopOutcome::Stopped { completed_count: self.completed_count }
     }
 
-    fn stop_or_pause(
+    async fn stop_or_pause(
         &mut self,
         engine: &DevLoopEngine,
         stop_rx: &watch::Receiver<LoopCommand>,
     ) -> LoopOutcome {
-        match *stop_rx.borrow() {
-            LoopCommand::Stop => self.handle_stop(engine),
-            _ => self.handle_pause(engine),
+        let cmd = *stop_rx.borrow();
+        match cmd {
+            LoopCommand::Stop => self.handle_stop(engine).await,
+            _ => self.handle_pause(engine).await,
         }
     }
 
@@ -196,11 +197,11 @@ impl LoopRunContext {
         match cmd {
             LoopCommand::Pause => {
                 self.finish_working(engine).await;
-                Some(self.handle_pause(engine))
+                Some(self.handle_pause(engine).await)
             }
             LoopCommand::Stop => {
                 self.finish_working(engine).await;
-                Some(self.handle_stop(engine))
+                Some(self.handle_stop(engine).await)
             }
             LoopCommand::Continue => None,
         }
@@ -226,7 +227,7 @@ impl LoopRunContext {
             task_id: task.task_id,
         });
         self.finish_working(engine).await;
-        self.stop_or_pause(engine, stop_rx)
+        self.stop_or_pause(engine, stop_rx).await
     }
 
     // ------------------------------------------------------------------
@@ -295,7 +296,7 @@ impl LoopRunContext {
             &self.agent_instance_id,
             &self.session.session_id,
             task.task_id,
-        )?;
+        ).await?;
         engine.agent_instance_service.start_working(
             &self.project_id,
             &self.agent_instance_id,
@@ -488,7 +489,7 @@ impl LoopRunContext {
         } else {
             "all_tasks_complete"
         };
-        self.end_session(engine);
+        self.end_session(engine).await;
         engine.emit(self.build_finished_event(engine, outcome_str));
         self.flush_metrics(outcome_str);
         if outcome_str == "all_tasks_blocked" {
@@ -498,9 +499,9 @@ impl LoopRunContext {
         }
     }
 
-    pub fn handle_credits_exhausted(&mut self, engine: &DevLoopEngine) -> LoopOutcome {
+    pub async fn handle_credits_exhausted(&mut self, engine: &DevLoopEngine) -> LoopOutcome {
         warn!("Credits exhausted, stopping engine loop");
-        self.end_session(engine);
+        self.end_session(engine).await;
         engine.emit(self.build_finished_event(engine, "insufficient_credits"));
         self.flush_metrics("insufficient_credits");
         LoopOutcome::AllTasksBlocked
@@ -519,7 +520,7 @@ impl LoopRunContext {
             &self.project_id,
             &self.agent_instance_id,
             &self.session.session_id,
-        )?;
+        ).await?;
         if !engine.session_service.should_rollover(&current_session) {
             return Ok(None);
         }
@@ -541,7 +542,7 @@ impl LoopRunContext {
             ) => { res? }
             _ = stop_rx.changed() => {
                 self.finish_working(engine).await;
-                return Ok(Some(self.stop_or_pause(engine, stop_rx)));
+                return Ok(Some(self.stop_or_pause(engine, stop_rx).await));
             }
         };
         let summary_duration_ms = summary_start.elapsed().as_millis() as u64;
@@ -552,7 +553,7 @@ impl LoopRunContext {
             &self.session.session_id,
             summary,
             None,
-        )?;
+        ).await?;
         engine.emit(EngineEvent::SessionRolledOver {
             project_id: self.project_id,
             agent_instance_id: self.agent_instance_id,

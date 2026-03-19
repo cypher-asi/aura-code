@@ -8,6 +8,7 @@ use aura_billing::MeteredLlm;
 use aura_settings::SettingsService;
 use aura_storage::StorageClient;
 use aura_store::RocksStore;
+use tracing::warn;
 
 use aura_claude::{
     ContentBlock, ImageSource, MessageContent, RichMessage,

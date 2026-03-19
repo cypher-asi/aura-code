@@ -74,7 +74,7 @@ impl DevLoopEngine {
         let session = self.session_service.create_session(
             &agent.agent_instance_id, &project_id, None,
             String::new(), user_id.clone(), model.clone(),
-        )?;
+        ).await?;
 
         self.task_service.assign_task(
             &project_id, &task.spec_id, &task.task_id,
@@ -82,7 +82,7 @@ impl DevLoopEngine {
         ).await?;
         self.session_service.record_task_worked(
             &project_id, &agent.agent_instance_id, &session.session_id, task.task_id,
-        )?;
+        ).await?;
         self.agent_instance_service.start_working(
             &project_id, &agent.agent_instance_id, &task.task_id, &session.session_id,
         ).await?;
@@ -126,7 +126,7 @@ impl DevLoopEngine {
         self.create_follow_ups_if_completed(&task, &outcome, project_id, aiid).await;
 
         let end_status = if outcome.is_completed() { SessionStatus::Completed } else { SessionStatus::Failed };
-        if let Err(e) = self.session_service.end_session(&project_id, &aiid, &session.session_id, end_status) {
+        if let Err(e) = self.session_service.end_session(&project_id, &aiid, &session.session_id, end_status).await {
             warn!(error = %e, "failed to end session after single task");
         }
         if let Err(e) = self.agent_instance_service.finish_working(&project_id, &aiid).await {
@@ -292,7 +292,7 @@ impl DevLoopEngine {
         if let Err(e2) = self.session_service.update_context_usage(
             &project_id, &agent_instance_id, &session.session_id,
             execution.input_tokens, execution.output_tokens,
-        ) { warn!(error = %e2, "failed to update context usage"); }
+        ).await { warn!(error = %e2, "failed to update context usage"); }
         TaskOutcome::Failed {
             reason, phase: "file_ops".to_string(), credit_failure: false,
             timings: TaskTimings {
@@ -360,7 +360,7 @@ impl DevLoopEngine {
         if let Err(e) = self.session_service.update_context_usage(
             &project_id, &agent_instance_id, &session.session_id,
             total_input, total_output,
-        ) { warn!(error = %e, "failed to update context usage"); }
+        ).await { warn!(error = %e, "failed to update context usage"); }
         TaskOutcome::Failed {
             reason, phase: "build_verify".to_string(), credit_failure: false, timings,
         }
@@ -418,7 +418,7 @@ impl DevLoopEngine {
         if let Err(e) = self.session_service.update_context_usage(
             &project_id, &agent_instance_id, &session.session_id,
             total_input, total_output,
-        ) { warn!(error = %e, "failed to update context usage"); }
+        ).await { warn!(error = %e, "failed to update context usage"); }
     }
 
     fn record_single_task_metrics(
