@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useOrg } from "../context/OrgContext";
 import { useAuth } from "../context/AuthContext";
 import { api, ApiClientError } from "../api/client";
-import { Modal, Navigator, Input, Button, Text } from "@cypher-asi/zui";
+import { Modal, Navigator } from "@cypher-asi/zui";
 import type { NavigatorItemProps } from "@cypher-asi/zui";
 import { Settings, Users, Mail, CreditCard } from "lucide-react";
 import type { OrgInvite, OrgBilling, OrgRole, CreditTier, CreditBalance } from "../types";

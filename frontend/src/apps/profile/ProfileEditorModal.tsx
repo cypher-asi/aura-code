@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Modal, Input, Textarea, Button, Text } from "@cypher-asi/zui";
-import { api } from "../../api/client";
+import { Modal, Input, Textarea, Button } from "@cypher-asi/zui";
 import type { UserProfileData } from "./ProfileProvider";
 import styles from "../../components/AgentEditorModal.module.css";
 
