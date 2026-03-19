@@ -60,7 +60,7 @@ pub struct AppState {
     pub storage_client: Option<Arc<StorageClient>>,
     /// Orbit REST client (always present).
     pub orbit_client: Arc<OrbitClient>,
-    /// Orbit base URL. `None` when `ORBIT_BASE_URL` is not set.
+    /// URL of the standalone Orbit service; `None` when `ORBIT_BASE_URL` is not set. Aura does not run Orbit; it only connects as a client.
     pub orbit_base_url: Option<String>,
     /// In-memory runtime state for agent instances (current_task_id, current_session_id).
     pub runtime_agent_state: RuntimeAgentStateMap,
