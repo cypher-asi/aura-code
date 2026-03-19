@@ -11,7 +11,7 @@ import { useProjectContext } from "../context/ProjectContext";
 import { useEventContext, useTaskOutput, type BuildStep, type TestStep } from "../context/EventContext";
 import { TaskStatusIcon } from "./TaskStatusIcon";
 import { toBullets, formatTokens, formatModelName } from "../utils/format";
-import { formatCostFromTokens } from "../utils/pricing";
+import { formatCostFromTokens, getCostEstimateLabel } from "../utils/pricing";
 import { parseTaskStream } from "../utils/parse-task-stream";
 import { deriveActivity, computeIterationStats } from "../utils/derive-activity";
 import { useLoopActive } from "../hooks/use-loop-active";
@@ -626,7 +626,7 @@ export function TaskPreview({ task }: { task: import("../types").Task }) {
                 <Text variant="muted" size="sm" as="span"> ({formatTokens(task.total_input_tokens)} in / {formatTokens(task.total_output_tokens)} out)</Text>
               </Text>
             </div>
-            <div className={styles.taskField}>
+            <div className={styles.taskField} title={getCostEstimateLabel()}>
               <span className={styles.fieldLabel}>Cost</span>
               <Text size="sm">{formatCostFromTokens(task.total_input_tokens, task.total_output_tokens, task.model ?? undefined)}</Text>
             </div>

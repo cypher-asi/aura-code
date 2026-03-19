@@ -175,6 +175,11 @@ export const api = {
     apiFetch<{ model: string; input_cost_per_million: number; output_cost_per_million: number; effective_date: string }[]>(
       "/api/settings/fee-schedule",
     ),
+  putFeeSchedule: (entries: { model: string; input_cost_per_million: number; output_cost_per_million: number; effective_date: string }[]) =>
+    apiFetch<{ model: string; input_cost_per_million: number; output_cost_per_million: number; effective_date: string }[]>(
+      "/api/settings/fee-schedule",
+      { method: "PUT", body: JSON.stringify(entries) },
+    ),
 
   // Orgs
   orgs: {
