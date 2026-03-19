@@ -485,6 +485,7 @@ dependencies = [
  "aura-core",
  "aura-store",
  "chrono",
+ "serde_json",
  "thiserror 1.0.69",
  "uuid",
 ]

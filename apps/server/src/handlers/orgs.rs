@@ -1,9 +1,8 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
-use chrono::{DateTime, Utc};
 use serde::Serialize;
-use tracing::{warn, info};
+use tracing::{info, warn};
 
 use aura_core::*;
 use aura_network::{NetworkOrg, NetworkOrgInvite, NetworkOrgMember};
@@ -256,49 +255,8 @@ async fn require_org_owner_or_admin(
     }
 }
 
-/// Ensure a local shadow org exists in RocksDB so billing handlers work.
-fn ensure_local_shadow(state: &AppState, net: &NetworkOrg) {
-    let org_id: OrgId = match net.id.parse() {
-        Ok(id) => id,
-        Err(_) => return,
-    };
-    let owner_user_id: UserId = match net.owner_user_id.parse() {
-        Ok(id) => id,
-        Err(_) => return,
-    };
-    if state.store.get_org(&org_id).is_ok() {
-        return;
-    }
-    let now = net
-        .created_at
-        .as_deref()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(Utc::now);
-    let local = Org {
-        org_id,
-        name: net.name.clone(),
-        owner_user_id,
-        billing: None,
-        created_at: now,
-        updated_at: now,
-    };
-    if let Err(e) = state.store.put_org(&local) {
-        warn!(org_id = %net.id, error = %e, "Failed to create local org shadow");
-    }
-}
-
-/// Look up local billing data for a network org.
-fn local_billing(state: &AppState, net_id: &str) -> Option<OrgBilling> {
-    net_id
-        .parse::<OrgId>()
-        .ok()
-        .and_then(|id| state.store.get_org(&id).ok())
-        .and_then(|org| org.billing)
-}
-
 // ---------------------------------------------------------------------------
-// Org CRUD — proxied to aura-network
+// Org CRUD — network only; billing from settings
 // ---------------------------------------------------------------------------
 
 pub async fn list_orgs(State(state): State<AppState>) -> ApiResult<Json<Vec<OrgResponse>>> {
@@ -306,14 +264,10 @@ pub async fn list_orgs(State(state): State<AppState>) -> ApiResult<Json<Vec<OrgR
     let jwt = state.get_jwt()?;
     let net_orgs = client.list_orgs(&jwt).await.map_err(map_network_error)?;
 
-    for net in &net_orgs {
-        ensure_local_shadow(&state, net);
-    }
-
     let responses = net_orgs
         .iter()
         .map(|net| {
-            let billing = local_billing(&state, &net.id);
+            let billing = net.id.parse::<OrgId>().ok().and_then(|id| state.org_service.get_billing(&id).ok().flatten());
             OrgResponse::from_network(net, billing)
         })
         .collect();
@@ -338,9 +292,8 @@ pub async fn create_org(
         .await
         .map_err(map_network_error)?;
 
-    ensure_local_shadow(&state, &net_org);
-
-    Ok((StatusCode::CREATED, Json(OrgResponse::from_network(&net_org, None))))
+    let billing = net_org.id.parse::<OrgId>().ok().and_then(|id| state.org_service.get_billing(&id).ok().flatten());
+    Ok((StatusCode::CREATED, Json(OrgResponse::from_network(&net_org, billing))))
 }
 
 pub async fn get_org(
@@ -355,9 +308,7 @@ pub async fn get_org(
         .await
         .map_err(map_network_error)?;
 
-    ensure_local_shadow(&state, &net_org);
-    let billing = local_billing(&state, &net_org.id);
-
+    let billing = state.org_service.get_billing(&org_id).ok().flatten();
     Ok(Json(OrgResponse::from_network(&net_org, billing)))
 }
 
@@ -379,13 +330,7 @@ pub async fn update_org(
         .await
         .map_err(map_network_error)?;
 
-    if let Ok(mut local) = state.store.get_org(&org_id) {
-        local.name = net_org.name.clone();
-        local.updated_at = Utc::now();
-        let _ = state.store.put_org(&local);
-    }
-
-    let billing = local_billing(&state, &net_org.id);
+    let billing = state.org_service.get_billing(&org_id).ok().flatten();
     Ok(Json(OrgResponse::from_network(&net_org, billing)))
 }
 
@@ -587,16 +532,16 @@ pub async fn set_billing(
     State(state): State<AppState>,
     Path(org_id): Path<OrgId>,
     Json(req): Json<SetBillingRequest>,
-) -> ApiResult<Json<Org>> {
+) -> ApiResult<Json<OrgBilling>> {
     let billing = OrgBilling {
         billing_email: req.billing_email,
         plan: req.plan,
     };
-    let org = state
+    let billing = state
         .org_service
         .set_billing(&org_id, billing)
         .map_err(map_org_err)?;
-    Ok(Json(org))
+    Ok(Json(billing))
 }
 
 pub async fn get_billing(
