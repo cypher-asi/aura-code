@@ -4,10 +4,9 @@ use tracing::warn;
 
 use aura_claude::{ContentBlock, MessageContent, RichMessage};
 
-use crate::ChatService;
-
-impl ChatService {
-    pub(crate) fn sanitize_orphan_tool_results(messages: Vec<RichMessage>) -> Vec<RichMessage> {
+/// Remove orphan tool_result blocks whose matching tool_use no longer exists
+/// in the preceding assistant message (e.g. after context compaction).
+pub(crate) fn sanitize_orphan_tool_results(messages: Vec<RichMessage>) -> Vec<RichMessage> {
         let mut result = Vec::with_capacity(messages.len());
         for i in 0..messages.len() {
             let msg = &messages[i];
@@ -86,10 +85,13 @@ impl ChatService {
                 result.push(msg.clone());
             }
         }
-        result
-    }
+    result
+}
 
-    pub(crate) fn sanitize_tool_use_results(messages: Vec<RichMessage>) -> Vec<RichMessage> {
+/// Ensure every tool_use block in an assistant message has a corresponding
+/// tool_result in the next user message.  Injects synthetic error results
+/// for any orphaned tool_use blocks.
+pub(crate) fn sanitize_tool_use_results(messages: Vec<RichMessage>) -> Vec<RichMessage> {
         let mut result = Vec::with_capacity(messages.len() + 16);
         let mut i = 0;
         while i < messages.len() {
@@ -168,6 +170,5 @@ impl ChatService {
             }
             i += 1;
         }
-        result
-    }
+    result
 }

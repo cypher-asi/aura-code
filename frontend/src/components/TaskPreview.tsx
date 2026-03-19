@@ -38,15 +38,17 @@ function FileOpIcon({ op }: { op: string }) {
 export function RunTaskButton({ task }: { task: import("../types").Task }) {
   const { subscribe } = useEventContext();
   const ctx = useProjectContext();
-  const sidekick = useSidekick();
   const { agentInstanceId } = useParams<{ agentInstanceId: string }>();
   const projectId = ctx?.project.project_id;
+  const loopActive = useLoopActive(projectId);
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState(task.status);
+  const [liveStatus, setLiveStatus] = useState<string | null>(null);
 
   useEffect(() => {
     setStatus(task.status);
     setRunning(false);
+    setLiveStatus(null);
   }, [task.task_id, task.status]);
 
   useEffect(() => {
@@ -54,15 +56,18 @@ export function RunTaskButton({ task }: { task: import("../types").Task }) {
       subscribe("task_started", (e) => {
         if (e.task_id !== task.task_id) return;
         setStatus("in_progress");
+        setLiveStatus("in_progress");
         setRunning(false);
       }),
       subscribe("task_completed", (e) => {
         if (e.task_id !== task.task_id) return;
         setStatus("done");
+        setLiveStatus("done");
       }),
       subscribe("task_failed", (e) => {
         if (e.task_id !== task.task_id) return;
         setStatus("failed");
+        setLiveStatus("failed");
         setRunning(false);
       }),
     ];
@@ -74,7 +79,6 @@ export function RunTaskButton({ task }: { task: import("../types").Task }) {
     setRunning(true);
     try {
       await api.runTask(projectId, task.task_id, agentInstanceId);
-      sidekick.pushTask({ ...task, status: "in_progress" });
     } catch (err) {
       if (isInsufficientCreditsError(err)) dispatchInsufficientCredits();
       console.error("Run task failed:", err);
@@ -82,7 +86,11 @@ export function RunTaskButton({ task }: { task: import("../types").Task }) {
     }
   }, [projectId, task.task_id, running, agentInstanceId]);
 
-  const visible = status === "ready";
+  const effectiveStatus =
+    status === "in_progress" && !loopActive && liveStatus === null
+      ? "ready"
+      : status;
+  const visible = effectiveStatus === "ready";
 
   return (
     <Button

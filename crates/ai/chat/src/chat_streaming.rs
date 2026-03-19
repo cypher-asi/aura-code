@@ -195,8 +195,8 @@ impl ChatService {
 
         let mut api_messages = crate::chat::convert_messages_to_rich(&stored_messages);
         api_messages = self.manage_context_window(&api_key, &system, api_messages).await;
-        api_messages = Self::sanitize_orphan_tool_results(api_messages);
-        api_messages = Self::sanitize_tool_use_results(api_messages);
+        api_messages = crate::chat_sanitize::sanitize_orphan_tool_results(api_messages);
+        api_messages = crate::chat_sanitize::sanitize_tool_use_results(api_messages);
 
         Some((api_key, system, api_messages, stored_messages))
     }

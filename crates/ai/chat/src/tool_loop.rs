@@ -12,6 +12,7 @@ use aura_billing::{MeteredLlm, MeteredLlmError};
 use crate::compaction;
 
 pub use crate::tool_loop_types::*;
+use crate::chat_sanitize;
 use crate::tool_loop_helpers::{
     detect_blocked_writes, detect_blocked_commands, detect_blocked_reads,
     detect_blocked_exploration, detect_blocked_write_failures,
@@ -140,6 +141,7 @@ pub async fn run_tool_loop(
             !state.write_file_cooldowns.is_empty(),
             &mut state.api_messages,
         );
+        sanitize_after_compaction(&mut state.api_messages);
         append_text(&mut state.total_text, &iter.iter_text);
 
         if iter.stop_reason == "max_tokens" && !iter.iter_tool_calls.is_empty() {
@@ -152,6 +154,7 @@ pub async fn run_tool_loop(
             compaction::compact_older_tool_results_tiered(
                 &mut state.api_messages, 2, &compaction::HISTORY,
             );
+            sanitize_after_compaction(&mut state.api_messages);
             continue;
         }
 
@@ -742,9 +745,19 @@ async fn process_tool_calls(
                 &mut state.api_messages, 4, &compaction::AGGRESSIVE,
             );
         }
+        sanitize_after_compaction(&mut state.api_messages);
     }
 
     should_stop
+}
+
+/// Re-run message sanitization after any compaction pass to fix orphaned
+/// tool_use / tool_result pairs that compaction may have created.
+fn sanitize_after_compaction(messages: &mut Vec<RichMessage>) {
+    let msgs = std::mem::take(messages);
+    let msgs = chat_sanitize::sanitize_orphan_tool_results(msgs);
+    let msgs = chat_sanitize::sanitize_tool_use_results(msgs);
+    *messages = msgs;
 }
 
 fn append_text(total: &mut String, new: &str) {
