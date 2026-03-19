@@ -28,6 +28,8 @@ struct LoopState {
     consecutive_write_tracker: HashMap<String, usize>,
     consecutive_cmd_failures: usize,
     total_read_results: usize,
+    budget_warning_50_sent: bool,
+    budget_warning_75_sent: bool,
 }
 
 impl LoopState {
@@ -86,6 +88,8 @@ pub async fn run_tool_loop(
         consecutive_write_tracker: HashMap::new(),
         consecutive_cmd_failures: 0,
         total_read_results: 0,
+        budget_warning_50_sent: false,
+        budget_warning_75_sent: false,
     };
 
     for iteration in 0..config.max_iterations {
@@ -137,6 +141,34 @@ pub async fn run_tool_loop(
         }
 
         if let Some(budget) = config.credit_budget {
+            let utilization = if budget > 0 {
+                state.cumulative_credits as f64 / budget as f64
+            } else {
+                0.0
+            };
+
+            if utilization >= 0.75 && !state.budget_warning_75_sent {
+                state.budget_warning_75_sent = true;
+                let warning = format!(
+                    "[BUDGET WARNING] You have used ~{:.0}% of your credit budget. \
+                     Wrap up immediately: finish the current edit, verify it compiles, \
+                     and call task_done. Do NOT start new explorations.",
+                    utilization * 100.0,
+                );
+                info!(utilization_pct = (utilization * 100.0) as u32, "Injecting 75% budget warning");
+                state.api_messages.push(RichMessage::user(&warning));
+            } else if utilization >= 0.50 && !state.budget_warning_50_sent {
+                state.budget_warning_50_sent = true;
+                let warning = format!(
+                    "[BUDGET WARNING] You have used ~{:.0}% of your credit budget. \
+                     Prioritize completing the implementation over further exploration. \
+                     Focus on writing and verifying code.",
+                    utilization * 100.0,
+                );
+                info!(utilization_pct = (utilization * 100.0) as u32, "Injecting 50% budget warning");
+                state.api_messages.push(RichMessage::user(&warning));
+            }
+
             let next_estimate = llm.estimate_credits(billing_model, iter.input_tokens, 0);
             if state.cumulative_credits + next_estimate > budget {
                 warn!(
