@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::convert::Infallible;
 
 use axum::extract::{Path, State};
@@ -18,6 +19,8 @@ use aura_core::{
 use aura_chat::ChatStreamEvent;
 use aura_engine::EngineEvent;
 use aura_network::NetworkAgent;
+
+use crate::state::RuntimeAgentState;
 
 use crate::dto::{
     CreateAgentInstanceRequest, CreateAgentRequest, SendMessageRequest, UpdateAgentInstanceRequest,
@@ -208,7 +211,15 @@ fn parse_agent_status(s: &str) -> AgentStatus {
     }
 }
 
-fn storage_agent_to_instance(spa: &aura_storage::StorageProjectAgent) -> AgentInstance {
+/// Merge three sources into a single `AgentInstance`:
+/// - `spa`: execution state from aura-storage (status, model, tokens, timestamps)
+/// - `agent`: config from aura-network Agent (name, role, personality, etc.) -- falls back to storage fields if the network Agent is unavailable
+/// - `runtime`: volatile runtime state from in-memory map (current_task_id, current_session_id)
+fn merge_agent_instance(
+    spa: &aura_storage::StorageProjectAgent,
+    agent: Option<&Agent>,
+    runtime: Option<&RuntimeAgentState>,
+) -> AgentInstance {
     AgentInstance {
         agent_instance_id: spa.id.parse().unwrap_or_else(|_| AgentInstanceId::new()),
         project_id: spa
@@ -217,31 +228,81 @@ fn storage_agent_to_instance(spa: &aura_storage::StorageProjectAgent) -> AgentIn
             .unwrap_or("")
             .parse()
             .unwrap_or_else(|_| ProjectId::new()),
-        agent_id: spa
-            .agent_id
-            .as_deref()
-            .unwrap_or("")
-            .parse()
-            .unwrap_or_else(|_| AgentId::new()),
-        name: spa.name.clone().unwrap_or_default(),
-        role: spa.role.clone().unwrap_or_default(),
-        personality: spa.personality.clone().unwrap_or_default(),
-        system_prompt: spa.system_prompt.clone().unwrap_or_default(),
-        skills: spa.skills.clone().unwrap_or_default(),
-        icon: spa.icon.clone(),
+        agent_id: agent
+            .map(|a| a.agent_id)
+            .or_else(|| {
+                spa.agent_id
+                    .as_deref()
+                    .and_then(|s| s.parse().ok())
+            })
+            .unwrap_or_else(AgentId::new),
+        name: agent
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| spa.name.clone().unwrap_or_default()),
+        role: agent
+            .map(|a| a.role.clone())
+            .unwrap_or_else(|| spa.role.clone().unwrap_or_default()),
+        personality: agent
+            .map(|a| a.personality.clone())
+            .unwrap_or_else(|| spa.personality.clone().unwrap_or_default()),
+        system_prompt: agent
+            .map(|a| a.system_prompt.clone())
+            .unwrap_or_else(|| spa.system_prompt.clone().unwrap_or_default()),
+        skills: agent
+            .map(|a| a.skills.clone())
+            .unwrap_or_else(|| spa.skills.clone().unwrap_or_default()),
+        icon: agent
+            .and_then(|a| a.icon.clone())
+            .or_else(|| spa.icon.clone()),
         status: spa
             .status
             .as_deref()
             .map(parse_agent_status)
             .unwrap_or(AgentStatus::Idle),
-        current_task_id: None,
-        current_session_id: None,
+        current_task_id: runtime.and_then(|r| r.current_task_id),
+        current_session_id: runtime.and_then(|r| r.current_session_id),
         total_input_tokens: spa.total_input_tokens.unwrap_or(0),
         total_output_tokens: spa.total_output_tokens.unwrap_or(0),
         model: spa.model.clone(),
         created_at: parse_dt_opt(&spa.created_at),
         updated_at: parse_dt_opt(&spa.updated_at),
     }
+}
+
+/// Fetch all agents from the network, returning a map by network agent ID.
+/// Falls back to an empty map if the network is unavailable.
+async fn resolve_network_agents(state: &AppState, jwt: &str) -> HashMap<String, Agent> {
+    if let Some(ref client) = state.network_client {
+        if let Ok(net_agents) = client.list_agents(jwt).await {
+            return net_agents
+                .iter()
+                .map(|na| (na.id.clone(), agent_from_network(na)))
+                .collect();
+        }
+    }
+    HashMap::new()
+}
+
+/// Fetch a single agent's config from the network (or local shadow).
+async fn resolve_single_agent(state: &AppState, jwt: &str, agent_id: &str) -> Option<Agent> {
+    if let Some(ref client) = state.network_client {
+        if let Ok(net_agent) = client.get_agent(agent_id, jwt).await {
+            return Some(agent_from_network(&net_agent));
+        }
+    }
+    // Fall back to local shadow
+    if let Ok(aid) = agent_id.parse::<AgentId>() {
+        if let Ok(uid) = get_user_id_opt(state) {
+            return state.agent_service.get_agent(&uid, &aid).ok();
+        }
+    }
+    None
+}
+
+fn get_user_id_opt(state: &AppState) -> Result<String, ()> {
+    let session_bytes = state.store.get_setting("zero_auth_session").map_err(|_| ())?;
+    let session: ZeroAuthSession = serde_json::from_slice(&session_bytes).map_err(|_| ())?;
+    Ok(session.user_id)
 }
 
 // ---------------------------------------------------------------------------
@@ -293,7 +354,7 @@ pub async fn create_agent_instance(
         .await
         .map_err(map_storage_error)?;
 
-    let instance = storage_agent_to_instance(&storage_agent);
+    let instance = merge_agent_instance(&storage_agent, Some(&agent), None);
     Ok(Json(instance))
 }
 
@@ -307,9 +368,18 @@ pub async fn list_agent_instances(
         .list_project_agents(&project_id.to_string(), &jwt)
         .await
         .map_err(map_storage_error)?;
+
+    let agent_map = resolve_network_agents(&state, &jwt).await;
+    let runtime_map = state.runtime_agent_state.lock().await;
+
     let instances: Vec<AgentInstance> = storage_agents
         .iter()
-        .map(storage_agent_to_instance)
+        .map(|spa| {
+            let agent = spa.agent_id.as_deref().and_then(|aid| agent_map.get(aid));
+            let aiid = spa.id.parse::<AgentInstanceId>().ok();
+            let runtime = aiid.and_then(|id| runtime_map.get(&id));
+            merge_agent_instance(spa, agent, runtime)
+        })
         .collect();
     Ok(Json(instances))
 }
@@ -329,7 +399,15 @@ pub async fn get_agent_instance(
             }
             _ => map_storage_error(e),
         })?;
-    let instance = storage_agent_to_instance(&storage_agent);
+
+    let agent = if let Some(ref aid) = storage_agent.agent_id {
+        resolve_single_agent(&state, &jwt, aid).await
+    } else {
+        None
+    };
+    let runtime_map = state.runtime_agent_state.lock().await;
+    let runtime = runtime_map.get(&agent_instance_id);
+    let instance = merge_agent_instance(&storage_agent, agent.as_ref(), runtime);
     Ok(Json(instance))
 }
 
@@ -355,7 +433,15 @@ pub async fn update_agent_instance(
         .get_project_agent(&agent_instance_id.to_string(), &jwt)
         .await
         .map_err(map_storage_error)?;
-    let instance = storage_agent_to_instance(&storage_agent);
+
+    let agent = if let Some(ref aid) = storage_agent.agent_id {
+        resolve_single_agent(&state, &jwt, aid).await
+    } else {
+        None
+    };
+    let runtime_map = state.runtime_agent_state.lock().await;
+    let runtime = runtime_map.get(&agent_instance_id);
+    let instance = merge_agent_instance(&storage_agent, agent.as_ref(), runtime);
     Ok(Json(instance))
 }
 
