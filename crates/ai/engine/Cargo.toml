@@ -26,6 +26,10 @@ tracing = "0.1"
 regex = "1"
 futures = "0.3"
 
+[features]
+# Gated orchestrator_loop tests (local task/spec seeding). Never set in production; used only when rewriting tests to use StorageClient mock.
+_local_task_tests = []
+
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["full", "test-util"] }

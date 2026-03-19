@@ -1,3 +1,7 @@
+// Project-scoped and agent-level message persistence.
+// Phase 9: Messages CF kept for project-scoped read path and agent-level (multi-project) chat;
+// remove only after project messages are read from aura-storage only and/or agent-level storage is designed.
+
 use std::sync::Arc;
 
 use aura_core::*;

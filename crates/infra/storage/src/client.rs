@@ -34,7 +34,7 @@ impl StorageClient {
         })
     }
 
-    #[cfg(test)]
+    /// Create a client with an explicit base URL (e.g. for tests or custom deployment).
     pub fn with_base_url(base_url: &str) -> Self {
         Self {
             http: Client::new(),

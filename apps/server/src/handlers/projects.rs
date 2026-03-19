@@ -95,6 +95,9 @@ pub async fn create_project(
     State(state): State<AppState>,
     Json(req): Json<CreateProjectRequest>,
 ) -> ApiResult<(StatusCode, Json<Project>)> {
+    if req.name.trim().is_empty() {
+        return Err(ApiError::bad_request("name must not be empty"));
+    }
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
 
