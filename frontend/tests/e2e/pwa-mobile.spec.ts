@@ -219,8 +219,9 @@ test("mobile new project modal presents local file actions", async ({ page, brow
   await page.goto("/projects");
 
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await expect(page.getByTitle("New Project")).toBeVisible();
-  await page.getByTitle("New Project").click({ force: true });
+  const newProjectButton = page.locator('button[title="New Project"]:visible');
+  await expect(newProjectButton).toBeVisible();
+  await newProjectButton.click();
 
   await expect(page.getByPlaceholder("Project name")).toBeVisible();
   await expect(page.getByText("Choose a folder or files from this device to start a project.")).toBeVisible();
@@ -236,7 +237,7 @@ test("mobile new project modal falls back to an existing project org when org lo
   await page.goto("/projects");
 
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByTitle("New Project").click({ force: true });
+  await page.locator('button[title="New Project"]:visible').click();
 
   await expect(page.getByPlaceholder("Project name")).toBeVisible();
   await expect(page.getByText("No team found. Log out and back in to create a default team.")).toHaveCount(0);
@@ -250,7 +251,7 @@ test("mobile file selection keeps the new project modal open", async ({ page, br
   await page.goto("/projects");
 
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByTitle("New Project").click({ force: true });
+  await page.locator('button[title="New Project"]:visible').click();
 
   await expect(page.getByPlaceholder("Project name")).toBeVisible();
 
@@ -272,7 +273,7 @@ test("mobile new project modal restores after a reload-like remount", async ({ p
   await page.goto("/projects");
 
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByTitle("New Project").click({ force: true });
+  await page.locator('button[title="New Project"]:visible').click();
 
   await page.getByPlaceholder("Project name").fill("Restore me");
   await page.getByPlaceholder("Description (optional)").fill("Android lifecycle check");
@@ -335,7 +336,7 @@ test("manifest and service worker assets are reachable", async ({ page }) => {
   expect(manifestResponse.ok()).toBeTruthy();
 
   const manifest = await manifestResponse.json();
-  expect(manifest.name).toBe("Aura Mobile Companion");
+  expect(manifest.name).toBe("AURA");
   expect(manifest.display).toBe("standalone");
   expect(manifest.icons).toEqual(
     expect.arrayContaining([

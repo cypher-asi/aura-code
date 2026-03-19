@@ -100,13 +100,13 @@ test("agents route keeps shared content with responsive navigation affordances",
   await page.goto("/agents/agent-1");
 
   await expect(page.getByText("Chat with Builder Bot")).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: "Builder Bot" })).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: "Research Bot" })).toBeVisible();
 
   if (factor === "desktop") {
     await expect(page.getByPlaceholder("Search Agents...")).toBeVisible();
-    await expect(page.getByRole("treeitem", { name: "Builder Bot" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open navigation" })).toHaveCount(0);
   } else {
-    await expect(page.getByRole("treeitem", { name: "Builder Bot" })).toBeVisible();
-    await expect(page.getByRole("treeitem", { name: "Research Bot" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
   }
 });

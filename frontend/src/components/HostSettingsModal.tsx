@@ -62,7 +62,7 @@ export function HostSettingsModal({
     >
       <div className={styles.content}>
         <Text variant="muted" size="sm">
-          Point the companion at a live Aura host. Leave this blank to use the current origin or dev proxy.
+          Point Aura at a live host. Leave this blank to use the current origin or dev proxy.
         </Text>
 
         <div className={styles.infoGrid}>
