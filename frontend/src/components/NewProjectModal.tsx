@@ -13,6 +13,8 @@ function slugFromName(name: string): string {
     .replace(/[^a-z0-9-]/g, "");
 }
 
+type OrbitRepoMode = "default" | "custom" | "existing" | "none";
+
 interface NewProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -26,7 +28,7 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
   const [description, setDescription] = useState("");
   const [folderPath, setFolderPath] = useState("");
   const [orbitRepoName, setOrbitRepoName] = useState("");
-  const [useExistingRepo, setUseExistingRepo] = useState(false);
+  const [orbitRepoMode, setOrbitRepoMode] = useState<OrbitRepoMode>("default");
   const [orbitRepos, setOrbitRepos] = useState<OrbitRepo[]>([]);
   const [orbitReposLoading, setOrbitReposLoading] = useState(false);
   const [selectedOrbitRepo, setSelectedOrbitRepo] = useState<OrbitRepo | null>(null);
@@ -50,7 +52,7 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
     setDescription("");
     setFolderPath("");
     setOrbitRepoName("");
-    setUseExistingRepo(false);
+    setOrbitRepoMode("default");
     setOrbitRepos([]);
     setSelectedOrbitRepo(null);
     setLoading(false);
@@ -59,14 +61,20 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
   }, []);
 
   useEffect(() => {
-    if (!isOpen || !useExistingRepo || !isAuthenticated) return;
+    if (isOpen && !isAuthenticated) {
+      setOrbitRepoMode("none");
+    }
+  }, [isOpen, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isOpen || orbitRepoMode !== "existing" || !isAuthenticated) return;
     setOrbitReposLoading(true);
     api
       .listOrbitRepos()
       .then(setOrbitRepos)
       .catch(() => setOrbitRepos([]))
       .finally(() => setOrbitReposLoading(false));
-  }, [isOpen, useExistingRepo, isAuthenticated]);
+  }, [isOpen, orbitRepoMode, isAuthenticated]);
 
   const handleClose = useCallback(() => {
     reset();
@@ -78,7 +86,7 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
       setNameError("Project name is required");
       return;
     }
-    if (useExistingRepo && !selectedOrbitRepo) {
+    if (orbitRepoMode === "existing" && !selectedOrbitRepo) {
       setError("Please select an existing repo");
       return;
     }
@@ -87,7 +95,10 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
     setLoading(true);
     try {
       if (!activeOrg) return;
-      const repoSlug = orbitRepoName.trim() || slugFromName(name) || "my-project";
+      const repoSlug =
+        orbitRepoMode === "custom"
+          ? (orbitRepoName.trim() || slugFromName(name) || "my-project")
+          : slugFromName(name) || "my-project";
       const payload = {
         org_id: activeOrg.org_id,
         name: name.trim(),
@@ -98,11 +109,11 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
         orbit_repo: undefined as string | undefined,
         git_repo_url: undefined as string | undefined,
       };
-      if (useExistingRepo && selectedOrbitRepo) {
+      if (orbitRepoMode === "existing" && selectedOrbitRepo) {
         payload.git_repo_url = selectedOrbitRepo.clone_url ?? `${selectedOrbitRepo.owner}/${selectedOrbitRepo.name}`;
         payload.orbit_owner = selectedOrbitRepo.owner;
         payload.orbit_repo = selectedOrbitRepo.name;
-      } else {
+      } else if (orbitRepoMode !== "none") {
         payload.orbit_owner = orbitOwner ?? undefined;
         payload.orbit_repo = repoSlug;
       }
@@ -134,7 +145,7 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
               loading ||
               orgLoading ||
               !activeOrg ||
-              (useExistingRepo && !selectedOrbitRepo)
+              (orbitRepoMode === "existing" && !selectedOrbitRepo)
             }
           >
             {loading ? <><Spinner size="sm" /> Creating...</> : "Create Project"}
@@ -175,12 +186,30 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
               <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
                 <input
                   type="radio"
-                  checked={!useExistingRepo}
-                  onChange={() => setUseExistingRepo(false)}
+                  checked={orbitRepoMode === "default"}
+                  onChange={() => setOrbitRepoMode("default")}
                 />
-                <span>Create new repo</span>
+                <span>Create new repo with default name</span>
               </label>
-              {!useExistingRepo && (
+              {orbitRepoMode === "default" && (
+                <div style={{ paddingLeft: "var(--space-6)" }}>
+                  <Text variant="muted" size="sm">
+                    orbit/{orbitOwner}/{proposedRepoSlug}
+                  </Text>
+                  <Text variant="muted" size="xs" style={{ opacity: 0.85, marginTop: "var(--space-1)" }}>
+                    Format: orbit/UUID/name
+                  </Text>
+                </div>
+              )}
+              <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
+                <input
+                  type="radio"
+                  checked={orbitRepoMode === "custom"}
+                  onChange={() => setOrbitRepoMode("custom")}
+                />
+                <span>Create new repo with custom name</span>
+              </label>
+              {orbitRepoMode === "custom" && (
                 <div style={{ paddingLeft: "var(--space-6)" }}>
                   <Text variant="muted" size="sm">
                     orbit/{orbitOwner}/{displayRepoName}
@@ -199,12 +228,12 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
               <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
                 <input
                   type="radio"
-                  checked={useExistingRepo}
-                  onChange={() => setUseExistingRepo(true)}
+                  checked={orbitRepoMode === "existing"}
+                  onChange={() => setOrbitRepoMode("existing")}
                 />
                 <span>Use existing repo</span>
               </label>
-              {useExistingRepo && (
+              {orbitRepoMode === "existing" && (
                 <div style={{ paddingLeft: "var(--space-6)" }}>
                   {orbitReposLoading ? (
                     <Spinner size="sm" />
@@ -245,6 +274,14 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
               )}
             </>
           )}
+          <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
+            <input
+              type="radio"
+              checked={orbitRepoMode === "none"}
+              onChange={() => setOrbitRepoMode("none")}
+            />
+            <span>No Orbit repo</span>
+          </label>
         </div>
         {!orgLoading && !activeOrg && (
           <Text variant="muted" size="sm" style={{ color: "var(--color-danger)" }}>
