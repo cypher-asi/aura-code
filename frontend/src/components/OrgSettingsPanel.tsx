@@ -211,7 +211,7 @@ export function OrgSettingsPanel({ isOpen, onClose, initialSection }: Props) {
   if (!activeOrg) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Team Settings" size="full" noPadding fullHeight>
+    <Modal isOpen={isOpen} onClose={onClose} title="Team Settings" size="xl" noPadding fullHeight>
       <div className={styles.settingsLayout}>
         <div className={styles.settingsNav}>
           <div className={styles.navHeader}>
