@@ -326,14 +326,51 @@ impl DevLoopEngine {
             attempt: Some(attempt),
         });
         let spec = self.load_spec(&task.project_id, &task.spec_id).await?;
-        let codebase_snapshot = match file_ops::retrieve_task_relevant_files_cached(
-            &project.linked_folder_path, &task.title, &task.description,
-            BUILD_FIX_SNAPSHOT_BUDGET, workspace_cache,
-        ).await {
-            Ok(s) => s,
-            Err(_) => file_ops::read_relevant_files(&project.linked_folder_path, BUILD_FIX_SNAPSHOT_BUDGET)
-                .unwrap_or_default(),
+
+        // Read error source files fresh from disk instead of relying on a
+        // cached snapshot that may be stale after the initial execution
+        // modified files.  This ensures the LLM sees the actual current
+        // content of files it needs to fix, preventing hallucinated search
+        // strings in search_replace operations.
+        let error_refs = parse_error_references(build_stderr);
+        let fresh_error_files = file_ops::resolve_error_source_files(
+            Path::new(&project.linked_folder_path),
+            &error_refs,
+            BUILD_FIX_SNAPSHOT_BUDGET,
+        );
+
+        let codebase_snapshot = if !fresh_error_files.is_empty() {
+            // Use fresh error files as the primary snapshot; fall back to
+            // cached files only for remaining budget.
+            let remaining_budget = BUILD_FIX_SNAPSHOT_BUDGET.saturating_sub(fresh_error_files.len());
+            let supplemental = if remaining_budget > 2_000 {
+                match file_ops::retrieve_task_relevant_files_cached(
+                    &project.linked_folder_path, &task.title, &task.description,
+                    remaining_budget, workspace_cache,
+                ).await {
+                    Ok(s) => s,
+                    Err(_) => String::new(),
+                }
+            } else {
+                String::new()
+            };
+            if supplemental.is_empty() {
+                fresh_error_files
+            } else {
+                format!("{fresh_error_files}\n{supplemental}")
+            }
+        } else {
+            match file_ops::retrieve_task_relevant_files_cached(
+                &project.linked_folder_path, &task.title, &task.description,
+                BUILD_FIX_SNAPSHOT_BUDGET, workspace_cache,
+            ).await {
+                Ok(s) => s,
+                Err(_) => file_ops::read_relevant_files(
+                    &project.linked_folder_path, BUILD_FIX_SNAPSHOT_BUDGET,
+                ).unwrap_or_default(),
+            }
         };
+
         let fix_prompt = build_fix_prompt_with_history(
             project, &spec, task, session, &codebase_snapshot,
             build_command, build_stderr, build_stdout,
