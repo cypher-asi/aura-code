@@ -39,7 +39,7 @@ async fn setup_with_auth(mock: Arc<MockLlmProvider>, store_auth: bool) -> TestHa
     let settings = Arc::new(SettingsService::new(store.clone()));
     let project_service = Arc::new(ProjectService::new(store.clone()));
     let task_service = Arc::new(TaskService::new(store.clone()));
-    let agent_instance_service = Arc::new(AgentInstanceService::new(store.clone()));
+    let agent_instance_service = Arc::new(AgentInstanceService::new(store.clone(), None));
     let session_service = Arc::new(SessionService::new(store.clone(), 0.8, 200_000));
     let (event_tx, event_rx) = mpsc::unbounded_channel();
 
@@ -296,7 +296,7 @@ async fn loop_runs_build_verification_when_configured() {
     let settings = Arc::new(SettingsService::new(store.clone()));
     let project_service = Arc::new(ProjectService::new(store.clone()));
     let task_service = Arc::new(TaskService::new(store.clone()));
-    let agent_instance_service = Arc::new(AgentInstanceService::new(store.clone()));
+    let agent_instance_service = Arc::new(AgentInstanceService::new(store.clone(), None));
     let session_service = Arc::new(SessionService::new(store.clone(), 0.8, 200_000));
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
 

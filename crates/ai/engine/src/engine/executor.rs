@@ -48,10 +48,27 @@ impl DevLoopEngine {
         let agent = if let Some(aiid) = agent_instance_id {
             self.agent_instance_service
                 .get_instance(&project_id, &aiid)
+                .await
                 .map_err(|_| EngineError::Parse(format!("agent instance {aiid} not found")))?
         } else {
+            let now = chrono::Utc::now();
+            let default_agent = aura_core::Agent {
+                agent_id: aura_core::AgentId::new(),
+                user_id: self.current_user_id().unwrap_or_default(),
+                name: "dev-agent".into(),
+                role: String::new(),
+                personality: String::new(),
+                system_prompt: String::new(),
+                skills: Vec::new(),
+                icon: None,
+                network_agent_id: None,
+                profile_id: None,
+                created_at: now,
+                updated_at: now,
+            };
             self.agent_instance_service
-                .create_instance(&project_id, "dev-agent".into())?
+                .create_instance_from_agent(&project_id, &default_agent)
+                .await?
         };
         let session = self.session_service.create_session(
             &agent.agent_instance_id, &project_id, None,
@@ -67,7 +84,7 @@ impl DevLoopEngine {
         )?;
         self.agent_instance_service.start_working(
             &project_id, &agent.agent_instance_id, &task.task_id, &session.session_id,
-        )?;
+        ).await?;
         let aiid = agent.agent_instance_id;
         self.emit(EngineEvent::TaskStarted {
             project_id, agent_instance_id: aiid,
@@ -111,7 +128,7 @@ impl DevLoopEngine {
         if let Err(e) = self.session_service.end_session(&project_id, &aiid, &session.session_id, end_status) {
             warn!(error = %e, "failed to end session after single task");
         }
-        if let Err(e) = self.agent_instance_service.finish_working(&project_id, &aiid) {
+        if let Err(e) = self.agent_instance_service.finish_working(&project_id, &aiid).await {
             warn!(error = %e, "failed to finish_working after single task");
         }
         Ok(())

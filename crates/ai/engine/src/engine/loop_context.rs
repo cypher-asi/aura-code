@@ -144,10 +144,11 @@ impl LoopRunContext {
         }
     }
 
-    fn finish_working(&self, engine: &DevLoopEngine) {
+    async fn finish_working(&self, engine: &DevLoopEngine) {
         if let Err(e) = engine
             .agent_instance_service
             .finish_working(&self.project_id, &self.agent_instance_id)
+            .await
         {
             warn!(error = %e, "failed to finish_working");
         }
@@ -186,25 +187,26 @@ impl LoopRunContext {
         }
     }
 
-    pub fn check_command(
+    pub async fn check_command(
         &mut self,
         engine: &DevLoopEngine,
         stop_rx: &watch::Receiver<LoopCommand>,
     ) -> Option<LoopOutcome> {
-        match *stop_rx.borrow() {
+        let cmd = *stop_rx.borrow();
+        match cmd {
             LoopCommand::Pause => {
-                self.finish_working(engine);
+                self.finish_working(engine).await;
                 Some(self.handle_pause(engine))
             }
             LoopCommand::Stop => {
-                self.finish_working(engine);
+                self.finish_working(engine).await;
                 Some(self.handle_stop(engine))
             }
             LoopCommand::Continue => None,
         }
     }
 
-    pub fn handle_interruption(
+    pub async fn handle_interruption(
         &mut self,
         engine: &DevLoopEngine,
         task: &Task,
@@ -222,7 +224,7 @@ impl LoopRunContext {
             agent_instance_id: self.agent_instance_id,
             task_id: task.task_id,
         });
-        self.finish_working(engine);
+        self.finish_working(engine).await;
         self.stop_or_pause(engine, stop_rx)
     }
 
@@ -286,7 +288,7 @@ impl LoopRunContext {
     // Task lifecycle
     // ------------------------------------------------------------------
 
-    pub fn begin_task(&self, engine: &DevLoopEngine, task: &Task) -> Result<(), EngineError> {
+    pub async fn begin_task(&self, engine: &DevLoopEngine, task: &Task) -> Result<(), EngineError> {
         engine.session_service.record_task_worked(
             &self.project_id,
             &self.agent_instance_id,
@@ -298,7 +300,7 @@ impl LoopRunContext {
             &self.agent_instance_id,
             &task.task_id,
             &self.session.session_id,
-        )?;
+        ).await?;
         engine.emit(EngineEvent::TaskStarted {
             project_id: self.project_id,
             agent_instance_id: self.agent_instance_id,
@@ -536,7 +538,7 @@ impl LoopRunContext {
                 &engine.llm, &self.api_key, &history,
             ) => { res? }
             _ = stop_rx.changed() => {
-                self.finish_working(engine);
+                self.finish_working(engine).await;
                 return Ok(Some(self.stop_or_pause(engine, stop_rx)));
             }
         };

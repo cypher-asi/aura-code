@@ -13,7 +13,6 @@ pub(crate) const CF_NAMES: &[&str] = &[
     "specs",
     "tasks",
     "agents",
-    "agent_instances",
     "sessions",
     "settings",
     "messages",

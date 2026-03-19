@@ -14,13 +14,11 @@ use axum::http::StatusCode;
 
 use aura_core::{
     Agent, AgentId, AgentInstance, AgentInstanceId, AgentStatus, Message, ProfileId, ProjectId,
-    Session, SessionId, Task, ZeroAuthSession,
+    RuntimeAgentState, Session, SessionId, Task, ZeroAuthSession,
 };
 use aura_chat::ChatStreamEvent;
 use aura_engine::EngineEvent;
 use aura_network::NetworkAgent;
-
-use crate::state::RuntimeAgentState;
 
 use crate::dto::{
     CreateAgentInstanceRequest, CreateAgentRequest, SendMessageRequest, UpdateAgentInstanceRequest,
@@ -167,23 +165,33 @@ pub async fn delete_agent(
     State(state): State<AppState>,
     Path(agent_id): Path<AgentId>,
 ) -> ApiResult<Json<()>> {
-    let instances = state
-        .store
-        .list_agent_instances_by_agent_id(&agent_id)
-        .unwrap_or_default();
-    if !instances.is_empty() {
-        return Err(ApiError::conflict(
-            "Cannot delete agent while it is added to projects. Remove it from all projects first.",
-        ));
-    }
-
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
+
+    if let Some(ref storage) = state.storage_client {
+        let projects = state.project_service.list_projects().unwrap_or_default();
+        let agent_id_str = agent_id.to_string();
+        for project in &projects {
+            if let Ok(agents) = storage
+                .list_project_agents(&project.project_id.to_string(), &jwt)
+                .await
+            {
+                let has_match = agents
+                    .iter()
+                    .any(|a| a.agent_id.as_deref() == Some(&agent_id_str));
+                if has_match {
+                    return Err(ApiError::conflict(
+                        "Cannot delete agent while it is added to projects. Remove it from all projects first.",
+                    ));
+                }
+            }
+        }
+    }
+
     client
         .delete_agent(&agent_id.to_string(), &jwt)
         .await
         .map_err(map_network_error)?;
-    // Remove local shadow
     let user_id = get_user_id(&state).unwrap_or_default();
     let _ = state.store.delete_agent(&user_id, &agent_id);
     Ok(Json(()))
@@ -520,16 +528,29 @@ pub async fn send_agent_message_stream(
         }
     };
 
-    let instances = state
-        .store
-        .list_agent_instances_by_agent_id(&agent_id)
-        .unwrap_or_default();
-
-    let project_ids: Vec<ProjectId> = instances.iter().map(|i| i.project_id).collect();
-    let projects: Vec<aura_core::Project> = project_ids
-        .iter()
-        .filter_map(|pid| state.store.get_project(pid).ok())
-        .collect();
+    let projects: Vec<aura_core::Project> = if let (Some(ref storage), Ok(jwt)) =
+        (&state.storage_client, state.get_jwt())
+    {
+        let all_projects = state.project_service.list_projects().unwrap_or_default();
+        let agent_id_str = agent_id.to_string();
+        let mut matched = Vec::new();
+        for project in all_projects {
+            if let Ok(agents) = storage
+                .list_project_agents(&project.project_id.to_string(), &jwt)
+                .await
+            {
+                if agents
+                    .iter()
+                    .any(|a| a.agent_id.as_deref() == Some(&agent_id_str))
+                {
+                    matched.push(project);
+                }
+            }
+        }
+        matched
+    } else {
+        Vec::new()
+    };
 
     let (tx, rx) = mpsc::unbounded_channel::<ChatStreamEvent>();
 
@@ -653,6 +674,7 @@ pub async fn send_message_stream(
     let agent_instance = state
         .agent_instance_service
         .get_instance(&project_id, &agent_instance_id)
+        .await
         .ok();
 
     let (tx, rx) = mpsc::unbounded_channel::<ChatStreamEvent>();

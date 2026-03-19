@@ -49,7 +49,7 @@ fn build_test_app() -> (Router, AppState, tempfile::TempDir) {
     let task_service = Arc::new(TaskService::new(store.clone()));
     let pricing_service = Arc::new(PricingService::new(store.clone()));
     let agent_service = Arc::new(AgentService::new(store.clone()));
-    let agent_instance_service = Arc::new(AgentInstanceService::new(store.clone()));
+    let agent_instance_service = Arc::new(AgentInstanceService::new(store.clone(), None));
     let llm_config = LlmConfig::default();
     let session_service = Arc::new(SessionService::new(store.clone(), llm_config.context_rollover_threshold, llm_config.max_context_tokens));
     let chat_service = Arc::new(ChatService::new(

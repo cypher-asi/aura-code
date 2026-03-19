@@ -332,51 +332,8 @@ fn list_agents_by_user_filters_correctly() {
 }
 
 // ---------------------------------------------------------------------------
-// AgentInstance CRUD (project-scoped)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn agent_instance_crud_round_trip() {
-    let (store, _dir) = open_temp_store();
-    let project = make_project();
-    let agent = make_agent();
-    store.put_project(&project).unwrap();
-    store.put_agent(&agent).unwrap();
-
-    let instance = make_agent_instance(project.project_id, agent.agent_id);
-    store.put_agent_instance(&instance).unwrap();
-
-    let fetched = store
-        .get_agent_instance(&project.project_id, &instance.agent_instance_id)
-        .unwrap();
-    assert_eq!(instance, fetched);
-
-    store
-        .delete_agent_instance(&project.project_id, &instance.agent_instance_id)
-        .unwrap();
-    let result = store.get_agent_instance(&project.project_id, &instance.agent_instance_id);
-    assert!(matches!(result, Err(StoreError::NotFound(_))));
-}
-
-#[test]
-fn list_agent_instances_by_project_filters_correctly() {
-    let (store, _dir) = open_temp_store();
-    let p1 = make_project();
-    let p2 = make_project();
-    let agent = make_agent();
-    store.put_project(&p1).unwrap();
-    store.put_project(&p2).unwrap();
-    store.put_agent(&agent).unwrap();
-
-    let i1 = make_agent_instance(p1.project_id, agent.agent_id);
-    let i2 = make_agent_instance(p2.project_id, agent.agent_id);
-    store.put_agent_instance(&i1).unwrap();
-    store.put_agent_instance(&i2).unwrap();
-
-    let instances = store.list_agent_instances_by_project(&p1.project_id).unwrap();
-    assert_eq!(instances.len(), 1);
-    assert_eq!(instances[0].project_id, p1.project_id);
-}
+// Agent instance storage has been migrated to aura-storage (Phase 4).
+// Agent instance CRUD tests removed.
 
 // ---------------------------------------------------------------------------
 // Session CRUD
@@ -391,7 +348,6 @@ fn session_crud_round_trip() {
     store.put_agent(&agent).unwrap();
 
     let instance = make_agent_instance(project.project_id, agent.agent_id);
-    store.put_agent_instance(&instance).unwrap();
 
     let session = make_session(instance.agent_instance_id, project.project_id);
     store.put_session(&session).unwrap();
@@ -418,8 +374,6 @@ fn list_sessions_by_agent_filters_correctly() {
 
     let i1 = make_agent_instance(project.project_id, agent.agent_id);
     let i2 = make_agent_instance(project.project_id, agent.agent_id);
-    store.put_agent_instance(&i1).unwrap();
-    store.put_agent_instance(&i2).unwrap();
 
     let s1 = make_session(i1.agent_instance_id, project.project_id);
     let s2 = make_session(i1.agent_instance_id, project.project_id);

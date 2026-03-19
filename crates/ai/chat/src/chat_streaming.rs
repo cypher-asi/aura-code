@@ -275,28 +275,14 @@ impl ChatService {
 
     fn update_instance_token_usage(
         &self,
-        project_id: &ProjectId,
-        agent_instance_id: &AgentInstanceId,
-        input_tokens: u64,
-        output_tokens: u64,
-        tx: &mpsc::UnboundedSender<ChatStreamEvent>,
+        _project_id: &ProjectId,
+        _agent_instance_id: &AgentInstanceId,
+        _input_tokens: u64,
+        _output_tokens: u64,
+        _tx: &mpsc::UnboundedSender<ChatStreamEvent>,
     ) {
-        if input_tokens == 0 && output_tokens == 0 {
-            return;
-        }
-        if let Ok(mut instance) = self.store.get_agent_instance(project_id, agent_instance_id) {
-            instance.total_input_tokens += input_tokens;
-            instance.total_output_tokens += output_tokens;
-            if instance.model.is_none() {
-                instance.model = Some(self.llm_config.default_model.clone());
-            }
-            instance.updated_at = Utc::now();
-            if let Err(e) = self.store.put_agent_instance(&instance) {
-                error!(%project_id, %agent_instance_id, error = %e, "Failed to persist token usage");
-            } else {
-                let _ = tx.send(ChatStreamEvent::AgentInstanceUpdated(instance));
-            }
-        }
+        // Token usage on agent instances is tracked at the task/session level.
+        // aura-storage project agents only support status updates, not token writes.
     }
 
     async fn save_assistant_message(
@@ -352,7 +338,7 @@ impl ChatService {
     async fn maybe_generate_title(
         &self,
         project_id: &ProjectId,
-        agent_instance_id: &AgentInstanceId,
+        _agent_instance_id: &AgentInstanceId,
         agent_instance: &AgentInstance,
         api_key: &str,
         messages: &[Message],
@@ -384,18 +370,10 @@ impl ChatService {
             Ok(resp) => {
                 let title = resp.text;
                 let title = title.trim().trim_matches('"').to_string();
-                if let Ok(mut instance) = self.store.get_agent_instance(project_id, agent_instance_id) {
-                    instance.name = title;
-                    instance.updated_at = Utc::now();
-                    match self.store.put_agent_instance(&instance) {
-                        Ok(()) => {
-                            let _ = tx.send(ChatStreamEvent::AgentInstanceUpdated(instance));
-                        }
-                        Err(e) => {
-                            error!(%project_id, error = %e, "Failed to update agent instance name");
-                        }
-                    }
-                }
+                let mut instance = agent_instance.clone();
+                instance.name = title;
+                instance.updated_at = Utc::now();
+                let _ = tx.send(ChatStreamEvent::AgentInstanceUpdated(instance));
             }
             Err(e) => {
                 error!(%project_id, error = %e, "Failed to generate title");

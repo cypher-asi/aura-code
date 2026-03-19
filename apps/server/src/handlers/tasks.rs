@@ -111,7 +111,7 @@ pub async fn get_progress(
         .map_err(|e| ApiError::internal(e.to_string()))?;
 
     aggregate_session_metrics(&state, &project_id, &mut progress);
-    aggregate_agent_instance_metrics(&state, &project_id, &mut progress);
+    aggregate_agent_instance_metrics(&state, &project_id, &mut progress).await;
 
     if let Ok(count) = state.store.count_messages_by_project(&project_id) {
         progress.total_messages = count as u64;
@@ -155,12 +155,12 @@ fn aggregate_session_metrics(
         .sum();
 }
 
-fn aggregate_agent_instance_metrics(
+async fn aggregate_agent_instance_metrics(
     state: &AppState,
     project_id: &ProjectId,
     progress: &mut ProjectProgress,
 ) {
-    let instances = match state.agent_instance_service.list_instances(project_id) {
+    let instances = match state.agent_instance_service.list_instances(project_id).await {
         Ok(v) => v,
         Err(e) => {
             tracing::error!(%project_id, error = %e, "Progress: failed to list agent instances");

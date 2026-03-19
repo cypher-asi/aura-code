@@ -164,6 +164,14 @@ pub struct AgentInstance {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Volatile per-agent-instance state that lives only in memory (lost on restart).
+/// `close_stale_sessions` cleans up on the next startup.
+#[derive(Debug, Clone, Default)]
+pub struct RuntimeAgentState {
+    pub current_task_id: Option<TaskId>,
+    pub current_session_id: Option<SessionId>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     pub session_id: SessionId,

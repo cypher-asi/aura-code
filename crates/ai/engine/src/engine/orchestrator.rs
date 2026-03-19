@@ -172,10 +172,27 @@ impl DevLoopEngine {
         let agent = if let Some(aiid) = agent_instance_id {
             self.agent_instance_service
                 .get_instance(&project_id, &aiid)
+                .await
                 .map_err(|_| EngineError::Parse(format!("agent instance {aiid} not found")))?
         } else {
+            let now = Utc::now();
+            let default_agent = Agent {
+                agent_id: AgentId::new(),
+                user_id: self.current_user_id().unwrap_or_default(),
+                name: "dev-agent".into(),
+                role: String::new(),
+                personality: String::new(),
+                system_prompt: String::new(),
+                skills: Vec::new(),
+                icon: None,
+                network_agent_id: None,
+                profile_id: None,
+                created_at: now,
+                updated_at: now,
+            };
             self.agent_instance_service
-                .create_instance(&project_id, "dev-agent".into())?
+                .create_instance_from_agent(&project_id, &default_agent)
+                .await?
         };
 
         let agent = if agent.status == AgentStatus::Working {
@@ -184,9 +201,12 @@ impl DevLoopEngine {
                 "resetting stale Working agent to Idle before starting loop"
             );
             self.agent_instance_service
-                .finish_working(&project_id, &agent.agent_instance_id)?;
+                .finish_working(&project_id, &agent.agent_instance_id)
+                .await
+                .ok();
             self.agent_instance_service
                 .get_instance(&project_id, &agent.agent_instance_id)
+                .await
                 .map_err(|_| EngineError::Parse(format!("agent instance {} not found", agent.agent_instance_id)))?
         } else {
             agent
@@ -244,7 +264,7 @@ impl DevLoopEngine {
                     total_build_fix_attempts: None,
                     duplicate_error_bailouts: None,
                 });
-                let _ = engine.agent_instance_service.finish_working(&project_id, &aiid);
+                let _ = engine.agent_instance_service.finish_working(&project_id, &aiid).await;
             }
             result
         });
@@ -267,7 +287,7 @@ impl DevLoopEngine {
         let mut ctx = LoopRunContext::new(self, project_id, agent_instance_id, session).await?;
         ctx.reset_and_promote_tasks(self)?;
         loop {
-            if let Some(out) = ctx.check_command(self, &stop_rx) { return Ok(out); }
+            if let Some(out) = ctx.check_command(self, &stop_rx).await { return Ok(out); }
             let task = match self.task_service.claim_next_task(
                 &project_id, &agent_instance_id, Some(ctx.session.session_id),
             )? {
@@ -277,12 +297,12 @@ impl DevLoopEngine {
                     return ctx.handle_no_more_tasks(self);
                 }
             };
-            ctx.begin_task(self, &task)?;
+            ctx.begin_task(self, &task).await?;
             let project = self.project_service.get_project(&project_id)?;
             let baseline = ctx.get_or_capture_test_baseline(self, &project).await;
             let task_start = Instant::now();
             let agent = self.agent_instance_service
-                .get_instance(&project_id, &agent_instance_id).ok();
+                .get_instance(&project_id, &agent_instance_id).await.ok();
             let result = if let Some(cmd) = shell::extract_shell_command(&task) {
                 Some(self.execute_shell_task(&project, &task, &cmd, agent_instance_id).await)
             } else {
@@ -295,7 +315,7 @@ impl DevLoopEngine {
                 }
             };
             let Some(result) = result else {
-                return Ok(ctx.handle_interruption(self, &task, &stop_rx));
+                return Ok(ctx.handle_interruption(self, &task, &stop_rx).await);
             };
             let outcome = self.finalize_task_execution(
                 project_id, agent_instance_id, &task, &ctx.session, &ctx.api_key,
@@ -303,7 +323,7 @@ impl DevLoopEngine {
                 &ctx.workspace_cache,
             ).await?;
             let failed = ctx.process_outcome(self, &task, outcome)?;
-            self.agent_instance_service.finish_working(&project_id, &agent_instance_id)?;
+            self.agent_instance_service.finish_working(&project_id, &agent_instance_id).await?;
             if self.llm.is_credits_exhausted() { return Ok(ctx.handle_credits_exhausted(self)); }
             if failed { continue; }
             if let Some(out) = ctx.try_session_rollover(self, &mut stop_rx).await? {

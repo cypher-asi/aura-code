@@ -291,8 +291,10 @@ name = "aura-agents"
 version = "0.1.0"
 dependencies = [
  "aura-core",
+ "aura-storage",
  "aura-store",
  "chrono",
+ "serde_json",
  "thiserror 1.0.69",
 ]
 
