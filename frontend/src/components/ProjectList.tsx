@@ -383,11 +383,17 @@ export function ProjectList() {
 
   const handleExpand = useCallback(
     (nodeId: string, expanded: boolean) => {
+      if (!expanded && nodeId === projectId && (agentInstanceId || location.pathname.endsWith("/execution"))) {
+        sidekick.closePreview();
+        navigate("/projects");
+        return;
+      }
+
       if (expanded && projectMap.has(nodeId) && !(nodeId in agentsByProject)) {
         void refreshProjectAgents(nodeId);
       }
     },
-    [projectMap, agentsByProject, refreshProjectAgents],
+    [agentInstanceId, agentsByProject, location.pathname, navigate, projectId, projectMap, refreshProjectAgents, sidekick],
   );
 
   const handleKeyDown = useCallback(

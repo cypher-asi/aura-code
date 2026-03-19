@@ -303,6 +303,20 @@ test("mobile details selection auto-opens preview", async ({ page }) => {
   await expect(page.getByText("Open changed files from a linked desktop workspace.")).toBeVisible();
 });
 
+test("mobile profile details sheet scrolls to lower profile fields", async ({ page }) => {
+  await mockAuthenticatedMobileApp(page);
+
+  await page.goto("/profile");
+
+  await page.getByRole("button", { name: "Open details" }).click();
+  await expect(page.getByText("PROFILE DETAILS")).toBeVisible();
+  await expect(page.getByText("Test User")).toBeVisible();
+
+  const locationField = page.getByText("Add location");
+  await locationField.scrollIntoViewIfNeeded();
+  await expect(locationField).toBeVisible();
+});
+
 test("mobile team settings opens above the closed navigation drawer", async ({ page }) => {
   await mockAuthenticatedMobileApp(page);
 

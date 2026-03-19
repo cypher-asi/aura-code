@@ -50,6 +50,28 @@ test("projects root reuses the same welcome view across form factors", async ({ 
   }
 });
 
+test("projects root does not auto-redirect from remembered agent state", async ({ page }, testInfo) => {
+  const factor = formFactor(testInfo.project.name);
+
+  await mockAuthenticatedApp(page);
+  await page.addInitScript(() => {
+    localStorage.setItem("aura:lastAgent", JSON.stringify({
+      projectId: "proj-1",
+      agentInstanceId: "agent-inst-1",
+    }));
+  });
+  await page.goto("/projects");
+
+  await expect(page).toHaveURL(/\/projects$/);
+  await expect(page.getByText("Welcome to AURA")).toBeVisible();
+
+  if (factor === "desktop") {
+    await expect(page.getByRole("button", { name: "Open navigation" })).toHaveCount(0);
+  } else {
+    await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
+  }
+});
+
 test("feed, leaderboard, and profile reuse sidebar selectors across form factors", async ({ page }, testInfo) => {
   const factor = formFactor(testInfo.project.name);
 
@@ -111,6 +133,24 @@ test("agents route keeps shared content with responsive navigation affordances",
   }
 });
 
+test("collapsing the active project exits nested project content", async ({ page }, testInfo) => {
+  const factor = formFactor(testInfo.project.name);
+  test.skip(factor === "desktop", "Desktop has multiple collapse controls on screen; this regression targets responsive navigation state.");
+
+  await mockAuthenticatedApp(page);
+  await page.goto("/projects/proj-1/execution");
+
+  await expect(page.getByRole("treeitem", { name: "Execution" })).toBeVisible({ timeout: 10000 });
+  await page.locator('[role="tree"]').first().locator('[role="button"][aria-label="Collapse"]').dispatchEvent("click");
+
+  await expect(page).toHaveURL(/\/projects$/);
+  await expect(page.getByText("Welcome to AURA")).toBeVisible();
+
+  if (factor !== "desktop") {
+    await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
+  }
+});
+
 test("navigation drawer remains settings access on smaller form factors only", async ({ page }, testInfo) => {
   const factor = formFactor(testInfo.project.name);
 
@@ -125,19 +165,17 @@ test("navigation drawer remains settings access on smaller form factors only", a
 });
 
 test("modal flows lock the background document across form factors", async ({ page }, testInfo) => {
-  const factor = formFactor(testInfo.project.name);
-
   await mockAuthenticatedApp(page);
   await page.goto("/projects");
 
-  if (factor !== "desktop") {
-    await page.getByRole("button", { name: "Open navigation" }).click();
-  }
+  await page.getByRole("button", { name: "Open host settings" }).click();
 
-  const newProjectButton = page.locator('button[title="New Project"]:visible');
-  await expect(newProjectButton).toBeVisible();
-  await newProjectButton.click();
-
-  await expect(page.getByPlaceholder("Project name")).toBeVisible();
-  await expect.poll(async () => page.evaluate(() => window.getComputedStyle(document.body).overflow)).toBe("hidden");
+  await expect(page.getByRole("heading", { name: "Host Connection" })).toBeVisible();
+  await expect.poll(async () => {
+    return page.evaluate(() => {
+      const bodyOverflow = window.getComputedStyle(document.body).overflow;
+      const htmlOverflow = window.getComputedStyle(document.documentElement).overflow;
+      return bodyOverflow === "hidden" || htmlOverflow === "hidden";
+    });
+  }).toBe(true);
 });

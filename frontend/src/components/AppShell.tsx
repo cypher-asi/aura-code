@@ -47,6 +47,13 @@ function previewItemKey(item: ReturnType<typeof useSidekick>["previewItem"]): st
   }
 }
 
+function blurActiveElement() {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement) {
+    active.blur();
+  }
+}
+
 function SidekickLaneInner() {
   const { activeApp } = useAppContext();
   const { SidekickPanel, SidekickTaskbar, SidekickHeader: SidekickHeaderComp } = activeApp;
@@ -328,6 +335,7 @@ function ResponsiveShell({
   const drawerOpen = navOpen || contextOpen || previewOpen || hostSettingsOpen;
   const overlayDrawerOpen = navOpen || contextOpen || previewOpen;
   const closeDrawers = useCallback(() => {
+    blurActiveElement();
     setNavOpen(false);
     setContextOpen(false);
     setPreviewOpen(false);
@@ -504,12 +512,15 @@ function ResponsiveShell({
           <Drawer
             side="left"
             isOpen={navOpen}
-            onClose={() => setNavOpen(false)}
-            title={activeApp.label}
+            onClose={() => {
+              blurActiveElement();
+              setNavOpen(false);
+            }}
+            title="Aura"
             className={styles.mobileNavDrawer}
             showMinimizedBar={false}
-            defaultSize={340}
-            maxSize={420}
+            defaultSize={356}
+            maxSize={404}
           >
             {navOpen && (
               <NavigationDrawerContent
@@ -525,7 +536,10 @@ function ResponsiveShell({
             <Drawer
               side="bottom"
               isOpen={contextOpen}
-              onClose={() => setContextOpen(false)}
+              onClose={() => {
+                blurActiveElement();
+                setContextOpen(false);
+              }}
               title={`${activeApp.label} details`}
               className={styles.mobileSheetDrawer}
               showMinimizedBar={false}
@@ -540,7 +554,10 @@ function ResponsiveShell({
             <Drawer
               side="bottom"
               isOpen={previewOpen}
-              onClose={() => setPreviewOpen(false)}
+              onClose={() => {
+                blurActiveElement();
+                setPreviewOpen(false);
+              }}
               title="Preview"
               className={styles.mobileSheetDrawer}
               showMinimizedBar={false}
@@ -553,7 +570,13 @@ function ResponsiveShell({
         </>
       )}
 
-      <HostSettingsModal isOpen={hostSettingsOpen} onClose={() => setHostSettingsOpen(false)} />
+      <HostSettingsModal
+        isOpen={hostSettingsOpen}
+        onClose={() => {
+          blurActiveElement();
+          setHostSettingsOpen(false);
+        }}
+      />
     </>
   );
 }
