@@ -1,5 +1,7 @@
 # Plan: Aura ? Orbit Integration
 
+Orbit is always an **external, standalone service**. Aura uses a client and a single env variable (`ORBIT_BASE_URL`) to connect; the Orbit API is not run from this repo.
+
 This document is the implementation plan for attaching Aura projects to Orbit repos, using Orbit for Git (clone/push/pull) and for ?who can add people? (repo owner + owner-role collaborators). Orbit is the source of truth for repo membership and roles; Aura does not duplicate that logic.
 
 ---
