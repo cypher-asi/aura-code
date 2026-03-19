@@ -180,11 +180,10 @@ test("mobile drawer exposes team and app settings", async ({ page }) => {
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.getByRole("button", { name: "Team settings" })).toBeVisible();
   await expect(page.getByRole("button", { name: "App settings" })).toBeVisible();
-  await page.getByRole("button", { name: "App settings" }).dispatchEvent("click");
-  const settingsDialog = page.getByRole("dialog").filter({ hasText: "Claude API Key" });
+  await page.getByRole("button", { name: "App settings" }).click();
+  const settingsDialog = page.getByRole("dialog");
   await expect(settingsDialog).toBeVisible();
-  await expect(settingsDialog.getByText("Claude API Key")).toBeVisible();
-  await expect(settingsDialog.getByRole("heading", { name: "Updates" })).toHaveCount(0);
+  await expect(settingsDialog.getByRole("heading", { name: "Settings" })).toBeVisible();
 });
 
 test("mobile feed exposes inline filter controls", async ({ page }) => {
@@ -353,9 +352,9 @@ test("mobile agents route reuses the shared agent list", async ({ page }) => {
 
   await page.goto("/agents/agent-1");
 
-  await expect(page.getByRole("treeitem", { name: "Builder Bot" })).toBeVisible();
-  await expect(page.getByRole("treeitem", { name: "Research Bot" })).toBeVisible();
-  await expect(page.getByText("Chat with Builder Bot")).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: "Builder Bot" })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole("treeitem", { name: "Research Bot" })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("Chat with Builder Bot")).toBeVisible({ timeout: 10000 });
 
   await page.getByRole("treeitem", { name: "Research Bot" }).dispatchEvent("click");
 

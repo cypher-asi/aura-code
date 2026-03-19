@@ -21,9 +21,12 @@ export function SpecList({ searchQuery }: { searchQuery: string }) {
   const { subscribe } = useEventContext();
   const sidekick = useSidekick();
   const sidekickRef = useRef(sidekick);
-  sidekickRef.current = sidekick;
   const ctxRef = useRef(ctx);
-  ctxRef.current = ctx;
+
+  useEffect(() => {
+    sidekickRef.current = sidekick;
+    ctxRef.current = ctx;
+  }, [ctx, sidekick]);
   const mergedSpecs = useMemo(
     () => mergeById(localSpecs, sidekick.specs, "spec_id"),
     [localSpecs, sidekick.specs],

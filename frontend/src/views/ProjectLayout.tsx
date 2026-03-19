@@ -30,10 +30,12 @@ export function ProjectLayout() {
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    setLoading(true);
-    setProjectRaw(null);
-    setInitialSpecs([]);
-    setInitialTasks([]);
+    const frame = window.requestAnimationFrame(() => {
+      setLoading(true);
+      setProjectRaw(null);
+      setInitialSpecs([]);
+      setInitialTasks([]);
+    });
     Promise.all([
       api.getProject(projectId),
       api.listSpecs(projectId).catch(() => [] as Spec[]),
@@ -47,7 +49,10 @@ export function ProjectLayout() {
       })
       .catch(() => { if (!cancelled) setProjectRaw(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+    };
   }, [projectId]);
 
   useEffect(() => {
@@ -57,7 +62,7 @@ export function ProjectLayout() {
         api.getProject(projectId).then(setProjectRaw).catch(() => {});
       }
     });
-  }, [projectId, subscribe]);
+  }, [projectId, setProjectSafe, subscribe]);
 
   useEffect(() => {
     if (!project) {
@@ -89,7 +94,7 @@ export function ProjectLayout() {
     });
 
     return () => unregister();
-  }, [project, initialSpecs, initialTasks, message, navigate, register, unregister]);
+  }, [project, initialSpecs, initialTasks, message, navigate, register, setProjectSafe, unregister]);
 
   if (loading) return null;
   if (!project) return <EmptyState>Project not found</EmptyState>;

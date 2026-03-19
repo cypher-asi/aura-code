@@ -24,7 +24,7 @@ export function SettingsModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setLoading(true);
+    const frame = window.requestAnimationFrame(() => setLoading(true));
     const requests = [api.getApiKeyInfo().then(setInfo)];
     if (features.nativeUpdater) {
       requests.push(
@@ -34,11 +34,12 @@ export function SettingsModal({
         }),
       );
     } else {
-      setCurrentVersion("");
+      window.requestAnimationFrame(() => setCurrentVersion(""));
     }
     Promise.all(requests)
       .catch(console.error)
       .finally(() => setLoading(false));
+    return () => window.cancelAnimationFrame(frame);
   }, [features.nativeUpdater, isOpen]);
 
   const handleChannelChange = useCallback(

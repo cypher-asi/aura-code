@@ -18,8 +18,11 @@ export function HostSettingsModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setValue(hostOrigin ?? "");
-    setError("");
+    const frame = window.requestAnimationFrame(() => {
+      setValue(hostOrigin ?? "");
+      setError("");
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [hostOrigin, isOpen]);
 
   const handleSave = async () => {

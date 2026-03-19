@@ -136,8 +136,11 @@ function RunTaskButton({ task }: { task: import("../types").Task }) {
   const [status, setStatus] = useState(task.status);
 
   useEffect(() => {
-    setStatus(task.status);
-    setRunning(false);
+    const frame = window.requestAnimationFrame(() => {
+      setStatus(task.status);
+      setRunning(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [task.task_id, task.status]);
 
   useEffect(() => {
@@ -171,7 +174,7 @@ function RunTaskButton({ task }: { task: import("../types").Task }) {
       console.error("Run task failed:", err);
       setRunning(false);
     }
-  }, [projectId, task.task_id, running, agentInstanceId]);
+  }, [agentInstanceId, projectId, running, sidekick, task]);
 
   const visible = status === "ready";
 
@@ -338,19 +341,27 @@ function TestStepItem({ step, active }: { step: TestStep; active: boolean }) {
 }
 
 function useElapsedTime(active: boolean) {
-  const startRef = useRef(Date.now());
+  const startRef = useRef<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     if (!active) {
-      setElapsed(0);
-      return;
+      const frame = window.requestAnimationFrame(() => setElapsed(0));
+      startRef.current = null;
+      return () => window.cancelAnimationFrame(frame);
     }
     startRef.current = Date.now();
     const id = setInterval(() => {
+      if (startRef.current === null) return;
       setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
     }, 1000);
     return () => clearInterval(id);
+  }, [active]);
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
   }, [active]);
 
   return elapsed;
@@ -584,12 +595,12 @@ function TaskPreview({ task }: { task: import("../types").Task }) {
     } finally {
       setRetrying(false);
     }
-  }, [projectId, task.task_id, retrying]);
+  }, [projectId, retrying, routeAgentInstanceId, task.task_id]);
 
   const handleViewSession = useCallback(async () => {
     if (!projectId || !effectiveSessionId) return;
     try {
-      let agentInstanceId = task.assigned_agent_instance_id;
+      const agentInstanceId = task.assigned_agent_instance_id;
       if (!agentInstanceId) {
         const instances = await api.listAgentInstances(projectId);
         for (const a of instances) {
@@ -893,12 +904,13 @@ function SessionPreview({ session }: { session: Session }) {
 
   useEffect(() => {
     if (!projectId) return;
-    setLoading(true);
+    const frame = window.requestAnimationFrame(() => setLoading(true));
     api
       .listSessionTasks(projectId, session.agent_instance_id, session.session_id)
       .then((t) => setTasks(t))
       .catch(console.error)
       .finally(() => setLoading(false));
+    return () => window.cancelAnimationFrame(frame);
   }, [projectId, session.session_id, session.agent_instance_id]);
 
   const contextPct = Math.round(session.context_usage_estimate * 100);
@@ -1109,9 +1121,15 @@ function previewTitle(item: PreviewItem): string {
 
 function useDisplayItem() {
   const { previewItem } = useSidekick();
-  const lastItem = useRef< PreviewItem | null >(null);
-  if (previewItem) lastItem.current = previewItem;
-  return previewItem ?? lastItem.current;
+  const [lastItem, setLastItem] = useState<PreviewItem | null>(previewItem);
+
+  useEffect(() => {
+    if (!previewItem) return;
+    const frame = window.requestAnimationFrame(() => setLastItem(previewItem));
+    return () => window.cancelAnimationFrame(frame);
+  }, [previewItem]);
+
+  return previewItem ?? lastItem;
 }
 
 export function PreviewHeader() {

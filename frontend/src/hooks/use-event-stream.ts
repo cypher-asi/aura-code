@@ -18,7 +18,10 @@ export function useEventStream(
   const [latestEvent, setLatestEvent] = useState<EngineEvent | null>(null);
   const wsRef = useRef<{ close: () => void } | null>(null);
   const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent;
+
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
 
   const handleMessage = useCallback((data: string) => {
     try {

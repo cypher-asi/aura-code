@@ -22,12 +22,15 @@ export function ProfileEditorModal({ isOpen, profile, onClose, onSave }: Profile
 
   useEffect(() => {
     if (!isOpen) return;
-    setName(profile.name);
-    setBio(profile.bio);
-    setWebsite(profile.website);
-    setLocation(profile.location);
-    setAvatarUrl(profile.avatarUrl ?? "");
-    setNameError("");
+    const frame = window.requestAnimationFrame(() => {
+      setName(profile.name);
+      setBio(profile.bio);
+      setWebsite(profile.website);
+      setLocation(profile.location);
+      setAvatarUrl(profile.avatarUrl ?? "");
+      setNameError("");
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [isOpen, profile]);
 
   const handleClose = useCallback(() => {

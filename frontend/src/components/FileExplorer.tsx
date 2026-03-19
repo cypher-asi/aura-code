@@ -30,17 +30,21 @@ export function FileExplorer({ rootPath, searchQuery, onFileSelect }: FileExplor
 
   useEffect(() => {
     if (!features.linkedWorkspace) {
-      setLoading(false);
-      return;
+      const frame = window.requestAnimationFrame(() => setLoading(false));
+      return () => window.cancelAnimationFrame(frame);
     }
     if (!rootPath) {
-      setEntries([]);
-      setError(null);
-      setLoading(false);
-      return;
+      const frame = window.requestAnimationFrame(() => {
+        setEntries([]);
+        setError(null);
+        setLoading(false);
+      });
+      return () => window.cancelAnimationFrame(frame);
     }
-    setLoading(true);
-    setError(null);
+    const frame = window.requestAnimationFrame(() => {
+      setLoading(true);
+      setError(null);
+    });
     api
       .listDirectory(rootPath)
       .then((res) => {
@@ -52,6 +56,7 @@ export function FileExplorer({ rootPath, searchQuery, onFileSelect }: FileExplor
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+    return () => window.cancelAnimationFrame(frame);
   }, [features.linkedWorkspace, rootPath]);
 
   const explorerData: ExplorerNode[] = useMemo(() => {

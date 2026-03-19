@@ -6,8 +6,6 @@ declare module "@cypher-asi/zui" {
     InputHTMLAttributes,
     TextareaHTMLAttributes,
     ElementType,
-    CSSProperties,
-    Ref,
     RefObject,
   } from "react";
 
@@ -159,7 +157,7 @@ declare module "@cypher-asi/zui" {
   export function Panel(props: PanelProps): JSX.Element;
 
   // Card
-  export interface CardProps extends HTMLAttributes<HTMLDivElement> {}
+  export type CardProps = HTMLAttributes<HTMLDivElement>;
   export function Card(props: CardProps): JSX.Element;
 
   export interface CardItemProps {
@@ -362,7 +360,7 @@ declare module "@cypher-asi/zui" {
   export function Code(props: CodeProps): JSX.Element;
 
   // Container
-  export interface ContainerProps extends HTMLAttributes<HTMLDivElement> {}
+  export type ContainerProps = HTMLAttributes<HTMLDivElement>;
   export function Container(props: ContainerProps): JSX.Element;
 
   // Drawer

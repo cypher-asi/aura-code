@@ -301,16 +301,20 @@ function ResponsiveShell({
 
   useEffect(() => {
     if (!isMobileLayout) return;
-    setNavOpen(false);
-    setContextOpen(false);
-    setPreviewOpen(false);
-    setHostSettingsOpen(false);
+    const frame = window.requestAnimationFrame(() => {
+      setNavOpen(false);
+      setContextOpen(false);
+      setPreviewOpen(false);
+      setHostSettingsOpen(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [isMobileLayout, location.pathname]);
 
   useEffect(() => {
     if (!isMobileLayout) return;
     if (!PreviewPanel || !previewItem) {
-      setPreviewOpen(false);
+      const frame = window.requestAnimationFrame(() => setPreviewOpen(false));
+      return () => window.cancelAnimationFrame(frame);
     }
   }, [PreviewPanel, isMobileLayout, previewItem]);
 
@@ -328,8 +332,11 @@ function ResponsiveShell({
     }
 
     lastPreviewKeyRef.current = key;
-    setContextOpen(false);
-    setPreviewOpen(true);
+    const frame = window.requestAnimationFrame(() => {
+      setContextOpen(false);
+      setPreviewOpen(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [PreviewPanel, isMobileLayout, previewItem]);
 
   const drawerOpen = navOpen || contextOpen || previewOpen || hostSettingsOpen;

@@ -42,15 +42,19 @@ export function ChatView() {
   const { handleScroll } = useAutoScroll(messageAreaRef, agentInstanceId);
 
   useEffect(() => {
+    let frame: number | null = null;
     if (projectId && agentInstanceId) {
       setLastAgent(projectId, agentInstanceId);
-      requestAnimationFrame(() => inputBarRef.current?.focus());
+      frame = window.requestAnimationFrame(() => inputBarRef.current?.focus());
       api.getAgentInstance(projectId, agentInstanceId).then((inst) => {
         setAgentName(inst.name);
       }).catch(() => {});
     } else {
-      setAgentName(undefined);
+      frame = window.requestAnimationFrame(() => setAgentName(undefined));
     }
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
   }, [projectId, agentInstanceId]);
 
   useEffect(() => {
@@ -88,8 +92,9 @@ export function ChatView() {
   }, [projectId, agentInstanceId, resetMessages]);
 
   useEffect(() => {
+    const raf = rafRef.current;
     return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      if (raf !== null) cancelAnimationFrame(raf);
     };
   }, [rafRef]);
 

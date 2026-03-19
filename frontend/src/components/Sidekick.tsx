@@ -172,7 +172,8 @@ export function SidekickContent() {
   const { features } = useAuraCapabilities();
 
   useEffect(() => {
-    setSearchQuery("");
+    const frame = window.requestAnimationFrame(() => setSearchQuery(""));
+    return () => window.cancelAnimationFrame(frame);
   }, [activeTab]);
 
   if (!ctx) {

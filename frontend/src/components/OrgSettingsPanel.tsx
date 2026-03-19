@@ -63,7 +63,7 @@ export function OrgSettingsPanel({ isOpen, onClose, initialSection }: Props) {
 
   useEffect(() => {
     setTeamName(activeOrg?.name ?? "");
-  }, [activeOrg?.org_id]);
+  }, [activeOrg?.name, activeOrg?.org_id]);
 
   const handleTeamNameChange = (value: string) => {
     setTeamName(value);
