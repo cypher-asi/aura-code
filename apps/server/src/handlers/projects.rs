@@ -101,6 +101,24 @@ fn folder_name_from_path(path: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// List all projects for the current user from the network (all orgs). Used by agents/log when no org scope.
+pub(crate) async fn list_all_projects_from_network(state: &AppState) -> ApiResult<Vec<Project>> {
+    let client = state.require_network_client()?;
+    let jwt = state.get_jwt()?;
+    let orgs = client.list_orgs(&jwt).await.map_err(map_network_error)?;
+    let mut projects = Vec::new();
+    for org in &orgs {
+        let net_projects = client
+            .list_projects_by_org(&org.id, &jwt)
+            .await
+            .map_err(map_network_error)?;
+        for net in &net_projects {
+            projects.push(project_from_network(net, None));
+        }
+    }
+    Ok(projects)
+}
+
 fn orbit_create_repo_url(
     base_url: &str,
     owner: &str,
