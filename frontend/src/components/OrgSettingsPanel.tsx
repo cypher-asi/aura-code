@@ -57,7 +57,7 @@ export function OrgSettingsPanel({ isOpen, onClose, initialSection }: Props) {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const { status: pollingStatus, currentBalance: polledBalance, startPolling, reset: resetPolling } = useCheckoutPolling(activeOrg?.org_id);
 
-  const [orbitRepo, setOrbitRepo] = useState<{ orbit_base_url: string; orbit_owner: string; orbit_repo: string } | null>(null);
+  const [_orbitRepo, setOrbitRepo] = useState<{ orbit_base_url: string; orbit_owner: string; orbit_repo: string } | null>(null);
   const [orbitBaseUrl, setOrbitBaseUrl] = useState("");
   const [orbitOwner, setOrbitOwner] = useState("");
   const [orbitRepoName, setOrbitRepoName] = useState("");
