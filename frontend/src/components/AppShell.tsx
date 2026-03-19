@@ -427,12 +427,12 @@ function ResponsiveShell({
           <>
             <div className={styles.mobileMain}>
               {ResponsiveControls && (
-                <div className={styles.mobileResponsiveControls}>
+                <div key={`${activeApp.id}-responsive-controls`} className={styles.mobileResponsiveControls}>
                   <ResponsiveControls />
                 </div>
               )}
               <div className={styles.mobileMainPanel}>
-                <MainPanel />
+                <MainPanel key={`${activeApp.id}-main-panel`} />
               </div>
             </div>
 
