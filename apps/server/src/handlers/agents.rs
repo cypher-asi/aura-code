@@ -926,8 +926,36 @@ pub async fn list_session_tasks(
             _ => map_storage_error(e),
         })?;
 
-    // aura-storage doesn't track session-task relationships (tasks_worked is
-    // not persisted remotely). Return empty until session_id is added to
-    // StorageTask.
-    Ok(Json(Vec::new()))
+    let storage_tasks = storage
+        .list_tasks(&_project_id.to_string(), &jwt)
+        .await
+        .map_err(map_storage_error)?;
+
+    let tasks: Vec<Task> = storage_tasks
+        .into_iter()
+        .filter(|t| t.session_id.as_deref() == Some(&session_id.to_string()))
+        .filter_map(|s| crate::handlers::tasks::storage_task_to_task(s).ok())
+        .collect();
+
+    Ok(Json(tasks))
+}
+
+pub async fn list_session_messages(
+    State(state): State<AppState>,
+    Path((_project_id, _agent_instance_id, session_id)): Path<(
+        ProjectId,
+        AgentInstanceId,
+        SessionId,
+    )>,
+) -> ApiResult<Json<Vec<Message>>> {
+    let storage = state.require_storage_client()?;
+    let jwt = state.get_jwt()?;
+
+    let storage_msgs = storage
+        .list_messages(&session_id.to_string(), &jwt, None, None)
+        .await
+        .map_err(map_storage_error)?;
+
+    let messages: Vec<Message> = storage_msgs.iter().map(storage_message_to_message).collect();
+    Ok(Json(messages))
 }

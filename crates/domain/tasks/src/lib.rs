@@ -134,18 +134,30 @@ pub fn storage_task_to_task(s: StorageTask) -> Result<Task, String> {
             .filter_map(|id| id.parse().ok())
             .collect(),
         parent_task_id: None,
-        assigned_agent_instance_id: None,
+        assigned_agent_instance_id: s
+            .assigned_project_agent_id
+            .and_then(|id| id.parse().ok()),
         completed_by_agent_instance_id: None,
-        session_id: None,
-        execution_notes: String::new(),
-        files_changed: vec![],
+        session_id: s.session_id.and_then(|id| id.parse().ok()),
+        execution_notes: s.execution_notes.unwrap_or_default(),
+        files_changed: s
+            .files_changed
+            .unwrap_or_default()
+            .into_iter()
+            .map(|f| FileChangeSummary {
+                op: f.op,
+                path: f.path,
+                lines_added: f.lines_added,
+                lines_removed: f.lines_removed,
+            })
+            .collect(),
         live_output: String::new(),
         build_steps: vec![],
         test_steps: vec![],
         user_id: None,
-        model: None,
-        total_input_tokens: 0,
-        total_output_tokens: 0,
+        model: s.model,
+        total_input_tokens: s.total_input_tokens.unwrap_or(0),
+        total_output_tokens: s.total_output_tokens.unwrap_or(0),
         created_at: parse_dt(&s.created_at),
         updated_at: parse_dt(&s.updated_at),
     })

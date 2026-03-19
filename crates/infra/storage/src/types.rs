@@ -193,6 +193,10 @@ pub struct UpdateTaskRequest {
     pub total_input_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_output_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_project_agent_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

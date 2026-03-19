@@ -209,6 +209,10 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
             "/api/projects/:project_id/agents/:agent_instance_id/sessions/:session_id/tasks",
             get(agents::list_session_tasks),
         )
+        .route(
+            "/api/projects/:project_id/agents/:agent_instance_id/sessions/:session_id/messages",
+            get(agents::list_session_messages),
+        )
         // Project-wide sessions
         .route(
             "/api/projects/:project_id/sessions",

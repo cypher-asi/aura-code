@@ -358,6 +358,10 @@ export const api = {
     apiFetch<Task[]>(
       `/api/projects/${projectId}/agents/${agentInstanceId}/sessions/${sessionId}/tasks`,
     ),
+  listSessionMessages: (projectId: ProjectId, agentInstanceId: AgentInstanceId, sessionId: string) =>
+    apiFetch<Message[]>(
+      `/api/projects/${projectId}/agents/${agentInstanceId}/sessions/${sessionId}/messages`,
+    ),
 
   // Log entries
   getLogEntries: (limit = 1000) =>

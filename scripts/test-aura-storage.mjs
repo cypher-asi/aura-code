@@ -472,6 +472,38 @@ async function run() {
     return { detail: "description updated" };
   });
 
+  await test("PUT /api/tasks/:id (execution fields)", async () => {
+    if (!state.task?.id) return { skip: "no task" };
+    const execFields = {
+      executionNotes: "Task completed successfully with all changes applied.",
+      filesChanged: [
+        { op: "create", path: "src/new-file.ts", linesAdded: 42, linesRemoved: 0 },
+        { op: "modify", path: "src/existing.ts", linesAdded: 10, linesRemoved: 3 },
+      ],
+      model: "claude-sonnet-4-5",
+      totalInputTokens: 15000,
+      totalOutputTokens: 8500,
+      sessionId: state.session?.id ?? null,
+      assignedProjectAgentId: state.projectAgent?.id ?? null,
+    };
+    const res = await request("PUT", `/api/tasks/${state.task.id}`, { body: execFields });
+    assertStatus(res, 200);
+
+    const getRes = await request("GET", `/api/tasks/${state.task.id}`);
+    assertStatus(getRes, 200);
+    const t = getRes.json;
+    assert(t.executionNotes === execFields.executionNotes, `executionNotes: got ${t.executionNotes}`);
+    assert(t.model === execFields.model, `model: got ${t.model}`);
+    assert(t.totalInputTokens === execFields.totalInputTokens, `totalInputTokens: got ${t.totalInputTokens}`);
+    assert(t.totalOutputTokens === execFields.totalOutputTokens, `totalOutputTokens: got ${t.totalOutputTokens}`);
+    assert(Array.isArray(t.filesChanged) && t.filesChanged.length === 2, "filesChanged length");
+    assert(t.filesChanged[0].op === "create", `filesChanged[0].op: got ${t.filesChanged[0].op}`);
+    assert(t.filesChanged[0].path === "src/new-file.ts", `filesChanged[0].path: got ${t.filesChanged[0].path}`);
+    if (execFields.sessionId) assert(t.sessionId === execFields.sessionId, `sessionId: got ${t.sessionId}`);
+    if (execFields.assignedProjectAgentId) assert(t.assignedProjectAgentId === execFields.assignedProjectAgentId, `assignedProjectAgentId: got ${t.assignedProjectAgentId}`);
+    return { detail: "execution fields persisted and verified" };
+  });
+
   await test("POST /api/tasks/:id/transition (pending → ready)", async () => {
     if (!state.task?.id) return { skip: "no task" };
     const res = await request("POST", `/api/tasks/${state.task.id}/transition`, {
@@ -739,6 +771,42 @@ async function run() {
     assert(Array.isArray(res.json), "Expected array");
     assert(res.json.length <= 2, `Expected <=2 messages, got ${res.json.length}`);
     return { detail: `${res.json.length} messages (limit=2, offset=2)` };
+  });
+
+  // ── Task Output as Session Message ─────────────────────────────
+
+  group("Task Output as Session Message");
+
+  await test("POST session message with task output content", async () => {
+    if (!state.session?.id || !state.projectAgent?.id) return { skip: "no session or project agent" };
+    const taskOutputContent = [
+      "Search: TaskService modules",
+      "Read src/lib.rs",
+      "Read src/task_service.rs",
+      "Plan: implement storage persistence",
+      "Write src/storage.rs (42 lines)",
+      "Build verification passed",
+    ].join("\n");
+
+    const res = await request("POST", `/api/sessions/${state.session.id}/messages`, {
+      body: {
+        projectAgentId: state.projectAgent.id,
+        projectId: state.projectId,
+        role: "assistant",
+        content: taskOutputContent,
+        inputTokens: 15000,
+        outputTokens: 8500,
+      },
+    });
+    assertStatus(res, 200, 201);
+    assertField(res.json, "id", "Message");
+
+    const listRes = await request("GET", `/api/sessions/${state.session.id}/messages`);
+    assertStatus(listRes, 200);
+    const assistantMsgs = listRes.json.filter((m) => m.role === "assistant");
+    const found = assistantMsgs.find((m) => m.content && m.content.includes("storage persistence"));
+    assert(found, "Task output message should be retrievable from session messages");
+    return { detail: `message id=${res.json.id}, verified retrieval` };
   });
 
   // ── Log Entries ──────────────────────────────────────────────────

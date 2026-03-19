@@ -135,6 +135,13 @@ fn event_summary(event: &EngineEvent) -> String {
     }
 }
 
+/// Per-task context tracked between TaskStarted and TaskCompleted/TaskFailed.
+struct TaskSessionEntry {
+    project_id: aura_core::ProjectId,
+    agent_instance_id: aura_core::AgentInstanceId,
+    session_id: aura_core::SessionId,
+}
+
 fn spawn_event_rebroadcast(
     mut rx: mpsc::UnboundedReceiver<EngineEvent>,
     broadcast_tx: broadcast::Sender<EngineEvent>,
@@ -149,6 +156,7 @@ fn spawn_event_rebroadcast(
         let mut flush_interval = interval(Duration::from_millis(DELTA_BROADCAST_INTERVAL_MS));
         flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut task_output_for_log: Option<(aura_core::TaskId, String)> = None;
+        let mut task_session_map: HashMap<aura_core::TaskId, TaskSessionEntry> = HashMap::new();
 
         loop {
             tokio::select! {
@@ -167,6 +175,13 @@ fn spawn_event_rebroadcast(
                                 .or_insert_with(|| (*project_id, *agent_instance_id, String::new()));
                             entry.2.push_str(delta);
                         }
+                        EngineEvent::TaskStarted { project_id, agent_instance_id, task_id, session_id, .. } => {
+                            task_session_map.insert(*task_id, TaskSessionEntry {
+                                project_id: *project_id,
+                                agent_instance_id: *agent_instance_id,
+                                session_id: *session_id,
+                            });
+                        }
                         EngineEvent::TaskCompleted { task_id, .. }
                         | EngineEvent::TaskFailed { task_id, .. } => {
                             let output = if let Ok(mut bufs) = task_output_buffers.lock() {
@@ -174,10 +189,21 @@ fn spawn_event_rebroadcast(
                             } else {
                                 String::new()
                             };
-                            task_output_for_log = Some((*task_id, output));
+                            task_output_for_log = Some((*task_id, output.clone()));
+
+                            if let Some(ref sc) = storage_client {
+                                if let Some(jwt) = get_jwt_from_store(&store) {
+                                    persist_task_to_storage(
+                                        sc, &jwt, &event, &output,
+                                        task_session_map.get(task_id),
+                                    ).await;
+                                }
+                            }
+                            task_session_map.remove(task_id);
                             finalize_live_output(&store, &task_output_buffers, task_id);
                         }
                         EngineEvent::LoopStopped { .. } | EngineEvent::LoopFinished { .. } => {
+                            task_session_map.clear();
                             finalize_all_live_output(&store, &task_output_buffers);
                         }
                         _ => {}
@@ -277,6 +303,114 @@ fn finalize_live_output(
 fn finalize_all_live_output(_store: &Arc<RocksStore>, buffers: &TaskOutputBuffers) {
     if let Ok(mut bufs) = buffers.lock() {
         bufs.drain();
+    }
+}
+
+async fn persist_task_to_storage(
+    storage: &Arc<StorageClient>,
+    jwt: &str,
+    event: &EngineEvent,
+    live_output: &str,
+    session_entry: Option<&TaskSessionEntry>,
+) {
+    match event {
+        EngineEvent::TaskCompleted {
+            task_id,
+            execution_notes,
+            file_changes,
+            input_tokens,
+            output_tokens,
+            model,
+            ..
+        } => {
+            let files_changed: Vec<aura_storage::StorageTaskFileChangeSummary> = file_changes
+                .iter()
+                .map(|f| aura_storage::StorageTaskFileChangeSummary {
+                    op: f.op.clone(),
+                    path: f.path.clone(),
+                    lines_added: f.lines_added,
+                    lines_removed: f.lines_removed,
+                })
+                .collect();
+
+            let update = aura_storage::UpdateTaskRequest {
+                title: None,
+                description: None,
+                order_index: None,
+                dependency_ids: None,
+                execution_notes: Some(execution_notes.clone()),
+                files_changed: Some(files_changed),
+                model: model.clone(),
+                total_input_tokens: *input_tokens,
+                total_output_tokens: *output_tokens,
+                session_id: session_entry.map(|e| e.session_id.to_string()),
+                assigned_project_agent_id: session_entry.map(|e| e.agent_instance_id.to_string()),
+            };
+
+            if let Err(e) = storage.update_task(&task_id.to_string(), jwt, &update).await {
+                warn!(task_id = %task_id, error = %e, "Failed to persist task execution data to aura-storage");
+            } else {
+                info!(task_id = %task_id, "Persisted task execution data to aura-storage");
+            }
+        }
+        EngineEvent::TaskFailed {
+            task_id,
+            reason,
+            model,
+            ..
+        } => {
+            let update = aura_storage::UpdateTaskRequest {
+                title: None,
+                description: None,
+                order_index: None,
+                dependency_ids: None,
+                execution_notes: Some(reason.clone()),
+                files_changed: None,
+                model: model.clone(),
+                total_input_tokens: None,
+                total_output_tokens: None,
+                session_id: session_entry.map(|e| e.session_id.to_string()),
+                assigned_project_agent_id: session_entry.map(|e| e.agent_instance_id.to_string()),
+            };
+
+            if let Err(e) = storage.update_task(&task_id.to_string(), jwt, &update).await {
+                warn!(task_id = %task_id, error = %e, "Failed to persist failed task data to aura-storage");
+            }
+        }
+        _ => return,
+    }
+
+    // Store live_output as a session message
+    if let Some(entry) = session_entry {
+        if !live_output.is_empty() {
+            let task_id = match event {
+                EngineEvent::TaskCompleted { task_id, .. }
+                | EngineEvent::TaskFailed { task_id, .. } => task_id,
+                _ => return,
+            };
+            let (input_tokens, output_tokens) = match event {
+                EngineEvent::TaskCompleted { input_tokens, output_tokens, .. } => (*input_tokens, *output_tokens),
+                _ => (None, None),
+            };
+
+            let msg_req = aura_storage::CreateMessageRequest {
+                project_agent_id: entry.agent_instance_id.to_string(),
+                project_id: entry.project_id.to_string(),
+                role: "assistant".to_string(),
+                content: live_output.to_string(),
+                input_tokens,
+                output_tokens,
+            };
+
+            if let Err(e) = storage
+                .create_message(&entry.session_id.to_string(), jwt, &msg_req)
+                .await
+            {
+                warn!(task_id = %task_id, session_id = %entry.session_id, error = %e, "Failed to persist task output as session message");
+            } else {
+                info!(task_id = %task_id, session_id = %entry.session_id, "Persisted task output as session message");
+            }
+        }
     }
 }
 
