@@ -265,6 +265,7 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         store.clone(),
         settings_service.clone(),
         llm.clone(),
+        storage_client.clone(),
     ));
     let task_service = Arc::new(TaskService::new(store.clone()));
     let agent_service = Arc::new(AgentService::new(store.clone()));
