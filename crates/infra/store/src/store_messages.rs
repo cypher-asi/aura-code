@@ -1,7 +1,3 @@
-// DEPRECATED: Messages are migrated to aura-storage (Phase 7).
-// These methods are kept as local-write fallback for the chat service
-// until Phase 9 removes them entirely.
-
 use std::sync::Arc;
 
 use aura_core::*;
@@ -14,7 +10,6 @@ impl RocksStore {
         self.cf_handle("messages")
     }
 
-    #[deprecated(note = "use StorageClient.create_message (Phase 7 migration)")]
     pub fn put_message(&self, message: &Message) -> StoreResult<()> {
         let key = format!(
             "{}:{}:{}",
@@ -26,7 +21,6 @@ impl RocksStore {
         Ok(())
     }
 
-    #[deprecated(note = "use StorageClient.list_messages (Phase 7 migration)")]
     pub fn list_messages(
         &self,
         project_id: &ProjectId,
@@ -36,7 +30,6 @@ impl RocksStore {
         self.scan_cf::<Message>(&self.cf_messages(), Some(&prefix))
     }
 
-    #[deprecated(note = "use StorageClient.delete_project_agent (Phase 7 migration)")]
     pub fn delete_messages_by_agent_instance(
         &self,
         project_id: &ProjectId,
@@ -55,7 +48,6 @@ impl RocksStore {
         Ok(())
     }
 
-    #[deprecated(note = "agent-level messages stay local until Phase 9")]
     pub fn put_agent_message(&self, agent_id: &AgentId, message: &Message) -> StoreResult<()> {
         let key = format!("agent:{}:{}", agent_id, message.message_id);
         let value = serde_json::to_vec(message)?;
@@ -64,13 +56,11 @@ impl RocksStore {
         Ok(())
     }
 
-    #[deprecated(note = "agent-level messages stay local until Phase 9")]
     pub fn list_agent_messages(&self, agent_id: &AgentId) -> StoreResult<Vec<Message>> {
         let prefix = format!("agent:{agent_id}:");
         self.scan_cf::<Message>(&self.cf_messages(), Some(&prefix))
     }
 
-    #[deprecated(note = "use StorageClient message count via sessions (Phase 7 migration)")]
     pub fn count_messages_by_project(&self, project_id: &ProjectId) -> StoreResult<usize> {
         let prefix = format!("{project_id}:");
         let cf = self.cf_messages();

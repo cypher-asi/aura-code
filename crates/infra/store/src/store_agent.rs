@@ -144,52 +144,6 @@ impl RocksStore {
         Ok(())
     }
 
-    // -- Session stubs (migrated to aura-storage, full cleanup in Phase 9) --
-
-    #[deprecated(note = "sessions migrated to aura-storage")]
-    pub fn put_session(&self, _session: &Session) -> StoreResult<()> {
-        Ok(())
-    }
-
-    #[deprecated(note = "sessions migrated to aura-storage")]
-    pub fn get_session(
-        &self,
-        project_id: &ProjectId,
-        agent_instance_id: &AgentInstanceId,
-        session_id: &SessionId,
-    ) -> StoreResult<Session> {
-        Err(StoreError::NotFound(format!(
-            "session:{project_id}:{agent_instance_id}:{session_id} (migrated to aura-storage)"
-        )))
-    }
-
-    #[deprecated(note = "sessions migrated to aura-storage")]
-    pub fn delete_session(
-        &self,
-        _project_id: &ProjectId,
-        _agent_instance_id: &AgentInstanceId,
-        _session_id: &SessionId,
-    ) -> StoreResult<()> {
-        Ok(())
-    }
-
-    #[deprecated(note = "sessions migrated to aura-storage")]
-    pub fn list_sessions_by_agent(
-        &self,
-        _project_id: &ProjectId,
-        _agent_instance_id: &AgentInstanceId,
-    ) -> StoreResult<Vec<Session>> {
-        Ok(Vec::new())
-    }
-
-    #[deprecated(note = "sessions migrated to aura-storage")]
-    pub fn list_sessions_by_project(
-        &self,
-        _project_id: &ProjectId,
-    ) -> StoreResult<Vec<Session>> {
-        Ok(Vec::new())
-    }
-
     // -- Settings CRUD --
 
     pub fn put_setting(&self, key: &str, value: &[u8]) -> StoreResult<()> {

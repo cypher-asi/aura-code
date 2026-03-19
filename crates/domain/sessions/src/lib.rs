@@ -20,18 +20,33 @@ pub struct SessionService {
     model_context_window: u64,
 }
 
-fn parse_dt(v: &Option<String>) -> DateTime<Utc> {
-    v.as_deref()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(Utc::now)
+pub fn parse_dt(v: &Option<String>) -> DateTime<Utc> {
+    match v.as_deref() {
+        Some(s) => match DateTime::parse_from_rfc3339(s) {
+            Ok(dt) => dt.with_timezone(&Utc),
+            Err(e) => {
+                warn!(value = s, error = %e, "failed to parse RFC3339 timestamp, defaulting to now");
+                Utc::now()
+            }
+        },
+        None => Utc::now(),
+    }
 }
 
-fn parse_session_status(s: &str) -> SessionStatus {
-    serde_json::from_str(&format!("\"{s}\"")).unwrap_or(SessionStatus::Active)
+pub fn parse_session_status(s: &str) -> SessionStatus {
+    match s {
+        "active" => SessionStatus::Active,
+        "completed" => SessionStatus::Completed,
+        "failed" => SessionStatus::Failed,
+        "rolled_over" => SessionStatus::RolledOver,
+        other => {
+            warn!(status = other, "unknown session status, defaulting to Active");
+            SessionStatus::Active
+        }
+    }
 }
 
-fn storage_session_to_session(
+pub fn storage_session_to_session(
     s: aura_storage::StorageSession,
     local_overrides: Option<&Session>,
 ) -> Result<Session, String> {
@@ -146,6 +161,11 @@ impl SessionService {
         })
     }
 
+    /// Update context usage after an LLM turn. `context_usage_estimate` is
+    /// persisted to aura-storage; `total_input_tokens` / `total_output_tokens`
+    /// are ephemeral -- they accumulate on the returned `Session` within a
+    /// single engine run but reset on the next `get_session` call because
+    /// `StorageSession` does not carry per-session token counts.
     pub async fn update_context_usage(
         &self,
         project_id: &ProjectId,
@@ -234,8 +254,10 @@ impl SessionService {
 
         if let Some(ref storage) = self.storage_client {
             let jwt = self.get_jwt()?;
-            let status_str =
-                serde_json::to_value(status).unwrap().as_str().unwrap_or("completed").to_string();
+            let status_str = serde_json::to_value(&status)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_else(|| "completed".to_string());
             let req = aura_storage::UpdateSessionRequest {
                 status: Some(status_str),
                 context_usage_estimate: None,
@@ -288,6 +310,11 @@ impl SessionService {
         Ok(Vec::new())
     }
 
+    /// Record that a task was worked in this session. This is a no-op for
+    /// persistence: `tasks_worked` is not tracked by `StorageSession` and the
+    /// local RocksDB session store is stubbed out. The returned `Session` is a
+    /// dummy carrying only the given `task_id`; callers must not rely on it for
+    /// anything beyond confirming the call succeeded.
     pub async fn record_task_worked(
         &self,
         project_id: &ProjectId,
@@ -312,6 +339,7 @@ impl SessionService {
             .list_project_agents(&project_id.to_string(), &jwt)
             .await?;
         let mut closed = Vec::new();
+        let now = Utc::now();
         for agent in &agents {
             let sessions = storage.list_sessions(&agent.id, &jwt).await?;
             for ss in sessions {
@@ -319,7 +347,7 @@ impl SessionService {
                     let req = aura_storage::UpdateSessionRequest {
                         status: Some("completed".to_string()),
                         context_usage_estimate: None,
-                        ended_at: Some(Utc::now().to_rfc3339()),
+                        ended_at: Some(now.to_rfc3339()),
                     };
                     if let Err(e) =
                         storage.update_session(&ss.id, &jwt, &req).await
@@ -327,7 +355,9 @@ impl SessionService {
                         warn!(session_id = %ss.id, error = %e, "failed to close stale session");
                         continue;
                     }
-                    if let Ok(s) = storage_session_to_session(ss, None) {
+                    if let Ok(mut s) = storage_session_to_session(ss, None) {
+                        s.status = SessionStatus::Completed;
+                        s.ended_at = Some(now);
                         closed.push(s);
                     }
                 }
