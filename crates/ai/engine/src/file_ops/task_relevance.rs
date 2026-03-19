@@ -877,6 +877,124 @@ fn resolve_task_dep_api_context_cached_sync(
     Ok(output)
 }
 
+/// Extract PascalCase type names (likely struct/trait/enum names) from text,
+/// filtering out standard library types and common English words.
+fn extract_type_names_from_text(text: &str) -> Vec<String> {
+    let type_re = Regex::new(r"\b([A-Z][a-zA-Z0-9]+)\b").unwrap();
+    let mut names: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for cap in type_re.captures_iter(text) {
+        let word = cap[1].to_string();
+        if word.len() >= 3
+            && !COMMON_WORDS.contains(&word.as_str())
+            && seen.insert(word.clone())
+        {
+            names.push(word);
+        }
+    }
+
+    names
+}
+
+/// Resolve struct, trait, and enum definitions for type names mentioned in the
+/// task description and spec. Returns a formatted section listing definitions
+/// and method signatures, giving the model accurate API information upfront
+/// to prevent field name and method hallucination.
+pub fn resolve_type_definitions_for_task(
+    project_root: &str,
+    task_title: &str,
+    task_description: &str,
+    spec_content: &str,
+    budget: usize,
+) -> String {
+    let combined = format!("{} {} {}", task_title, task_description, spec_content);
+    let type_names = extract_type_names_from_text(&combined);
+
+    if type_names.is_empty() {
+        return String::new();
+    }
+
+    let base_path = Path::new(project_root);
+    let mut output = String::new();
+    let mut remaining = budget;
+
+    for type_name in &type_names {
+        if remaining == 0 {
+            break;
+        }
+
+        let sources = super::find_type_sources(base_path, type_name, &[]);
+        if sources.is_empty() {
+            continue;
+        }
+
+        let mut section = String::new();
+        let mut has_content = false;
+
+        for (rel_path, content) in &sources {
+            if let Some(def) = super::extract_definition_block(content, type_name) {
+                if !has_content {
+                    section.push_str(&format!("### {} ({})\n", type_name, rel_path));
+                    has_content = true;
+                } else {
+                    section.push_str(&format!("  (also in {})\n", rel_path));
+                }
+                section.push_str(&def);
+                section.push('\n');
+            }
+
+            let sigs = super::extract_pub_signatures(content, type_name);
+            if !sigs.is_empty() {
+                if !has_content {
+                    section.push_str(&format!("### {} ({})\n", type_name, rel_path));
+                    has_content = true;
+                }
+                for sig in &sigs {
+                    section.push_str(sig);
+                    section.push('\n');
+                }
+            }
+        }
+
+        if has_content {
+            section.push('\n');
+            if section.len() <= remaining {
+                output.push_str(&section);
+                remaining = remaining.saturating_sub(section.len());
+            }
+        }
+    }
+
+    if output.is_empty() {
+        return String::new();
+    }
+
+    format!("## Key Type Definitions\n\n{}", output)
+}
+
+/// Async wrapper for `resolve_type_definitions_for_task` that runs on a
+/// blocking thread to avoid stalling the tokio runtime.
+pub async fn resolve_type_definitions_for_task_async(
+    project_root: &str,
+    task_title: &str,
+    task_description: &str,
+    spec_content: &str,
+    budget: usize,
+) -> String {
+    let project_root = project_root.to_string();
+    let task_title = task_title.to_string();
+    let task_description = task_description.to_string();
+    let spec_content = spec_content.to_string();
+    tokio::task::spawn_blocking(move || {
+        resolve_type_definitions_for_task(
+            &project_root, &task_title, &task_description, &spec_content, budget,
+        )
+    })
+    .await
+    .unwrap_or_default()
+}
+
 /// Check whether a line is an `impl` block header for the given type name.
 /// Handles `impl Type`, `impl<T> Type<T>`, `impl Trait for Type`, etc.
 pub(crate) fn is_impl_for_type(line: &str, type_name: &str) -> bool {

@@ -473,7 +473,7 @@ pub fn resolve_error_source_files(
     output
 }
 
-fn find_type_sources(
+pub(crate) fn find_type_sources(
     base_path: &Path,
     type_name: &str,
     source_hints: &[(String, u32)],
@@ -482,8 +482,10 @@ fn find_type_sources(
 
     let mut results: Vec<(String, String)> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
-    let struct_pat = format!("struct {}", type_name);
-    let impl_pat = format!("impl {}", type_name);
+    let patterns: Vec<String> = ["struct", "impl", "trait", "enum"]
+        .iter()
+        .map(|kw| format!("{} {}", kw, type_name))
+        .collect();
 
     for (hint_file, _) in source_hints {
         if seen.contains(hint_file) {
@@ -491,7 +493,7 @@ fn find_type_sources(
         }
         let full = base_path.join(hint_file);
         if let Ok(content) = std::fs::read_to_string(&full) {
-            if content.contains(&struct_pat) || content.contains(&impl_pat) {
+            if patterns.iter().any(|pat| content.contains(pat)) {
                 seen.insert(hint_file.clone());
                 results.push((hint_file.clone(), content));
             }
@@ -520,8 +522,10 @@ fn walk_for_type_sources(
         Err(_) => return,
     };
 
-    let struct_pat = format!("struct {}", type_name);
-    let impl_pat = format!("impl {}", type_name);
+    let patterns: Vec<String> = ["struct", "impl", "trait", "enum"]
+        .iter()
+        .map(|kw| format!("{} {}", kw, type_name))
+        .collect();
 
     let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
     entries.sort_by_key(|e| e.file_name());
@@ -549,7 +553,7 @@ fn walk_for_type_sources(
                 continue;
             }
             if let Ok(content) = std::fs::read_to_string(&path) {
-                if content.contains(&struct_pat) || content.contains(&impl_pat) {
+                if patterns.iter().any(|pat| content.contains(pat)) {
                     seen.insert(rel.clone());
                     results.push((rel, content));
                 }
@@ -558,7 +562,7 @@ fn walk_for_type_sources(
     }
 }
 
-fn extract_struct_fields(content: &str, type_name: &str) -> Option<String> {
+pub(crate) fn extract_struct_fields(content: &str, type_name: &str) -> Option<String> {
     let struct_prefix_pub = format!("pub struct {}", type_name);
     let struct_prefix = format!("struct {}", type_name);
     let lines: Vec<&str> = content.lines().collect();
@@ -604,7 +608,7 @@ fn extract_struct_fields(content: &str, type_name: &str) -> Option<String> {
     None
 }
 
-fn extract_pub_signatures(content: &str, type_name: &str) -> Vec<String> {
+pub(crate) fn extract_pub_signatures(content: &str, type_name: &str) -> Vec<String> {
     let mut signatures = Vec::new();
     let mut in_impl = false;
     let mut impl_depth: i32 = 0;
@@ -664,4 +668,55 @@ fn extract_pub_signatures(content: &str, type_name: &str) -> Vec<String> {
     }
 
     signatures
+}
+
+/// Extract the definition block (struct, trait, or enum) for a given type name.
+/// Tries each keyword in order and returns the first match found.
+pub(crate) fn extract_definition_block(content: &str, type_name: &str) -> Option<String> {
+    let lines: Vec<&str> = content.lines().collect();
+
+    for keyword in &["struct", "trait", "enum"] {
+        let prefix_pub = format!("pub {} {}", keyword, type_name);
+        let prefix_plain = format!("{} {}", keyword, type_name);
+
+        for (i, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            let after = trimmed
+                .strip_prefix(prefix_pub.as_str())
+                .or_else(|| trimmed.strip_prefix(prefix_plain.as_str()));
+            let after = match after {
+                Some(rest) => rest,
+                None => continue,
+            };
+            match after.chars().next() {
+                Some('{') | Some(' ') | Some('<') | Some(':') | None => {}
+                _ => continue,
+            }
+            if !trimmed.contains('{') {
+                if trimmed.ends_with(';') {
+                    break;
+                }
+                continue;
+            }
+
+            let mut result = String::new();
+            let mut depth: i32 = 0;
+            for j in i..lines.len() {
+                for ch in lines[j].chars() {
+                    match ch {
+                        '{' => depth += 1,
+                        '}' => depth -= 1,
+                        _ => {}
+                    }
+                }
+                result.push_str(lines[j].trim());
+                result.push('\n');
+                if depth <= 0 {
+                    break;
+                }
+            }
+            return Some(result);
+        }
+    }
+    None
 }

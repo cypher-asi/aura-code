@@ -57,6 +57,14 @@ impl DevLoopEngine {
             String::new()
         };
 
+        let type_defs_context = file_ops::resolve_type_definitions_for_task_async(
+            &project.linked_folder_path,
+            &task.title,
+            &task.description,
+            &spec.markdown_contents,
+            10_000,
+        ).await;
+
         let completed_deps: Vec<Task> = if task.dependency_ids.is_empty() {
             Vec::new()
         } else {
@@ -77,6 +85,9 @@ impl DevLoopEngine {
         );
         if !workspace_map.is_empty() {
             task_context.push_str(&format!("\n# Workspace Structure\n{}\n", workspace_map));
+        }
+        if !type_defs_context.is_empty() {
+            task_context.push_str(&format!("\n# Type Definitions Referenced in Task\n{}\n", type_defs_context));
         }
         if !codebase_snapshot.is_empty() {
             task_context.push_str(&format!("\n# Current Codebase Files\n{}\n", codebase_snapshot));
