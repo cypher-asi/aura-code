@@ -167,7 +167,7 @@ function summarizeInput(name: string, input: Record<string, unknown>): string {
     case "delete_file":
       return (input.path as string) || "";
     case "list_files":
-      return (input.path as string) || ".";
+      return (input.path as string) || "";
     case "create_spec":
     case "create_task":
       return (input.title as string) || "";
