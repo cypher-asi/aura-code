@@ -19,6 +19,8 @@ interface PanelState {
   showInfo: boolean;
   specs: Spec[];
   tasks: Task[];
+  /** Spec IDs deleted this session so the sidebar can hide them until next refetch */
+  deletedSpecIds: string[];
   streamingAgentInstanceId: string | null;
 }
 
@@ -36,6 +38,7 @@ interface PanelActions {
   toggleInfo: (title: string, content: ReactNode) => void;
   pushSpec: (spec: Spec) => void;
   removeSpec: (specId: string) => void;
+  clearDeletedSpecs: () => void;
   pushTask: (task: Task) => void;
   removeTask: (taskId: string) => void;
   clearGeneratedArtifacts: () => void;
@@ -57,6 +60,7 @@ const INITIAL_PANEL: PanelState = {
   showInfo: false,
   specs: [],
   tasks: [],
+  deletedSpecIds: [],
   streamingAgentInstanceId: null,
 };
 
@@ -126,7 +130,14 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
     setPanel((prev) => ({
       ...prev,
       specs: prev.specs.filter((s) => s.spec_id !== specId),
+      deletedSpecIds: prev.deletedSpecIds.includes(specId)
+        ? prev.deletedSpecIds
+        : [...prev.deletedSpecIds, specId],
     }));
+  }, []);
+
+  const clearDeletedSpecs = useCallback(() => {
+    setPanel((prev) => (prev.deletedSpecIds.length === 0 ? prev : { ...prev, deletedSpecIds: [] }));
   }, []);
 
   const pushTask = useCallback((task: Task) => {
@@ -214,6 +225,7 @@ export function SidekickProvider({ children }: { children: React.ReactNode }) {
         toggleInfo,
         pushSpec,
         removeSpec,
+        clearDeletedSpecs,
         pushTask,
         removeTask,
         patchTask,
