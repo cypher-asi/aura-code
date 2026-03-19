@@ -515,18 +515,6 @@ export function TaskPreview({ task }: { task: import("../types").Task }) {
     }
   }, [projectId, effectiveSessionId, task.assigned_agent_instance_id, sidekick]);
 
-  const emptyBuildMessage = isActive
-    ? "Build verification pending..."
-    : isTerminal
-      ? "No build verification recorded"
-      : "—";
-
-  const emptyTestMessage = isActive
-    ? "Test verification pending..."
-    : isTerminal
-      ? "No tests recorded"
-      : "—";
-
   return (
     <>
       <div className={styles.taskMeta}>
@@ -664,8 +652,8 @@ export function TaskPreview({ task }: { task: import("../types").Task }) {
         </GroupCollapsible>
       )}
 
-      <GroupCollapsible label="Build Verification" count={taskOutput.buildSteps.length || undefined} defaultOpen className={styles.section}>
-        {taskOutput.buildSteps.length > 0 ? (
+      {taskOutput.buildSteps.length > 0 && (
+        <GroupCollapsible label="Build Verification" count={taskOutput.buildSteps.length} defaultOpen className={styles.section}>
           <div className={styles.liveOutputSection}>
             <div className={styles.activityList}>
               {taskOutput.buildSteps.map((step, i) => (
@@ -673,15 +661,11 @@ export function TaskPreview({ task }: { task: import("../types").Task }) {
               ))}
             </div>
           </div>
-        ) : (
-          <div className={styles.emptyVerification}>
-            <Text variant="muted" size="sm">{emptyBuildMessage}</Text>
-          </div>
-        )}
-      </GroupCollapsible>
+        </GroupCollapsible>
+      )}
 
-      <GroupCollapsible label="Test Verification" count={taskOutput.testSteps.length || undefined} defaultOpen className={styles.section}>
-        {taskOutput.testSteps.length > 0 ? (
+      {taskOutput.testSteps.length > 0 && (
+        <GroupCollapsible label="Test Verification" count={taskOutput.testSteps.length} defaultOpen className={styles.section}>
           <div className={styles.liveOutputSection}>
             <div className={styles.activityList}>
               {taskOutput.testSteps.map((step, i) => (
@@ -689,12 +673,8 @@ export function TaskPreview({ task }: { task: import("../types").Task }) {
               ))}
             </div>
           </div>
-        ) : (
-          <div className={styles.emptyVerification}>
-            <Text variant="muted" size="sm">{emptyTestMessage}</Text>
-          </div>
-        )}
-      </GroupCollapsible>
+        </GroupCollapsible>
+      )}
 
       {showNotes && (
         <GroupCollapsible label="Notes" defaultOpen className={styles.section}>
