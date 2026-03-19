@@ -28,21 +28,6 @@ fn make_project() -> Project {
     }
 }
 
-fn make_spec(project_id: ProjectId) -> Spec {
-    let now = Utc::now();
-    Spec {
-        spec_id: SpecId::new(),
-        project_id,
-        title: "Test Spec".into(),
-        order_index: 0,
-        markdown_contents: "# Spec\nTest contents".into(),
-        created_at: now,
-        updated_at: now,
-    }
-}
-
-// Task CRUD has been migrated to aura-storage. Task store tests removed.
-
 const TEST_USER_ID: &str = "test-user-001";
 
 fn make_agent() -> Agent {
@@ -58,29 +43,6 @@ fn make_agent() -> Agent {
         icon: None,
         network_agent_id: None,
         profile_id: None,
-        created_at: now,
-        updated_at: now,
-    }
-}
-
-fn make_agent_instance(project_id: ProjectId, agent_id: AgentId) -> AgentInstance {
-    let now = Utc::now();
-    AgentInstance {
-        agent_instance_id: AgentInstanceId::new(),
-        project_id,
-        agent_id,
-        name: "Agent-1".into(),
-        role: "developer".into(),
-        personality: "helpful".into(),
-        system_prompt: "You are a test agent instance.".into(),
-        skills: vec![],
-        icon: None,
-        status: AgentStatus::Idle,
-        current_task_id: None,
-        current_session_id: None,
-        total_input_tokens: 0,
-        total_output_tokens: 0,
-        model: None,
         created_at: now,
         updated_at: now,
     }
@@ -123,56 +85,8 @@ fn list_projects_returns_all() {
     assert_eq!(projects.len(), 2);
 }
 
-// ---------------------------------------------------------------------------
-// Spec CRUD
-// ---------------------------------------------------------------------------
-
-#[test]
-fn spec_crud_round_trip() {
-    let (store, _dir) = open_temp_store();
-    let project = make_project();
-    store.put_project(&project).unwrap();
-
-    let spec = make_spec(project.project_id);
-    store.put_spec(&spec).unwrap();
-
-    let fetched = store.get_spec(&project.project_id, &spec.spec_id).unwrap();
-    assert_eq!(spec, fetched);
-
-    store
-        .delete_spec(&project.project_id, &spec.spec_id)
-        .unwrap();
-    let result = store.get_spec(&project.project_id, &spec.spec_id);
-    assert!(matches!(result, Err(StoreError::NotFound(_))));
-}
-
-#[test]
-fn list_specs_by_project_filters_correctly() {
-    let (store, _dir) = open_temp_store();
-    let p1 = make_project();
-    let p2 = make_project();
-    store.put_project(&p1).unwrap();
-    store.put_project(&p2).unwrap();
-
-    let s1 = make_spec(p1.project_id);
-    let s2 = make_spec(p1.project_id);
-    let s3 = make_spec(p2.project_id);
-    store.put_spec(&s1).unwrap();
-    store.put_spec(&s2).unwrap();
-    store.put_spec(&s3).unwrap();
-
-    let specs_p1 = store.list_specs_by_project(&p1.project_id).unwrap();
-    assert_eq!(specs_p1.len(), 2);
-    for s in &specs_p1 {
-        assert_eq!(s.project_id, p1.project_id);
-    }
-
-    let specs_p2 = store.list_specs_by_project(&p2.project_id).unwrap();
-    assert_eq!(specs_p2.len(), 1);
-    assert_eq!(specs_p2[0].project_id, p2.project_id);
-}
-
-// Task CRUD tests removed -- tasks migrated to aura-storage (Phase 5e).
+// Spec, task, agent instance, and session CRUD tests removed --
+// these entities are fully migrated to aura-storage.
 
 // ---------------------------------------------------------------------------
 // Agent CRUD (user-scoped)
@@ -213,15 +127,6 @@ fn list_agents_by_user_filters_correctly() {
 }
 
 // ---------------------------------------------------------------------------
-// Agent instance storage has been migrated to aura-storage (Phase 4).
-// Agent instance CRUD tests removed.
-
-// ---------------------------------------------------------------------------
-// Session storage has been migrated to aura-storage.
-// The RocksStore session methods are now stubs (no-ops / NotFound).
-// Full cleanup in Phase 9.
-
-// ---------------------------------------------------------------------------
 // Settings CRUD
 // ---------------------------------------------------------------------------
 
@@ -247,35 +152,29 @@ fn settings_crud_round_trip() {
 #[test]
 fn batch_write_is_atomic() {
     let (store, _dir) = open_temp_store();
-    let project = make_project();
-    let s1 = make_spec(project.project_id);
-    let s2 = make_spec(project.project_id);
+    let p1 = make_project();
+    let p2 = make_project();
 
     let ops = vec![
         BatchOp::Put {
             cf: ColumnFamilyName::Projects,
-            key: project.project_id.to_string(),
-            value: serde_json::to_vec(&project).unwrap(),
+            key: p1.project_id.to_string(),
+            value: serde_json::to_vec(&p1).unwrap(),
         },
         BatchOp::Put {
-            cf: ColumnFamilyName::Specs,
-            key: format!("{}:{}", s1.project_id, s1.spec_id),
-            value: serde_json::to_vec(&s1).unwrap(),
-        },
-        BatchOp::Put {
-            cf: ColumnFamilyName::Specs,
-            key: format!("{}:{}", s2.project_id, s2.spec_id),
-            value: serde_json::to_vec(&s2).unwrap(),
+            cf: ColumnFamilyName::Projects,
+            key: p2.project_id.to_string(),
+            value: serde_json::to_vec(&p2).unwrap(),
         },
     ];
 
     store.write_batch(ops).unwrap();
 
-    let fetched_project = store.get_project(&project.project_id).unwrap();
-    assert_eq!(fetched_project, project);
+    let fetched = store.get_project(&p1.project_id).unwrap();
+    assert_eq!(fetched, p1);
 
-    let specs = store.list_specs_by_project(&project.project_id).unwrap();
-    assert_eq!(specs.len(), 2);
+    let projects = store.list_projects().unwrap();
+    assert_eq!(projects.len(), 2);
 }
 
 // ---------------------------------------------------------------------------

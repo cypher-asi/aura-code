@@ -4,6 +4,7 @@ use axum::extract::{Path, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use tracing::warn;
 
 use aura_core::{ProjectId, SpecId, Task, TaskId, TaskStatus};
 use aura_storage::StorageTask;
@@ -238,19 +239,47 @@ pub async fn get_progress(
 
     // Count messages from aura-storage (aggregate across agent sessions)
     if let (Some(ref storage), Ok(jwt)) = (&state.storage_client, state.get_jwt()) {
-        let agents = storage
+        let agents = match storage
             .list_project_agents(&project_id.to_string(), &jwt)
             .await
-            .unwrap_or_default();
+        {
+            Ok(a) => a,
+            Err(e) => {
+                tracing::warn!(%project_id, error = %e, "Failed to list project agents for message count");
+                Vec::new()
+            }
+        };
+
+        let session_futs: Vec<_> = agents
+            .iter()
+            .map(|a| storage.list_sessions(&a.id, &jwt))
+            .collect();
+        let session_results = futures_util::future::join_all(session_futs).await;
+
+        let all_sessions: Vec<_> = session_results
+            .into_iter()
+            .enumerate()
+            .flat_map(|(i, result)| match result {
+                Ok(sessions) => sessions,
+                Err(e) => {
+                    tracing::warn!(project_agent_id = %agents[i].id, error = %e, "Failed to list sessions for message count");
+                    Vec::new()
+                }
+            })
+            .collect();
+
+        let msg_futs: Vec<_> = all_sessions
+            .iter()
+            .map(|s| storage.list_messages(&s.id, &jwt, None, None))
+            .collect();
+        let msg_results = futures_util::future::join_all(msg_futs).await;
+
         let mut msg_count: u64 = 0;
-        for agent in &agents {
-            let sessions = storage
-                .list_sessions(&agent.id, &jwt)
-                .await
-                .unwrap_or_default();
-            for session in &sessions {
-                if let Ok(msgs) = storage.list_messages(&session.id, &jwt, None, None).await {
-                    msg_count += msgs.len() as u64;
+        for (i, result) in msg_results.into_iter().enumerate() {
+            match result {
+                Ok(msgs) => msg_count += msgs.len() as u64,
+                Err(e) => {
+                    tracing::warn!(session_id = %all_sessions[i].id, error = %e, "Failed to list messages for count");
                 }
             }
         }
@@ -277,37 +306,41 @@ async fn aggregate_session_metrics(
         return;
     };
 
+    let now = Utc::now();
     let mut total_sessions = 0u64;
     let mut total_time_seconds = 0u64;
     for agent in &storage_agents {
-        if let Ok(sessions) = storage.list_sessions(&agent.id, &jwt).await {
-            total_sessions += sessions.len() as u64;
-            total_time_seconds += sessions
-                .iter()
-                .map(|s| {
-                    let created = s
-                        .created_at
-                        .as_deref()
-                        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-                        .map(|dt| dt.with_timezone(&Utc));
-                    let ended = s
-                        .ended_at
-                        .as_deref()
-                        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .or_else(|| Some(Utc::now()));
-                    match (created, ended) {
-                        (Some(c), Some(e)) => (e - c).num_seconds().max(0) as u64,
-                        _ => 0,
-                    }
-                })
-                .sum::<u64>();
+        match storage.list_sessions(&agent.id, &jwt).await {
+            Ok(sessions) => {
+                total_sessions += sessions.len() as u64;
+                total_time_seconds += sessions
+                    .iter()
+                    .map(|s| {
+                        let created = s
+                            .created_at
+                            .as_deref()
+                            .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+                            .map(|dt| dt.with_timezone(&Utc));
+                        // Active sessions without ended_at use `now` so their
+                        // elapsed time is included in the running total.
+                        let ended = s
+                            .ended_at
+                            .as_deref()
+                            .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .unwrap_or(now);
+                        match created {
+                            Some(c) => (ended - c).num_seconds().max(0) as u64,
+                            None => 0,
+                        }
+                    })
+                    .sum::<u64>();
+            }
+            Err(e) => warn!(agent_id = %agent.id, error = %e, "failed to list sessions for agent"),
         }
     }
     progress.total_sessions = total_sessions;
     progress.total_time_seconds = total_time_seconds;
-    // Token counts and cost are now tracked via agent instances, not sessions.
-    // StorageSession doesn't carry total_input_tokens / total_output_tokens.
 }
 
 async fn aggregate_agent_instance_metrics(
