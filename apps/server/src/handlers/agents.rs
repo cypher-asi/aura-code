@@ -29,6 +29,7 @@ use crate::dto::{
     UpdateAgentRequest,
 };
 use crate::error::{map_network_error, map_storage_error, ApiError, ApiResult};
+use crate::handlers::projects;
 use crate::state::AppState;
 
 fn get_user_id(state: &AppState) -> Result<String, (StatusCode, Json<ApiError>)> {
@@ -173,7 +174,7 @@ pub async fn delete_agent(
     let jwt = state.get_jwt()?;
 
     if let Some(ref storage) = state.storage_client {
-        let projects = state.project_service.list_projects().unwrap_or_default();
+        let projects = projects::list_all_projects_from_network(&state).await?;
         let agent_id_str = agent_id.to_string();
         for project in &projects {
             if let Ok(agents) = storage
@@ -463,7 +464,9 @@ pub async fn list_agent_messages(
 
     // Source 1: project-scoped messages from aura-storage
     if let (Some(ref storage), Ok(jwt)) = (&state.storage_client, state.get_jwt()) {
-        let all_projects = state.project_service.list_projects().unwrap_or_default();
+        let all_projects = projects::list_all_projects_from_network(&state)
+            .await
+            .unwrap_or_default();
         let agent_id_str = agent_id.to_string();
 
         let pids: Vec<String> = all_projects
@@ -583,7 +586,9 @@ pub async fn send_agent_message_stream(
     let projects: Vec<aura_core::Project> = if let (Some(ref storage), Ok(jwt)) =
         (&state.storage_client, state.get_jwt())
     {
-        let all_projects = state.project_service.list_projects().unwrap_or_default();
+        let all_projects = projects::list_all_projects_from_network(&state)
+            .await
+            .unwrap_or_default();
         let agent_id_str = agent_id.to_string();
         let mut matched = Vec::new();
         for project in all_projects {
