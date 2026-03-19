@@ -9,10 +9,10 @@ import type { Project, AgentInstance } from "../types";
 import { ButtonPlus, Explorer, Menu } from "@cypher-asi/zui";
 import { EmptyState } from "./EmptyState";
 import type { ExplorerNode, MenuItem } from "@cypher-asi/zui";
-import { Bot, Pencil, Trash2, Loader2 } from "lucide-react";
+import { Bot, Pencil, Trash2, Loader2, Settings } from "lucide-react";
 import { InlineRenameInput } from "./InlineRenameInput";
 import { NewProjectModal } from "./NewProjectModal";
-import { DeleteProjectModal, DeleteAgentInstanceModal } from "./ProjectModals";
+import { DeleteProjectModal, DeleteAgentInstanceModal, ProjectSettingsModal } from "./ProjectModals";
 import { AgentSelectorModal } from "./AgentSelectorModal";
 import { useEventContext } from "../context/EventContext";
 import { useSidebarSearch } from "../context/SidebarSearchContext";
@@ -36,6 +36,7 @@ function filterTree(nodes: ExplorerNode[], q: string): ExplorerNode[] {
 const projectMenuItems: MenuItem[] = [
   { id: "add-agent", label: "Add Agent", icon: <Bot size={14} /> },
   { id: "rename", label: "Rename", icon: <Pencil size={14} /> },
+  { id: "settings", label: "Settings", icon: <Settings size={14} /> },
   { type: "separator" },
   { id: "delete", label: "Delete", icon: <Trash2 size={14} /> },
 ];
@@ -67,6 +68,7 @@ export function ProjectList() {
 
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const [renameTarget, setRenameTarget] = useState<Project | null>(null);
+  const [settingsTarget, setSettingsTarget] = useState<Project | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteAgentTarget, setDeleteAgentTarget] = useState<AgentInstance | null>(null);
@@ -356,6 +358,8 @@ export function ProjectList() {
       handleAddAgent(target.project_id);
     } else if (actionId === "rename" && target) {
       setRenameTarget(target);
+    } else if (actionId === "settings" && target) {
+      setSettingsTarget(target);
     } else if (actionId === "delete" && target) {
       setDeleteTarget(target);
     } else if (actionId === "delete-agent" && agentTarget) {
@@ -497,6 +501,15 @@ export function ProjectList() {
           onCancel={() => setRenameTarget(null)}
         />
       )}
+
+      <ProjectSettingsModal
+        target={settingsTarget}
+        onClose={() => setSettingsTarget(null)}
+        onSaved={(p) => {
+          setProjects((prev) => prev.map((proj) => (proj.project_id === p.project_id ? p : proj)));
+          setSettingsTarget(null);
+        }}
+      />
 
       <DeleteProjectModal
         target={deleteTarget}
