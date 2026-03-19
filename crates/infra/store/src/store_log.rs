@@ -1,3 +1,7 @@
+// DEPRECATED: Log entries are migrated to aura-storage (Phase 8).
+// These methods are kept as local-write fallback for the event rebroadcast
+// loop until Phase 9 removes them entirely.
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -15,7 +19,7 @@ impl RocksStore {
         self.cf_handle("log_entries")
     }
 
-    /// Persist a log entry. `event_json` is the raw serialized EngineEvent.
+    #[deprecated(note = "use StorageClient.create_log_entry (Phase 8 migration)")]
     pub fn append_log_entry(&self, event_json: &[u8]) -> StoreResult<()> {
         let millis = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -29,7 +33,7 @@ impl RocksStore {
         Ok(())
     }
 
-    /// Return all log entries in chronological order as `(timestamp_ms, event_json_bytes)`.
+    #[deprecated(note = "use StorageClient.list_log_entries (Phase 8 migration)")]
     pub fn list_log_entries(&self, limit: usize) -> StoreResult<Vec<(i64, Vec<u8>)>> {
         let cf = self.cf_log_entries();
         let mut opts = rocksdb::ReadOptions::default();
@@ -56,7 +60,7 @@ impl RocksStore {
         Ok(entries)
     }
 
-    /// Remove oldest entries when the count exceeds the prune threshold.
+    #[deprecated(note = "pruning handled by aura-storage (Phase 8 migration)")]
     pub fn prune_log_entries_if_needed(&self) -> StoreResult<()> {
         let cf = self.cf_log_entries();
         let mut opts = rocksdb::ReadOptions::default();
