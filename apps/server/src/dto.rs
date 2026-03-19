@@ -80,6 +80,7 @@ pub struct CreateAgentInstanceRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateAgentInstanceRequest {
+    pub status: Option<String>,
     pub name: Option<String>,
     pub role: Option<String>,
     pub personality: Option<String>,

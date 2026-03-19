@@ -12,8 +12,8 @@ use tracing::{info, warn};
 use axum::http::StatusCode;
 
 use aura_core::{
-    Agent, AgentId, AgentInstance, AgentInstanceId, Message, ProfileId, ProjectId, Session,
-    SessionId, Task, ZeroAuthSession,
+    Agent, AgentId, AgentInstance, AgentInstanceId, AgentStatus, Message, ProfileId, ProjectId,
+    Session, SessionId, Task, ZeroAuthSession,
 };
 use aura_chat::ChatStreamEvent;
 use aura_engine::EngineEvent;
@@ -23,7 +23,7 @@ use crate::dto::{
     CreateAgentInstanceRequest, CreateAgentRequest, SendMessageRequest, UpdateAgentInstanceRequest,
     UpdateAgentRequest,
 };
-use crate::error::{map_network_error, ApiError, ApiResult};
+use crate::error::{map_network_error, map_storage_error, ApiError, ApiResult};
 use crate::state::AppState;
 
 fn get_user_id(state: &AppState) -> Result<String, (StatusCode, Json<ApiError>)> {
@@ -187,7 +187,65 @@ pub async fn delete_agent(
 }
 
 // ---------------------------------------------------------------------------
-// Project-level AgentInstance CRUD
+// StorageProjectAgent -> AgentInstance conversion
+// ---------------------------------------------------------------------------
+
+fn parse_dt_opt(s: &Option<String>) -> DateTime<Utc> {
+    s.as_deref()
+        .and_then(|v| DateTime::parse_from_rfc3339(v).ok())
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(Utc::now)
+}
+
+fn parse_agent_status(s: &str) -> AgentStatus {
+    match s {
+        "idle" => AgentStatus::Idle,
+        "working" => AgentStatus::Working,
+        "blocked" => AgentStatus::Blocked,
+        "stopped" => AgentStatus::Stopped,
+        "error" => AgentStatus::Error,
+        _ => AgentStatus::Idle,
+    }
+}
+
+fn storage_agent_to_instance(spa: &aura_storage::StorageProjectAgent) -> AgentInstance {
+    AgentInstance {
+        agent_instance_id: spa.id.parse().unwrap_or_else(|_| AgentInstanceId::new()),
+        project_id: spa
+            .project_id
+            .as_deref()
+            .unwrap_or("")
+            .parse()
+            .unwrap_or_else(|_| ProjectId::new()),
+        agent_id: spa
+            .agent_id
+            .as_deref()
+            .unwrap_or("")
+            .parse()
+            .unwrap_or_else(|_| AgentId::new()),
+        name: spa.name.clone().unwrap_or_default(),
+        role: spa.role.clone().unwrap_or_default(),
+        personality: spa.personality.clone().unwrap_or_default(),
+        system_prompt: spa.system_prompt.clone().unwrap_or_default(),
+        skills: spa.skills.clone().unwrap_or_default(),
+        icon: spa.icon.clone(),
+        status: spa
+            .status
+            .as_deref()
+            .map(parse_agent_status)
+            .unwrap_or(AgentStatus::Idle),
+        current_task_id: None,
+        current_session_id: None,
+        total_input_tokens: spa.total_input_tokens.unwrap_or(0),
+        total_output_tokens: spa.total_output_tokens.unwrap_or(0),
+        model: spa.model.clone(),
+        created_at: parse_dt_opt(&spa.created_at),
+        updated_at: parse_dt_opt(&spa.updated_at),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Project-level AgentInstance CRUD (proxied to aura-storage)
 // ---------------------------------------------------------------------------
 
 pub async fn create_agent_instance(
@@ -195,21 +253,21 @@ pub async fn create_agent_instance(
     Path(project_id): Path<ProjectId>,
     Json(body): Json<CreateAgentInstanceRequest>,
 ) -> ApiResult<Json<AgentInstance>> {
+    let storage = state.require_storage_client()?;
+    let jwt = state.get_jwt()?;
     let user_id = get_user_id(&state)?;
 
-    // Try local first, then fall back to network if the agent shadow is missing
     let agent = match state.agent_service.get_agent(&user_id, &body.agent_id) {
         Ok(a) => a,
         Err(_) if state.network_client.is_some() => {
             let client = state.network_client.as_ref().unwrap();
-            let jwt = state.get_jwt()?;
             let net_agent = client
                 .get_agent(&body.agent_id.to_string(), &jwt)
                 .await
                 .map_err(map_network_error)?;
-            let agent = agent_from_network(&net_agent);
-            ensure_agent_shadow(&state, &agent);
-            agent
+            let a = agent_from_network(&net_agent);
+            ensure_agent_shadow(&state, &a);
+            a
         }
         Err(e) => {
             return Err(match &e {
@@ -221,10 +279,21 @@ pub async fn create_agent_instance(
         }
     };
 
-    let instance = state
-        .agent_instance_service
-        .create_instance_from_agent(&project_id, &agent)
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let req = aura_storage::CreateProjectAgentRequest {
+        agent_id: body.agent_id.to_string(),
+        name: agent.name.clone(),
+        role: Some(agent.role.clone()),
+        personality: Some(agent.personality.clone()),
+        system_prompt: Some(agent.system_prompt.clone()),
+        skills: Some(agent.skills.clone()),
+        icon: agent.icon.clone(),
+    };
+    let storage_agent = storage
+        .create_project_agent(&project_id.to_string(), &jwt, &req)
+        .await
+        .map_err(map_storage_error)?;
+
+    let instance = storage_agent_to_instance(&storage_agent);
     Ok(Json(instance))
 }
 
@@ -232,65 +301,78 @@ pub async fn list_agent_instances(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
 ) -> ApiResult<Json<Vec<AgentInstance>>> {
-    let instances = state
-        .agent_instance_service
-        .list_instances(&project_id)
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let storage = state.require_storage_client()?;
+    let jwt = state.get_jwt()?;
+    let storage_agents = storage
+        .list_project_agents(&project_id.to_string(), &jwt)
+        .await
+        .map_err(map_storage_error)?;
+    let instances: Vec<AgentInstance> = storage_agents
+        .iter()
+        .map(storage_agent_to_instance)
+        .collect();
     Ok(Json(instances))
 }
 
 pub async fn get_agent_instance(
     State(state): State<AppState>,
-    Path((project_id, agent_instance_id)): Path<(ProjectId, AgentInstanceId)>,
+    Path((_project_id, agent_instance_id)): Path<(ProjectId, AgentInstanceId)>,
 ) -> ApiResult<Json<AgentInstance>> {
-    let instance = state
-        .agent_instance_service
-        .get_instance(&project_id, &agent_instance_id)
+    let storage = state.require_storage_client()?;
+    let jwt = state.get_jwt()?;
+    let storage_agent = storage
+        .get_project_agent(&agent_instance_id.to_string(), &jwt)
+        .await
         .map_err(|e| match &e {
-            aura_agents::AgentError::NotFound => {
+            aura_storage::StorageError::Server { status: 404, .. } => {
                 ApiError::not_found("agent instance not found")
             }
-            _ => ApiError::internal(e.to_string()),
+            _ => map_storage_error(e),
         })?;
+    let instance = storage_agent_to_instance(&storage_agent);
     Ok(Json(instance))
 }
 
 pub async fn update_agent_instance(
     State(state): State<AppState>,
-    Path((project_id, agent_instance_id)): Path<(ProjectId, AgentInstanceId)>,
+    Path((_project_id, agent_instance_id)): Path<(ProjectId, AgentInstanceId)>,
     Json(body): Json<UpdateAgentInstanceRequest>,
 ) -> ApiResult<Json<AgentInstance>> {
-    let instance = state
-        .agent_instance_service
-        .update_instance(
-            &project_id,
-            &agent_instance_id,
-            body.name,
-            body.role,
-            body.personality,
-            body.system_prompt,
-        )
-        .map_err(|e| match &e {
-            aura_agents::AgentError::NotFound => {
-                ApiError::not_found("agent instance not found")
-            }
-            _ => ApiError::internal(e.to_string()),
-        })?;
+    let storage = state.require_storage_client()?;
+    let jwt = state.get_jwt()?;
+
+    if let Some(ref status) = body.status {
+        let req = aura_storage::UpdateProjectAgentRequest {
+            status: status.clone(),
+        };
+        storage
+            .update_project_agent_status(&agent_instance_id.to_string(), &jwt, &req)
+            .await
+            .map_err(map_storage_error)?;
+    }
+
+    let storage_agent = storage
+        .get_project_agent(&agent_instance_id.to_string(), &jwt)
+        .await
+        .map_err(map_storage_error)?;
+    let instance = storage_agent_to_instance(&storage_agent);
     Ok(Json(instance))
 }
 
 pub async fn delete_agent_instance(
     State(state): State<AppState>,
-    Path((project_id, agent_instance_id)): Path<(ProjectId, AgentInstanceId)>,
+    Path((_project_id, agent_instance_id)): Path<(ProjectId, AgentInstanceId)>,
 ) -> ApiResult<Json<()>> {
-    state
-        .agent_instance_service
-        .delete_instance(&project_id, &agent_instance_id)
+    let storage = state.require_storage_client()?;
+    let jwt = state.get_jwt()?;
+    storage
+        .delete_project_agent(&agent_instance_id.to_string(), &jwt)
+        .await
         .map_err(|e| match &e {
-            aura_agents::AgentError::NotFound => {
+            aura_storage::StorageError::Server { status: 404, .. } => {
                 ApiError::not_found("agent instance not found")
             }
-            _ => ApiError::internal(e.to_string()),
+            _ => map_storage_error(e),
         })?;
     Ok(Json(()))
 }
