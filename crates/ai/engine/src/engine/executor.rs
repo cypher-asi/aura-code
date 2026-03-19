@@ -30,15 +30,15 @@ impl DevLoopEngine {
             .find(|t| t.task_id == task_id)
             .ok_or_else(|| EngineError::Parse(format!("task {task_id} not found")))?;
 
-        if task.status == TaskStatus::Failed {
+        if task.status == TaskStatus::Failed || task.status == TaskStatus::InProgress {
             task = self
                 .task_service
-                .retry_task(&project_id, &task.spec_id, &task.task_id)
+                .reset_task_to_ready(&project_id, &task.spec_id, &task.task_id)
                 .await?;
         }
         if task.status != TaskStatus::Ready {
             return Err(EngineError::Parse(format!(
-                "task must be in ready or failed state, currently: {:?}",
+                "task must be in ready, failed, or in_progress state, currently: {:?}",
                 task.status,
             )));
         }

@@ -103,7 +103,9 @@ export function TaskFeed({ projectId }: TaskFeedProps) {
       <div className={styles.feedList}>
         {displayed.map((task) => {
           const displayStatus =
-            task.status === "in_progress" && !loopActive ? "ready" : task.status;
+            task.status === "in_progress" && !loopActive && task.task_id !== activeTaskId
+              ? "ready"
+              : task.status;
           return (
             <Item
               key={task.task_id}

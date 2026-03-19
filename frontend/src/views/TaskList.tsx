@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { api } from "../api/client";
 import type { Spec, Task, TaskStatus } from "../types";
 import { TaskStatusIcon } from "../components/TaskStatusIcon";
@@ -20,6 +20,7 @@ export function TaskList({ searchQuery }: { searchQuery: string }) {
   const sidekick = useSidekick();
   const { subscribe } = useEventContext();
   const loopActive = useLoopActive(projectId);
+  const liveTaskIdsRef = useRef(new Set<string>());
   const [localSpecs, setLocalSpecs] = useState<Spec[]>(() => ctx?.initialSpecs ?? []);
   const [localTasks, setLocalTasks] = useState<Task[]>(() => ctx?.initialTasks ?? []);
   const [loading, setLoading] = useState(false);
@@ -54,14 +55,19 @@ export function TaskList({ searchQuery }: { searchQuery: string }) {
   }, [projectId]);
 
   useEffect(() => {
+    liveTaskIdsRef.current.clear();
     const unsubs = [
       subscribe("task_started", (e) => {
-        if (e.task_id) updateTaskStatus(e.task_id, "in_progress", {
-          ...(e.session_id ? { session_id: e.session_id } : {}),
-        });
+        if (e.task_id) {
+          liveTaskIdsRef.current.add(e.task_id);
+          updateTaskStatus(e.task_id, "in_progress", {
+            ...(e.session_id ? { session_id: e.session_id } : {}),
+          });
+        }
       }),
       subscribe("task_completed", (e) => {
         if (e.task_id) {
+          liveTaskIdsRef.current.delete(e.task_id);
           updateTaskStatus(e.task_id, "done", {
             execution_notes: e.execution_notes,
             ...(e.files ? { files_changed: e.files } : {}),
@@ -69,7 +75,10 @@ export function TaskList({ searchQuery }: { searchQuery: string }) {
         }
       }),
       subscribe("task_failed", (e) => {
-        if (e.task_id) updateTaskStatus(e.task_id, "failed");
+        if (e.task_id) {
+          liveTaskIdsRef.current.delete(e.task_id);
+          updateTaskStatus(e.task_id, "failed");
+        }
       }),
       subscribe("file_ops_applied", (e) => {
         if (e.task_id && e.files) {
@@ -133,7 +142,9 @@ export function TaskList({ searchQuery }: { searchQuery: string }) {
       function toNode(task: Task): ExplorerNode {
         const subtasks = childrenByParent.get(task.task_id);
         const displayStatus =
-          task.status === "in_progress" && !loopActive ? "ready" : task.status;
+          task.status === "in_progress" && !loopActive && !liveTaskIdsRef.current.has(task.task_id)
+            ? "ready"
+            : task.status;
         return {
           id: task.task_id,
           label: task.title,
