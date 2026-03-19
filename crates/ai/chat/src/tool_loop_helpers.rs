@@ -34,7 +34,7 @@ pub(crate) fn detect_blocked_writes(
         .filter_map(|(i, tc)| {
             if tc.name == "write_file" || tc.name == "edit_file" {
                 let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                if tracker.get(path).copied().unwrap_or(0) >= 3 {
+                if tracker.get(path).copied().unwrap_or(0) >= 2 {
                     return Some(i);
                 }
             }

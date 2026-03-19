@@ -4,7 +4,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use aura_claude::mock::{MockLlmProvider, MockResponse};
 use aura_billing::testutil;
-use crate::tool_loop_helpers::{detect_blocked_reads, detect_blocked_exploration, detect_blocked_write_failures};
+use crate::tool_loop_helpers::{
+    detect_blocked_exploration, detect_blocked_reads, detect_blocked_write_failures,
+    detect_blocked_writes,
+};
 
 fn default_config(max_iterations: usize) -> ToolLoopConfig {
     ToolLoopConfig {
@@ -175,6 +178,22 @@ fn test_detect_blocked_reads_allows_first_two() {
     let blocked = detect_blocked_reads(&calls, &mut counts);
     assert!(blocked.is_empty(), "2nd read should not be blocked");
     assert_eq!(counts["src/lib.rs"], 2);
+}
+
+#[test]
+fn test_detect_blocked_writes_blocks_second_attempt_same_file() {
+    let mut tracker: HashMap<String, usize> = HashMap::new();
+    let calls = vec![ToolCall {
+        id: "w1".into(),
+        name: "write_file".into(),
+        input: serde_json::json!({"path": "src/lib.rs"}),
+    }];
+
+    let first = detect_blocked_writes(&calls, &mut tracker);
+    assert!(first.is_empty(), "first write should be allowed");
+
+    let second = detect_blocked_writes(&calls, &mut tracker);
+    assert_eq!(second, vec![0], "second consecutive write should be blocked");
 }
 
 #[test]
