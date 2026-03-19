@@ -2,6 +2,7 @@ pub mod dto;
 pub mod error;
 pub mod handlers;
 pub mod router;
+pub mod session_init;
 pub mod state;
 
 pub use router::{create_router, create_router_with_frontend};
