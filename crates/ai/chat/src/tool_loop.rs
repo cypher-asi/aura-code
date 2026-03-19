@@ -130,7 +130,12 @@ pub async fn run_tool_loop(
         let iter_credits = llm.estimate_credits(billing_model, iter.input_tokens, iter.output_tokens);
         state.cumulative_credits += iter_credits;
 
-        check_context_compaction(config, iter.input_tokens, &mut state.api_messages);
+        check_context_compaction(
+            config,
+            iter.input_tokens,
+            !state.write_file_cooldowns.is_empty(),
+            &mut state.api_messages,
+        );
         append_text(&mut state.total_text, &iter.iter_text);
 
         if iter.stop_reason == "max_tokens" && !iter.iter_tool_calls.is_empty() {
@@ -368,6 +373,7 @@ async fn handle_stream_result(
 fn check_context_compaction(
     config: &ToolLoopConfig,
     iteration_input_tokens: u64,
+    duplicate_stall_active: bool,
     api_messages: &mut Vec<RichMessage>,
 ) {
     if let Some(max_ctx) = config.max_context_tokens {
@@ -382,6 +388,9 @@ fn check_context_compaction(
             compaction::compact_older_tool_results_tiered(
                 api_messages, 2, &compaction::HISTORY,
             );
+            compaction::compact_older_message_text_tiered(
+                api_messages, 2, &compaction::HISTORY,
+            );
         } else if utilization > 0.70 {
             info!(
                 input_tokens = iteration_input_tokens,
@@ -392,14 +401,39 @@ fn check_context_compaction(
             compaction::compact_older_tool_results_tiered(
                 api_messages, 3, &compaction::AGGRESSIVE,
             );
-        } else if utilization > 0.50 {
+            compaction::compact_older_message_text_tiered(
+                api_messages, 3, &compaction::AGGRESSIVE,
+            );
+        } else if utilization > 0.60 {
             info!(
                 input_tokens = iteration_input_tokens,
                 max_context = max_ctx,
                 utilization_pct = (utilization * 100.0) as u32,
-                "Context >50% full, moderate compaction (keep last 4)"
+                "Context >60% full, moderate compaction (keep last 4)"
             );
             compaction::compact_older_tool_results(api_messages, 4);
+        } else if utilization > 0.40 {
+            info!(
+                input_tokens = iteration_input_tokens,
+                max_context = max_ctx,
+                utilization_pct = (utilization * 100.0) as u32,
+                "Context >40% full, early compaction (keep last 5)"
+            );
+            compaction::compact_older_tool_results_tiered(
+                api_messages, 5, &compaction::MICRO,
+            );
+        }
+
+        if duplicate_stall_active && utilization > 0.45 {
+            info!(
+                input_tokens = iteration_input_tokens,
+                max_context = max_ctx,
+                utilization_pct = (utilization * 100.0) as u32,
+                "Duplicate-write stall active, compacting non-tool text as well"
+            );
+            compaction::compact_older_message_text_tiered(
+                api_messages, 4, &compaction::AGGRESSIVE,
+            );
         }
     }
 }
@@ -662,6 +696,11 @@ async fn process_tool_calls(
             "High exploration accumulation, proactively compacting older tool results"
         );
         compaction::compact_older_tool_results(&mut state.api_messages, 4);
+        if !state.write_file_cooldowns.is_empty() {
+            compaction::compact_older_message_text_tiered(
+                &mut state.api_messages, 4, &compaction::AGGRESSIVE,
+            );
+        }
     }
 
     let (result_blocks, should_stop) = build_tool_result_blocks(
