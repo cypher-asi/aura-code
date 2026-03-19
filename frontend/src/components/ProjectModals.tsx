@@ -37,11 +37,12 @@ export function DeleteProjectModal({ target, loading, onClose, onDelete }: Delet
 interface DeleteAgentInstanceModalProps {
   target: AgentInstance | null;
   loading: boolean;
+  error?: string | null;
   onClose: () => void;
   onDelete: () => void;
 }
 
-export function DeleteAgentInstanceModal({ target, loading, onClose, onDelete }: DeleteAgentInstanceModalProps) {
+export function DeleteAgentInstanceModal({ target, loading, error, onClose, onDelete }: DeleteAgentInstanceModalProps) {
   return (
     <Modal
       isOpen={!!target}
@@ -60,6 +61,11 @@ export function DeleteAgentInstanceModal({ target, loading, onClose, onDelete }:
       <div className={styles.confirmMessage}>
         Are you sure you want to remove &ldquo;{target?.name}&rdquo; and all its messages? This action cannot be undone.
       </div>
+      {error && (
+        <div className={styles.errorMessage} role="alert">
+          {error}
+        </div>
+      )}
     </Modal>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
-import { api } from "../api/client";
+import { api, ApiClientError } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { useOrg } from "../context/OrgContext";
 import { clearLastAgentIf } from "../utils/storage";
@@ -73,6 +73,7 @@ export function ProjectList() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteAgentTarget, setDeleteAgentTarget] = useState<AgentInstance | null>(null);
   const [deleteAgentLoading, setDeleteAgentLoading] = useState(false);
+  const [deleteAgentError, setDeleteAgentError] = useState<string | null>(null);
   const [showNewProject, setShowNewProject] = useState(false);
   const [agentSelectorProjectId, setAgentSelectorProjectId] = useState<string | null>(null);
   const [failedIcons, setFailedIcons] = useState<Set<string>>(new Set());
@@ -420,6 +421,7 @@ export function ProjectList() {
     if (!deleteAgentTarget) return;
     const { project_id: pid, agent_instance_id: aid } = deleteAgentTarget;
     setDeleteAgentLoading(true);
+    setDeleteAgentError(null);
 
     const prevAgents = agentsByProject[pid];
     setAgentsByProject((prev) => ({
@@ -442,6 +444,8 @@ export function ProjectList() {
       fetchAgentInstances(pid);
     } catch (err) {
       console.error("Failed to delete agent instance", err);
+      const message = err instanceof ApiClientError ? err.body.error : (err instanceof Error ? err.message : "Failed to remove agent.");
+      setDeleteAgentError(message);
       if (prevAgents) {
         setAgentsByProject((prev) => ({ ...prev, [pid]: prevAgents }));
       }
@@ -538,7 +542,8 @@ export function ProjectList() {
       <DeleteAgentInstanceModal
         target={deleteAgentTarget}
         loading={deleteAgentLoading}
-        onClose={() => setDeleteAgentTarget(null)}
+        error={deleteAgentError}
+        onClose={() => { setDeleteAgentTarget(null); setDeleteAgentError(null); }}
         onDelete={handleDeleteAgent}
       />
 
