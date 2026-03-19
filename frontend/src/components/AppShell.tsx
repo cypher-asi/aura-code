@@ -131,19 +131,149 @@ function ProjectCreationModalHost() {
   );
 }
 
-interface ShellChromeProps {
+const hostBadgeVariant: Record<HostConnectionStatus, "running" | "pending" | "error"> = {
+  checking: "pending",
+  online: "running",
+  auth_required: "pending",
+  unreachable: "error",
+  error: "error",
+};
+
+const hostBadgeText: Record<HostConnectionStatus, string> = {
+  checking: "Checking host",
+  online: "Host online",
+  auth_required: "Sign in required",
+  unreachable: "Host unreachable",
+  error: "Host error",
+};
+
+function NavigationDrawerContent({
+  onOpenOrgSettings,
+  onOpenSettings,
+  onBuyCredits,
+  openAfterDrawerClose,
+}: {
   onOpenOrgSettings: () => void;
+  onOpenSettings: () => void;
   onBuyCredits: () => void;
-  onOpenHostSettings: () => void;
+  openAfterDrawerClose: (callback: () => void) => void;
+}) {
+  const { activeApp } = useAppContext();
+
+  return (
+    <div className={styles.mobileDrawerContent}>
+      <div className={styles.mobileDrawerSearch}>
+        <SidebarSearchInput />
+      </div>
+      <div className={styles.mobileDrawerBody}>
+        <activeApp.LeftPanel />
+      </div>
+      <div className={styles.mobileDrawerFooter}>
+        <OrgSelector onOpenSettings={onOpenOrgSettings} variant="drawer" />
+        <CreditsBadge onClick={onBuyCredits} />
+        <div className={styles.mobileDrawerActions}>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Building2 size={14} />}
+            className={styles.mobileDrawerAction}
+            onClick={() => openAfterDrawerClose(onOpenOrgSettings)}
+          >
+            Team settings
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Settings size={14} />}
+            className={styles.mobileDrawerAction}
+            onClick={() => openAfterDrawerClose(onOpenSettings)}
+          >
+            App settings
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function DesktopShell({ onOpenOrgSettings, onBuyCredits, onOpenHostSettings }: ShellChromeProps) {
+function DetailsSheetContent() {
   const { activeApp } = useAppContext();
-  const { features } = useAuraCapabilities();
-  const { MainPanel } = activeApp;
+  const {
+    SidekickPanel,
+    SidekickTaskbar,
+    SidekickHeader: SidekickHeaderComp,
+  } = activeApp;
+
+  if (!SidekickPanel) return null;
+
+  return (
+    <div className={styles.mobileDrawerContent}>
+      {SidekickTaskbar && (
+        <div className={styles.mobileContextHeader}>
+          <SidekickTaskbar />
+        </div>
+      )}
+      <div className={styles.mobileDrawerBody}>
+        <SidekickPanel />
+      </div>
+      {SidekickHeaderComp && (
+        <div className={styles.mobileContextHeader}>
+          <SidekickHeaderComp />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PreviewSheetContent() {
+  const { activeApp } = useAppContext();
+  const { PreviewPanel, PreviewHeader: PreviewHeaderComp } = activeApp;
+
+  if (!PreviewPanel) return null;
+
+  return (
+    <div className={styles.mobileDrawerContent}>
+      {PreviewHeaderComp && (
+        <div className={styles.mobileContextHeader}>
+          <PreviewHeaderComp />
+        </div>
+      )}
+      <div className={styles.mobileDrawerBody}>
+        <PreviewPanel />
+      </div>
+    </div>
+  );
+}
+
+function ResponsiveShell({
+  onOpenOrgSettings,
+  onOpenSettings,
+  onBuyCredits,
+}: {
+  onOpenOrgSettings: () => void;
+  onOpenSettings: () => void;
+  onBuyCredits: () => void;
+}) {
+  const { activeApp } = useAppContext();
+  const { features, isMobileLayout } = useAuraCapabilities();
+  const { status: hostStatus } = useHost();
+  const { previewItem, setActiveTab } = useSidekick();
+  const location = useLocation();
+  const [navOpen, setNavOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
   const leftPanelRef = useRef<HTMLDivElement>(null);
+  const lastPreviewKeyRef = useRef<string | null>(null);
+  const {
+    MainPanel,
+    ResponsiveControls,
+    SidekickPanel,
+    PreviewPanel,
+  } = activeApp;
 
   useEffect(() => {
+    if (isMobileLayout) return;
     const el = leftPanelRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
@@ -152,124 +282,25 @@ function DesktopShell({ onOpenOrgSettings, onBuyCredits, onOpenHostSettings }: S
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <Topbar
-        className="titlebar-drag"
-        onDoubleClick={() => windowCommand("maximize")}
-        icon={<img src="/aura-icon.png" alt="" className="titlebar-icon" />}
-        title={<span className="titlebar-center"><Link to="/projects" style={{ color: "inherit", textDecoration: "none" }}>AURA</Link></span>}
-        actions={(
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-            {features.hostRetargeting && (
-              <Button
-                variant="ghost"
-                size="sm"
-                iconOnly
-                icon={<Server size={16} />}
-                aria-label="Open host settings"
-                onClick={onOpenHostSettings}
-              />
-            )}
-            <WindowControls />
-          </div>
-        )}
-      />
-
-      <UpdateBanner />
-
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        <div ref={leftPanelRef} style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
-          <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-            <AppNavRail />
-            <Lane
-              resizable
-              resizePosition="right"
-              defaultWidth={200}
-              maxWidth={600}
-              storageKey="aura-sidebar"
-              header={<SidebarSearchInput />}
-            >
-              {apps.map((app) => (
-                <div
-                  key={app.id}
-                  style={{ display: app.id === activeApp.id ? "contents" : "none" }}
-                >
-                  <app.LeftPanel />
-                </div>
-              ))}
-            </Lane>
-          </div>
-          <BottomTaskbar
-            onOpenOrgSettings={onOpenOrgSettings}
-            onBuyCredits={onBuyCredits}
-          />
-        </div>
-
-        <MainPanel />
-        <SidekickLane />
-        {activeApp.PreviewPanel && <PreviewLane />}
-      </div>
-    </div>
-  );
-}
-
-function MobileShell({
-  onOpenOrgSettings,
-  onOpenSettings,
-  onBuyCredits,
-}: Omit<ShellChromeProps, "onOpenHostSettings"> & { onOpenSettings: () => void }) {
-  const { activeApp } = useAppContext();
-  const { status: hostStatus } = useHost();
-  const { previewItem, setActiveTab } = useSidekick();
-  const location = useLocation();
-  const [navOpen, setNavOpen] = useState(false);
-  const [contextOpen, setContextOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
-  const {
-    MainPanel,
-    ResponsiveControls,
-    SidekickPanel,
-    SidekickTaskbar,
-    SidekickHeader: SidekickHeaderComp,
-    PreviewPanel,
-    PreviewHeader: PreviewHeaderComp,
-  } = activeApp;
-  const lastPreviewKeyRef = useRef<string | null>(null);
+  }, [isMobileLayout]);
 
   useEffect(() => {
+    if (!isMobileLayout) return;
     setNavOpen(false);
     setContextOpen(false);
     setPreviewOpen(false);
     setHostSettingsOpen(false);
-  }, [location.pathname]);
-
-  const hostBadgeVariant: Record<HostConnectionStatus, "running" | "pending" | "error"> = {
-    checking: "pending",
-    online: "running",
-    auth_required: "pending",
-    unreachable: "error",
-    error: "error",
-  };
-
-  const hostBadgeText: Record<HostConnectionStatus, string> = {
-    checking: "Checking host",
-    online: "Host online",
-    auth_required: "Sign in required",
-    unreachable: "Host unreachable",
-    error: "Host error",
-  };
+  }, [isMobileLayout, location.pathname]);
 
   useEffect(() => {
+    if (!isMobileLayout) return;
     if (!PreviewPanel || !previewItem) {
       setPreviewOpen(false);
     }
-  }, [PreviewPanel, previewItem]);
+  }, [PreviewPanel, isMobileLayout, previewItem]);
 
   useEffect(() => {
+    if (!isMobileLayout) return;
     const key = previewItemKey(previewItem);
 
     if (!PreviewPanel || !key) {
@@ -284,7 +315,7 @@ function MobileShell({
     lastPreviewKeyRef.current = key;
     setContextOpen(false);
     setPreviewOpen(true);
-  }, [PreviewPanel, previewItem]);
+  }, [PreviewPanel, isMobileLayout, previewItem]);
 
   const drawerOpen = navOpen || contextOpen || previewOpen || hostSettingsOpen;
   const overlayDrawerOpen = navOpen || contextOpen || previewOpen;
@@ -305,87 +336,149 @@ function MobileShell({
     setContextOpen(true);
   }, [activeApp.id, setActiveTab]);
 
+  const topbar = isMobileLayout ? (
+    <Topbar
+      className={styles.mobileTopbar}
+      icon={
+        <div className={styles.mobileTopbarInner}>
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon={<Menu size={18} />}
+            aria-label="Open navigation"
+            onClick={() => setNavOpen(true)}
+          />
+          <img src="/aura-icon.png" alt="" className="titlebar-icon" />
+        </div>
+      }
+      title={(
+        <span className={styles.mobileTopbarTitle}>
+          <Link to="/projects" className={styles.mobileTopbarTitleLink}>AURA</Link>
+        </span>
+      )}
+      actions={(
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          <Badge variant={hostBadgeVariant[hostStatus]}>
+            {hostBadgeText[hostStatus]}
+          </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon={<Server size={16} />}
+            aria-label="Open host settings"
+            onClick={() => setHostSettingsOpen(true)}
+          />
+          {SidekickPanel && (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              icon={<Rows3 size={16} />}
+              aria-label="Open details"
+              onClick={handleOpenContext}
+            />
+          )}
+          {PreviewPanel && previewItem && (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              icon={<Eye size={16} />}
+              aria-label="Open preview"
+              onClick={() => setPreviewOpen(true)}
+            />
+          )}
+        </div>
+      )}
+    />
+  ) : (
+    <Topbar
+      className="titlebar-drag"
+      onDoubleClick={() => windowCommand("maximize")}
+      icon={<img src="/aura-icon.png" alt="" className="titlebar-icon" />}
+      title={<span className="titlebar-center"><Link to="/projects" style={{ color: "inherit", textDecoration: "none" }}>AURA</Link></span>}
+      actions={(
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          {features.hostRetargeting && (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              icon={<Server size={16} />}
+              aria-label="Open host settings"
+              onClick={() => setHostSettingsOpen(true)}
+            />
+          )}
+          <WindowControls />
+        </div>
+      )}
+    />
+  );
+
   return (
     <>
-      <div className={`${styles.mobileShell} ${overlayDrawerOpen ? styles.mobileShellDimmed : ""}`}>
-        <Topbar
-          className={styles.mobileTopbar}
-          icon={
-            <div className={styles.mobileTopbarInner}>
-              <Button
-                variant="ghost"
-                size="sm"
-                iconOnly
-                icon={<Menu size={18} />}
-                aria-label="Open navigation"
-                onClick={() => setNavOpen(true)}
-              />
-              <img src="/aura-icon.png" alt="" className="titlebar-icon" />
-            </div>
-          }
-          title={(
-            <span className={styles.mobileTopbarTitle}>
-              <Link to="/projects" className={styles.mobileTopbarTitleLink}>AURA</Link>
-            </span>
-          )}
-          actions={(
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-              <Badge variant={hostBadgeVariant[hostStatus]}>
-                {hostBadgeText[hostStatus]}
-              </Badge>
-              <Button
-                variant="ghost"
-                size="sm"
-                iconOnly
-                icon={<Server size={16} />}
-                aria-label="Open host settings"
-                onClick={() => setHostSettingsOpen(true)}
-              />
-              {SidekickPanel && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  iconOnly
-                  icon={<Rows3 size={16} />}
-                  aria-label="Open details"
-                  onClick={handleOpenContext}
-                />
-              )}
-              {PreviewPanel && previewItem && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  iconOnly
-                  icon={<Eye size={16} />}
-                  aria-label="Open preview"
-                  onClick={() => setPreviewOpen(true)}
-                />
-              )}
-            </div>
-          )}
-        />
-
+      <div className={isMobileLayout ? `${styles.mobileShell} ${overlayDrawerOpen ? styles.mobileShellDimmed : ""}` : styles.desktopShell}>
+        {topbar}
         <UpdateBanner />
 
-        <div className={styles.mobileMain}>
-          {ResponsiveControls && (
-            <div className={styles.mobileResponsiveControls}>
-              <ResponsiveControls />
+        {isMobileLayout ? (
+          <>
+            <div className={styles.mobileMain}>
+              {ResponsiveControls && (
+                <div className={styles.mobileResponsiveControls}>
+                  <ResponsiveControls />
+                </div>
+              )}
+              <div className={styles.mobileMainPanel}>
+                <MainPanel />
+              </div>
             </div>
-          )}
-          <div className={styles.mobileMainPanel}>
-            <MainPanel />
-          </div>
-        </div>
 
-        {!drawerOpen && (
-          <div className={styles.mobileBottomNav}>
-            <AppNavRail layout="bar" />
+            {!drawerOpen && (
+              <div className={styles.mobileBottomNav}>
+                <AppNavRail layout="bar" />
+              </div>
+            )}
+          </>
+        ) : (
+          <div className={styles.desktopContent}>
+            <div ref={leftPanelRef} className={styles.desktopSidebar}>
+              <div className={styles.desktopSidebarBody}>
+                <AppNavRail />
+                <Lane
+                  resizable
+                  resizePosition="right"
+                  defaultWidth={200}
+                  maxWidth={600}
+                  storageKey="aura-sidebar"
+                  header={<SidebarSearchInput />}
+                >
+                  {apps.map((app) => (
+                    <div
+                      key={app.id}
+                      style={{ display: app.id === activeApp.id ? "contents" : "none" }}
+                    >
+                      <app.LeftPanel />
+                    </div>
+                  ))}
+                </Lane>
+              </div>
+              <BottomTaskbar
+                onOpenOrgSettings={onOpenOrgSettings}
+                onBuyCredits={onBuyCredits}
+              />
+            </div>
+
+            <MainPanel />
+            <SidekickLane />
+            {PreviewPanel && <PreviewLane />}
           </div>
         )}
       </div>
 
-      {overlayDrawerOpen && (
+      {isMobileLayout && overlayDrawerOpen && (
         <button
           type="button"
           className={styles.mobileDrawerBackdrop}
@@ -394,103 +487,58 @@ function MobileShell({
         />
       )}
 
-      <Drawer
-        side="left"
-        isOpen={navOpen}
-        onClose={() => setNavOpen(false)}
-        title={activeApp.label}
-        className={styles.mobileNavDrawer}
-        showMinimizedBar={false}
-        defaultSize={340}
-        maxSize={420}
-      >
-        {navOpen && (
-          <div className={styles.mobileDrawerContent}>
-            <div className={styles.mobileDrawerSearch}>
-              <SidebarSearchInput />
-            </div>
-            <div className={styles.mobileDrawerBody}>
-              <activeApp.LeftPanel />
-            </div>
-            <div className={styles.mobileDrawerFooter}>
-              <OrgSelector onOpenSettings={onOpenOrgSettings} variant="drawer" />
-              <CreditsBadge onClick={onBuyCredits} />
-              <div className={styles.mobileDrawerActions}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={<Building2 size={14} />}
-                  className={styles.mobileDrawerAction}
-                  onClick={() => openAfterDrawerClose(onOpenOrgSettings)}
-                >
-                  Team settings
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={<Settings size={14} />}
-                  className={styles.mobileDrawerAction}
-                  onClick={() => openAfterDrawerClose(onOpenSettings)}
-                >
-                  App settings
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-      </Drawer>
+      {isMobileLayout && (
+        <>
+          <Drawer
+            side="left"
+            isOpen={navOpen}
+            onClose={() => setNavOpen(false)}
+            title={activeApp.label}
+            className={styles.mobileNavDrawer}
+            showMinimizedBar={false}
+            defaultSize={340}
+            maxSize={420}
+          >
+            {navOpen && (
+              <NavigationDrawerContent
+                onOpenOrgSettings={onOpenOrgSettings}
+                onOpenSettings={onOpenSettings}
+                onBuyCredits={onBuyCredits}
+                openAfterDrawerClose={openAfterDrawerClose}
+              />
+            )}
+          </Drawer>
 
-      {SidekickPanel && (
-        <Drawer
-          side="bottom"
-          isOpen={contextOpen}
-          onClose={() => setContextOpen(false)}
-          title={`${activeApp.label} details`}
-          className={styles.mobileSheetDrawer}
-          showMinimizedBar={false}
-          defaultSize={440}
-          maxSize={640}
-        >
-          <div className={styles.mobileDrawerContent}>
-            {SidekickTaskbar && (
-              <div className={styles.mobileContextHeader}>
-                <SidekickTaskbar />
-              </div>
-            )}
-            <div className={styles.mobileDrawerBody}>
-              <SidekickPanel />
-            </div>
-            {SidekickHeaderComp && (
-              <div className={styles.mobileContextHeader}>
-                <SidekickHeaderComp />
-              </div>
-            )}
-          </div>
-        </Drawer>
-      )}
+          {SidekickPanel && (
+            <Drawer
+              side="bottom"
+              isOpen={contextOpen}
+              onClose={() => setContextOpen(false)}
+              title={`${activeApp.label} details`}
+              className={styles.mobileSheetDrawer}
+              showMinimizedBar={false}
+              defaultSize={440}
+              maxSize={640}
+            >
+              <DetailsSheetContent />
+            </Drawer>
+          )}
 
-      {PreviewPanel && (
-        <Drawer
-          side="bottom"
-          isOpen={previewOpen}
-          onClose={() => setPreviewOpen(false)}
-          title="Preview"
-          className={styles.mobileSheetDrawer}
-          showMinimizedBar={false}
-          defaultSize={420}
-          maxSize={640}
-        >
-          <div className={styles.mobileDrawerContent}>
-            {PreviewHeaderComp && (
-              <div className={styles.mobileContextHeader}>
-                <PreviewHeaderComp />
-              </div>
-            )}
-            <div className={styles.mobileDrawerBody}>
-              <PreviewPanel />
-            </div>
-          </div>
-        </Drawer>
+          {PreviewPanel && (
+            <Drawer
+              side="bottom"
+              isOpen={previewOpen}
+              onClose={() => setPreviewOpen(false)}
+              title="Preview"
+              className={styles.mobileSheetDrawer}
+              showMinimizedBar={false}
+              defaultSize={420}
+              maxSize={640}
+            >
+              <PreviewSheetContent />
+            </Drawer>
+          )}
+        </>
       )}
 
       <HostSettingsModal isOpen={hostSettingsOpen} onClose={() => setHostSettingsOpen(false)} />
@@ -502,8 +550,6 @@ function AppContent() {
   const [orgSettingsOpen, setOrgSettingsOpen] = useState(false);
   const [orgInitialSection, setOrgInitialSection] = useState<"billing" | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [hostSettingsOpen, setHostSettingsOpen] = useState(false);
-  const { isMobileLayout } = useAuraCapabilities();
 
   const openOrgBilling = useCallback(() => {
     setOrgInitialSection("billing");
@@ -518,19 +564,11 @@ function AppContent() {
 
   return (
     <>
-      {isMobileLayout ? (
-        <MobileShell
-          onOpenOrgSettings={() => setOrgSettingsOpen(true)}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onBuyCredits={openOrgBilling}
-        />
-      ) : (
-        <DesktopShell
-          onOpenOrgSettings={() => setOrgSettingsOpen(true)}
-          onBuyCredits={openOrgBilling}
-          onOpenHostSettings={() => setHostSettingsOpen(true)}
-        />
-      )}
+      <ResponsiveShell
+        onOpenOrgSettings={() => setOrgSettingsOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onBuyCredits={openOrgBilling}
+      />
 
       <OrgSettingsPanel
         isOpen={orgSettingsOpen}
@@ -538,9 +576,6 @@ function AppContent() {
         initialSection={orgInitialSection}
       />
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      {!isMobileLayout && (
-        <HostSettingsModal isOpen={hostSettingsOpen} onClose={() => setHostSettingsOpen(false)} />
-      )}
       <ProjectCreationModalHost />
     </>
   );
