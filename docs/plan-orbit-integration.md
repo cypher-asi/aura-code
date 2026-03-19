@@ -4,6 +4,112 @@ This document is the implementation plan for attaching Aura projects to Orbit re
 
 ---
 
+## Implementation phases (overview)
+
+Implement in order; each phase is shippable on its own.
+
+| Phase | Goal | Depends on | Deliverable |
+|-------|------|------------|-------------|
+| **Phase 1** | Project → Orbit link | — | Store and edit `git_repo_url` / `git_branch` on projects; UI to attach an Orbit repo. No Orbit API or token yet. |
+| **Phase 2** | Orbit auth | — | Store Orbit token (encrypted); settings API + UI; use token for Git (clone/push/pull) when project has link. |
+| **Phase 3** | Collaborators (read) | Phase 1, 2 | Orbit client `list_collaborators`; `GET /api/projects/:id/orbit-collaborators`; optional "Collaborators" UI. |
+| **Phase 4** | Session init / runtime | Phase 1, 2 | Send `workspace.git_repo_url` and `workspace.git_branch` in session_init; pass token to runtime for clone/push. |
+| **Phase 5** | Aura ↔ Orbit org sync | Phase 2, 3 | Org Orbit link + user orbit_username; sync members to Orbit repo on invite accept / remove / role update; UI. |
+
+**Dependency graph:** Phase 1 and 2 can be done in parallel; Phase 3 and 4 depend on 1+2; Phase 5 depends on 2 (and reuses Orbit client from 3).
+
+---
+
+## Phase 1: Project → Orbit link (data + UI)
+
+**Goal:** Projects can store and display a Git/Orbit repo URL and branch. Users can attach or detach an Orbit repo from a project. No Orbit API calls or token in this phase.
+
+**Checklist:**
+
+- [ ] **Core:** Add `git_repo_url`, `git_branch`, and optionally `orbit_base_url`, `orbit_owner`, `orbit_repo` to `Project` in `crates/infra/core/src/entities.rs` with `#[serde(default)]`.
+- [ ] **Domain:** Add same optional fields to `CreateProjectInput` and `UpdateProjectInput` in `crates/domain/projects/src/lib.rs`; pass through in `create_project` and `update_project`.
+- [ ] **Network types (optional):** If aura-network will persist these, add to `NetworkProject`, `CreateProjectRequest`, `UpdateProjectRequest` in `crates/infra/network/src/types.rs`.
+- [ ] **Server:** Add optional git/orbit fields to `CreateProjectRequest` and `UpdateProjectRequest` in `apps/server/src/dto.rs`; in `apps/server/src/handlers/projects.rs`, map in create/update and in `project_from_network`.
+- [ ] **Frontend:** Add optional git/orbit fields to `Project` in `frontend/src/types/entities.ts` and to `CreateProjectRequest` / `UpdateProjectRequest` in `frontend/src/api/client.ts`.
+- [ ] **UI:** Add "Git / Orbit" section in project settings: inputs for Git remote URL and branch; save via `updateProject`. Optionally allow in New Project flow.
+- [ ] **Tests:** Project CRUD with new fields; existing project tests still pass with fields omitted.
+
+**Done when:** User can open a project, set an Orbit repo URL and branch, save, and see them on reload.
+
+---
+
+## Phase 2: Orbit auth (token + Git)
+
+**Goal:** User can store an Orbit token (PAT or login token) securely. The app uses it for Orbit REST calls and for Git (clone/push/pull) when a project has `git_repo_url`.
+
+**Checklist:**
+
+- [ ] **Settings:** Add Orbit token storage (encrypted, like API key): e.g. key `orbit_token`; "has / set / get decrypted" only where needed.
+- [ ] **Server:** Endpoints e.g. `GET /api/settings/orbit-token` (metadata only) and `PUT /api/settings/orbit-token` with body `{ "token": "..." }`; store encrypted.
+- [ ] **Frontend:** Settings UI to add/remove Orbit token (and optional "Connect to Orbit" if login flow exists). When attaching a project to an Orbit repo, prompt for token if not set.
+- [ ] **Git usage:** When a project has `git_repo_url`, use the user's Orbit token for clone/push/pull (credential helper or URL injection); do not log the token.
+- [ ] **Tests:** Settings round-trip; no raw token in responses.
+
+**Done when:** User can set an Orbit token in settings and the app can use it for Git operations on linked projects (and later for Orbit API).
+
+---
+
+## Phase 3: Collaborators (read-only)
+
+**Goal:** For a project linked to an Orbit repo, show who the collaborators are and who can add people (repo owner + owner-role). Orbit is the source of truth.
+
+**Checklist:**
+
+- [ ] **Orbit client:** Add HTTP client that takes Orbit base URL + Bearer token; implement `list_collaborators(base_url, owner, repo, token)` calling `GET /repos/{owner}/{repo}/collaborators`. Optionally `GET /api` for discovery.
+- [ ] **API:** Add `GET /api/projects/:project_id/orbit-collaborators`: load project; if no Orbit link return 400 or empty; use project's Orbit link + current user's Orbit token to call Orbit; return list with roles; document "can add people" = owner role + repo owner.
+- [ ] **UI (optional):** "Collaborators" or "Repo settings" section on project (when link present) that calls the endpoint and shows who can add people.
+- [ ] **Tests:** Integration test for orbit-collaborators endpoint (or mock Orbit).
+
+**Done when:** User can open a linked project and see Orbit collaborators and who can add people.
+
+---
+
+## Phase 4: Session init and runtime (workspace from Orbit)
+
+**Goal:** When starting a session for a project with an Orbit link, send `workspace.git_repo_url` and `workspace.git_branch` in session_init and provide the runtime with the Orbit token so it can clone (and push).
+
+**Checklist:**
+
+- [ ] **Locate or add:** Code path that builds and sends session_init (or equivalent) to the runtime (e.g. WebSocket connect or REST workspace init). If missing, document contract and add stub.
+- [ ] **Payload:** When project has `git_repo_url` / `git_branch`, set `workspace.git_repo_url` and `workspace.git_branch` in that payload.
+- [ ] **Token:** Define and implement how the token is passed to the runtime (env, credential helper, or secure inject); document for runtime implementers.
+- [ ] **Tests:** Unit or integration test that payload includes workspace fields when project is linked.
+
+**Done when:** Cloud or empty-workspace sessions receive repo URL and branch and can authenticate to Orbit to clone/push.
+
+---
+
+## Phase 5: Aura ↔ Orbit org sync
+
+**Goal:** When an Aura org is linked to an Orbit repo, keep org membership in sync: add/remove/update Orbit repo collaborators when users join/leave/change role in the Aura org.
+
+**Checklist:**
+
+- [ ] **Orbit client:** Add `add_collaborator(base_url, owner, repo, username, role, token)` and `remove_collaborator(...)` (and optionally `update_collaborator`).
+- [ ] **Org–Orbit link:** Store per org (e.g. `org_orbit_repo:{org_id}`) with `{ orbit_base_url, orbit_owner, orbit_repo }`; API `GET/PUT /api/orgs/:org_id/orbit-repo` (org owner/admin only).
+- [ ] **Orbit username per user:** Store per user (e.g. `user:{user_id}:orbit_username`); API `GET/PUT /api/users/me/orbit-username` (or under settings).
+- [ ] **Sync on accept_invite:** After adding member, if org has Orbit link and user has orbit_username, call Orbit `add_collaborator` with role from invite; use current user's token; do not fail invite on Orbit errors.
+- [ ] **Sync on remove_member:** If org has Orbit link and member has orbit_username, call Orbit `remove_collaborator`.
+- [ ] **Sync on update_member_role:** If org has Orbit link and member has orbit_username, call Orbit `add_collaborator` with mapped role.
+- [ ] **UI – org:** Org settings section to set/clear linked Orbit repo (base URL, owner, repo).
+- [ ] **UI – user:** Profile/settings field for Orbit username.
+- [ ] **Tests:** Sync logic and API for org link and orbit_username; do not block org ops on Orbit failure.
+
+**Done when:** Adding/removing/changing a member in an Aura org updates the linked Orbit repo's collaborators when the org has an Orbit link and users have orbit_username set.
+
+---
+
+## Detailed spec (reference)
+
+The sections below are the full specification for each area; phases above reference them.
+
+---
+
 ## 1. Attach an Aura project to an Orbit repo
 
 ### 1.1 Data model (project → Orbit link)
@@ -172,11 +278,16 @@ Later, if desired: when someone is added as collaborator on the Orbit repo (outs
 
 ## 6. Implementation checklist (summary)
 
-- [ ] **Project model (core):** Add `git_repo_url`, `git_branch`, and optionally `orbit_base_url`, `orbit_owner`, `orbit_repo` to `Project` in `crates/infra/core/src/entities.rs` with `#[serde(default)]`.
-- [ ] **Domain:** Add same fields to `CreateProjectInput` and `UpdateProjectInput` in `crates/domain/projects/src/lib.rs`; wire in `create_project` and `update_project`.
-- [ ] **Network types:** Add optional git/orbit fields to `NetworkProject`, `CreateProjectRequest`, `UpdateProjectRequest` in `crates/infra/network/src/types.rs` if aura-network will persist them.
-- [ ] **Server DTOs:** Add optional git/orbit fields to `CreateProjectRequest` and `UpdateProjectRequest` in `apps/server/src/dto.rs`.
-- [ ] **Server handlers:** In `apps/server/src/handlers/projects.rs`, map new fields in create/update and in `project_from_network`.
+Use the **per-phase checklists** in Phase 1–5 above. Quick index:
+
+| Phase | Section |
+|-------|---------|
+| Phase 1 | [Phase 1: Project → Orbit link](#phase-1-project--orbit-link-data--ui) |
+| Phase 2 | [Phase 2: Orbit auth](#phase-2-orbit-auth-token--git) |
+| Phase 3 | [Phase 3: Collaborators](#phase-3-collaborators-read-only) |
+| Phase 4 | [Phase 4: Session init and runtime](#phase-4-session-init-and-runtime-workspace-from-orbit) |
+| Phase 5 | [Phase 5: Aura ↔ Orbit org sync](#phase-5-aura--orbit-org-sync) |
+
 - [ ] **Frontend types:** Add optional git/orbit fields to `Project`, `CreateProjectRequest`, `UpdateProjectRequest` in `frontend/src/types/entities.ts` and `frontend/src/api/client.ts`.
 - [ ] **UI – attach repo:** Add “Git / Orbit” section in project settings (and optionally in New Project) to set `git_repo_url` and `git_branch`; optionally “Browse Orbit repos” using Orbit API discovery.
 - [ ] **Orbit token storage:** Add Orbit token setting (encrypted preferred); backend API to set/get (metadata or secure use only); frontend settings UI to add/remove or “Connect to Orbit.”
