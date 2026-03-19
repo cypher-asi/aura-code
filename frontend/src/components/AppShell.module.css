@@ -17,7 +17,7 @@
 .mobileTopbarInner {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .mobileTopbarTitle {
@@ -36,6 +36,23 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.mobileTopbarActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mobileHostBadge {
+  flex-shrink: 0;
+  padding-inline: 10px;
+  min-height: 28px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .mobileMain {
@@ -182,4 +199,27 @@
 
 .mobileContextHeader {
   border-bottom: 1px solid var(--color-border);
+}
+
+@media (max-width: 680px) {
+  .mobileTopbarTitleLink {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+  }
+
+  .mobileTopbarActions {
+    gap: 4px;
+  }
+
+  .mobileHostBadge {
+    padding-inline: 8px;
+    min-height: 26px;
+    font-size: 10px;
+  }
+
+  .mobileNavDrawer {
+    width: 100vw !important;
+    max-width: 100vw;
+    box-shadow: none;
+  }
 }

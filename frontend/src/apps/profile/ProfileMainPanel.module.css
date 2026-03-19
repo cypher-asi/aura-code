@@ -51,15 +51,18 @@
 
 @media (max-width: 640px) {
   .scrollArea {
-    padding: 12px;
+    padding: 10px;
     padding-bottom: calc(20px + env(safe-area-inset-bottom));
   }
 
   .commitGridWrapper {
-    padding: 12px 12px 8px;
+    max-width: none;
+    padding: 8px 0 6px;
   }
 
   .feedList {
+    max-width: none;
+    width: 100%;
     gap: 2px;
   }
 }

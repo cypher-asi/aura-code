@@ -147,6 +147,14 @@ const hostBadgeText: Record<HostConnectionStatus, string> = {
   error: "Host error",
 };
 
+const mobileHostBadgeText: Record<HostConnectionStatus, string> = {
+  checking: "Checking",
+  online: "Online",
+  auth_required: "Sign in",
+  unreachable: "Offline",
+  error: "Error",
+};
+
 function NavigationDrawerContent({
   onOpenOrgSettings,
   onOpenSettings,
@@ -358,9 +366,13 @@ function ResponsiveShell({
         </span>
       )}
       actions={(
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          <Badge variant={hostBadgeVariant[hostStatus]}>
-            {hostBadgeText[hostStatus]}
+        <div className={styles.mobileTopbarActions}>
+          <Badge
+            variant={hostBadgeVariant[hostStatus]}
+            className={styles.mobileHostBadge}
+            title={hostBadgeText[hostStatus]}
+          >
+            {mobileHostBadgeText[hostStatus]}
           </Badge>
           <Button
             variant="ghost"
