@@ -41,10 +41,101 @@ use tokio_tungstenite::tungstenite;
 const LIVE_OUTPUT_FLUSH_INTERVAL: u64 = 50;
 const DELTA_BROADCAST_INTERVAL_MS: u64 = 100;
 
+/// Extract project_id from an EngineEvent (if available).
+fn event_project_id(event: &EngineEvent) -> Option<aura_core::ProjectId> {
+    match event {
+        EngineEvent::LoopStarted { project_id, .. }
+        | EngineEvent::TaskStarted { project_id, .. }
+        | EngineEvent::TaskCompleted { project_id, .. }
+        | EngineEvent::TaskFailed { project_id, .. }
+        | EngineEvent::TaskRetrying { project_id, .. }
+        | EngineEvent::TaskBecameReady { project_id, .. }
+        | EngineEvent::FollowUpTaskCreated { project_id, .. }
+        | EngineEvent::SessionRolledOver { project_id, .. }
+        | EngineEvent::LoopPaused { project_id, .. }
+        | EngineEvent::LoopStopped { project_id, .. }
+        | EngineEvent::LoopFinished { project_id, .. }
+        | EngineEvent::LoopIterationSummary { project_id, .. }
+        | EngineEvent::FileOpsApplied { project_id, .. }
+        | EngineEvent::SpecGenStarted { project_id, .. }
+        | EngineEvent::SpecGenProgress { project_id, .. }
+        | EngineEvent::SpecGenCompleted { project_id, .. }
+        | EngineEvent::SpecGenFailed { project_id, .. }
+        | EngineEvent::SpecSaved { project_id, .. }
+        | EngineEvent::BuildVerificationSkipped { project_id, .. }
+        | EngineEvent::BuildVerificationStarted { project_id, .. }
+        | EngineEvent::BuildVerificationPassed { project_id, .. }
+        | EngineEvent::BuildVerificationFailed { project_id, .. }
+        | EngineEvent::BuildFixAttempt { project_id, .. }
+        | EngineEvent::TestVerificationStarted { project_id, .. }
+        | EngineEvent::TestVerificationPassed { project_id, .. }
+        | EngineEvent::TestVerificationFailed { project_id, .. }
+        | EngineEvent::TestFixAttempt { project_id, .. } => Some(*project_id),
+        EngineEvent::TaskOutputDelta { project_id, .. } => Some(*project_id),
+        EngineEvent::LogLine { .. } | EngineEvent::NetworkEvent { .. } => None,
+    }
+}
+
+/// Map an EngineEvent type to a log level string for aura-storage.
+fn event_log_level(event: &EngineEvent) -> &'static str {
+    match event {
+        EngineEvent::TaskFailed { .. }
+        | EngineEvent::SpecGenFailed { .. }
+        | EngineEvent::BuildVerificationFailed { .. }
+        | EngineEvent::TestVerificationFailed { .. } => "error",
+        EngineEvent::TaskRetrying { .. }
+        | EngineEvent::BuildFixAttempt { .. }
+        | EngineEvent::TestFixAttempt { .. } => "warn",
+        _ => "info",
+    }
+}
+
+/// Build a human-readable summary from an EngineEvent.
+fn event_summary(event: &EngineEvent) -> String {
+    match event {
+        EngineEvent::LoopStarted { .. } => "Dev loop started".into(),
+        EngineEvent::TaskStarted { task_title, .. } => format!("Task started: {task_title}"),
+        EngineEvent::TaskCompleted { task_id, .. } => format!("Task {task_id} completed"),
+        EngineEvent::TaskFailed { task_id, reason, .. } => {
+            format!("Task {task_id} failed: {reason}")
+        }
+        EngineEvent::TaskRetrying { task_id, attempt, reason, .. } => {
+            format!("Task {task_id} retrying (attempt {attempt}): {reason}")
+        }
+        EngineEvent::LoopFinished { outcome, .. } => format!("Dev loop finished: {outcome}"),
+        EngineEvent::LoopStopped { completed_count, .. } => {
+            format!("Dev loop stopped ({completed_count} tasks completed)")
+        }
+        EngineEvent::LoopPaused { completed_count, .. } => {
+            format!("Dev loop paused ({completed_count} tasks completed)")
+        }
+        EngineEvent::SpecGenStarted { .. } => "Spec generation started".into(),
+        EngineEvent::SpecGenCompleted { spec_count, .. } => {
+            format!("Spec generation completed ({spec_count} specs)")
+        }
+        EngineEvent::SpecGenFailed { reason, .. } => {
+            format!("Spec generation failed: {reason}")
+        }
+        EngineEvent::SessionRolledOver { .. } => "Session rolled over".into(),
+        EngineEvent::FileOpsApplied { files_written, files_deleted, .. } => {
+            format!("Files applied: {files_written} written, {files_deleted} deleted")
+        }
+        EngineEvent::LogLine { message } => message.clone(),
+        _ => {
+            let type_name = serde_json::to_value(event)
+                .ok()
+                .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(String::from))
+                .unwrap_or_else(|| "unknown".into());
+            type_name
+        }
+    }
+}
+
 fn spawn_event_rebroadcast(
     mut rx: mpsc::UnboundedReceiver<EngineEvent>,
     broadcast_tx: broadcast::Sender<EngineEvent>,
     store: Arc<RocksStore>,
+    storage_client: Option<Arc<StorageClient>>,
     task_output_buffers: TaskOutputBuffers,
 ) {
     tokio::spawn(async move {
@@ -93,6 +184,23 @@ fn spawn_event_rebroadcast(
                             if write_count % 500 == 0 {
                                 if let Err(e) = store.prune_log_entries_if_needed() {
                                     warn!("Failed to prune log entries: {e}");
+                                }
+                            }
+                        }
+                    }
+
+                    // Also write to aura-storage
+                    if let Some(ref sc) = storage_client {
+                        if let Some(pid) = event_project_id(&event) {
+                            if let Some(jwt) = get_jwt_from_store(&store) {
+                                let metadata = serde_json::to_value(&event).ok();
+                                let req = aura_storage::CreateLogEntryRequest {
+                                    level: event_log_level(&event).to_string(),
+                                    message: event_summary(&event),
+                                    metadata,
+                                };
+                                if let Err(e) = sc.create_log_entry(&pid.to_string(), &jwt, &req).await {
+                                    debug!("Failed to write log entry to aura-storage: {e}");
                                 }
                             }
                         }
@@ -330,6 +438,7 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         event_rx,
         event_broadcast.clone(),
         store.clone(),
+        storage_client.clone(),
         task_output_buffers.clone(),
     );
 
