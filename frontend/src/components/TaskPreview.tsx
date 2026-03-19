@@ -307,7 +307,9 @@ export function TaskPreview({ task }: { task: import("../types").Task }) {
 
   const rawStatus = liveStatus ?? task.status;
   const effectiveStatus =
-    rawStatus === "in_progress" && !loopActive ? "ready" : rawStatus;
+    rawStatus === "in_progress" && !loopActive && liveStatus === null
+      ? "ready"
+      : rawStatus;
   const effectiveSessionId = liveSessionId ?? task.session_id;
   const isActive = effectiveStatus === "in_progress";
   const isTerminal = effectiveStatus === "done" || effectiveStatus === "failed";
