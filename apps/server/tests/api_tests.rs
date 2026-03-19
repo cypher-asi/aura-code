@@ -39,6 +39,7 @@ fn build_test_app() -> (Router, AppState, tempfile::TempDir) {
         store.clone(),
         settings_service.clone(),
         llm.clone(),
+        None,
     ));
     let task_extraction_service = Arc::new(TaskExtractionService::new(
         store.clone(),
@@ -88,6 +89,7 @@ fn build_test_app() -> (Router, AppState, tempfile::TempDir) {
         task_output_buffers,
         terminal_manager: Arc::new(aura_terminal::TerminalManager::new()),
         network_client: None,
+        storage_client: None,
     };
 
     let app = aura_server::create_router(state.clone());

@@ -276,10 +276,12 @@ pub fn build_app_state(db_path: &Path) -> AppState {
     ));
     let project_service = Arc::new(ProjectService::new(store.clone()));
     project_service.cleanup_empty_projects();
+    let storage_client = StorageClient::from_env().map(Arc::new);
     let spec_gen_service = Arc::new(SpecGenerationService::new(
         store.clone(),
         settings_service.clone(),
         llm.clone(),
+        storage_client.clone(),
     ));
     let task_extraction_service = Arc::new(TaskExtractionService::new(
         store.clone(),
@@ -336,7 +338,6 @@ pub fn build_app_state(db_path: &Path) -> AppState {
     );
 
     let network_client = NetworkClient::from_env().map(Arc::new);
-    let storage_client = StorageClient::from_env().map(Arc::new);
 
     if let Some(ref client) = storage_client {
         let health_client = client.clone();

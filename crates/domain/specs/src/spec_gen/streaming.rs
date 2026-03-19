@@ -125,7 +125,7 @@ impl SpecGenerationService {
                 Some(v) => v,
                 None => return,
             };
-        if let Err(e) = self.clear_project_specs(project_id) {
+        if let Err(e) = self.clear_project_specs(project_id).await {
             send(SpecStreamEvent::Error(format!("Failed to clear existing specs: {e}")));
             return;
         }
@@ -191,7 +191,7 @@ impl SpecGenerationService {
                             };
                             self.save_and_emit_spec(
                                 project_id, &spec, tx, &mut spec_index, saved_specs,
-                            );
+                            ).await;
                         }
                     }
                 }
@@ -234,7 +234,7 @@ impl SpecGenerationService {
         };
         if saved_specs.is_empty() {
             if let Some(text) = response_text {
-                self.try_fallback_parse(project_id, &text, tx, saved_specs);
+                self.try_fallback_parse(project_id, &text, tx, saved_specs).await;
                 if saved_specs.is_empty() { return; }
             }
         }
@@ -245,7 +245,7 @@ impl SpecGenerationService {
     /// Regenerate project overview (title + summary) from the current specs.
     /// Used only as a manual refresh from the API endpoint.
     pub async fn regenerate_specs_summary(&self, project_id: &ProjectId) -> Result<(String, String), SpecGenError> {
-        let specs = self.list_specs(project_id)?;
+        let specs = self.list_specs(project_id).await?;
         if specs.is_empty() {
             return Err(SpecGenError::ParseError("No specs found".to_string()));
         }
@@ -338,7 +338,7 @@ impl SpecGenerationService {
         Some((requirements_content, api_key))
     }
 
-    fn save_and_emit_spec(
+    async fn save_and_emit_spec(
         &self,
         project_id: &ProjectId,
         spec: &Spec,
@@ -346,7 +346,7 @@ impl SpecGenerationService {
         spec_index: &mut u32,
         saved_specs: &mut Vec<Spec>,
     ) {
-        if let Err(e) = self.save_single_spec(spec) {
+        if let Err(e) = self.save_single_spec(spec).await {
             error!(%project_id, error = %e, "Failed to save spec incrementally");
             return;
         }
@@ -371,7 +371,7 @@ impl SpecGenerationService {
         }
     }
 
-    fn try_fallback_parse(
+    async fn try_fallback_parse(
         &self,
         project_id: &ProjectId,
         text: &str,
@@ -390,7 +390,7 @@ impl SpecGenerationService {
                     "Saving {} specs to database",
                     new_specs.len()
                 )));
-                if let Err(e) = self.save_specs(project_id, &new_specs) {
+                if let Err(e) = self.save_specs(project_id, &new_specs).await {
                     send(SpecStreamEvent::Error(format!("Failed to save specs: {e}")));
                     return;
                 }
