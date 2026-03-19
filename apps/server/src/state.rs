@@ -8,6 +8,7 @@ use tokio::sync::{broadcast, mpsc, Mutex};
 use aura_core::{AgentInstanceId, ProjectId, TaskId, ZeroAuthSession};
 use aura_engine::{DevLoopEngine, EngineEvent, LoopHandle, ProjectWriteCoordinator};
 use aura_network::NetworkClient;
+use aura_storage::StorageClient;
 use aura_terminal::TerminalManager;
 use aura_agents::{AgentService, AgentInstanceService};
 use aura_auth::AuthService;
@@ -53,6 +54,8 @@ pub struct AppState {
     pub terminal_manager: Arc<TerminalManager>,
     /// Optional aura-network client. `None` when `AURA_NETWORK_URL` is not set.
     pub network_client: Option<Arc<NetworkClient>>,
+    /// Optional aura-storage client. `None` when `AURA_STORAGE_URL` is not set.
+    pub storage_client: Option<Arc<StorageClient>>,
 }
 
 impl AppState {
@@ -75,6 +78,13 @@ impl AppState {
         self.network_client
             .as_ref()
             .ok_or_else(|| ApiError::service_unavailable("aura-network is not configured"))
+    }
+
+    /// Get the storage client, returning 503 if not configured.
+    pub fn require_storage_client(&self) -> Result<&Arc<StorageClient>, (StatusCode, Json<ApiError>)> {
+        self.storage_client
+            .as_ref()
+            .ok_or_else(|| ApiError::service_unavailable("aura-storage is not configured"))
     }
 
     /// Build a new `DevLoopEngine` wired to this application's services.

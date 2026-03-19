@@ -20,6 +20,7 @@ use crate::state::TaskOutputBuffers;
 use aura_core::ZeroAuthSession;
 use aura_engine::EngineEvent;
 use aura_network::NetworkClient;
+use aura_storage::StorageClient;
 use aura_terminal::TerminalManager;
 use aura_agents::{AgentService, AgentInstanceService};
 use aura_auth::AuthService;
@@ -335,6 +336,22 @@ pub fn build_app_state(db_path: &Path) -> AppState {
     );
 
     let network_client = NetworkClient::from_env().map(Arc::new);
+    let storage_client = StorageClient::from_env().map(Arc::new);
+
+    if let Some(ref client) = storage_client {
+        let health_client = client.clone();
+        tokio::spawn(async move {
+            match health_client.health_check().await {
+                Ok(()) => info!("aura-storage is reachable"),
+                Err(e) => warn!(
+                    error = %e,
+                    "aura-storage health check failed on startup (will retry on first request)"
+                ),
+            }
+        });
+    } else {
+        info!("aura-storage integration disabled (AURA_STORAGE_URL not set)");
+    }
 
     if let Some(ref client) = network_client {
         let health_client = client.clone();
@@ -384,5 +401,6 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         task_output_buffers,
         terminal_manager: Arc::new(TerminalManager::new()),
         network_client,
+        storage_client,
     }
 }

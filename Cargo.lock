@@ -499,6 +499,7 @@ dependencies = [
  "aura-sessions",
  "aura-settings",
  "aura-specs",
+ "aura-storage",
  "aura-store",
  "aura-tasks",
  "aura-terminal",
