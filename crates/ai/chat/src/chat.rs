@@ -6,8 +6,9 @@ use tokio::sync::mpsc;
 use aura_core::*;
 use aura_billing::MeteredLlm;
 use aura_settings::SettingsService;
-use aura_storage::StorageClient;
+use aura_storage::{StorageClient, StorageMessage};
 use aura_store::RocksStore;
+use chrono::DateTime;
 use tracing::warn;
 
 use aura_claude::{
@@ -283,6 +284,31 @@ impl ChatService {
             .map(|s| s.id.clone())
     }
 
+    /// Ensure an active session exists for this project agent; create one if not.
+    /// Returns the session id to use for saving messages, or None if storage is unavailable.
+    pub(crate) async fn ensure_active_session(
+        &self,
+        project_id: &ProjectId,
+        agent_instance_id: &AgentInstanceId,
+    ) -> Option<String> {
+        if let Some(sid) = self.find_active_session_id(agent_instance_id).await {
+            return Some(sid);
+        }
+        let storage = self.storage_client.as_ref()?;
+        let jwt = self.get_jwt()?;
+        let req = aura_storage::CreateSessionRequest {
+            project_id: project_id.to_string(),
+            status: Some("active".to_string()),
+            context_usage_estimate: None,
+            summary_of_previous_context: None,
+        };
+        let session = storage
+            .create_session(&agent_instance_id.to_string(), &jwt, &req)
+            .await
+            .ok()?;
+        Some(session.id)
+    }
+
     /// Save a message to aura-storage.
     /// Fire-and-forget: logs a warning on failure but does not propagate errors.
     /// When `session_id` is provided, skips the session lookup HTTP call.
@@ -335,14 +361,72 @@ impl ChatService {
         }
     }
 
-    pub fn list_messages(
+    fn storage_message_to_message(
+        sm: &StorageMessage,
+        project_id: ProjectId,
+        agent_instance_id: AgentInstanceId,
+    ) -> Message {
+        let message_id = sm
+            .id
+            .parse::<MessageId>()
+            .unwrap_or_else(|_| MessageId::new());
+        let role = match sm.role.as_deref() {
+            Some("user") => ChatRole::User,
+            Some("assistant") => ChatRole::Assistant,
+            _ => ChatRole::User,
+        };
+        let created_at = sm
+            .created_at
+            .as_deref()
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(Utc::now);
+        Message {
+            message_id,
+            agent_instance_id,
+            project_id,
+            role,
+            content: sm.content.clone().unwrap_or_default(),
+            content_blocks: None,
+            thinking: None,
+            thinking_duration_ms: None,
+            created_at,
+        }
+    }
+
+    /// List project-scoped messages from aura-storage only (no local store).
+    /// Returns error if storage is not configured.
+    pub(crate) async fn list_messages_async(
         &self,
         project_id: &ProjectId,
         agent_instance_id: &AgentInstanceId,
     ) -> Result<Vec<Message>, ChatError> {
-        let mut messages = self
-            .store
-            .list_messages(project_id, agent_instance_id)?;
+        let storage = self.storage_client.as_ref().ok_or_else(|| {
+            ChatError::Storage(aura_storage::StorageError::NotConfigured)
+        })?;
+        let jwt = self.get_jwt().ok_or_else(|| {
+            ChatError::Storage(aura_storage::StorageError::Deserialize(
+                "not authenticated".to_string(),
+            ))
+        })?;
+        let sessions = storage
+            .list_sessions(&agent_instance_id.to_string(), &jwt)
+            .await
+            .map_err(ChatError::Storage)?;
+        let mut messages = Vec::new();
+        for session in &sessions {
+            let session_msgs = storage
+                .list_messages(&session.id, &jwt, None, None)
+                .await
+                .map_err(ChatError::Storage)?;
+            for sm in &session_msgs {
+                messages.push(Self::storage_message_to_message(
+                    sm,
+                    *project_id,
+                    *agent_instance_id,
+                ));
+            }
+        }
         messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
         Ok(messages)
     }
@@ -372,30 +456,28 @@ impl ChatService {
             let _ = tx.send(evt);
         };
 
-        let now = Utc::now();
-        let content_blocks = build_attachment_blocks(content, attachments);
+        let _content_blocks = build_attachment_blocks(content, attachments);
 
-        let user_msg = Message {
-            message_id: MessageId::new(),
-            agent_instance_id: *agent_instance_id,
-            project_id: *project_id,
-            role: ChatRole::User,
-            content: content.to_string(),
-            content_blocks,
-            thinking: None,
-            thinking_duration_ms: None,
-            created_at: now,
-        };
-        if let Err(e) = self.store.put_message(&user_msg) {
-            send(ChatStreamEvent::Error(format!("Failed to save user message: {e}")));
+        let active_session_id = self
+            .ensure_active_session(project_id, agent_instance_id)
+            .await;
+        let Some(ref session_id) = active_session_id else {
+            send(ChatStreamEvent::Error(
+                "aura-storage is not configured or could not create session".to_string(),
+            ));
             send(ChatStreamEvent::Done);
             return;
-        }
-        let active_session_id = self.find_active_session_id(agent_instance_id).await;
+        };
         self.save_message_to_storage(
-            project_id, agent_instance_id, "user", content, None, None,
-            active_session_id.as_deref(),
-        ).await;
+            project_id,
+            agent_instance_id,
+            "user",
+            content,
+            None,
+            None,
+            Some(session_id.as_str()),
+        )
+        .await;
 
         match action {
             Some("generate_specs") => {

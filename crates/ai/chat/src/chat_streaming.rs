@@ -173,7 +173,7 @@ impl ChatService {
             }
         };
 
-        let stored_messages = match self.list_messages(project_id, agent_instance_id) {
+        let stored_messages = match self.list_messages_async(project_id, agent_instance_id).await {
             Ok(m) => m,
             Err(e) => {
                 let _ = tx.send(ChatStreamEvent::Error(format!("Failed to load messages: {e}")));
@@ -315,17 +315,13 @@ impl ChatService {
                 agent_instance_id: *agent_instance_id,
                 project_id: *project_id,
                 role: ChatRole::Assistant,
-                content: result.text,
+                content: result.text.clone(),
                 content_blocks,
                 thinking,
                 thinking_duration_ms,
                 created_at: Utc::now(),
             };
-            if let Err(e) = self.store.put_message(&assistant_msg) {
-                error!(%project_id, error = %e, "Failed to save assistant message");
-            } else {
-                let _ = tx.send(ChatStreamEvent::MessageSaved(assistant_msg));
-            }
+            let _ = tx.send(ChatStreamEvent::MessageSaved(assistant_msg));
             self.save_message_to_storage(
                 project_id,
                 agent_instance_id,
@@ -473,11 +469,7 @@ impl ChatService {
                 thinking_duration_ms: None,
                 created_at: Utc::now(),
             };
-            if let Err(e) = self.store.put_message(&assistant_msg) {
-                error!(%project_id, error = %e, "Failed to save spec gen assistant message");
-            } else {
-                send(ChatStreamEvent::MessageSaved(assistant_msg));
-            }
+            send(ChatStreamEvent::MessageSaved(assistant_msg));
             self.save_message_to_storage(
                 project_id,
                 agent_instance_id,
