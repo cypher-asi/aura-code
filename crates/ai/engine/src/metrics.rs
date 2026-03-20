@@ -318,3 +318,167 @@ pub fn write_run_metrics(project_root: &Path, metrics: &LoopRunMetrics) {
         append_jsonl(&dir.join(HISTORY_FILE), &line);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::types::{TaskOutcome, TaskTimings};
+
+    fn sample_timings(input: u64, output: u64, fix_input: u64, fix_output: u64) -> TaskTimings {
+        TaskTimings {
+            input_tokens: input,
+            output_tokens: output,
+            fix_input_tokens: fix_input,
+            fix_output_tokens: fix_output,
+            parse_retries: 1,
+            build_fix_attempts: 2,
+            duplicate_error_bailouts: 0,
+            llm_duration_ms: 500,
+            file_ops_duration_ms: 100,
+            build_verify_duration_ms: 200,
+            task_duration_ms: 1000,
+            files_changed: 3,
+        }
+    }
+
+    #[test]
+    fn task_metrics_from_outcome_completed_preserves_tokens() {
+        let timings = sample_timings(1000, 500, 200, 100);
+        let outcome = TaskOutcome::Completed {
+            notes: "done".into(),
+            follow_up_tasks: vec![],
+            file_ops: vec![],
+            timings: timings.clone(),
+        };
+
+        let metrics = TaskMetrics::from_outcome("t1".into(), "Test Task".into(), Some("opus".into()), &outcome);
+        assert_eq!(metrics.input_tokens, timings.total_input());
+        assert_eq!(metrics.output_tokens, timings.total_output());
+        assert_eq!(metrics.input_tokens, 1200);
+        assert_eq!(metrics.output_tokens, 600);
+        assert_eq!(metrics.outcome, "completed");
+        assert_eq!(metrics.files_changed, 3);
+        assert_eq!(metrics.parse_retries, 1);
+        assert_eq!(metrics.build_fix_attempts, 2);
+    }
+
+    #[test]
+    fn task_metrics_from_outcome_failed_preserves_reason() {
+        let timings = sample_timings(500, 200, 0, 0);
+        let outcome = TaskOutcome::Failed {
+            reason: "build error".into(),
+            phase: "build_verify".into(),
+            credit_failure: false,
+            timings,
+        };
+
+        let metrics = TaskMetrics::from_outcome("t2".into(), "Fail Task".into(), None, &outcome);
+        assert_eq!(metrics.outcome, "failed");
+        assert_eq!(metrics.failure_phase.as_deref(), Some("build_verify"));
+        assert_eq!(metrics.failure_reason.as_deref(), Some("build error"));
+        assert_eq!(metrics.input_tokens, 500);
+        assert_eq!(metrics.output_tokens, 200);
+    }
+
+    #[test]
+    fn task_timings_total_includes_fix_tokens() {
+        let t = sample_timings(1000, 500, 200, 100);
+        assert_eq!(t.total_input(), 1200);
+        assert_eq!(t.total_output(), 600);
+    }
+
+    #[test]
+    fn recompute_aggregates_sums_correctly() {
+        let schedule = vec![
+            FeeScheduleEntry {
+                model: "claude-opus-4-6".into(),
+                input_cost_per_million: 5.0,
+                output_cost_per_million: 25.0,
+                effective_date: "2026-02-01".into(),
+            },
+            FeeScheduleEntry {
+                model: "claude-haiku-4-5".into(),
+                input_cost_per_million: 0.80,
+                output_cost_per_million: 4.00,
+                effective_date: "2025-10-01".into(),
+            },
+        ];
+
+        let mut run = LoopRunMetrics::new("proj-1".into());
+        run.tasks.push(
+            TaskMetrics::completed("t1".into(), "Task 1".into(), 1000, Some("claude-opus-4-6".into()))
+                .with_tokens(100_000, 50_000)
+                .with_parse_retries(2)
+                .with_build_fix_attempts(1),
+        );
+        run.tasks.push(
+            TaskMetrics::completed("t2".into(), "Task 2".into(), 2000, Some("claude-haiku-4-5".into()))
+                .with_tokens(200_000, 80_000),
+        );
+        run.tasks.push(
+            TaskMetrics::failed("t3".into(), "Task 3".into(), 500, None, "build", "error".into())
+                .with_tokens(50_000, 20_000),
+        );
+
+        run.finalize("completed", 5000, 1, 0, 0, &schedule);
+
+        assert_eq!(run.total_input_tokens, 350_000);
+        assert_eq!(run.total_output_tokens, 150_000);
+        assert_eq!(run.tasks_completed, 2);
+        assert_eq!(run.tasks_failed, 1);
+        assert_eq!(run.total_parse_retries, 2);
+        assert_eq!(run.total_build_fix_attempts, 1);
+
+        // Cost: opus (100K in, 50K out) + haiku (200K in, 80K out) + opus-fallback (50K in, 20K out)
+        let opus_cost = compute_cost_with_rates(100_000, 50_000, 5.0, 25.0);
+        let haiku_cost = compute_cost_with_rates(200_000, 80_000, 0.80, 4.00);
+        let fallback_cost = compute_cost_with_rates(50_000, 20_000, 5.0, 25.0);
+        let expected_cost = opus_cost + haiku_cost + fallback_cost;
+        assert!((run.estimated_cost_usd - expected_cost).abs() < 0.001);
+    }
+
+    #[test]
+    fn cost_uses_per_task_model() {
+        let schedule = vec![
+            FeeScheduleEntry {
+                model: "claude-opus-4-6".into(),
+                input_cost_per_million: 5.0,
+                output_cost_per_million: 25.0,
+                effective_date: "2026-02-01".into(),
+            },
+            FeeScheduleEntry {
+                model: "claude-haiku-4-5".into(),
+                input_cost_per_million: 0.80,
+                output_cost_per_million: 4.00,
+                effective_date: "2025-10-01".into(),
+            },
+        ];
+
+        let mut run = LoopRunMetrics::new("proj-1".into());
+        run.tasks.push(
+            TaskMetrics::completed("t1".into(), "Opus".into(), 1000, Some("claude-opus-4-6".into()))
+                .with_tokens(1_000_000, 0),
+        );
+        run.tasks.push(
+            TaskMetrics::completed("t2".into(), "Haiku".into(), 1000, Some("claude-haiku-4-5".into()))
+                .with_tokens(1_000_000, 0),
+        );
+        run.finalize("completed", 2000, 1, 0, 0, &schedule);
+
+        // opus: 1M * 5.0 / 1M = $5.00, haiku: 1M * 0.80 / 1M = $0.80
+        assert!((run.estimated_cost_usd - 5.80).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn empty_tasks_produces_zeros() {
+        let schedule = vec![];
+        let mut run = LoopRunMetrics::new("proj-1".into());
+        run.finalize("completed", 0, 1, 0, 0, &schedule);
+
+        assert_eq!(run.total_input_tokens, 0);
+        assert_eq!(run.total_output_tokens, 0);
+        assert_eq!(run.estimated_cost_usd, 0.0);
+        assert_eq!(run.tasks_completed, 0);
+        assert_eq!(run.tasks_failed, 0);
+    }
+}
