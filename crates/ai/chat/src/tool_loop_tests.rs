@@ -5,8 +5,9 @@ use async_trait::async_trait;
 use aura_claude::mock::{MockLlmProvider, MockResponse};
 use aura_billing::testutil;
 use crate::tool_loop_helpers::{
+    apply_cmd_failure_tracking, build_tool_result_blocks, detect_blocked_commands,
     detect_blocked_exploration, detect_blocked_reads, detect_blocked_write_failures,
-    detect_blocked_writes,
+    detect_blocked_writes, looks_truncated, summarize_write_file_input,
 };
 
 fn default_config(max_iterations: usize) -> ToolLoopConfig {
@@ -607,4 +608,785 @@ async fn test_write_failure_tracking_blocks_after_repeated_errors() {
         }
     }
     assert!(blocked_on_e4, "4th edit attempt should be blocked after 3 failures");
+}
+
+// -----------------------------------------------------------------------
+// run_tool_loop integration tests
+// -----------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_stop_loop_flag_exits_after_first_iteration() {
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::tool_use(vec![ToolCall {
+            id: "t1".into(),
+            name: "task_done".into(),
+            input: serde_json::json!({"result": "finished"}),
+        }])
+        .with_tokens(100, 50),
+        MockResponse::text("Should not be reached").with_tokens(50, 50),
+    ]));
+
+    let (llm, _tmp) = testutil::make_test_llm(mock).await;
+    let (event_tx, _event_rx) = mpsc::unbounded_channel();
+    let config = default_config(10);
+
+    let executor = SimpleExecutor {
+        handler: Box::new(|calls| {
+            calls
+                .iter()
+                .map(|tc| ToolCallResult {
+                    tool_use_id: tc.id.clone(),
+                    content: "done".into(),
+                    is_error: false,
+                    stop_loop: true,
+                })
+                .collect()
+        }),
+    };
+
+    let result = run_tool_loop(
+        llm, "test-key", "test", vec![RichMessage::user("Do it")],
+        Arc::from(Vec::<ToolDefinition>::new()), &config, &executor, &event_tx,
+    ).await;
+
+    assert_eq!(result.iterations_run, 1);
+    assert!(!result.timed_out);
+}
+
+#[tokio::test]
+async fn test_multiple_tool_calls_in_single_iteration() {
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::tool_use(vec![
+            ToolCall { id: "t1".into(), name: "read_file".into(), input: serde_json::json!({"path": "a.rs"}) },
+            ToolCall { id: "t2".into(), name: "read_file".into(), input: serde_json::json!({"path": "b.rs"}) },
+            ToolCall { id: "t3".into(), name: "read_file".into(), input: serde_json::json!({"path": "c.rs"}) },
+        ]).with_tokens(100, 80),
+        MockResponse::text("All three read.").with_tokens(80, 40),
+    ]));
+
+    let (llm, _tmp) = testutil::make_test_llm(mock).await;
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let config = default_config(5);
+
+    let executor = SimpleExecutor {
+        handler: Box::new(|calls| {
+            calls.iter().map(|tc| ToolCallResult {
+                tool_use_id: tc.id.clone(),
+                content: format!("content of {}", tc.input["path"].as_str().unwrap_or("")),
+                is_error: false,
+                stop_loop: false,
+            }).collect()
+        }),
+    };
+
+    let result = run_tool_loop(
+        llm, "test-key", "test", vec![RichMessage::user("Read three files")],
+        Arc::from(Vec::<ToolDefinition>::new()), &config, &executor, &event_tx,
+    ).await;
+
+    assert_eq!(result.iterations_run, 2);
+
+    let mut tool_result_count = 0;
+    while let Ok(evt) = event_rx.try_recv() {
+        if matches!(evt, ToolLoopEvent::ToolResult { .. }) {
+            tool_result_count += 1;
+        }
+    }
+    assert_eq!(tool_result_count, 3, "should have 3 tool results from the batch");
+}
+
+#[tokio::test]
+async fn test_text_accumulation_across_iterations() {
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::tool_use(vec![ToolCall {
+            id: "t1".into(),
+            name: "do_thing".into(),
+            input: serde_json::json!({}),
+        }]).with_tokens(50, 30),
+        MockResponse::text("Second part").with_tokens(50, 30),
+    ]));
+
+    let mock_ref = Arc::clone(&mock);
+    // Set text on the first (tool_use) response
+    {
+        let mut resp = MockResponse::tool_use(vec![ToolCall {
+            id: "t1".into(),
+            name: "do_thing".into(),
+            input: serde_json::json!({}),
+        }]);
+        resp.text = "First part".into();
+        resp.input_tokens = 50;
+        resp.output_tokens = 30;
+        let _ = mock_ref; // don't actually need to modify, we'll rebuild
+    }
+
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![{
+        let mut r = MockResponse::tool_use(vec![ToolCall {
+            id: "t1".into(),
+            name: "do_thing".into(),
+            input: serde_json::json!({}),
+        }]);
+        r.text = "First part".into();
+        r.input_tokens = 50;
+        r.output_tokens = 30;
+        r
+    }, MockResponse::text("Second part").with_tokens(50, 30)]));
+
+    let (llm, _tmp) = testutil::make_test_llm(mock).await;
+    let (event_tx, _) = mpsc::unbounded_channel();
+    let config = default_config(5);
+    let executor = SimpleExecutor {
+        handler: Box::new(|calls| {
+            calls.iter().map(|tc| ToolCallResult {
+                tool_use_id: tc.id.clone(),
+                content: "ok".into(),
+                is_error: false,
+                stop_loop: false,
+            }).collect()
+        }),
+    };
+
+    let result = run_tool_loop(
+        llm, "test-key", "test", vec![RichMessage::user("go")],
+        Arc::from(Vec::<ToolDefinition>::new()), &config, &executor, &event_tx,
+    ).await;
+
+    assert!(result.text.contains("First part"));
+    assert!(result.text.contains("Second part"));
+}
+
+#[tokio::test]
+async fn test_empty_tool_call_list_with_tool_use_stop_reason() {
+    // Mock returns stop_reason="tool_use" but no actual tool calls.
+    // The loop should treat this as end-of-turn.
+    let mut resp = MockResponse::tool_use(vec![]);
+    resp.stop_reason = "tool_use".into();
+    resp.input_tokens = 100;
+    resp.output_tokens = 50;
+
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![resp]));
+    let (llm, _tmp) = testutil::make_test_llm(mock).await;
+    let (event_tx, _) = mpsc::unbounded_channel();
+    let config = default_config(5);
+    let executor = noop_executor();
+
+    let result = run_tool_loop(
+        llm, "test-key", "test", vec![RichMessage::user("go")],
+        Arc::from(Vec::<ToolDefinition>::new()), &config, &executor, &event_tx,
+    ).await;
+
+    assert_eq!(result.iterations_run, 1);
+    assert!(!result.timed_out);
+}
+
+#[tokio::test]
+async fn test_max_tokens_truncation_handling() {
+    let mut resp = MockResponse::tool_use(vec![ToolCall {
+        id: "t1".into(),
+        name: "write_file".into(),
+        input: serde_json::json!({"path": "out.rs", "content": "fn main() {}"}),
+    }]);
+    resp.stop_reason = "max_tokens".into();
+    resp.input_tokens = 100;
+    resp.output_tokens = 50;
+
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        resp,
+        MockResponse::text("Done after truncation").with_tokens(80, 40),
+    ]));
+
+    let (llm, _tmp) = testutil::make_test_llm(mock).await;
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let config = default_config(5);
+    let executor = noop_executor();
+
+    let result = run_tool_loop(
+        llm, "test-key", "test", vec![RichMessage::user("write")],
+        Arc::from(Vec::<ToolDefinition>::new()), &config, &executor, &event_tx,
+    ).await;
+
+    assert_eq!(result.iterations_run, 2);
+
+    let mut found_truncation_error = false;
+    while let Ok(evt) = event_rx.try_recv() {
+        if let ToolLoopEvent::ToolResult { content, is_error, .. } = evt {
+            if is_error && content.contains("truncated") {
+                found_truncation_error = true;
+            }
+        }
+    }
+    assert!(found_truncation_error, "should emit truncation error for tool calls with max_tokens");
+}
+
+#[tokio::test]
+async fn test_zero_iterations_config() {
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::text("Should not run").with_tokens(100, 50),
+    ]));
+
+    let (llm, _tmp) = testutil::make_test_llm(mock).await;
+    let (event_tx, _) = mpsc::unbounded_channel();
+    let config = default_config(0);
+    let executor = noop_executor();
+
+    let result = run_tool_loop(
+        llm, "test-key", "test", vec![RichMessage::user("go")],
+        Arc::from(Vec::<ToolDefinition>::new()), &config, &executor, &event_tx,
+    ).await;
+
+    assert_eq!(result.iterations_run, 0);
+}
+
+#[tokio::test]
+async fn test_event_emission_delta_tool_use_tool_result_token_usage() {
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::tool_use(vec![ToolCall {
+            id: "t1".into(),
+            name: "read_file".into(),
+            input: serde_json::json!({"path": "a.rs"}),
+        }]).with_tokens(100, 50),
+        MockResponse::text("Done").with_tokens(80, 40),
+    ]));
+
+    let (llm, _tmp) = testutil::make_test_llm(mock).await;
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let config = default_config(5);
+    let executor = SimpleExecutor {
+        handler: Box::new(|calls| {
+            calls.iter().map(|tc| ToolCallResult {
+                tool_use_id: tc.id.clone(),
+                content: "fn main() {}".into(),
+                is_error: false,
+                stop_loop: false,
+            }).collect()
+        }),
+    };
+
+    let _result = run_tool_loop(
+        llm, "test-key", "test", vec![RichMessage::user("read")],
+        Arc::from(Vec::<ToolDefinition>::new()), &config, &executor, &event_tx,
+    ).await;
+
+    let mut has_delta = false;
+    let mut has_tool_use = false;
+    let mut has_tool_result = false;
+    let mut has_token_usage = false;
+
+    while let Ok(evt) = event_rx.try_recv() {
+        match evt {
+            ToolLoopEvent::Delta(_) => has_delta = true,
+            ToolLoopEvent::ToolUseDetected { .. } => has_tool_use = true,
+            ToolLoopEvent::ToolResult { .. } => has_tool_result = true,
+            ToolLoopEvent::IterationTokenUsage { .. } => has_token_usage = true,
+            _ => {}
+        }
+    }
+
+    assert!(has_delta, "should emit Delta event for 'Done' text");
+    assert!(has_tool_use, "should emit ToolUseDetected");
+    assert!(has_tool_result, "should emit ToolResult");
+    assert!(has_token_usage, "should emit IterationTokenUsage");
+}
+
+#[tokio::test]
+async fn test_stall_fail_fast_after_three_consecutive_failed_edits() {
+    let responses: Vec<MockResponse> = (0..5)
+        .map(|i| {
+            MockResponse::tool_use(vec![ToolCall {
+                id: format!("e{i}"),
+                name: "edit_file".into(),
+                input: serde_json::json!({"path": "src/lib.rs", "old_text": "x", "new_text": "y"}),
+            }]).with_tokens(50, 30)
+        })
+        .chain(std::iter::once(MockResponse::text("fallback").with_tokens(50, 30)))
+        .collect();
+
+    let mock = Arc::new(MockLlmProvider::with_responses(responses));
+    let (llm, _tmp) = testutil::make_test_llm(mock).await;
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let config = default_config(10);
+
+    let executor = SimpleExecutor {
+        handler: Box::new(|calls| {
+            calls.iter().map(|tc| ToolCallResult {
+                tool_use_id: tc.id.clone(),
+                content: "edit failed: old_text not found".into(),
+                is_error: true,
+                stop_loop: false,
+            }).collect()
+        }),
+    };
+
+    let result = run_tool_loop(
+        llm, "test-key", "test", vec![RichMessage::user("edit")],
+        Arc::from(Vec::<ToolDefinition>::new()), &config, &executor, &event_tx,
+    ).await;
+
+    assert!(result.iterations_run <= 4, "should stop early due to stall fail-fast");
+
+    let mut found_stall_error = false;
+    while let Ok(evt) = event_rx.try_recv() {
+        if let ToolLoopEvent::Error(msg) = evt {
+            if msg.contains("STALL FAIL-FAST") {
+                found_stall_error = true;
+            }
+        }
+    }
+    assert!(found_stall_error, "should emit stall fail-fast error");
+}
+
+#[tokio::test]
+async fn test_mixed_tool_calls_some_blocked_some_allowed() {
+    // First iteration: read file twice (allowed both)
+    // Second iteration: read same file a third time (blocked) + a new tool (allowed)
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::tool_use(vec![
+            ToolCall { id: "r1".into(), name: "read_file".into(), input: serde_json::json!({"path": "a.rs"}) },
+        ]).with_tokens(50, 30),
+        MockResponse::tool_use(vec![
+            ToolCall { id: "r2".into(), name: "read_file".into(), input: serde_json::json!({"path": "a.rs"}) },
+        ]).with_tokens(50, 30),
+        MockResponse::tool_use(vec![
+            ToolCall { id: "r3".into(), name: "read_file".into(), input: serde_json::json!({"path": "a.rs"}) },
+            ToolCall { id: "t1".into(), name: "do_thing".into(), input: serde_json::json!({}) },
+        ]).with_tokens(50, 30),
+        MockResponse::text("Done").with_tokens(50, 30),
+    ]));
+
+    let (llm, _tmp) = testutil::make_test_llm(mock).await;
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let config = default_config(10);
+
+    let executor = SimpleExecutor {
+        handler: Box::new(|calls| {
+            calls.iter().map(|tc| ToolCallResult {
+                tool_use_id: tc.id.clone(),
+                content: "ok".into(),
+                is_error: false,
+                stop_loop: false,
+            }).collect()
+        }),
+    };
+
+    let result = run_tool_loop(
+        llm, "test-key", "test", vec![RichMessage::user("read then read more")],
+        Arc::from(Vec::<ToolDefinition>::new()), &config, &executor, &event_tx,
+    ).await;
+
+    assert_eq!(result.iterations_run, 4);
+
+    let mut r3_blocked = false;
+    let mut t1_ok = false;
+    while let Ok(evt) = event_rx.try_recv() {
+        if let ToolLoopEvent::ToolResult { tool_use_id, is_error, content, .. } = evt {
+            if tool_use_id == "r3" && is_error && content.contains("BLOCKED") {
+                r3_blocked = true;
+            }
+            if tool_use_id == "t1" && !is_error {
+                t1_ok = true;
+            }
+        }
+    }
+    assert!(r3_blocked, "3rd read of a.rs should be blocked");
+    assert!(t1_ok, "do_thing in same batch should still execute");
+}
+
+// -----------------------------------------------------------------------
+// detect_blocked_commands tests
+// -----------------------------------------------------------------------
+
+#[test]
+fn test_detect_blocked_commands_returns_empty_when_failures_under_5() {
+    let calls = vec![
+        ToolCall { id: "t1".into(), name: "run_command".into(), input: serde_json::json!({"command": "ls"}) },
+    ];
+    let blocked = detect_blocked_commands(&calls, 4);
+    assert!(blocked.is_empty(), "4 failures should not block");
+}
+
+#[test]
+fn test_detect_blocked_commands_blocks_at_exactly_5() {
+    let calls = vec![
+        ToolCall { id: "t1".into(), name: "run_command".into(), input: serde_json::json!({"command": "ls"}) },
+    ];
+    let blocked = detect_blocked_commands(&calls, 5);
+    assert_eq!(blocked, vec![0]);
+}
+
+#[test]
+fn test_detect_blocked_commands_does_not_block_non_run_command() {
+    let calls = vec![
+        ToolCall { id: "t1".into(), name: "read_file".into(), input: serde_json::json!({"path": "a.rs"}) },
+        ToolCall { id: "t2".into(), name: "write_file".into(), input: serde_json::json!({"path": "b.rs"}) },
+    ];
+    let blocked = detect_blocked_commands(&calls, 10);
+    assert!(blocked.is_empty());
+}
+
+#[test]
+fn test_detect_blocked_commands_blocks_multiple_run_commands() {
+    let calls = vec![
+        ToolCall { id: "t1".into(), name: "run_command".into(), input: serde_json::json!({"command": "ls"}) },
+        ToolCall { id: "t2".into(), name: "read_file".into(), input: serde_json::json!({"path": "a.rs"}) },
+        ToolCall { id: "t3".into(), name: "run_command".into(), input: serde_json::json!({"command": "pwd"}) },
+    ];
+    let blocked = detect_blocked_commands(&calls, 5);
+    assert_eq!(blocked, vec![0, 2]);
+}
+
+// -----------------------------------------------------------------------
+// apply_cmd_failure_tracking tests
+// -----------------------------------------------------------------------
+
+#[test]
+fn test_apply_cmd_failure_tracking_increments_on_run_command_error() {
+    let calls = vec![
+        ToolCall { id: "t1".into(), name: "run_command".into(), input: serde_json::json!({"command": "bad"}) },
+    ];
+    let results = vec![ToolCallResult {
+        tool_use_id: "t1".into(),
+        content: "command not found".into(),
+        is_error: true,
+        stop_loop: false,
+    }];
+    let mut failures = 0;
+    apply_cmd_failure_tracking(&calls, results, &mut failures);
+    assert_eq!(failures, 1);
+}
+
+#[test]
+fn test_apply_cmd_failure_tracking_resets_on_success() {
+    let calls = vec![
+        ToolCall { id: "t1".into(), name: "read_file".into(), input: serde_json::json!({"path": "a.rs"}) },
+    ];
+    let results = vec![ToolCallResult {
+        tool_use_id: "t1".into(),
+        content: "file content".into(),
+        is_error: false,
+        stop_loop: false,
+    }];
+    let mut failures = 3;
+    apply_cmd_failure_tracking(&calls, results, &mut failures);
+    assert_eq!(failures, 0);
+}
+
+#[test]
+fn test_apply_cmd_failure_tracking_appends_warning_at_3_plus() {
+    let calls = vec![
+        ToolCall { id: "t1".into(), name: "run_command".into(), input: serde_json::json!({"command": "bad"}) },
+    ];
+    let results = vec![ToolCallResult {
+        tool_use_id: "t1".into(),
+        content: "command not found".into(),
+        is_error: true,
+        stop_loop: false,
+    }];
+    let mut failures = 2;
+    let updated = apply_cmd_failure_tracking(&calls, results, &mut failures);
+    assert_eq!(failures, 3);
+    assert!(updated[0].content.contains("WARNING"), "should append warning at 3 consecutive failures");
+    assert!(updated[0].content.contains("3 consecutive"));
+}
+
+#[test]
+fn test_apply_cmd_failure_tracking_does_not_modify_non_error() {
+    let calls = vec![
+        ToolCall { id: "t1".into(), name: "run_command".into(), input: serde_json::json!({"command": "ls"}) },
+    ];
+    let results = vec![ToolCallResult {
+        tool_use_id: "t1".into(),
+        content: "file1 file2".into(),
+        is_error: false,
+        stop_loop: false,
+    }];
+    let mut failures = 2;
+    let updated = apply_cmd_failure_tracking(&calls, results, &mut failures);
+    assert_eq!(updated[0].content, "file1 file2");
+    assert_eq!(failures, 0);
+}
+
+// -----------------------------------------------------------------------
+// build_tool_result_blocks tests
+// -----------------------------------------------------------------------
+
+#[test]
+fn test_build_tool_result_blocks_emits_events() {
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let calls = vec![
+        ToolCall { id: "t1".into(), name: "read_file".into(), input: serde_json::json!({"path": "a.rs"}) },
+        ToolCall { id: "t2".into(), name: "do_thing".into(), input: serde_json::json!({}) },
+    ];
+    let results = vec![
+        ToolCallResult { tool_use_id: "t1".into(), content: "fn main()".into(), is_error: false, stop_loop: false },
+        ToolCallResult { tool_use_id: "t2".into(), content: "ok".into(), is_error: false, stop_loop: false },
+    ];
+    let mut cache = HashMap::new();
+
+    let (blocks, should_stop) = build_tool_result_blocks(&calls, &results, &mut cache, &event_tx);
+    assert_eq!(blocks.len(), 2);
+    assert!(!should_stop);
+
+    let mut event_count = 0;
+    while let Ok(ToolLoopEvent::ToolResult { .. }) = event_rx.try_recv() {
+        event_count += 1;
+    }
+    assert_eq!(event_count, 2);
+}
+
+#[test]
+fn test_build_tool_result_blocks_should_stop_on_stop_loop() {
+    let (event_tx, _) = mpsc::unbounded_channel();
+    let calls = vec![
+        ToolCall { id: "t1".into(), name: "task_done".into(), input: serde_json::json!({}) },
+    ];
+    let results = vec![
+        ToolCallResult { tool_use_id: "t1".into(), content: "done".into(), is_error: false, stop_loop: true },
+    ];
+    let mut cache = HashMap::new();
+
+    let (_, should_stop) = build_tool_result_blocks(&calls, &results, &mut cache, &event_tx);
+    assert!(should_stop);
+}
+
+#[test]
+fn test_build_tool_result_blocks_duplicate_read_returns_stop_message() {
+    let (event_tx, _) = mpsc::unbounded_channel();
+    let calls = vec![
+        ToolCall { id: "t1".into(), name: "read_file".into(), input: serde_json::json!({"path": "a.rs"}) },
+    ];
+    let results = vec![
+        ToolCallResult { tool_use_id: "t1".into(), content: "fn main() {}".into(), is_error: false, stop_loop: false },
+    ];
+    let mut cache = HashMap::new();
+
+    // First read: populates cache
+    build_tool_result_blocks(&calls, &results, &mut cache, &event_tx);
+    // Second read: identical content
+    let calls2 = vec![
+        ToolCall { id: "t2".into(), name: "read_file".into(), input: serde_json::json!({"path": "a.rs"}) },
+    ];
+    let results2 = vec![
+        ToolCallResult { tool_use_id: "t2".into(), content: "fn main() {}".into(), is_error: false, stop_loop: false },
+    ];
+    let (blocks, _) = build_tool_result_blocks(&calls2, &results2, &mut cache, &event_tx);
+
+    let content = match &blocks[0] {
+        ContentBlock::ToolResult { content, .. } => content.clone(),
+        _ => String::new(),
+    };
+    assert!(content.contains("STOP: File already read"), "duplicate read should return STOP message");
+}
+
+#[test]
+fn test_build_tool_result_blocks_write_invalidates_cache() {
+    let (event_tx, _) = mpsc::unbounded_channel();
+    let calls = vec![
+        ToolCall { id: "t1".into(), name: "read_file".into(), input: serde_json::json!({"path": "a.rs"}) },
+    ];
+    let results = vec![
+        ToolCallResult { tool_use_id: "t1".into(), content: "old content".into(), is_error: false, stop_loop: false },
+    ];
+    let mut cache = HashMap::new();
+    build_tool_result_blocks(&calls, &results, &mut cache, &event_tx);
+    assert!(cache.contains_key("a.rs"));
+
+    // Write invalidates the cache
+    let write_calls = vec![
+        ToolCall { id: "w1".into(), name: "write_file".into(), input: serde_json::json!({"path": "a.rs", "content": "new content"}) },
+    ];
+    let write_results = vec![
+        ToolCallResult { tool_use_id: "w1".into(), content: "ok".into(), is_error: false, stop_loop: false },
+    ];
+    build_tool_result_blocks(&write_calls, &write_results, &mut cache, &event_tx);
+    assert!(!cache.contains_key("a.rs"), "write_file should invalidate read cache");
+}
+
+#[test]
+fn test_build_tool_result_blocks_edit_invalidates_cache() {
+    let (event_tx, _) = mpsc::unbounded_channel();
+    let mut cache = HashMap::new();
+    cache.insert("a.rs".to_string(), 12345u64);
+
+    let edit_calls = vec![
+        ToolCall { id: "e1".into(), name: "edit_file".into(), input: serde_json::json!({"path": "a.rs"}) },
+    ];
+    let edit_results = vec![
+        ToolCallResult { tool_use_id: "e1".into(), content: "ok".into(), is_error: false, stop_loop: false },
+    ];
+    build_tool_result_blocks(&edit_calls, &edit_results, &mut cache, &event_tx);
+    assert!(!cache.contains_key("a.rs"), "edit_file should invalidate read cache");
+}
+
+// -----------------------------------------------------------------------
+// summarize_write_file_input tests
+// -----------------------------------------------------------------------
+
+#[test]
+fn test_summarize_write_file_input_short_content_unchanged() {
+    let input = serde_json::json!({"path": "a.rs", "content": "fn main() {}"});
+    let summary = summarize_write_file_input(&input);
+    assert_eq!(summary["content"].as_str().unwrap(), "fn main() {}");
+    assert_eq!(summary["path"].as_str().unwrap(), "a.rs");
+}
+
+#[test]
+fn test_summarize_write_file_input_long_content_truncated() {
+    let lines: Vec<String> = (0..50).map(|i| format!("line {i}")).collect();
+    let content = lines.join("\n");
+    let input = serde_json::json!({"path": "big.rs", "content": content});
+    let summary = summarize_write_file_input(&input);
+    let summarized = summary["content"].as_str().unwrap();
+    assert!(summarized.contains("CONTEXT COMPACTED"));
+    assert!(summarized.contains("big.rs"));
+    assert!(summarized.contains("line 0")); // head
+    assert!(summarized.contains("line 49")); // tail
+}
+
+// -----------------------------------------------------------------------
+// looks_truncated tests
+// -----------------------------------------------------------------------
+
+#[test]
+fn test_looks_truncated_short_content_never_truncated() {
+    assert!(!looks_truncated("short"));
+    assert!(!looks_truncated("a { b }"));
+    assert!(!looks_truncated(""));
+}
+
+#[test]
+fn test_looks_truncated_balanced_braces_not_truncated() {
+    let content = format!("{}{}", "x".repeat(200), "fn main() { let x = { 1 }; }");
+    assert!(!looks_truncated(&content));
+}
+
+#[test]
+fn test_looks_truncated_significantly_unbalanced_braces() {
+    let content = format!("{}fn main() {{{{ {{{{ {{{{\n", "x".repeat(200));
+    assert!(looks_truncated(&content));
+}
+
+#[test]
+fn test_looks_truncated_content_ending_abruptly() {
+    let content = format!("{}let x = some_func(", "x".repeat(200));
+    assert!(looks_truncated(&content));
+}
+
+#[test]
+fn test_looks_truncated_content_ending_with_brace_ok() {
+    let content = format!("{}}}", "x".repeat(200));
+    assert!(!looks_truncated(&content));
+}
+
+#[test]
+fn test_looks_truncated_content_ending_with_newline_ok() {
+    let content = format!("{}\n", "x".repeat(200));
+    assert!(!looks_truncated(&content));
+}
+
+#[test]
+fn test_looks_truncated_content_ending_with_semicolon_ok() {
+    let content = format!("{};", "x".repeat(200));
+    assert!(!looks_truncated(&content));
+}
+
+// -----------------------------------------------------------------------
+// detect_same_target_stall additional tests
+// -----------------------------------------------------------------------
+
+#[test]
+fn test_detect_same_target_stall_resets_on_edit_file_success() {
+    let calls = vec![ToolCall {
+        id: "e1".into(),
+        name: "edit_file".into(),
+        input: serde_json::json!({"path": "src/lib.rs", "old_text": "a", "new_text": "b"}),
+    }];
+    let fail = vec![ToolCallResult {
+        tool_use_id: "e1".into(), content: "failed".into(), is_error: true, stop_loop: false,
+    }];
+    let ok = vec![ToolCallResult {
+        tool_use_id: "e1".into(), content: "ok".into(), is_error: false, stop_loop: false,
+    }];
+    let mut sig = None;
+    let mut streak = 0usize;
+
+    detect_same_target_stall(&calls, &fail, &mut sig, &mut streak);
+    assert_eq!(streak, 1);
+    detect_same_target_stall(&calls, &fail, &mut sig, &mut streak);
+    assert_eq!(streak, 2);
+
+    // Successful edit resets
+    detect_same_target_stall(&calls, &ok, &mut sig, &mut streak);
+    assert_eq!(streak, 0, "successful edit_file should reset streak");
+}
+
+#[test]
+fn test_detect_same_target_stall_different_write_content_resets() {
+    let calls1 = vec![ToolCall {
+        id: "w1".into(), name: "write_file".into(),
+        input: serde_json::json!({"path": "a.rs", "content": "version 1"}),
+    }];
+    let calls2 = vec![ToolCall {
+        id: "w2".into(), name: "write_file".into(),
+        input: serde_json::json!({"path": "a.rs", "content": "version 2"}),
+    }];
+    let ok = vec![ToolCallResult {
+        tool_use_id: "w1".into(), content: "ok".into(), is_error: false, stop_loop: false,
+    }];
+    let ok2 = vec![ToolCallResult {
+        tool_use_id: "w2".into(), content: "ok".into(), is_error: false, stop_loop: false,
+    }];
+    let mut sig = None;
+    let mut streak = 0usize;
+
+    detect_same_target_stall(&calls1, &ok, &mut sig, &mut streak);
+    assert_eq!(streak, 0);
+    detect_same_target_stall(&calls2, &ok2, &mut sig, &mut streak);
+    assert_eq!(streak, 0, "different content should not increment streak");
+}
+
+#[test]
+fn test_detect_same_target_stall_no_writes_resets() {
+    let calls_write = vec![ToolCall {
+        id: "e1".into(), name: "edit_file".into(),
+        input: serde_json::json!({"path": "a.rs", "old_text": "x", "new_text": "y"}),
+    }];
+    let fail = vec![ToolCallResult {
+        tool_use_id: "e1".into(), content: "failed".into(), is_error: true, stop_loop: false,
+    }];
+    let mut sig = None;
+    let mut streak = 0usize;
+    detect_same_target_stall(&calls_write, &fail, &mut sig, &mut streak);
+    assert_eq!(streak, 1);
+
+    // Non-write/edit calls
+    let calls_read = vec![ToolCall {
+        id: "r1".into(), name: "read_file".into(),
+        input: serde_json::json!({"path": "b.rs"}),
+    }];
+    let ok = vec![ToolCallResult {
+        tool_use_id: "r1".into(), content: "data".into(), is_error: false, stop_loop: false,
+    }];
+    detect_same_target_stall(&calls_read, &ok, &mut sig, &mut streak);
+    assert_eq!(streak, 0, "non-write/edit calls should reset streak");
+}
+
+#[test]
+fn test_detect_same_target_stall_mixed_write_edit_same_batch() {
+    let calls = vec![
+        ToolCall { id: "w1".into(), name: "write_file".into(),
+            input: serde_json::json!({"path": "a.rs", "content": "x"}) },
+        ToolCall { id: "e1".into(), name: "edit_file".into(),
+            input: serde_json::json!({"path": "a.rs", "old_text": "a", "new_text": "b"}) },
+    ];
+    let results = vec![
+        ToolCallResult { tool_use_id: "w1".into(), content: "failed".into(), is_error: true, stop_loop: false },
+        ToolCallResult { tool_use_id: "e1".into(), content: "ok".into(), is_error: false, stop_loop: false },
+    ];
+    let mut sig = None;
+    let mut streak = 0usize;
+
+    // edit_file succeeded so this should reset
+    let stalled = detect_same_target_stall(&calls, &results, &mut sig, &mut streak);
+    assert!(!stalled);
+    assert_eq!(streak, 0, "successful edit in mixed batch should reset streak");
 }
