@@ -37,8 +37,11 @@ export function ProjectLayout() {
 
   useEffect(() => {
     if (!cachedProject) return;
-    setProjectRaw((prev) => prev ?? cachedProject);
-    setLoading(false);
+    const frame = window.requestAnimationFrame(() => {
+      setProjectRaw((prev) => prev ?? cachedProject);
+      setLoading(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [cachedProject]);
 
   useEffect(() => {

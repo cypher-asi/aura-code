@@ -9,13 +9,12 @@ export function ProjectAgentRedirectView() {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
   const { agentsByProject, refreshProjectAgents } = useProjectsList();
-  const [hasNoAgents, setHasNoAgents] = useState(false);
+  const [emptyProjectId, setEmptyProjectId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
 
     let cancelled = false;
-    setHasNoAgents(false);
 
     const resolveTarget = async () => {
       const cachedAgents = agentsByProject[projectId];
@@ -26,17 +25,19 @@ export function ProjectAgentRedirectView() {
       if (lastAgent?.projectId === projectId) {
         const matching = agents.find((agent) => agent.agent_instance_id === lastAgent.agentInstanceId);
         if (matching) {
+          setEmptyProjectId((current) => (current === projectId ? null : current));
           navigate(projectAgentChatRoute(projectId, matching.agent_instance_id), { replace: true });
           return;
         }
       }
 
       if (agents.length > 0) {
+        setEmptyProjectId((current) => (current === projectId ? null : current));
         navigate(projectAgentChatRoute(projectId, agents[0].agent_instance_id), { replace: true });
         return;
       }
 
-      setHasNoAgents(true);
+      setEmptyProjectId(projectId);
     };
 
     void resolveTarget();
@@ -46,7 +47,7 @@ export function ProjectAgentRedirectView() {
     };
   }, [agentsByProject, navigate, projectId, refreshProjectAgents]);
 
-  if (hasNoAgents) {
+  if (projectId && emptyProjectId === projectId) {
     return <ProjectEmptyView mode="agent" />;
   }
 
