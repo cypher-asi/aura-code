@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { api, isInsufficientCreditsError, dispatchInsufficientCredits } from "../api/client";
 import { useSidekick } from "../context/SidekickContext";
 import { useProjectContext } from "../context/ProjectContext";
-import type { ChatStreamCallbacks, ChatAttachment, ToolCallInfo, ToolResultInfo } from "../api/streams";
+import type { ChatStreamCallbacks, ChatAttachment, ToolCallInfo, ToolCallStartedInfo, ToolResultInfo } from "../api/streams";
 import type { Message } from "../types";
 
 export interface DisplayContentBlock {
@@ -43,6 +43,7 @@ export interface ToolCallEntry {
   result?: string;
   isError?: boolean;
   pending: boolean;
+  started?: boolean;
 }
 
 interface UseChatStreamOptions {
@@ -242,15 +243,39 @@ function handleDelta(ctx: StreamCtx, text: string) {
   }
 }
 
-function handleToolCall(ctx: StreamCtx, info: ToolCallInfo) {
+function handleToolCallStarted(ctx: StreamCtx, info: ToolCallStartedInfo) {
   ctx.setProgressText("");
   const entry: ToolCallEntry = {
     id: info.id,
     name: info.name,
-    input: info.input,
+    input: {},
     pending: true,
+    started: true,
   };
   ctx.toolCallsRef.current = [...ctx.toolCallsRef.current, entry];
+  ctx.setActiveToolCalls([...ctx.toolCallsRef.current]);
+}
+
+function handleToolCall(ctx: StreamCtx, info: ToolCallInfo) {
+  ctx.setProgressText("");
+  const existingIdx = ctx.toolCallsRef.current.findIndex(
+    (tc) => tc.id === info.id && tc.started,
+  );
+  if (existingIdx !== -1) {
+    ctx.toolCallsRef.current = ctx.toolCallsRef.current.map((tc) =>
+      tc.id === info.id && tc.started
+        ? { ...tc, input: info.input, started: false }
+        : tc,
+    );
+  } else {
+    const entry: ToolCallEntry = {
+      id: info.id,
+      name: info.name,
+      input: info.input,
+      pending: true,
+    };
+    ctx.toolCallsRef.current = [...ctx.toolCallsRef.current, entry];
+  }
   ctx.setActiveToolCalls([...ctx.toolCallsRef.current]);
   if (info.name === "create_spec" && ctx.projectId) {
     pushPendingSpec(info, ctx.projectId, ctx.sidekick, ctx.pendingSpecIdsRef);
@@ -363,6 +388,7 @@ function createStreamCallbacks(ctx: StreamCtx): ChatStreamCallbacks {
     onProgress: (stage) => ctx.setProgressText(stage),
     onThinkingDelta: (text) => handleThinkingDelta(ctx, text),
     onDelta: (text) => handleDelta(ctx, text),
+    onToolCallStarted: (info) => handleToolCallStarted(ctx, info),
     onToolCall: (info) => handleToolCall(ctx, info),
     onToolResult: (info) => handleToolResult(ctx, info),
     onSpecSaved(spec) {

@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import type { MutableRefObject, Dispatch, SetStateAction } from "react";
 import { api, isInsufficientCreditsError, dispatchInsufficientCredits } from "../api/client";
-import type { ToolCallInfo, ToolResultInfo } from "../api/streams";
+import type { ToolCallInfo, ToolCallStartedInfo, ToolResultInfo } from "../api/streams";
 import type { Message, Spec, Task } from "../types";
 import type {
   DisplayMessage,
@@ -98,18 +98,45 @@ function handleTextDelta(
   }
 }
 
-function handleToolCall(
-  info: ToolCallInfo,
+function handleToolCallStarted(
+  info: ToolCallStartedInfo,
   refs: StreamRefs,
   setters: StreamSetters,
 ) {
   const entry: ToolCallEntry = {
     id: info.id,
     name: info.name,
-    input: info.input,
+    input: {},
     pending: true,
+    started: true,
   };
   refs.toolCalls.current = [...refs.toolCalls.current, entry];
+  setters.setActiveToolCalls([...refs.toolCalls.current]);
+}
+
+function handleToolCall(
+  info: ToolCallInfo,
+  refs: StreamRefs,
+  setters: StreamSetters,
+) {
+  const existingIdx = refs.toolCalls.current.findIndex(
+    (tc) => tc.id === info.id && tc.started,
+  );
+  if (existingIdx !== -1) {
+    refs.toolCalls.current = refs.toolCalls.current.map((tc) =>
+      tc.id === info.id && tc.started
+        ? { ...tc, input: info.input, started: false }
+        : tc,
+    );
+  } else {
+    const entry: ToolCallEntry = {
+      id: info.id,
+      name: info.name,
+      input: info.input,
+      pending: true,
+    };
+    refs.toolCalls.current = [...refs.toolCalls.current, entry];
+  }
   setters.setActiveToolCalls([...refs.toolCalls.current]);
 }
 
@@ -320,6 +347,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
           onProgress: (stage) => setProgressText(stage),
           onThinkingDelta: (text) => { setProgressText(""); handleThinkingDelta(text, refs, setters); },
           onDelta: (text) => { setProgressText(""); handleTextDelta(text, thinkingDurationMsRef.current, refs, setters); },
+          onToolCallStarted: (info) => { setProgressText(""); handleToolCallStarted(info, refs, setters); },
           onToolCall: (info) => { setProgressText(""); handleToolCall(info, refs, setters); },
           onToolResult: (info) => handleToolResult(info, refs, setters),
           onSpecSaved: (spec) => onSpecSavedRef.current?.(spec),
