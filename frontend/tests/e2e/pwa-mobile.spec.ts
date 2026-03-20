@@ -136,8 +136,8 @@ test("mobile login page renders with PWA metadata", async ({ page }) => {
   await expect(page).toHaveTitle(/AURA/);
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#05070d");
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("href", "/manifest.webmanifest");
-  await expect(page.getByText("Sign in required")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Change host" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Host .*?(online|auth required|unreachable|error|checking)/i })).toBeVisible();
   await expect(page.getByPlaceholder("Email")).toBeVisible();
   await expect(page.locator("form").getByRole("button", { name: "Sign In" })).toBeVisible();
 });
@@ -145,7 +145,7 @@ test("mobile login page renders with PWA metadata", async ({ page }) => {
 test("mobile login page can open host settings", async ({ page }) => {
   await page.goto("/login");
 
-  await page.getByRole("button", { name: "Change host" }).click();
+  await page.getByRole("button", { name: /Host .*?(online|auth required|unreachable|error|checking)/i }).click();
   await expect(page.getByRole("heading", { name: "Host Connection" })).toBeVisible();
 });
 
@@ -177,7 +177,7 @@ test("mobile primary navigation opens shared agent, work, files, and feed routes
 
   await tapPrimaryNav(page, "Tasks");
   await expect(page).toHaveURL(/\/projects\/proj-1\/work$/);
-  await expect(page.getByText("Execution")).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("Execution", { exact: true })).toBeVisible({ timeout: 10000 });
   await expect(page.getByText("Specs")).toBeVisible({ timeout: 10000 });
   await expect(page.getByRole("main").getByRole("button", { name: "Tasks" })).toBeVisible();
 
@@ -194,6 +194,17 @@ test("mobile primary navigation opens shared agent, work, files, and feed routes
   await tapPrimaryNav(page, "Feed");
   await expect(page).toHaveURL(/\/feed$/);
   await expect(page.getByRole("treeitem", { name: "My Agents" })).toBeVisible();
+});
+
+test("mobile global surfaces use the drawer to enter a project work mode", async ({ page }) => {
+  await mockAuthenticatedMobileApp(page);
+  await page.goto("/feed");
+
+  await openProjectDrawer(page);
+  await page.getByRole("treeitem", { name: "Demo Project" }).click();
+
+  await expect(page).toHaveURL(/\/projects\/proj-1\/agents\/agent-inst-1$/);
+  await expect(page.getByPlaceholder("Add a follow-up")).toBeVisible({ timeout: 10000 });
 });
 
 test("mobile files view shows imported workspace snapshots", async ({ page }) => {
@@ -285,7 +296,7 @@ test("mobile work view opens shared preview details for specs and tasks", async 
   await mockAuthenticatedMobileApp(page);
   await page.goto("/projects/proj-1/work");
 
-  await expect(page.getByText("Execution")).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("Execution", { exact: true })).toBeVisible({ timeout: 10000 });
   const specButton = page.getByRole("button", { name: "Mobile parity spec", exact: true });
   await expect(specButton).toBeVisible({ timeout: 10000 });
   await specButton.click();
@@ -294,8 +305,10 @@ test("mobile work view opens shared preview details for specs and tasks", async 
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Mobile parity" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Close", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Patch auth flow/i })).toBeVisible({ timeout: 10000 });
-  await page.getByRole("button", { name: /Patch auth flow/i }).click();
+  const taskButton = page.getByRole("button", { name: /Patch auth flow Task/i });
+  await taskButton.scrollIntoViewIfNeeded();
+  await expect(taskButton).toBeVisible({ timeout: 10000 });
+  await taskButton.click();
   await expect(page.getByText("Files Changed")).toBeVisible();
 });
 

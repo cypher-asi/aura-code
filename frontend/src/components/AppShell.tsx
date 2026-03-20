@@ -31,6 +31,7 @@ import { INSUFFICIENT_CREDITS_EVENT } from "../api/client";
 import { getLastAgent } from "../utils/storage";
 import {
   getMobileProjectDestination,
+  getMobileShellMode,
   getProjectIdFromPathname,
   isProjectSubroute,
   projectAgentRoute,
@@ -322,16 +323,25 @@ function ResponsiveShell({
     ? lastAgent.projectId
     : mostRecentProject?.project_id ?? projects[0]?.project_id ?? null;
   const mobileTargetProjectId = currentProjectId ?? recentProjectId;
+  const mobileTargetProject = projects.find((project) => project.project_id === mobileTargetProjectId) ?? null;
+  const hasResolvedCurrentProject = Boolean(currentProject);
   const currentProjectRootPath = currentProjectId ? projectRootPath(currentProjectId) : null;
   const isProjectRoute = Boolean(currentProjectId) && (
     location.pathname === currentProjectRootPath
       || isProjectSubroute(location.pathname, currentProjectId)
   );
+  const mobileShellMode = getMobileShellMode(
+    location.pathname,
+    currentProjectId,
+    hasResolvedCurrentProject,
+  );
   const isPrimaryProjectDestination = mobileDestination === "agent"
     || mobileDestination === "tasks"
     || mobileDestination === "files";
-  const hasResolvedCurrentProject = Boolean(currentProject);
-  const showProjectTitle = hasResolvedCurrentProject && Boolean(currentProjectId) && isProjectRoute;
+  const showProjectTitle = mobileShellMode === "project"
+    && hasResolvedCurrentProject
+    && Boolean(currentProjectId)
+    && isProjectRoute;
   const showProjectBack = hasResolvedCurrentProject
     && Boolean(currentProjectId)
     && isProjectRoute
@@ -455,16 +465,20 @@ function ResponsiveShell({
               </span>
               <ChevronDown size={14} />
             </button>
-          ) : (
+          ) : mobileTargetProject ? (
             <button
               type="button"
-              className={styles.mobileTopbarTitleButton}
+              className={styles.mobileProjectTitleButton}
               onClick={() => setNavOpen(true)}
-              aria-label="Open project navigation"
+              aria-label={`Open project navigation for ${mobileTargetProject.name}`}
             >
-              <span className={styles.mobileTopbarTitleText}>AURA</span>
+              <span className={styles.mobileTopbarTitleText}>{mobileTargetProject.name}</span>
               <ChevronDown size={14} />
             </button>
+          ) : (
+            <span className={styles.mobileTopbarTitleButton} aria-label="Aura">
+              <span className={styles.mobileTopbarTitleText}>AURA</span>
+            </span>
           )}
         </span>
       )}

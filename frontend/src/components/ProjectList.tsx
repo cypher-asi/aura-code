@@ -17,6 +17,7 @@ import { useProjectsList } from "../apps/projects/useProjectsList";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import {
   getMobileProjectDestination,
+  projectRootPath,
   projectAgentRoute,
   projectFilesRoute,
   projectWorkRoute,
@@ -329,7 +330,7 @@ export function ProjectList() {
         if (id !== projectId) sidekick.closePreview();
         if (isMobileLayout) {
           if (id === projectId && isNestedMobileProjectView) {
-            navigate(`/projects/${id}`);
+            navigate(projectRootPath(id));
             return;
           }
           if (mobileDestination === "tasks") {

@@ -72,7 +72,7 @@ function formatAuthError(err: unknown, hostLabel: string): string {
 export function LoginView() {
   const { login, register } = useAuth();
   const { hostLabel, status, refreshStatus } = useHost();
-  const { features } = useAuraCapabilities();
+  const { features, isMobileLayout } = useAuraCapabilities();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? "/";
@@ -138,60 +138,115 @@ export function LoginView() {
 
   const hostStatus = HOST_STATUS_COPY[status];
   const showHostWarning = status === "unreachable" || status === "error";
+  const showCompactHostStatus = isMobileLayout && (status === "online" || status === "auth_required");
 
   return (
-    <div className={styles.page}>
-      <Topbar
-        className="titlebar-drag"
-        onDoubleClick={() => windowCommand("maximize")}
-        icon={<img src="/aura-icon.png" alt="" className="titlebar-icon" />}
-        title={<span className="titlebar-center">AURA</span>}
-        actions={<WindowControls />}
-      />
-      <div className={styles.container}>
-        <Panel variant="solid" border="solid" borderRadius="lg" className={styles.card}>
-          <div className={styles.header}>
+    <div className={`${styles.page} ${isMobileLayout ? styles.pageMobile : ""}`}>
+      {!isMobileLayout && (
+        <Topbar
+          className="titlebar-drag"
+          onDoubleClick={() => windowCommand("maximize")}
+          icon={<img src="/aura-icon.png" alt="" className="titlebar-icon" />}
+          title={<span className="titlebar-center">AURA</span>}
+          actions={<WindowControls />}
+        />
+      )}
+      <div className={`${styles.container} ${isMobileLayout ? styles.containerMobile : ""}`}>
+        {isMobileLayout && (
+          <div className={styles.mobileHero}>
             <Heading level={2}>
               <span className={styles.brand}>AURA</span>
             </Heading>
             <Text variant="muted" size="sm" align="center" className={styles.subtitle}>
-              Zero Identity Authentication
+              Connect to an Aura host, then sign in and get to work.
             </Text>
           </div>
+        )}
+        <Panel
+          variant="solid"
+          border="solid"
+          borderRadius="lg"
+          className={`${styles.card} ${isMobileLayout ? styles.cardMobile : ""}`}
+        >
+          {!isMobileLayout && (
+            <div className={styles.header}>
+              <Heading level={2}>
+                <span className={styles.brand}>AURA</span>
+              </Heading>
+              <Text variant="muted" size="sm" align="center" className={styles.subtitle}>
+                Zero Identity Authentication
+              </Text>
+            </div>
+          )}
+
+          {isMobileLayout && (
+            <div className={styles.mobileSectionHeader}>
+              <div className={styles.mobileSectionHeaderRow}>
+                <Heading level={4}>Sign in</Heading>
+                {showCompactHostStatus ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={styles.mobileHostButton}
+                    onClick={() => setHostSettingsOpen(true)}
+                  >
+                    <span className={styles.mobileHostButtonLabel}>Host</span>
+                    <span
+                      className={`${styles.mobileHostStatusDot} ${
+                        status === "online" || status === "auth_required"
+                          ? styles.mobileHostStatusDotOnline
+                          : styles.mobileHostStatusDotOffline
+                      }`}
+                    />
+                    <span>{status.replace(/_/g, " ")}</span>
+                  </Button>
+                ) : null}
+              </div>
+              {!showCompactHostStatus ? (
+                <Text variant="muted" size="sm" className={styles.mobileSectionEyebrow}>
+                  Host
+                </Text>
+              ) : null}
+            </div>
+          )}
 
           {features.hostRetargeting && (
-            <div className={`${styles.hostCard} ${showHostWarning ? styles.hostCardWarning : ""}`}>
-              <div className={styles.hostCardTop}>
-                <div className={styles.hostCardText}>
-                  <Text size="sm" weight="medium">
-                    {hostStatus.title}
-                  </Text>
-                  <Text variant="muted" size="sm" className={styles.hostLabel}>
-                    {hostLabel}
-                  </Text>
+            !showCompactHostStatus ? (
+              <div
+                className={`${styles.hostCard} ${showHostWarning ? styles.hostCardWarning : ""} ${isMobileLayout ? styles.hostCardMobile : ""}`}
+              >
+                <div className={styles.hostCardTop}>
+                  <div className={styles.hostCardText}>
+                    <Text size="sm" weight="medium">
+                      {hostStatus.title}
+                    </Text>
+                    <Text variant="muted" size="sm" className={styles.hostLabel}>
+                      {hostLabel}
+                    </Text>
+                  </div>
+                  <Badge variant={HOST_BADGE_VARIANT[status]}>
+                    {status.replace(/_/g, " ")}
+                  </Badge>
                 </div>
-                <Badge variant={HOST_BADGE_VARIANT[status]}>
-                  {status.replace(/_/g, " ")}
-                </Badge>
+                <Text variant="muted" size="sm">
+                  {hostStatus.detail}
+                </Text>
+                <div className={`${styles.hostActions} ${isMobileLayout ? styles.hostActionsMobile : ""}`}>
+                  <Button variant="ghost" size="sm" onClick={() => setHostSettingsOpen(true)}>
+                    Change host
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRefreshHost}
+                    disabled={hostRefreshing}
+                    icon={hostRefreshing ? <Spinner size="sm" /> : undefined}
+                  >
+                    {hostRefreshing ? "Retrying..." : "Retry check"}
+                  </Button>
+                </div>
               </div>
-              <Text variant="muted" size="sm">
-                {hostStatus.detail}
-              </Text>
-              <div className={styles.hostActions}>
-                <Button variant="ghost" size="sm" onClick={() => setHostSettingsOpen(true)}>
-                  Change host
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleRefreshHost}
-                  disabled={hostRefreshing}
-                  icon={hostRefreshing ? <Spinner size="sm" /> : undefined}
-                >
-                  {hostRefreshing ? "Retrying..." : "Retry check"}
-                </Button>
-              </div>
-            </div>
+            ) : null
           )}
 
           <div className={styles.tabs}>

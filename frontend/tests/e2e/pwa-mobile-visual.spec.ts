@@ -127,7 +127,7 @@ test("capture mobile work, files, and account sheet", async ({ page, browserName
   const projectName = testInfo.project.name.replace(/\s+/g, "-");
 
   await page.goto("/projects/proj-1/work");
-  await expect(page.getByText("Execution")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("Execution", { exact: true })).toBeVisible({ timeout: 15000 });
   await page.screenshot({
     path: `test-artifacts/review-shots/${projectName}-${browserName}-project-work-mobile-ia.png`,
     fullPage: true,

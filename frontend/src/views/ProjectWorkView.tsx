@@ -4,6 +4,8 @@ import { api } from "../api/client";
 import { AgentStatusBar } from "./AgentStatusBar";
 import { LoopControls } from "./LoopControls";
 import { ExecutionView } from "./ExecutionView";
+import { TaskFeed } from "./TaskFeed";
+import { LogPanel } from "./LogPanel";
 import { useProjectContext } from "../context/ProjectContext";
 import { useEventContext } from "../context/EventContext";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
@@ -221,9 +223,21 @@ export function ProjectWorkView() {
 
   return (
     <div className={styles.root}>
-      <GroupCollapsible label="Execution" defaultOpen className={styles.section}>
+      <section className={styles.section}>
+        <div className={styles.sectionLabel}>Execution</div>
+        <ExecutionSummary projectId={projectId} />
+      </section>
+
+      <GroupCollapsible label="Execution details" defaultOpen={false} className={styles.section}>
         <div className={`${styles.sectionBody} ${styles.executionBody}`}>
-          <ExecutionSummary projectId={projectId} />
+          <div className={styles.executionPanels}>
+            <div className={styles.executionPanel}>
+              <TaskFeed projectId={projectId} />
+            </div>
+            <div className={styles.executionPanel}>
+              <LogPanel />
+            </div>
+          </div>
         </div>
       </GroupCollapsible>
 

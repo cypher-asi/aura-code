@@ -1,4 +1,5 @@
 export type MobileProjectDestination = "agent" | "tasks" | "files" | "feed" | null;
+export type MobileShellMode = "global" | "project";
 
 function matchProjectPath(pathname: string) {
   return pathname.match(/^\/projects\/([^/]+)(?:\/(.*))?$/);
@@ -34,6 +35,27 @@ export function getMobileProjectDestination(pathname: string): MobileProjectDest
   }
 
   return null;
+}
+
+export function getMobileShellMode(
+  pathname: string,
+  currentProjectId: string | null,
+  hasResolvedCurrentProject: boolean,
+): MobileShellMode {
+  if (
+    pathname === "/projects"
+    || pathname.startsWith("/feed")
+    || pathname.startsWith("/profile")
+    || pathname.startsWith("/leaderboard")
+  ) {
+    return "global";
+  }
+
+  if (currentProjectId && hasResolvedCurrentProject) {
+    return "project";
+  }
+
+  return "global";
 }
 
 export function projectRootPath(projectId: string): string {

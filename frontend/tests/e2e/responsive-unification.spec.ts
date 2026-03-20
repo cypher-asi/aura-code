@@ -209,7 +209,7 @@ test("project work route uses the combined mobile work view while desktop keeps 
     await expect(page.getByRole("button", { name: "Specs" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Tasks" })).toBeVisible();
   } else {
-    await expect(page.getByText("Execution")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText("Execution", { exact: true })).toBeVisible({ timeout: 15000 });
     await expect(page.getByText("Specs")).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole("main").getByRole("button", { name: "Tasks" })).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole("treeitem", { name: "Demo Project" })).toHaveCount(0);
