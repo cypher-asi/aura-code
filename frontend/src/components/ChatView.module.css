@@ -154,10 +154,7 @@
 .markdown pre {
   border: 1px solid var(--color-border);
   border-radius: 0;
-  padding: 0 12px;
-  min-height: var(--control-height-sm, 32px);
-  display: flex;
-  align-items: center;
+  padding: 10px 12px;
   overflow-x: auto;
   margin-bottom: 10px;
   font-size: 12px;
@@ -168,8 +165,9 @@
   background: none;
   padding: 0;
   font-size: 12px;
-  line-height: var(--control-height-sm, 32px);
-  vertical-align: middle;
+  line-height: 1.6;
+  display: block;
+  white-space: pre;
   color: var(--color-text-secondary);
 }
 .markdown table {
