@@ -27,21 +27,29 @@ impl OrbitClient {
         }
     }
 
-    /// Create a repository. Owner is Aura org_id or user_id (UUID).
+    /// Create a repository via JWT-authenticated endpoint.
+    /// `org_id` and `project_id` link back to aura-network entities.
     pub async fn create_repo(
         &self,
         base_url: &str,
-        owner: &str,
+        org_id: &str,
+        project_id: &str,
         repo: &str,
+        description: Option<&str>,
         jwt: &str,
     ) -> Result<CreateRepoResponse, OrbitError> {
-        let url = format!("{}/api/repos", base_url.trim_end_matches('/'));
-        debug!(%url, owner, repo, "Orbit create_repo");
+        let url = format!("{}/repos", base_url.trim_end_matches('/'));
+        debug!(%url, org_id, project_id, repo, "Orbit create_repo");
 
-        let body = serde_json::json!({
-            "owner": owner,
+        let mut body = serde_json::json!({
+            "orgId": org_id,
+            "projectId": project_id,
             "name": repo,
+            "visibility": "private",
         });
+        if let Some(desc) = description {
+            body["description"] = serde_json::Value::String(desc.to_string());
+        }
 
         let resp = self
             .http
@@ -61,7 +69,9 @@ impl OrbitClient {
             });
         }
 
-        serde_json::from_str(&body_text).map_err(|e| OrbitError::InvalidResponse(e.to_string()))
+        let repo_resp: OrbitRepoApiResponse =
+            serde_json::from_str(&body_text).map_err(|e| OrbitError::InvalidResponse(e.to_string()))?;
+        Ok(repo_resp.to_create_repo_response(base_url))
     }
 
     /// Create a repository using Orbit's internal service-to-service endpoint.

@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use tracing::warn;
 
-use aura_core::{OrgId, Project, ProjectId, ProjectStatus, UserId};
+use aura_core::{OrgId, Project, ProjectId, ProjectStatus};
 use aura_network::NetworkProject;
 use aura_projects::{CreateProjectInput, UpdateProjectInput};
 
@@ -129,19 +129,6 @@ fn orbit_create_repo_url(
             let base = base_url.trim_end_matches('/');
             format!("{}/{}/{}.git", base, owner, repo)
         })
-}
-
-fn current_orbit_owner_user_id(state: &AppState) -> ApiResult<String> {
-    let session = state.get_session()?;
-    if let Some(user_id) = session.network_user_id {
-        return Ok(user_id.to_string());
-    }
-    if session.user_id.parse::<UserId>().is_ok() {
-        return Ok(session.user_id);
-    }
-    Err(ApiError::internal(
-        "Could not determine the current network user for Orbit repo creation",
-    ))
 }
 
 fn should_create_new_orbit_repo(
@@ -301,6 +288,12 @@ pub async fn create_project(
 
     if let Some(client) = &state.network_client {
         let jwt = state.get_jwt()?;
+
+        let wants_orbit = should_create_new_orbit_repo(&req.git_repo_url, &req.orbit_owner, &req.orbit_repo);
+        if wants_orbit && state.orbit_base_url.is_none() {
+            return Err(ApiError::service_unavailable("Orbit repo creation is not configured (ORBIT_BASE_URL)"));
+        }
+
         let net_req = aura_network::CreateProjectRequest {
             name: req.name.clone(),
             org_id: req.org_id.to_string(),
@@ -318,28 +311,19 @@ pub async fn create_project(
             .map_err(map_network_error)?;
 
         let (git_repo_url, git_branch, orbit_base_url, orbit_owner, orbit_repo) =
-            if should_create_new_orbit_repo(&req.git_repo_url, &req.orbit_owner, &req.orbit_repo) {
-                let base_url = state
-                    .orbit_base_url
-                    .as_deref()
-                    .ok_or_else(|| ApiError::service_unavailable("Orbit repo creation is not configured"))?;
-                let internal_token = state
-                    .internal_service_token
-                    .as_deref()
-                    .ok_or_else(|| ApiError::service_unavailable("Orbit internal repo creation is not configured"))?;
-                let owner_id = current_orbit_owner_user_id(&state)?;
+            if wants_orbit {
+                let base_url = state.orbit_base_url.as_deref().unwrap();
                 let owner = req.orbit_owner.as_deref().unwrap_or(&net_project.org_id);
                 let repo = req.orbit_repo.as_deref().unwrap_or(&req.name);
                 let created = state
                     .orbit_client
-                    .create_repo_internal(
+                    .create_repo(
                         base_url,
-                        internal_token,
                         &net_project.org_id,
                         &net_project.id,
-                        &owner_id,
                         repo,
                         (!req.description.trim().is_empty()).then_some(req.description.as_str()),
+                        &jwt,
                     )
                     .await
                     .map_err(|err| ApiError::internal(err.message_for_api()))?;
@@ -439,6 +423,12 @@ pub async fn create_imported_project(
 
     if let Some(client) = &state.network_client {
         let jwt = state.get_jwt()?;
+
+        let wants_orbit = should_create_new_orbit_repo(&git_repo_url, &orbit_owner, &orbit_repo);
+        if wants_orbit && state.orbit_base_url.is_none() {
+            return Err(ApiError::service_unavailable("Orbit repo creation is not configured (ORBIT_BASE_URL)"));
+        }
+
         let net_req = aura_network::CreateProjectRequest {
             name: name.clone(),
             org_id: org_id.to_string(),
@@ -456,28 +446,19 @@ pub async fn create_imported_project(
             .map_err(map_network_error)?;
 
         let (git_repo_url, git_branch, orbit_base_url, orbit_owner, orbit_repo) =
-            if should_create_new_orbit_repo(&git_repo_url, &orbit_owner, &orbit_repo) {
-                let base_url = state
-                    .orbit_base_url
-                    .as_deref()
-                    .ok_or_else(|| ApiError::service_unavailable("Orbit repo creation is not configured"))?;
-                let internal_token = state
-                    .internal_service_token
-                    .as_deref()
-                    .ok_or_else(|| ApiError::service_unavailable("Orbit internal repo creation is not configured"))?;
-                let owner_id = current_orbit_owner_user_id(&state)?;
+            if wants_orbit {
+                let base_url = state.orbit_base_url.as_deref().unwrap();
                 let owner = orbit_owner.as_deref().unwrap_or(&net_project.org_id);
                 let repo = orbit_repo.as_deref().unwrap_or(&name);
                 let created = state
                     .orbit_client
-                    .create_repo_internal(
+                    .create_repo(
                         base_url,
-                        internal_token,
                         &net_project.org_id,
                         &net_project.id,
-                        &owner_id,
                         repo,
                         (!description.trim().is_empty()).then_some(description.as_str()),
+                        &jwt,
                     )
                     .await
                     .map_err(|err| ApiError::internal(err.message_for_api()))?;
