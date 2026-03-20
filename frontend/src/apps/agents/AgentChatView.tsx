@@ -37,6 +37,8 @@ export function AgentChatView() {
 
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const inputBarRef = useRef<ChatInputBarHandle>(null);
+  const attachmentsRef = useRef(attachments);
+  useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
   const { handleScroll } = useAutoScroll(messageAreaRef, agentId);
 
   useEffect(() => {
@@ -99,10 +101,15 @@ export function AgentChatView() {
     };
   }, [rafRef]);
 
+  const handleRemoveAttachment = useCallback(
+    (id: string) => setAttachments((prev) => prev.filter((a) => a.id !== id)),
+    [],
+  );
+
   const handleSend = useCallback(
     (content: string, action?: string, atts?: AttachmentItem[]) => {
       setInput("");
-      const toSend = atts ?? attachments;
+      const toSend = atts ?? attachmentsRef.current;
       const apiAttachments = toSend.length > 0
         ? toSend.map((a) => ({
             type: a.attachmentType,
@@ -114,7 +121,7 @@ export function AgentChatView() {
       sendMessage(content, action ?? null, null, apiAttachments);
       setAttachments([]);
     },
-    [sendMessage, attachments],
+    [sendMessage],
   );
 
   if (!agentId) {
@@ -172,7 +179,7 @@ export function AgentChatView() {
           agentName={agentName}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
-          onRemoveAttachment={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
+          onRemoveAttachment={handleRemoveAttachment}
         />
       </div>
     </div>

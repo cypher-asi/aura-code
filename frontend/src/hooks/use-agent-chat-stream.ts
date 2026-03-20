@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import type { MutableRefObject, Dispatch, SetStateAction } from "react";
 import { api, isInsufficientCreditsError, dispatchInsufficientCredits } from "../api/client";
 import type { ToolCallInfo, ToolResultInfo } from "../api/streams";
@@ -218,6 +218,18 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCallEntry[]>([]);
   const [progressText, setProgressText] = useState("");
 
+  const isStreamingRef = useRef(false);
+  useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
+
+  const thinkingDurationMsRef = useRef<number | null>(null);
+  useEffect(() => { thinkingDurationMsRef.current = thinkingDurationMs; }, [thinkingDurationMs]);
+
+  const onSpecSavedRef = useRef(onSpecSaved);
+  useEffect(() => { onSpecSavedRef.current = onSpecSaved; }, [onSpecSaved]);
+
+  const onTaskSavedRef = useRef(onTaskSaved);
+  useEffect(() => { onTaskSavedRef.current = onTaskSaved; }, [onTaskSaved]);
+
   const abortRef = useRef<AbortController | null>(null);
   const streamBufferRef = useRef("");
   const rafRef = useRef<number | null>(null);
@@ -257,7 +269,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
       _selectedModel?: string | null,
       attachments?: import("../api/streams").ChatAttachment[],
     ) => {
-      if (!agentId || isStreaming) return;
+      if (!agentId || isStreamingRef.current) return;
       const trimmed = content.trim();
       const hasAttachments = attachments && attachments.length > 0;
       if (!trimmed && !action && !hasAttachments) return;
@@ -285,15 +297,15 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
         {
           onProgress: (stage) => setProgressText(stage),
           onThinkingDelta: (text) => { setProgressText(""); handleThinkingDelta(text, refs, setters); },
-          onDelta: (text) => { setProgressText(""); handleTextDelta(text, thinkingDurationMs, refs, setters); },
+          onDelta: (text) => { setProgressText(""); handleTextDelta(text, thinkingDurationMsRef.current, refs, setters); },
           onToolCall: (info) => { setProgressText(""); handleToolCall(info, refs, setters); },
           onToolResult: (info) => handleToolResult(info, refs, setters),
-          onSpecSaved: (spec) => onSpecSaved?.(spec),
-          onTaskSaved: (task) => onTaskSaved?.(task),
+          onSpecSaved: (spec) => onSpecSavedRef.current?.(spec),
+          onTaskSaved: (task) => onTaskSavedRef.current?.(task),
           onMessageSaved: (msg) => handleMessageSaved(msg, refs, setters),
           onTokenUsage() {},
           onError: (message) => handleStreamError(message, refs, setters),
-          onDone: () => finalizeStream(refs, setters, abortRef, isStreaming),
+          onDone: () => finalizeStream(refs, setters, abortRef, isStreamingRef.current),
         },
         controller.signal,
       );
@@ -301,7 +313,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
       setIsStreaming(false);
       abortRef.current = null;
     },
-    [agentId, isStreaming, onSpecSaved, onTaskSaved, thinkingDurationMs],
+    [agentId],
   );
 
   const stopStreaming = useCallback(() => {
