@@ -1,8 +1,11 @@
 use std::path::Path;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tracing::{debug, info};
+
+const GIT_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitInfo {
@@ -14,31 +17,41 @@ pub fn is_git_repo(project_root: &str) -> bool {
     Path::new(project_root).join(".git").exists()
 }
 
+async fn git_output(cmd: &mut Command) -> Result<std::process::Output, String> {
+    tokio::time::timeout(GIT_TIMEOUT, cmd.output())
+        .await
+        .map_err(|_| "git command timed out".to_string())?
+        .map_err(|e| format!("git command failed: {e}"))
+}
+
 pub async fn ensure_remote(project_root: &str, name: &str, url: &str) {
-    let existing = Command::new("git")
-        .args(["remote", "get-url", name])
-        .current_dir(project_root)
-        .output()
-        .await;
+    let existing = git_output(
+        Command::new("git")
+            .args(["remote", "get-url", name])
+            .current_dir(project_root),
+    )
+    .await;
 
     match existing {
         Ok(o) if o.status.success() => {
             let current = String::from_utf8_lossy(&o.stdout).trim().to_string();
             if current != url {
-                let _ = Command::new("git")
-                    .args(["remote", "set-url", name, url])
-                    .current_dir(project_root)
-                    .output()
-                    .await;
+                let _ = git_output(
+                    Command::new("git")
+                        .args(["remote", "set-url", name, url])
+                        .current_dir(project_root),
+                )
+                .await;
                 debug!(remote = name, %url, "updated git remote URL");
             }
         }
         _ => {
-            let _ = Command::new("git")
-                .args(["remote", "add", name, url])
-                .current_dir(project_root)
-                .output()
-                .await;
+            let _ = git_output(
+                Command::new("git")
+                    .args(["remote", "add", name, url])
+                    .current_dir(project_root),
+            )
+            .await;
             debug!(remote = name, %url, "added git remote");
         }
     }
@@ -46,12 +59,12 @@ pub async fn ensure_remote(project_root: &str, name: &str, url: &str) {
 
 /// Stage all changes and commit. Returns the commit SHA if a commit was created.
 pub async fn git_commit(project_root: &str, message: &str) -> Result<Option<String>, String> {
-    let add = Command::new("git")
-        .args(["add", "-A"])
-        .current_dir(project_root)
-        .output()
-        .await
-        .map_err(|e| format!("git add failed: {e}"))?;
+    let add = git_output(
+        Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(project_root),
+    )
+    .await?;
 
     if !add.status.success() {
         return Err(format!(
@@ -60,24 +73,24 @@ pub async fn git_commit(project_root: &str, message: &str) -> Result<Option<Stri
         ));
     }
 
-    let diff = Command::new("git")
-        .args(["diff", "--cached", "--quiet"])
-        .current_dir(project_root)
-        .output()
-        .await
-        .map_err(|e| format!("git diff --cached failed: {e}"))?;
+    let diff = git_output(
+        Command::new("git")
+            .args(["diff", "--cached", "--quiet"])
+            .current_dir(project_root),
+    )
+    .await?;
 
     if diff.status.success() {
         debug!("nothing to commit");
         return Ok(None);
     }
 
-    let commit = Command::new("git")
-        .args(["commit", "-m", message])
-        .current_dir(project_root)
-        .output()
-        .await
-        .map_err(|e| format!("git commit failed: {e}"))?;
+    let commit = git_output(
+        Command::new("git")
+            .args(["commit", "-m", message])
+            .current_dir(project_root),
+    )
+    .await?;
 
     if !commit.status.success() {
         return Err(format!(
@@ -86,12 +99,12 @@ pub async fn git_commit(project_root: &str, message: &str) -> Result<Option<Stri
         ));
     }
 
-    let sha = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(project_root)
-        .output()
-        .await
-        .map_err(|e| format!("git rev-parse failed: {e}"))?;
+    let sha = git_output(
+        Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(project_root),
+    )
+    .await?;
 
     let sha_str = String::from_utf8_lossy(&sha.stdout).trim().to_string();
     info!(%sha_str, "git commit created");
@@ -105,11 +118,12 @@ pub async fn list_unpushed_commits(
     branch: &str,
 ) -> Vec<CommitInfo> {
     let range = format!("{remote}/{branch}..HEAD");
-    let output = Command::new("git")
-        .args(["log", &range, "--pretty=format:%H %s"])
-        .current_dir(project_root)
-        .output()
-        .await;
+    let output = git_output(
+        Command::new("git")
+            .args(["log", &range, "--pretty=format:%H %s"])
+            .current_dir(project_root),
+    )
+    .await;
 
     match output {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
@@ -139,12 +153,12 @@ pub async fn git_push(
     let auth_url = build_auth_url(remote_url, jwt)?;
     ensure_remote(project_root, "orbit", &auth_url).await;
 
-    let push = Command::new("git")
-        .args(["push", "orbit", &format!("HEAD:{branch}")])
-        .current_dir(project_root)
-        .output()
-        .await
-        .map_err(|e| format!("git push failed: {e}"))?;
+    let push = git_output(
+        Command::new("git")
+            .args(["push", "orbit", &format!("HEAD:{branch}")])
+            .current_dir(project_root),
+    )
+    .await?;
 
     if !push.status.success() {
         let stderr = String::from_utf8_lossy(&push.stderr);

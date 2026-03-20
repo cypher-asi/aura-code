@@ -6,6 +6,8 @@ use crate::chat_tool_executor::{ChatToolExecutor, ToolExecResult};
 use crate::tool_loop_helpers::looks_truncated;
 use super::str_field;
 
+const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
+
 impl ChatToolExecutor {
     pub(crate) async fn read_file(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
         let rel = str_field(input, "path").unwrap_or_default();
@@ -15,6 +17,15 @@ impl ChatToolExecutor {
         };
         let start_line = input.get("start_line").and_then(|v| v.as_u64()).map(|n| n as usize);
         let end_line = input.get("end_line").and_then(|v| v.as_u64()).map(|n| n as usize);
+
+        if let Ok(meta) = std::fs::metadata(&abs) {
+            if meta.len() > MAX_FILE_SIZE {
+                return ToolExecResult::err(format!(
+                    "File {rel} is too large ({:.1} MB, limit is 10 MB). Use start_line/end_line to read a section.",
+                    meta.len() as f64 / (1024.0 * 1024.0),
+                ));
+            }
+        }
 
         match std::fs::read_to_string(&abs) {
             Ok(content) => {
@@ -214,6 +225,15 @@ impl ChatToolExecutor {
             Err(e) => return e,
         };
 
+        if let Ok(meta) = std::fs::metadata(&abs) {
+            if meta.len() > MAX_FILE_SIZE {
+                return ToolExecResult::err(format!(
+                    "File {rel} is too large ({:.1} MB, limit is 10 MB).",
+                    meta.len() as f64 / (1024.0 * 1024.0),
+                ));
+            }
+        }
+
         let raw_content = match std::fs::read_to_string(&abs) {
             Ok(c) => c,
             Err(e) => return ToolExecResult::err(format!("Failed to read {rel}: {e}")),
@@ -228,7 +248,7 @@ impl ChatToolExecutor {
         let occurrence_count = content.matches(&norm_old).count();
 
         let (new_content, replacements) = if occurrence_count == 0 {
-            match fuzzy_search_replace_single(&content, &norm_old, &norm_new) {
+            match fuzzy_search_replace(&content, &norm_old, &norm_new) {
                 Some(c) => (c, 1usize),
                 None => return ToolExecResult::err(format!(
                     "old_text not found in {rel}. Make sure it matches the file content exactly, \
@@ -276,57 +296,4 @@ impl ChatToolExecutor {
             Err(e) => ToolExecResult::err(format!("Failed to write {rel}: {e}")),
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// Fuzzy edit helper
-// ---------------------------------------------------------------------------
-
-fn fuzzy_search_replace_single(content: &str, search: &str, replace: &str) -> Option<String> {
-    let search_lines: Vec<&str> = search.lines().map(|l| l.trim()).collect();
-    if search_lines.is_empty() || search_lines.iter().all(|l| l.is_empty()) {
-        return None;
-    }
-
-    let content_lines: Vec<&str> = content.lines().collect();
-    let mut match_positions: Vec<usize> = Vec::new();
-
-    'outer: for start in 0..content_lines.len() {
-        if start + search_lines.len() > content_lines.len() {
-            break;
-        }
-        for (j, search_line) in search_lines.iter().enumerate() {
-            if content_lines[start + j].trim() != *search_line {
-                continue 'outer;
-            }
-        }
-        match_positions.push(start);
-    }
-
-    if match_positions.len() != 1 {
-        return None;
-    }
-
-    let match_start = match_positions[0];
-    let match_end = match_start + search_lines.len();
-
-    let mut result = String::with_capacity(content.len());
-    for (i, line) in content_lines.iter().enumerate() {
-        if i == match_start {
-            result.push_str(replace);
-            if !replace.ends_with('\n') {
-                result.push('\n');
-            }
-        } else if i >= match_start && i < match_end {
-            continue;
-        } else {
-            result.push_str(line);
-            result.push('\n');
-        }
-    }
-    if !content.ends_with('\n') && result.ends_with('\n') {
-        result.pop();
-    }
-
-    Some(result)
 }

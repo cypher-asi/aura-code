@@ -17,6 +17,17 @@ pub struct NetworkClient {
     base_url: String,
 }
 
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+fn build_http_client() -> Client {
+    Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .unwrap_or_else(|_| Client::new())
+}
+
 impl NetworkClient {
     /// Create a new `NetworkClient`, reading `AURA_NETWORK_URL` from env.
     /// Returns `None` if the env var is not set or empty (network integration disabled).
@@ -29,7 +40,7 @@ impl NetworkClient {
         info!(%base_url, "aura-network client configured");
 
         Some(Self {
-            http: Client::new(),
+            http: build_http_client(),
             base_url,
         })
     }
@@ -37,7 +48,7 @@ impl NetworkClient {
     /// Create a `NetworkClient` with an explicit base URL (e.g. for tests or custom deployment).
     pub fn with_base_url(base_url: &str) -> Self {
         Self {
-            http: Client::new(),
+            http: build_http_client(),
             base_url: base_url.trim_end_matches('/').to_string(),
         }
     }
