@@ -31,7 +31,6 @@ export function ChatView() {
     sendMessage,
     stopStreaming,
     resetMessages,
-    rafRef,
   } = useChatStream({ projectId, agentInstanceId });
 
   const [input, setInput] = useState("");
