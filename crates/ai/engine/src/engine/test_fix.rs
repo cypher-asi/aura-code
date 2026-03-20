@@ -272,7 +272,14 @@ impl DevLoopEngine {
     ) -> Result<(), EngineError> {
         match parse_execution_response(response) {
             Ok(fix_execution) => {
-                file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await?;
+                if let Err(e) = file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await {
+                    warn!(
+                        task_id = %task.task_id, attempt, error = %e,
+                        "file ops failed during test-fix (likely search-replace mismatch), \
+                         treating as failed fix attempt"
+                    );
+                    return Ok(());
+                }
                 if !fix_execution.file_ops.is_empty() {
                     self.emit_file_ops_applied(
                         project.project_id, session.agent_instance_id,

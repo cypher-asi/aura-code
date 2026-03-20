@@ -395,7 +395,14 @@ impl DevLoopEngine {
     ) -> Result<(bool, Vec<String>, Vec<FileOp>), EngineError> {
         match parse_execution_response(response) {
             Ok(fix_execution) => {
-                file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await?;
+                if let Err(e) = file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await {
+                    warn!(
+                        task_id = %task.task_id, attempt, error = %e,
+                        "file ops failed during build-fix (likely search-replace mismatch), \
+                         treating as failed fix attempt"
+                    );
+                    return Ok((false, vec![], vec![]));
+                }
                 let files_changed: Vec<String> = fix_execution.file_ops.iter().map(|op| {
                     let (op_name, path) = match op {
                         FileOp::Create { path, .. } => ("create", path.as_str()),
