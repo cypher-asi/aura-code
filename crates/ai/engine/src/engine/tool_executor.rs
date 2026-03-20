@@ -8,7 +8,10 @@ use aura_core::*;
 use aura_claude::ToolCall;
 use aura_chat::{AutoBuildResult, ChatToolExecutor, ToolCallResult, ToolExecResult, ToolExecutor};
 
-use super::build_fix::infer_default_build_command;
+use super::build_fix::{
+    infer_default_build_command,
+    classify_build_errors, error_category_guidance, parse_error_references,
+};
 use super::prompts::build_stub_fix_prompt;
 use super::types::{track_file_op, FollowUpSuggestion};
 use crate::build_verify;
@@ -64,6 +67,11 @@ impl ToolExecutor for EngineToolLoopExecutor {
                     if !output.is_empty() { output.push('\n'); }
                     output.push_str(&result.stderr);
                 }
+                let output = if !result.success {
+                    self.enrich_compiler_output(&output)
+                } else {
+                    output
+                };
                 Some(AutoBuildResult {
                     success: result.success,
                     output,
@@ -129,6 +137,33 @@ impl ToolExecutor for EngineToolLoopExecutor {
 }
 
 impl EngineToolLoopExecutor {
+    fn enrich_compiler_output(&self, raw_output: &str) -> String {
+        if !looks_like_compiler_errors(raw_output) {
+            return raw_output.to_string();
+        }
+
+        let base_path = Path::new(&self.project.linked_folder_path);
+
+        let categories = classify_build_errors(raw_output);
+        let guidance = error_category_guidance(&categories);
+        let refs = parse_error_references(raw_output);
+        let api_ref = file_ops::resolve_error_context(base_path, &refs);
+
+        let mut enriched = raw_output.to_string();
+
+        if !guidance.is_empty() {
+            enriched.push_str("\n\n## Error Diagnosis & Guidance\n\n");
+            enriched.push_str(&guidance);
+        }
+
+        if !api_ref.is_empty() {
+            enriched.push('\n');
+            enriched.push_str(&api_ref);
+        }
+
+        enriched
+    }
+
     async fn handle_task_done(
         &self,
         tc: &ToolCall,
@@ -268,12 +303,26 @@ impl EngineToolLoopExecutor {
                 task_id: self.task_id,
                 delta: marker,
             });
+
+            let content = if tc.name == "run_command" && result.is_error {
+                self.enrich_compiler_output(&result.content)
+            } else {
+                result.content
+            };
+
             results.push(ToolCallResult {
                 tool_use_id: tc.id.clone(),
-                content: result.content,
+                content,
                 is_error: result.is_error,
                 stop_loop: false,
             });
         }
     }
+}
+
+fn looks_like_compiler_errors(output: &str) -> bool {
+    let has_rust_errors = output.contains("error[E") && output.contains("-->");
+    let has_generic_errors = output.contains("error:") && output.contains("-->");
+    let has_ts_errors = output.contains("TS2") && output.contains("error TS");
+    has_rust_errors || has_generic_errors || has_ts_errors
 }
