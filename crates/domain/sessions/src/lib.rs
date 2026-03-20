@@ -55,7 +55,10 @@ pub fn storage_session_to_session(
         active_task_id: local_overrides.and_then(|o| o.active_task_id),
         tasks_worked: local_overrides
             .map(|o| o.tasks_worked.clone())
-            .unwrap_or_default(),
+            .unwrap_or_else(|| {
+                let count = s.tasks_worked_count.unwrap_or(0) as usize;
+                (0..count).map(|_| TaskId::new()).collect()
+            }),
         context_usage_estimate: s.context_usage_estimate.unwrap_or(0.0),
         total_input_tokens: local_overrides.map(|o| o.total_input_tokens).unwrap_or(0),
         total_output_tokens: local_overrides.map(|o| o.total_output_tokens).unwrap_or(0),
@@ -173,6 +176,7 @@ impl SessionService {
             let req = aura_storage::UpdateSessionRequest {
                 status: None,
                 context_usage_estimate: Some(session.context_usage_estimate),
+                tasks_worked_count: None,
                 ended_at: None,
             };
             storage
@@ -207,6 +211,7 @@ impl SessionService {
             let req = aura_storage::UpdateSessionRequest {
                 status: Some("rolled_over".to_string()),
                 context_usage_estimate: None,
+                tasks_worked_count: None,
                 ended_at: Some(Utc::now().to_rfc3339()),
             };
             storage
@@ -247,6 +252,7 @@ impl SessionService {
             let req = aura_storage::UpdateSessionRequest {
                 status: Some(status_str),
                 context_usage_estimate: None,
+                tasks_worked_count: None,
                 ended_at: Some(
                     session
                         .ended_at
@@ -301,18 +307,39 @@ impl SessionService {
         Ok(Vec::new())
     }
 
-    /// Record that a task was worked in this session. This is a no-op for
-    /// persistence: `tasks_worked` is not tracked by `StorageSession` and the
-    /// local RocksDB session store is stubbed out. The returned `Session` is a
-    /// dummy carrying only the given `task_id`; callers must not rely on it for
-    /// anything beyond confirming the call succeeded.
+    /// Record that a task was worked in this session.
+    ///
+    /// Increments the persisted `tasks_worked_count` in aura-storage so that
+    /// the 8-task rollover limit survives process restarts. Returns the
+    /// refreshed session when storage is available, or a dummy otherwise.
     pub async fn record_task_worked(
         &self,
         project_id: &ProjectId,
         _agent_instance_id: &AgentInstanceId,
-        _session_id: &SessionId,
+        session_id: &SessionId,
         task_id: TaskId,
     ) -> Result<Session, SessionError> {
+        if let Some(ref storage) = self.storage_client {
+            let jwt = self.get_jwt()?;
+            let current = storage
+                .get_session(&session_id.to_string(), &jwt)
+                .await?;
+            let new_count = current.tasks_worked_count.unwrap_or(0) + 1;
+            let req = aura_storage::UpdateSessionRequest {
+                status: None,
+                context_usage_estimate: None,
+                tasks_worked_count: Some(new_count),
+                ended_at: None,
+            };
+            storage
+                .update_session(&session_id.to_string(), &jwt, &req)
+                .await?;
+            let mut session = storage_session_to_session(current, None)
+                .map_err(SessionError::Parse)?;
+            session.tasks_worked.push(task_id);
+            return Ok(session);
+        }
+
         let mut session = Session::dummy(*project_id);
         session.tasks_worked.push(task_id);
         Ok(session)
@@ -348,6 +375,7 @@ impl SessionService {
                     let req = aura_storage::UpdateSessionRequest {
                         status: Some("completed".to_string()),
                         context_usage_estimate: None,
+                        tasks_worked_count: None,
                         ended_at: Some(now.to_rfc3339()),
                     };
                     if let Err(e) =

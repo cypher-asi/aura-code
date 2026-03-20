@@ -224,6 +224,8 @@ pub struct StorageSession {
     #[serde(default)]
     pub summary_of_previous_context: Option<String>,
     #[serde(default)]
+    pub tasks_worked_count: Option<u32>,
+    #[serde(default)]
     pub ended_at: Option<String>,
     #[serde(default)]
     pub created_at: Option<String>,
@@ -250,6 +252,8 @@ pub struct UpdateSessionRequest {
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_usage_estimate: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tasks_worked_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<String>,
 }

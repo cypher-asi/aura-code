@@ -362,6 +362,7 @@ impl ChatService {
         let req = aura_storage::UpdateSessionRequest {
             status: None,
             context_usage_estimate: Some(new_estimate),
+            tasks_worked_count: None,
             ended_at: None,
         };
         if let Err(e) = storage.update_session(session_id, &jwt, &req).await {
