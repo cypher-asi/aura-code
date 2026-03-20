@@ -161,4 +161,56 @@ mod tests {
         assert_eq!(decoded.thinking.as_deref(), Some("deep thoughts"));
         assert_eq!(decoded.thinking_duration_ms, Some(3000));
     }
+
+    #[test]
+    fn malformed_json_fallback() {
+        let raw = r#"{"_aura_v": not valid json!!!"#;
+        let decoded = decode_message_content(raw);
+        assert_eq!(decoded.text, raw, "malformed JSON should decode as plain text");
+        assert!(decoded.content_blocks.is_none());
+        assert!(decoded.thinking.is_none());
+    }
+
+    #[test]
+    fn empty_string_roundtrip() {
+        let encoded = encode_message_content("", None, None, None);
+        assert_eq!(encoded, "");
+        let decoded = decode_message_content(&encoded);
+        assert_eq!(decoded.text, "");
+        assert!(decoded.content_blocks.is_none());
+    }
+
+    #[test]
+    fn unicode_content_roundtrip() {
+        let text = "Hello 🌍 世界 مرحبا";
+        let blocks = vec![
+            ChatContentBlock::Text { text: "emoji: 🎉🎊 CJK: 你好世界 Arabic: مرحبا بالعالم".into() },
+        ];
+        let thinking = "思考中… 🤔";
+        let encoded = encode_message_content(text, Some(&blocks), Some(thinking), Some(42));
+        assert!(encoded.starts_with("{\"_aura_v\":"));
+
+        let decoded = decode_message_content(&encoded);
+        assert_eq!(decoded.text, text);
+        assert_eq!(decoded.content_blocks.as_ref().unwrap().len(), 1);
+        assert_eq!(decoded.thinking.as_deref(), Some(thinking));
+        assert_eq!(decoded.thinking_duration_ms, Some(42));
+    }
+
+    #[test]
+    fn large_content_roundtrip() {
+        let text = "x".repeat(50_000);
+        let blocks: Vec<ChatContentBlock> = (0..100)
+            .map(|i| ChatContentBlock::Text { text: format!("block {i}") })
+            .collect();
+        let thinking = "t".repeat(10_000);
+
+        let encoded = encode_message_content(&text, Some(&blocks), Some(&thinking), Some(99999));
+        let decoded = decode_message_content(&encoded);
+
+        assert_eq!(decoded.text, text);
+        assert_eq!(decoded.content_blocks.as_ref().unwrap().len(), 100);
+        assert_eq!(decoded.thinking.as_deref(), Some(thinking.as_str()));
+        assert_eq!(decoded.thinking_duration_ms, Some(99999));
+    }
 }
