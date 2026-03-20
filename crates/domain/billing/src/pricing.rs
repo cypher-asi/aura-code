@@ -183,4 +183,120 @@ mod tests {
         let cost = compute_cost_with_rates(1_000_000, 1_000_000, 5.0, 25.0);
         assert!((cost - 30.0).abs() < f64::EPSILON);
     }
+
+    // --- new tests ---
+
+    #[test]
+    fn substring_matching_dated_model() {
+        let sched = default_fee_schedule();
+        let (inp, out) = lookup_rate_in(&sched, "claude-opus-4-6-20260301");
+        assert!((inp - 5.0).abs() < f64::EPSILON);
+        assert!((out - 25.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn multiple_effective_dates_latest_wins() {
+        let sched = vec![
+            FeeScheduleEntry {
+                model: "claude-opus-4-6".into(),
+                input_cost_per_million: 5.0,
+                output_cost_per_million: 25.0,
+                effective_date: "2026-01-01".into(),
+            },
+            FeeScheduleEntry {
+                model: "claude-opus-4-6".into(),
+                input_cost_per_million: 4.0,
+                output_cost_per_million: 20.0,
+                effective_date: "2026-06-01".into(),
+            },
+        ];
+        let (inp, out) = lookup_rate_in(&sched, "claude-opus-4-6");
+        assert!((inp - 4.0).abs() < f64::EPSILON);
+        assert!((out - 20.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn set_fee_schedule_rejects_negative_costs() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        let svc = PricingService::new(store);
+        let result = svc.set_fee_schedule(vec![FeeScheduleEntry {
+            model: "test".into(),
+            input_cost_per_million: -1.0,
+            output_cost_per_million: 10.0,
+            effective_date: "2026-01-01".into(),
+        }]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("non-negative"));
+    }
+
+    #[test]
+    fn set_fee_schedule_rejects_empty_model() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        let svc = PricingService::new(store);
+        let result = svc.set_fee_schedule(vec![FeeScheduleEntry {
+            model: String::new(),
+            input_cost_per_million: 5.0,
+            output_cost_per_million: 25.0,
+            effective_date: "2026-01-01".into(),
+        }]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
+    }
+
+    #[test]
+    fn schedule_persistence_round_trip() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        let svc = PricingService::new(store);
+        let entries = vec![FeeScheduleEntry {
+            model: "custom-model".into(),
+            input_cost_per_million: 7.0,
+            output_cost_per_million: 35.0,
+            effective_date: "2026-03-01".into(),
+        }];
+        svc.set_fee_schedule(entries.clone()).unwrap();
+        let loaded = svc.get_fee_schedule();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].model, "custom-model");
+        assert!((loaded[0].input_cost_per_million - 7.0).abs() < f64::EPSILON);
+        assert!((loaded[0].output_cost_per_million - 35.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn cost_zero_tokens() {
+        let cost = compute_cost_with_rates(0, 0, 5.0, 25.0);
+        assert!((cost - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn cost_input_only() {
+        let cost = compute_cost_with_rates(1_000_000, 0, 5.0, 25.0);
+        assert!((cost - 5.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn cost_output_only() {
+        let cost = compute_cost_with_rates(0, 1_000_000, 5.0, 25.0);
+        assert!((cost - 25.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn cost_large_token_counts() {
+        let cost = compute_cost_with_rates(1_000_000_000, 1_000_000_000, 5.0, 25.0);
+        assert!((cost - 30_000.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn compute_cost_with_rates_known_opus_values() {
+        let cost = compute_cost_with_rates(1_000_000, 0, 5.0, 25.0);
+        assert!((cost - 5.0).abs() < f64::EPSILON, "1M opus input tokens should cost $5.00");
+
+        let cost = compute_cost_with_rates(0, 1_000_000, 5.0, 25.0);
+        assert!((cost - 25.0).abs() < f64::EPSILON, "1M opus output tokens should cost $25.00");
+
+        let cost_haiku = compute_cost_with_rates(1_000_000, 1_000_000, 0.80, 4.0);
+        assert!((cost_haiku - 4.80).abs() < f64::EPSILON, "1M haiku in+out should cost $4.80");
+    }
 }
