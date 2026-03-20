@@ -5,17 +5,15 @@ use std::time::Instant;
 use tracing::{info, warn};
 
 use aura_core::*;
-use aura_claude::StreamTokenCapture;
 
-use super::build_fix::{normalize_error_signature, BuildFixAttemptRecord, BUILD_FIX_SNAPSHOT_BUDGET};
+use super::build_fix::{BuildFixAttemptRecord, BUILD_FIX_SNAPSHOT_BUDGET};
 use super::orchestrator::DevLoopEngine;
-use super::parser::parse_execution_response;
-use super::prompts::{build_fix_system_prompt, build_fix_prompt_with_history};
 use super::types::*;
+use super::verify_fix_common::build_codebase_snapshot;
 use crate::build_verify;
 use crate::error::EngineError;
 use crate::events::EngineEvent;
-use crate::file_ops::{self, FileOp, WorkspaceCache};
+use crate::file_ops::{FileOp, WorkspaceCache};
 
 impl DevLoopEngine {
     /// Run the test suite and return the names of currently-failing tests.
@@ -95,9 +93,9 @@ impl DevLoopEngine {
             project, task, session, api_key, initial_execution,
             test_command, &test_result, prior_test_attempts, workspace_cache,
         ).await?;
-        self.apply_test_fix_response(
-            task, base_path, project, session, &response,
-            attempt, all_fix_ops, &test_result, prior_test_attempts,
+        self.apply_fix_and_record(
+            project, session, task, base_path, &response, attempt,
+            &test_result.stderr, prior_test_attempts, all_fix_ops, "test-fix",
         ).await?;
         Ok((false, inp, out))
     }
@@ -184,6 +182,7 @@ impl DevLoopEngine {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn request_test_fix(
         &self, project: &Project, task: &Task, session: &Session,
         api_key: &str, initial_execution: &TaskExecution,
@@ -191,81 +190,15 @@ impl DevLoopEngine {
         prior_test_attempts: &[BuildFixAttemptRecord],
         workspace_cache: &WorkspaceCache,
     ) -> Result<(String, u64, u64), EngineError> {
-        let spec = self.load_spec(&task.project_id, &task.spec_id).await?;
-        let codebase_snapshot = match file_ops::retrieve_task_relevant_files_cached(
+        let codebase_snapshot = build_codebase_snapshot(
             &project.linked_folder_path, &task.title, &task.description,
             BUILD_FIX_SNAPSHOT_BUDGET, workspace_cache,
-        ).await {
-            Ok(s) => s,
-            Err(_) => file_ops::read_relevant_files(&project.linked_folder_path, BUILD_FIX_SNAPSHOT_BUDGET)
-                .unwrap_or_default(),
-        };
-        let fix_prompt = build_fix_prompt_with_history(
-            project, &spec, task, session, &codebase_snapshot,
-            test_command, &test_result.stderr, &test_result.stdout,
-            &initial_execution.notes, prior_test_attempts,
-        );
-        let (tx, handle) = StreamTokenCapture::sink();
-        let response = self
-            .llm
-            .complete_stream(
-                api_key, &build_fix_system_prompt(), &fix_prompt,
-                self.llm_config.task_execution_max_tokens,
-                tx, "aura_build_fix", None,
-            )
-            .await?;
-        let (inp, out, _, _) = handle.finalize().await;
-        Ok((response, inp, out))
-    }
+        ).await;
 
-    #[allow(clippy::too_many_arguments)]
-    async fn apply_test_fix_response(
-        &self, task: &Task, base_path: &Path,
-        project: &Project, session: &Session, response: &str,
-        attempt: u32, all_fix_ops: &mut Vec<FileOp>,
-        test_result: &build_verify::BuildResult,
-        prior_test_attempts: &mut Vec<BuildFixAttemptRecord>,
-    ) -> Result<(), EngineError> {
-        match parse_execution_response(response) {
-            Ok(fix_execution) => {
-                if let Err(e) = file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await {
-                    warn!(
-                        task_id = %task.task_id, attempt, error = %e,
-                        "file ops failed during test-fix (likely search-replace mismatch), \
-                         treating as failed fix attempt"
-                    );
-                    return Ok(());
-                }
-                if !fix_execution.file_ops.is_empty() {
-                    self.emit_file_ops_applied(
-                        project.project_id, session.agent_instance_id,
-                        task, &fix_execution.file_ops,
-                    );
-                }
-                let attempt_files: Vec<String> = fix_execution.file_ops.iter().map(|op| {
-                    let (op_name, path) = match op {
-                        FileOp::Create { path, .. } => ("create", path.as_str()),
-                        FileOp::Modify { path, .. } => ("modify", path.as_str()),
-                        FileOp::Delete { path } => ("delete", path.as_str()),
-                        FileOp::SearchReplace { path, .. } => ("search_replace", path.as_str()),
-                    };
-                    format!("{op_name} {path}")
-                }).collect();
-                let sig = normalize_error_signature(&test_result.stderr);
-                prior_test_attempts.push(BuildFixAttemptRecord {
-                    stderr: test_result.stderr.clone(),
-                    error_signature: sig,
-                    files_changed: attempt_files,
-                });
-                all_fix_ops.extend(fix_execution.file_ops);
-            }
-            Err(e) => {
-                warn!(
-                    task_id = %task.task_id, attempt, error = %e,
-                    "failed to parse test-fix response"
-                );
-            }
-        }
-        Ok(())
+        self.request_fix(
+            project, task, session, api_key, initial_execution,
+            test_command, &test_result.stderr, &test_result.stdout,
+            &codebase_snapshot, prior_test_attempts,
+        ).await
     }
 }

@@ -10,6 +10,7 @@ pub(crate) mod prompts;
 pub(crate) mod shell;
 mod test_fix;
 pub(crate) mod tool_executor;
+mod verify_fix_common;
 pub mod types;
 pub mod write_coordinator;
 

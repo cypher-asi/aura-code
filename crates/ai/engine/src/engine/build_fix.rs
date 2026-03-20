@@ -5,7 +5,6 @@ use std::time::Instant;
 use tracing::{info, warn};
 
 use aura_core::*;
-use aura_claude::StreamTokenCapture;
 
 pub(crate) use super::build_fix_types::{
     BuildFixAttemptRecord, ErrorCategory,
@@ -13,9 +12,8 @@ pub(crate) use super::build_fix_types::{
 };
 
 use super::orchestrator::DevLoopEngine;
-use super::parser::parse_execution_response;
-use super::prompts::{build_fix_system_prompt, build_fix_prompt_with_history};
 use super::types::*;
+use super::verify_fix_common::build_codebase_snapshot;
 use crate::build_verify;
 use crate::channel_ext::send_or_log;
 use crate::error::EngineError;
@@ -342,13 +340,11 @@ impl DevLoopEngine {
             task_id: task.task_id,
             attempt,
         });
-        let spec = self.load_spec(&task.project_id, &task.spec_id).await?;
 
         // Read error source files fresh from disk instead of relying on a
         // cached snapshot that may be stale after the initial execution
-        // modified files.  This ensures the LLM sees the actual current
-        // content of files it needs to fix, preventing hallucinated search
-        // strings in search_replace operations.
+        // modified files. This ensures the LLM sees the actual current
+        // content of files it needs to fix.
         let error_refs = parse_error_references(build_stderr);
         let fresh_error_files = file_ops::resolve_error_source_files(
             Path::new(&project.linked_folder_path),
@@ -357,17 +353,12 @@ impl DevLoopEngine {
         );
 
         let codebase_snapshot = if !fresh_error_files.is_empty() {
-            // Use fresh error files as the primary snapshot; fall back to
-            // cached files only for remaining budget.
             let remaining_budget = BUILD_FIX_SNAPSHOT_BUDGET.saturating_sub(fresh_error_files.len());
             let supplemental = if remaining_budget > 2_000 {
-                match file_ops::retrieve_task_relevant_files_cached(
+                build_codebase_snapshot(
                     &project.linked_folder_path, &task.title, &task.description,
                     remaining_budget, workspace_cache,
-                ).await {
-                    Ok(s) => s,
-                    Err(_) => String::new(),
-                }
+                ).await
             } else {
                 String::new()
             };
@@ -377,74 +368,17 @@ impl DevLoopEngine {
                 format!("{fresh_error_files}\n{supplemental}")
             }
         } else {
-            match file_ops::retrieve_task_relevant_files_cached(
+            build_codebase_snapshot(
                 &project.linked_folder_path, &task.title, &task.description,
                 BUILD_FIX_SNAPSHOT_BUDGET, workspace_cache,
-            ).await {
-                Ok(s) => s,
-                Err(_) => file_ops::read_relevant_files(
-                    &project.linked_folder_path, BUILD_FIX_SNAPSHOT_BUDGET,
-                ).unwrap_or_default(),
-            }
+            ).await
         };
 
-        let fix_prompt = build_fix_prompt_with_history(
-            project, &spec, task, session, &codebase_snapshot,
+        self.request_fix(
+            project, task, session, api_key, initial_execution,
             build_command, build_stderr, build_stdout,
-            &initial_execution.notes, prior_attempts,
-        );
-        let (tx, handle) = StreamTokenCapture::sink();
-        let response = self
-            .llm
-            .complete_stream(
-                api_key, &build_fix_system_prompt(), &fix_prompt,
-                self.llm_config.task_execution_max_tokens,
-                tx, "aura_build_fix", None,
-            )
-            .await?;
-        let (cap_inp, cap_out, _, _) = handle.finalize().await;
-        Ok((response, cap_inp, cap_out))
-    }
-
-    async fn apply_fix_response(
-        &self, project: &Project, session: &Session, task: &Task,
-        base_path: &Path, response: &str, attempt: u32,
-    ) -> Result<(bool, Vec<String>, Vec<FileOp>), EngineError> {
-        match parse_execution_response(response) {
-            Ok(fix_execution) => {
-                if let Err(e) = file_ops::apply_file_ops(base_path, &fix_execution.file_ops).await {
-                    warn!(
-                        task_id = %task.task_id, attempt, error = %e,
-                        "file ops failed during build-fix (likely search-replace mismatch), \
-                         treating as failed fix attempt"
-                    );
-                    return Ok((false, vec![], vec![]));
-                }
-                let files_changed: Vec<String> = fix_execution.file_ops.iter().map(|op| {
-                    let (op_name, path) = match op {
-                        FileOp::Create { path, .. } => ("create", path.as_str()),
-                        FileOp::Modify { path, .. } => ("modify", path.as_str()),
-                        FileOp::Delete { path } => ("delete", path.as_str()),
-                        FileOp::SearchReplace { path, .. } => ("search_replace", path.as_str()),
-                    };
-                    format!("{op_name} {path}")
-                }).collect();
-                if !fix_execution.file_ops.is_empty() {
-                    self.emit_file_ops_applied(
-                        project.project_id, session.agent_instance_id,
-                        task, &fix_execution.file_ops,
-                    );
-                }
-                Ok((true, files_changed, fix_execution.file_ops))
-            }
-            Err(e) => {
-                warn!(
-                    task_id = %task.task_id, attempt, error = %e,
-                    "failed to parse build-fix response, fix not applied"
-                );
-                Ok((false, vec![], vec![]))
-            }
-        }
+            &codebase_snapshot, prior_attempts,
+        ).await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -485,16 +419,10 @@ impl DevLoopEngine {
             build_command, &build_result.stderr, &build_result.stdout,
             prior_attempts, attempt, workspace_cache,
         ).await?;
-        let (fix_applied, files_changed, ops) = self.apply_fix_response(
+        self.apply_fix_and_record(
             project, session, task, base_path, &response, attempt,
+            &build_result.stderr, prior_attempts, all_fix_ops, "build-fix",
         ).await?;
-        all_fix_ops.extend(ops);
-        let sig = normalize_error_signature(&build_result.stderr);
-        prior_attempts.push(BuildFixAttemptRecord {
-            stderr: build_result.stderr.clone(),
-            error_signature: sig,
-            files_changed: if fix_applied { files_changed } else { vec!["(fix did not apply)".into()] },
-        });
         Ok((inp, out))
     }
 
