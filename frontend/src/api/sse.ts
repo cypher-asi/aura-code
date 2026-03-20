@@ -4,13 +4,22 @@ export interface SSECallbacks<T extends string> {
   onDone?: () => void;
 }
 
+const IDLE_TIMEOUT_MS = 90_000;
+
 export async function streamSSE<T extends string>(
   url: string,
   init: RequestInit,
   callbacks: SSECallbacks<T>,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(url, { ...init, credentials: "include", signal });
+  let response: Response;
+  try {
+    response = await fetch(url, { ...init, credentials: "include", signal });
+  } catch (err) {
+    if (signal?.aborted) return;
+    callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
+    return;
+  }
 
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText);
@@ -36,7 +45,11 @@ export async function streamSSE<T extends string>(
 
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const readPromise = reader.read();
+      const timeoutPromise = new Promise<{ done: true; value: undefined }>(
+        (_, reject) => setTimeout(() => reject(new Error("SSE idle timeout")), IDLE_TIMEOUT_MS),
+      );
+      const { done, value } = await Promise.race([readPromise, timeoutPromise]);
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
@@ -70,6 +83,7 @@ export async function streamSSE<T extends string>(
   } catch (err) {
     if (signal?.aborted) return;
     callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
+    reader.cancel().catch(() => {});
     return;
   }
 
