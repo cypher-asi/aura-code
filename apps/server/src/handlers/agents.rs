@@ -609,6 +609,10 @@ pub async fn send_agent_message_stream(
                 .event("thinking_delta")
                 .json_data(serde_json::json!({ "text": text }))
                 .unwrap(),
+            ChatStreamEvent::Progress(stage) => Event::default()
+                .event("progress")
+                .json_data(serde_json::json!({ "stage": stage }))
+                .unwrap(),
             ChatStreamEvent::ToolCall { id, name, input } => Event::default()
                 .event("tool_call")
                 .json_data(serde_json::json!({ "id": id, "name": name, "input": input }))
@@ -760,6 +764,10 @@ pub async fn send_message_stream(
             ChatStreamEvent::ThinkingDelta(text) => Event::default()
                 .event("thinking_delta")
                 .json_data(serde_json::json!({ "text": text }))
+                .unwrap(),
+            ChatStreamEvent::Progress(stage) => Event::default()
+                .event("progress")
+                .json_data(serde_json::json!({ "stage": stage }))
                 .unwrap(),
             ChatStreamEvent::ToolCall { id, name, input } => Event::default()
                 .event("tool_call")

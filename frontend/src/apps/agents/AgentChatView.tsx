@@ -25,6 +25,7 @@ export function AgentChatView() {
     thinkingText,
     thinkingDurationMs,
     activeToolCalls,
+    progressText,
     sendMessage,
     stopStreaming,
     resetMessages,
@@ -145,7 +146,7 @@ export function AgentChatView() {
                   <MessageBubble key={msg.id} message={msg} />
                 ))}
                 {isStreaming && !streamingText && !thinkingText && activeToolCalls.length === 0 && (
-                  <CookingIndicator />
+                  <CookingIndicator label={progressText || "Cooking..."} />
                 )}
                 {(streamingText || thinkingText || activeToolCalls.length > 0) && (
                   <StreamingBubble
@@ -153,6 +154,7 @@ export function AgentChatView() {
                     toolCalls={activeToolCalls}
                     thinkingText={thinkingText}
                     thinkingDurationMs={thinkingDurationMs}
+                    progressText={progressText}
                   />
                 )}
               </>

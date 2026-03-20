@@ -190,6 +190,7 @@ pub struct ChatAttachment {
 pub enum ChatStreamEvent {
     Delta(String),
     ThinkingDelta(String),
+    Progress(String),
     ToolCall {
         id: String,
         name: String,
@@ -309,6 +310,38 @@ impl ChatService {
         Some(session.id)
     }
 
+    /// Update the session's `context_usage_estimate` in aura-storage after a chat turn.
+    /// Fire-and-forget: logs a warning on failure.
+    pub(crate) async fn update_session_context_usage(
+        &self,
+        session_id: &str,
+        input_tokens: u64,
+        output_tokens: u64,
+    ) {
+        let Some(ref storage) = self.storage_client else { return };
+        let Some(jwt) = self.get_jwt() else { return };
+
+        let current = match storage.get_session(session_id, &jwt).await {
+            Ok(s) => s.context_usage_estimate.unwrap_or(0.0),
+            Err(e) => {
+                warn!(error = %e, "Failed to get session for context usage update");
+                return;
+            }
+        };
+        let turn_usage =
+            (input_tokens + output_tokens) as f64 / self.llm_config.max_context_tokens as f64;
+        let new_estimate = (current + turn_usage).min(1.0);
+
+        let req = aura_storage::UpdateSessionRequest {
+            status: None,
+            context_usage_estimate: Some(new_estimate),
+            ended_at: None,
+        };
+        if let Err(e) = storage.update_session(session_id, &jwt, &req).await {
+            warn!(error = %e, "Failed to update session context usage");
+        }
+    }
+
     /// Save a message to aura-storage.
     /// Fire-and-forget: logs a warning on failure but does not propagate errors.
     /// When `session_id` is provided, skips the session lookup HTTP call.
@@ -391,15 +424,17 @@ impl ChatService {
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(Utc::now);
+        let raw = sm.content.clone().unwrap_or_default();
+        let decoded = crate::message_metadata::decode_message_content(&raw);
         Message {
             message_id,
             agent_instance_id,
             project_id,
             role,
-            content: sm.content.clone().unwrap_or_default(),
-            content_blocks: None,
-            thinking: None,
-            thinking_duration_ms: None,
+            content: decoded.text,
+            content_blocks: decoded.content_blocks,
+            thinking: decoded.thinking,
+            thinking_duration_ms: decoded.thinking_duration_ms,
             created_at,
         }
     }

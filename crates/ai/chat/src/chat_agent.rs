@@ -141,6 +141,8 @@ impl ChatService {
             }
         };
 
+        let _ = tx.send(ChatStreamEvent::Progress("Building context...".to_string()));
+
         let system = build_multi_project_system_prompt(agent, projects);
 
         let mut api_messages = convert_messages_to_rich(&stored_messages);
@@ -151,6 +153,8 @@ impl ChatService {
 
         api_messages = crate::chat_sanitize::sanitize_orphan_tool_results(api_messages);
         api_messages = crate::chat_sanitize::sanitize_tool_use_results(api_messages);
+
+        let _ = tx.send(ChatStreamEvent::Progress("Waiting for response...".to_string()));
 
         let tools = multi_project_tool_definitions();
 

@@ -141,6 +141,8 @@ impl ChatService {
 
         self.maybe_generate_attachment_overview(&stored_messages, project_id, tx).await;
 
+        let _ = tx.send(ChatStreamEvent::Progress("Waiting for response...".to_string()));
+
         let tool_blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
         let executor = ChatToolLoopExecutor {
             inner: ChatToolExecutor::new(
@@ -208,6 +210,8 @@ impl ChatService {
             }
         };
 
+        let _ = tx.send(ChatStreamEvent::Progress("Loading conversation...".to_string()));
+
         let stored_messages = match self.list_messages_async(project_id, agent_instance_id).await {
             Ok(m) => m,
             Err(e) => {
@@ -215,6 +219,8 @@ impl ChatService {
                 return None;
             }
         };
+
+        let _ = tx.send(ChatStreamEvent::Progress("Building context...".to_string()));
 
         let custom_prompt = &agent_instance.system_prompt;
         let system = match self.project_service.get_project_async(project_id).await {
@@ -242,6 +248,21 @@ impl ChatService {
         project_id: &ProjectId,
         tx: &mpsc::UnboundedSender<ChatStreamEvent>,
     ) {
+        let has_text_attachments_flag = stored_messages.iter().any(|m| {
+            m.role == ChatRole::User
+                && m.content_blocks
+                    .as_ref()
+                    .map(|blocks| {
+                        blocks.iter().any(|b| {
+                            matches!(b, ChatContentBlock::Text { text } if text.contains("[File:"))
+                        })
+                    })
+                    .unwrap_or(false)
+        });
+        if has_text_attachments_flag {
+            let _ = tx.send(ChatStreamEvent::Progress("Analyzing attachments...".to_string()));
+        }
+
         let has_text_attachments = stored_messages.iter().any(|m| {
             m.role == ChatRole::User
                 && m.content_blocks

@@ -216,6 +216,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
   const [thinkingText, setThinkingText] = useState("");
   const [thinkingDurationMs, setThinkingDurationMs] = useState<number | null>(null);
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCallEntry[]>([]);
+  const [progressText, setProgressText] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
   const streamBufferRef = useRef("");
@@ -282,9 +283,10 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
         null,
         attachments,
         {
-          onThinkingDelta: (text) => handleThinkingDelta(text, refs, setters),
-          onDelta: (text) => handleTextDelta(text, thinkingDurationMs, refs, setters),
-          onToolCall: (info) => handleToolCall(info, refs, setters),
+          onProgress: (stage) => setProgressText(stage),
+          onThinkingDelta: (text) => { setProgressText(""); handleThinkingDelta(text, refs, setters); },
+          onDelta: (text) => { setProgressText(""); handleTextDelta(text, thinkingDurationMs, refs, setters); },
+          onToolCall: (info) => { setProgressText(""); handleToolCall(info, refs, setters); },
           onToolResult: (info) => handleToolResult(info, refs, setters),
           onSpecSaved: (spec) => onSpecSaved?.(spec),
           onTaskSaved: (task) => onTaskSaved?.(task),
@@ -330,6 +332,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
     thinkingText,
     thinkingDurationMs,
     activeToolCalls,
+    progressText,
     sendMessage,
     stopStreaming,
     resetMessages,

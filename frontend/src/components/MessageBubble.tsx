@@ -9,6 +9,7 @@ import styles from "./ChatView.module.css";
 import toolStyles from "./ToolCallBlock.module.css";
 import { ResponseBlock } from "./ResponseBlock";
 import { CookingIndicator, getStreamingPhaseLabel } from "./CookingIndicator";
+import { FilePreviewCard } from "./FilePreviewCard";
 
 import type { DisplayContentBlockUnion } from "../hooks/use-chat-stream";
 
@@ -88,10 +89,41 @@ const TOOL_LABELS: Record<string, string> = {
   get_progress: "Get stats",
 };
 
+const FILE_OPS = new Set(["write_file", "edit_file", "read_file"]);
+const ARTIFACT_OPS = new Set(["create_task", "create_spec"]);
+
+function ArtifactPreview({ entry }: { entry: ToolCallEntry }) {
+  const title = (entry.input.title as string) || "";
+  const description = (entry.input.description as string) || (entry.input.markdown_contents as string) || "";
+  const firstLine = description.split("\n")[0]?.slice(0, 120) || "";
+
+  return (
+    <div style={{ padding: "2px 0 2px 4px", fontSize: 12 }}>
+      {title && (
+        <div style={{ color: "var(--color-text, #ddd)", fontWeight: 500 }}>
+          {title}
+        </div>
+      )}
+      {firstLine && (
+        <div style={{ color: "var(--color-text-muted, #888)", fontSize: 11, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {firstLine}
+        </div>
+      )}
+      {entry.isError && entry.result && (
+        <div style={{ color: "#f87171", fontSize: 11, marginTop: 2 }}>
+          {entry.result.slice(0, 120)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolCallBlock({ entry }: { entry: ToolCallEntry }) {
   const [expanded, setExpanded] = useState(false);
   const label = TOOL_LABELS[entry.name] || entry.name;
   const inputSummary = summarizeInput(entry.name, entry.input);
+  const isFileOp = FILE_OPS.has(entry.name);
+  const isArtifactOp = ARTIFACT_OPS.has(entry.name);
 
   const stateClass = entry.pending
     ? toolStyles.taskActive
@@ -112,50 +144,101 @@ function ToolCallBlock({ entry }: { entry: ToolCallEntry }) {
           <span className={toolStyles.toolSummary}>{inputSummary}</span>
         )}
       </button>
-      <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
-        <div className={toolStyles.toolBody}>
-          <div className={toolStyles.section}>
-            <div className={toolStyles.sectionLabel}>Input</div>
-            <pre className={toolStyles.json}>
-              {JSON.stringify(entry.input, null, 2)}
-            </pre>
+      {isFileOp ? (
+        <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
+          <div className={toolStyles.toolBody}>
+            <FilePreviewCard entry={entry} />
           </div>
-          {entry.result != null && (
+        </div>
+      ) : isArtifactOp ? (
+        <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
+          <div className={toolStyles.toolBody}>
+            <ArtifactPreview entry={entry} />
+          </div>
+        </div>
+      ) : (
+        <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
+          <div className={toolStyles.toolBody}>
             <div className={toolStyles.section}>
-              <div className={toolStyles.sectionLabel}>
-                {entry.isError ? "Error" : "Result"}
-              </div>
-              <pre className={`${toolStyles.json} ${entry.isError ? toolStyles.errorText : ""}`}>
-                {formatResult(entry.result)}
+              <div className={toolStyles.sectionLabel}>Input</div>
+              <pre className={toolStyles.json}>
+                {JSON.stringify(entry.input, null, 2)}
               </pre>
             </div>
-          )}
+            {entry.result != null && (
+              <div className={toolStyles.section}>
+                <div className={toolStyles.sectionLabel}>
+                  {entry.isError ? "Error" : "Result"}
+                </div>
+                <pre className={`${toolStyles.json} ${entry.isError ? toolStyles.errorText : ""}`}>
+                  {formatResult(entry.result)}
+                </pre>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
 function ToolCallsList({ entries }: { entries: ToolCallEntry[] }) {
+  const [showAll, setShowAll] = useState(false);
   const pendingCount = entries.filter((e) => e.pending).length;
+  const doneCount = entries.length - pendingCount;
   const total = entries.length;
   const allDone = pendingCount === 0;
+
+  const nameCounts = new Map<string, number>();
+  for (const e of entries) {
+    nameCounts.set(e.name, (nameCounts.get(e.name) ?? 0) + 1);
+  }
+  let dominantName: string | null = null;
+  for (const [name, count] of nameCounts) {
+    if (count / total >= 0.7) {
+      dominantName = name;
+      break;
+    }
+  }
+
+  const isBatch = dominantName !== null && total > 3;
+
+  const batchLabel = () => {
+    const label = TOOL_LABELS[dominantName!] || dominantName!;
+    if (allDone) {
+      return <><strong>{total}</strong> {label.toLowerCase()} actions completed</>;
+    }
+    return <>{label}: <strong>{doneCount}</strong> of <strong>{total}</strong> completed...</>;
+  };
 
   return (
     <div className={toolStyles.toolCallsContainer}>
       <div className={toolStyles.toolCallsHeader}>
         <span className={`${toolStyles.headerDot} ${allDone ? toolStyles.headerDotDone : ""}`} />
         <span className={toolStyles.headerText}>
-          {allDone ? (
+          {isBatch ? (
+            batchLabel()
+          ) : allDone ? (
             <>Ran <strong>{total}</strong> {total === 1 ? "action" : "actions"}</>
           ) : (
             <><strong>Working</strong> on {total} to-do{total !== 1 ? "s" : ""}</>
           )}
         </span>
       </div>
-      {entries.map((tc) => (
-        <ToolCallBlock key={tc.id} entry={tc} />
-      ))}
+      {isBatch && !showAll ? (
+        <button
+          type="button"
+          className={toolStyles.toolHeader}
+          onClick={() => setShowAll(true)}
+          style={{ paddingLeft: 18, opacity: 0.7 }}
+        >
+          Show all {total} actions
+        </button>
+      ) : (
+        entries.map((tc) => (
+          <ToolCallBlock key={tc.id} entry={tc} />
+        ))
+      )}
     </div>
   );
 }
@@ -375,27 +458,31 @@ interface StreamingBubbleProps {
   toolCalls?: ToolCallEntry[];
   thinkingText?: string;
   thinkingDurationMs?: number | null;
+  progressText?: string;
 }
 
 function StreamingIndicator({
   text,
   thinkingText,
   toolCalls,
+  progressText,
 }: {
   text: string;
   thinkingText?: string;
   toolCalls?: ToolCallEntry[];
+  progressText?: string;
 }) {
   const label = getStreamingPhaseLabel({
     streamingText: text,
     thinkingText,
     toolCalls: toolCalls ?? [],
+    progressText,
   });
 
   return <CookingIndicator label={label ?? "Cooking..."} />;
 }
 
-export function StreamingBubble({ text, toolCalls, thinkingText, thinkingDurationMs }: StreamingBubbleProps) {
+export function StreamingBubble({ text, toolCalls, thinkingText, thinkingDurationMs, progressText }: StreamingBubbleProps) {
   const isThinking = Boolean(thinkingText) && !text;
   return (
     <div className={`${styles.message} ${styles.messageAssistant}`}>
@@ -419,7 +506,7 @@ export function StreamingBubble({ text, toolCalls, thinkingText, thinkingDuratio
               {normalizeMidSentenceBreaks(stripEmojis(text))}
             </ReactMarkdown>
           )}
-          <StreamingIndicator text={text} thinkingText={thinkingText} toolCalls={toolCalls} />
+          <StreamingIndicator text={text} thinkingText={thinkingText} toolCalls={toolCalls} progressText={progressText} />
         </div>
       </div>
     </div>

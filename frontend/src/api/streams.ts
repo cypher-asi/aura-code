@@ -44,6 +44,7 @@ export interface ChatAttachment {
 export interface ChatStreamCallbacks {
   onDelta: (text: string) => void;
   onThinkingDelta?: (text: string) => void;
+  onProgress?: (stage: string) => void;
   onToolCall?: (info: ToolCallInfo) => void;
   onToolResult?: (info: ToolResultInfo) => void;
   onSpecSaved?: (spec: Spec) => void;
@@ -112,7 +113,7 @@ export function sendAgentMessageStream(
   if (attachments && attachments.length > 0) {
     body.attachments = attachments;
   }
-  return streamSSE<"delta" | "thinking_delta" | "tool_call" | "tool_result" | "spec_saved" | "specs_title" | "specs_summary" | "task_saved" | "message_saved" | "agent_instance_updated" | "token_usage" | "error" | "done">(
+  return streamSSE<"delta" | "thinking_delta" | "progress" | "tool_call" | "tool_result" | "spec_saved" | "specs_title" | "specs_summary" | "task_saved" | "message_saved" | "agent_instance_updated" | "token_usage" | "error" | "done">(
     `${BASE_URL}/api/agents/${agentId}/messages/stream`,
     {
       method: "POST",
@@ -128,6 +129,9 @@ export function sendAgentMessageStream(
             break;
           case "thinking_delta":
             cb.onThinkingDelta?.(d.text as string);
+            break;
+          case "progress":
+            cb.onProgress?.(d.stage as string);
             break;
           case "tool_call":
             cb.onToolCall?.({
@@ -198,7 +202,7 @@ export function sendMessageStream(
   if (attachments && attachments.length > 0) {
     body.attachments = attachments;
   }
-  return streamSSE<"delta" | "thinking_delta" | "tool_call" | "tool_result" | "spec_saved" | "specs_title" | "specs_summary" | "task_saved" | "message_saved" | "agent_instance_updated" | "token_usage" | "error" | "done">(
+  return streamSSE<"delta" | "thinking_delta" | "progress" | "tool_call" | "tool_result" | "spec_saved" | "specs_title" | "specs_summary" | "task_saved" | "message_saved" | "agent_instance_updated" | "token_usage" | "error" | "done">(
     `${BASE_URL}/api/projects/${projectId}/agents/${agentInstanceId}/messages/stream`,
     {
       method: "POST",
@@ -214,6 +218,9 @@ export function sendMessageStream(
             break;
           case "thinking_delta":
             cb.onThinkingDelta?.(d.text as string);
+            break;
+          case "progress":
+            cb.onProgress?.(d.stage as string);
             break;
           case "tool_call":
             cb.onToolCall?.({

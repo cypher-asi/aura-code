@@ -72,6 +72,7 @@ interface StreamCtx {
   setActiveToolCalls: Dispatch<SetStateAction<ToolCallEntry[]>>;
   setMessages: Dispatch<SetStateAction<DisplayMessage[]>>;
   setIsStreaming: Dispatch<SetStateAction<boolean>>;
+  setProgressText: Dispatch<SetStateAction<string>>;
 }
 
 type StreamBufferState = Pick<StreamCtx,
@@ -210,6 +211,7 @@ function removePendingArtifact(
 }
 
 function handleThinkingDelta(ctx: StreamCtx, text: string) {
+  ctx.setProgressText("");
   if (ctx.thinkingStartRef.current === null) {
     ctx.thinkingStartRef.current = Date.now();
   }
@@ -223,6 +225,7 @@ function handleThinkingDelta(ctx: StreamCtx, text: string) {
 }
 
 function handleDelta(ctx: StreamCtx, text: string) {
+  ctx.setProgressText("");
   if (ctx.thinkingStartRef.current !== null && ctx.capturedThinkingDurationMs === null) {
     ctx.setThinkingDurationMs(Date.now() - ctx.thinkingStartRef.current);
   }
@@ -240,6 +243,7 @@ function handleDelta(ctx: StreamCtx, text: string) {
 }
 
 function handleToolCall(ctx: StreamCtx, info: ToolCallInfo) {
+  ctx.setProgressText("");
   const entry: ToolCallEntry = {
     id: info.id,
     name: info.name,
@@ -355,6 +359,7 @@ function handleStreamDone(ctx: StreamCtx) {
 
 function createStreamCallbacks(ctx: StreamCtx): ChatStreamCallbacks {
   return {
+    onProgress: (stage) => ctx.setProgressText(stage),
     onThinkingDelta: (text) => handleThinkingDelta(ctx, text),
     onDelta: (text) => handleDelta(ctx, text),
     onToolCall: (info) => handleToolCall(ctx, info),
@@ -400,6 +405,7 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
   const [thinkingText, setThinkingText] = useState("");
   const [thinkingDurationMs, setThinkingDurationMs] = useState<number | null>(null);
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCallEntry[]>([]);
+  const [progressText, setProgressText] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
   const streamBufferRef = useRef("");
@@ -443,7 +449,7 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
         streamBufferRef, thinkingBufferRef, thinkingStartRef, thinkingRafRef, rafRef,
         toolCallsRef, needsSeparatorRef, pendingSpecIdsRef, pendingTaskIdsRef, abortRef,
         setStreamingText, setThinkingText, setThinkingDurationMs, setActiveToolCalls,
-        setMessages, setIsStreaming,
+        setMessages, setIsStreaming, setProgressText,
       };
       resetStreamBuffers(ctx);
       needsSeparatorRef.current = false;
@@ -512,6 +518,7 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
     thinkingText,
     thinkingDurationMs,
     activeToolCalls,
+    progressText,
     sendMessage,
     stopStreaming,
     resetMessages,
