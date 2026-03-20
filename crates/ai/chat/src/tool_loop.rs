@@ -42,6 +42,7 @@ struct LoopState {
     last_write_target_signature: Option<String>,
     same_target_no_progress_streak: usize,
     plan_checkpoint_sent: bool,
+    auto_build_cooldown: usize,
 }
 
 impl LoopState {
@@ -111,10 +112,12 @@ pub async fn run_tool_loop(
         last_write_target_signature: None,
         same_target_no_progress_streak: 0,
         plan_checkpoint_sent: false,
+        auto_build_cooldown: 0,
     };
 
     for iteration in 0..config.max_iterations {
         decrement_write_file_cooldowns(&mut state.write_file_cooldowns);
+        state.auto_build_cooldown = state.auto_build_cooldown.saturating_sub(1);
         let iter = match run_single_iteration(
             &llm, api_key, system_prompt, &tools, config, event_tx, &mut state, iteration,
         ).await {
@@ -762,6 +765,19 @@ async fn process_tool_calls(
                  If any of these are uncertain, use one more read_file or search_code call to confirm \
                  before proceeding with further writes."
             ));
+        }
+
+        if state.auto_build_cooldown == 0 {
+            if let Some(build_result) = executor.auto_build_check().await {
+                state.auto_build_cooldown = 2;
+                let status = if build_result.success { "PASSED" } else { "FAILED" };
+                let msg = format!(
+                    "[AUTO-BUILD] Build check {status}:\n{}",
+                    build_result.output,
+                );
+                info!(success = build_result.success, "Auto-build check after write batch");
+                state.api_messages.push(RichMessage::user(&msg));
+            }
         }
     }
 

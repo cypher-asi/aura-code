@@ -6,10 +6,12 @@ use tokio::sync::Mutex;
 
 use aura_core::*;
 use aura_claude::ToolCall;
-use aura_chat::{ChatToolExecutor, ToolCallResult, ToolExecResult, ToolExecutor};
+use aura_chat::{AutoBuildResult, ChatToolExecutor, ToolCallResult, ToolExecResult, ToolExecutor};
 
+use super::build_fix::infer_default_build_command;
 use super::prompts::build_stub_fix_prompt;
 use super::types::{track_file_op, FollowUpSuggestion};
+use crate::build_verify;
 use crate::events::EngineEvent;
 use crate::file_ops::{self, FileOp};
 
@@ -38,6 +40,42 @@ pub(crate) struct EngineToolLoopExecutor {
 
 #[async_trait]
 impl ToolExecutor for EngineToolLoopExecutor {
+    async fn auto_build_check(&self) -> Option<AutoBuildResult> {
+        let project_root = std::path::Path::new(&self.project.linked_folder_path);
+        let cmd = self.project.build_command.as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(String::from)
+            .or_else(|| infer_default_build_command(project_root))?;
+
+        let _ = self.engine_event_tx.send(EngineEvent::TaskOutputDelta {
+            project_id: self.project_id,
+            agent_instance_id: self.agent_instance_id,
+            task_id: self.task_id,
+            delta: format!("\n[auto-build: {}]\n", cmd),
+        });
+
+        match build_verify::run_build_command(project_root, &cmd, None).await {
+            Ok(result) => {
+                let mut output = String::new();
+                if !result.stdout.is_empty() {
+                    output.push_str(&result.stdout);
+                }
+                if !result.stderr.is_empty() {
+                    if !output.is_empty() { output.push('\n'); }
+                    output.push_str(&result.stderr);
+                }
+                Some(AutoBuildResult {
+                    success: result.success,
+                    output,
+                })
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "auto-build check failed to execute");
+                None
+            }
+        }
+    }
+
     async fn execute(&self, tool_calls: &[ToolCall]) -> Vec<ToolCallResult> {
         let mut executor_indices: Vec<usize> = Vec::new();
         for (i, tc) in tool_calls.iter().enumerate() {

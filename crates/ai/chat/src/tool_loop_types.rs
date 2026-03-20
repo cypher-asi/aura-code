@@ -43,6 +43,19 @@ pub struct ToolCallResult {
 #[async_trait]
 pub trait ToolExecutor: Send + Sync {
     async fn execute(&self, tool_calls: &[ToolCall]) -> Vec<ToolCallResult>;
+
+    /// Run a lightweight build check (e.g. `cargo check --lib`) and return the
+    /// combined stdout+stderr output. Returns `None` when build checking is not
+    /// supported or not configured for this project.
+    async fn auto_build_check(&self) -> Option<AutoBuildResult> {
+        None
+    }
+}
+
+/// Result of an automatic build check triggered after write operations.
+pub struct AutoBuildResult {
+    pub success: bool,
+    pub output: String,
 }
 
 // ---------------------------------------------------------------------------
