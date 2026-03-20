@@ -1,8 +1,21 @@
 use std::path::Path;
+use std::sync::OnceLock;
 
 use regex::Regex;
 
 use super::FileOp;
+
+fn fn_signature_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"^\s*(?:pub(?:\(crate\))?\s+)?(?:async\s+)?fn\s+(\w+)\s*\(([^)]*)\)")
+            .expect("static regex")
+    })
+}
+fn return_type_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"->\s*(.+?)\s*\{?\s*$").expect("static regex"))
+}
 
 #[derive(Debug, Clone)]
 pub enum StubPattern {
@@ -115,11 +128,8 @@ fn detect_stubs_in_content(path: &str, content: &str, reports: &mut Vec<StubRepo
 /// parameters prefixed with `_` (unused). Uses simple regex heuristics rather
 /// than full AST parsing.
 fn detect_hollow_functions(path: &str, lines: &[&str], reports: &mut Vec<StubReport>) {
-    let fn_re = Regex::new(
-        r"^\s*(?:pub(?:\(crate\))?\s+)?(?:async\s+)?fn\s+(\w+)\s*\(([^)]*)\)",
-    )
-    .unwrap();
-    let return_re = Regex::new(r"->\s*(.+?)\s*\{?\s*$").unwrap();
+    let fn_re = fn_signature_re();
+    let return_re = return_type_re();
 
     let mut i = 0;
     while i < lines.len() {
@@ -137,8 +147,7 @@ fn detect_hollow_functions(path: &str, lines: &[&str], reports: &mut Vec<StubRep
             }
         };
 
-        let _fn_name = caps.get(1).unwrap().as_str();
-        let params_str = caps.get(2).unwrap().as_str().trim();
+        let params_str = caps.get(2).map(|m| m.as_str().trim()).unwrap_or("");
         let fn_line = i + 1;
 
         let has_return = return_re.captures(trimmed).is_some();

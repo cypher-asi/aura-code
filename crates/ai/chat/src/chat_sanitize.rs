@@ -247,8 +247,9 @@ fn merge_consecutive_same_role(messages: Vec<RichMessage>) -> Vec<RichMessage> {
             .map(|prev| prev.role == msg.role)
             .unwrap_or(false);
         if should_merge {
-            let prev = result.last_mut().unwrap();
-            merge_into(prev, msg);
+            if let Some(prev) = result.last_mut() {
+                merge_into(prev, msg);
+            }
         } else {
             result.push(msg);
         }

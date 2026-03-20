@@ -2,13 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
-use aura_claude::{
-    ClaudeStreamEvent, ContentBlock, RichMessage, ToolCall,
-    ToolDefinition, ToolStreamResponse,
-};
-use aura_billing::{MeteredLlm, MeteredLlmError};
+use aura_claude::{ContentBlock, RichMessage, ToolCall, ToolDefinition};
+use aura_billing::MeteredLlm;
 use crate::compaction;
 
 pub use crate::tool_loop_types::*;
@@ -19,51 +16,54 @@ use crate::tool_loop_helpers::{
     apply_cmd_failure_tracking,
     build_tool_result_blocks, summarize_write_file_input,
 };
+use crate::tool_loop_streaming::{
+    run_single_iteration, IterationOutcome, IterationCompleted,
+};
 
-struct ExplorationState {
-    total_calls: usize,
-    allowance: usize,
-    warning_mild_sent: bool,
-    warning_strong_sent: bool,
+pub(crate) struct ExplorationState {
+    pub(crate) total_calls: usize,
+    pub(crate) allowance: usize,
+    pub(crate) warning_mild_sent: bool,
+    pub(crate) warning_strong_sent: bool,
 }
 
-struct BudgetState {
-    cumulative_credits: u64,
-    warning_30_sent: bool,
-    warning_60_sent: bool,
+pub(crate) struct BudgetState {
+    pub(crate) cumulative_credits: u64,
+    pub(crate) warning_30_sent: bool,
+    pub(crate) warning_60_sent: bool,
 }
 
-struct WriteTrackingState {
-    consecutive_write_tracker: HashMap<String, usize>,
-    file_write_failures: HashMap<String, usize>,
-    cooldowns: HashMap<String, usize>,
-    last_target_signature: Option<String>,
-    no_progress_streak: usize,
+pub(crate) struct WriteTrackingState {
+    pub(crate) consecutive_write_tracker: HashMap<String, usize>,
+    pub(crate) file_write_failures: HashMap<String, usize>,
+    pub(crate) cooldowns: HashMap<String, usize>,
+    pub(crate) last_target_signature: Option<String>,
+    pub(crate) no_progress_streak: usize,
 }
 
-struct BuildState {
-    auto_build_cooldown: usize,
-    baseline: Option<BuildBaseline>,
-    plan_checkpoint_sent: bool,
+pub(crate) struct BuildState {
+    pub(crate) auto_build_cooldown: usize,
+    pub(crate) baseline: Option<BuildBaseline>,
+    pub(crate) plan_checkpoint_sent: bool,
 }
 
-struct LoopState {
-    api_messages: Vec<RichMessage>,
-    total_text: String,
-    total_thinking: String,
-    total_input_tokens: u64,
-    total_output_tokens: u64,
-    file_read_cache: HashMap<String, u64>,
-    consecutive_cmd_failures: usize,
-    file_read_counts: HashMap<String, usize>,
-    exploration: ExplorationState,
-    budget: BudgetState,
-    writes: WriteTrackingState,
-    build: BuildState,
+pub(crate) struct LoopState {
+    pub(crate) api_messages: Vec<RichMessage>,
+    pub(crate) total_text: String,
+    pub(crate) total_thinking: String,
+    pub(crate) total_input_tokens: u64,
+    pub(crate) total_output_tokens: u64,
+    pub(crate) file_read_cache: HashMap<String, u64>,
+    pub(crate) consecutive_cmd_failures: usize,
+    pub(crate) file_read_counts: HashMap<String, usize>,
+    pub(crate) exploration: ExplorationState,
+    pub(crate) budget: BudgetState,
+    pub(crate) writes: WriteTrackingState,
+    pub(crate) build: BuildState,
 }
 
 impl LoopState {
-    fn build_result(
+    pub(crate) fn build_result(
         &self,
         iterations_run: usize,
         timed_out: bool,
@@ -81,20 +81,6 @@ impl LoopState {
             llm_error,
         }
     }
-}
-
-enum IterationOutcome {
-    EarlyReturn(ToolLoopResult),
-    Completed(IterationCompleted),
-}
-
-struct IterationCompleted {
-    iter_text: String,
-    iter_tool_calls: Vec<ToolCall>,
-    input_tokens: u64,
-    output_tokens: u64,
-    stop_reason: String,
-    model_used: String,
 }
 
 pub async fn run_tool_loop(
@@ -299,166 +285,6 @@ fn check_budget_warnings(
     }
 
     None
-}
-
-async fn run_single_iteration(
-    llm: &Arc<MeteredLlm>,
-    api_key: &str,
-    system_prompt: &str,
-    tools: &Arc<[ToolDefinition]>,
-    config: &ToolLoopConfig,
-    event_tx: &mpsc::UnboundedSender<ToolLoopEvent>,
-    state: &mut LoopState,
-    iteration: usize,
-) -> IterationOutcome {
-    // Validate and repair message history before every API call to prevent
-    // 400 errors from orphaned tool blocks or broken alternation.
-    let repaired = chat_sanitize::validate_and_repair_messages(state.api_messages.clone());
-    if repaired.len() != state.api_messages.len() {
-        info!(
-            before = state.api_messages.len(),
-            after = repaired.len(),
-            "Pre-send validation repaired message history"
-        );
-    }
-    state.api_messages = repaired;
-
-    let (claude_tx, mut claude_rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-
-    let llm_clone = llm.clone();
-    let api_key_owned = api_key.to_string();
-    let system_owned = system_prompt.to_string();
-    let msgs_owned = state.api_messages.clone();
-    let tools_owned = tools.to_vec();
-    let max_tokens = config.max_tokens;
-    let thinking = config.thinking.clone();
-    let reason = config.billing_reason;
-
-    let model_override = config.model_override.clone();
-    let stream_handle = tokio::spawn(async move {
-        llm_clone
-            .complete_stream_with_tools_opt_model(
-                model_override.as_deref(),
-                &api_key_owned, &system_owned, msgs_owned, tools_owned,
-                max_tokens, thinking, claude_tx, reason, None,
-            )
-            .await
-    });
-
-    let mut iter_text = String::new();
-    let mut iter_tool_calls: Vec<ToolCall> = Vec::new();
-    let mut stream_error_forwarded = false;
-
-    let iter_timed_out = loop {
-        match tokio::time::timeout(config.stream_timeout, claude_rx.recv()).await {
-            Ok(Some(evt)) => match evt {
-                ClaudeStreamEvent::Delta(text) => {
-                    iter_text.push_str(&text);
-                    let _ = event_tx.send(ToolLoopEvent::Delta(text));
-                }
-                ClaudeStreamEvent::ToolUseStarted { id, name } => {
-                    let _ = event_tx.send(ToolLoopEvent::ToolUseStarted {
-                        id: id.clone(),
-                        name: name.clone(),
-                    });
-                }
-                ClaudeStreamEvent::ToolUse { id, name, input } => {
-                    let _ = event_tx.send(ToolLoopEvent::ToolUseDetected {
-                        id: id.clone(),
-                        name: name.clone(),
-                        input: input.clone(),
-                    });
-                    iter_tool_calls.push(ToolCall { id, name, input });
-                }
-                ClaudeStreamEvent::ThinkingDelta(text) => {
-                    state.total_thinking.push_str(&text);
-                    let _ = event_tx.send(ToolLoopEvent::ThinkingDelta(text));
-                }
-                ClaudeStreamEvent::Done { stop_reason, .. } => {
-                    info!(iteration, stop_reason = %stop_reason, tool_calls = iter_tool_calls.len(), "Tool loop iteration done");
-                }
-                ClaudeStreamEvent::Error(msg) => {
-                    let _ = event_tx.send(ToolLoopEvent::Error(msg));
-                    stream_error_forwarded = true;
-                }
-            },
-            Ok(None) => break false,
-            Err(_) => {
-                warn!(iteration, "Tool loop streaming timed out after {}s", config.stream_timeout.as_secs());
-                stream_handle.abort();
-                break true;
-            }
-        }
-    };
-
-    if iter_timed_out {
-        let _ = event_tx.send(ToolLoopEvent::Error("LLM streaming timed out".to_string()));
-        append_text(&mut state.total_text, &iter_text);
-        return IterationOutcome::EarlyReturn(state.build_result(iteration + 1, true, false, None));
-    }
-
-    handle_stream_result(
-        stream_handle, iter_text, iter_tool_calls,
-        stream_error_forwarded, event_tx, state, iteration,
-    )
-    .await
-}
-
-async fn handle_stream_result(
-    stream_handle: tokio::task::JoinHandle<Result<ToolStreamResponse, MeteredLlmError>>,
-    iter_text: String,
-    iter_tool_calls: Vec<ToolCall>,
-    stream_error_forwarded: bool,
-    event_tx: &mpsc::UnboundedSender<ToolLoopEvent>,
-    state: &mut LoopState,
-    iteration: usize,
-) -> IterationOutcome {
-    let stream_result = match stream_handle.await {
-        Ok(Ok(r)) => r,
-        Ok(Err(e)) => {
-            error!(iteration, error = %e, "LLM streaming failed");
-            let is_billing = e.is_billing_error();
-            let error_msg = format!("{e}");
-            if !stream_error_forwarded {
-                if e.is_insufficient_credits() {
-                    let _ = event_tx.send(ToolLoopEvent::Error(
-                        "Insufficient credits — please top up to continue.".to_string(),
-                    ));
-                } else if is_billing {
-                    let _ = event_tx.send(ToolLoopEvent::Error(
-                        format!("Billing error — stopping to prevent unbilled usage: {e}"),
-                    ));
-                } else if iter_text.is_empty() && iter_tool_calls.is_empty() {
-                    let _ = event_tx.send(ToolLoopEvent::Error(error_msg.clone()));
-                }
-            }
-            append_text(&mut state.total_text, &iter_text);
-            let llm_error = if is_billing { None } else { Some(error_msg) };
-            return IterationOutcome::EarlyReturn(
-                state.build_result(iteration + 1, false, is_billing, llm_error),
-            );
-        }
-        Err(e) => {
-            error!(iteration, error = %e, "Stream task panicked or was cancelled");
-            let error_msg = format!("Stream task error: {e}");
-            if iter_text.is_empty() && iter_tool_calls.is_empty() {
-                let _ = event_tx.send(ToolLoopEvent::Error(error_msg.clone()));
-            }
-            append_text(&mut state.total_text, &iter_text);
-            return IterationOutcome::EarlyReturn(
-                state.build_result(iteration + 1, false, false, Some(error_msg)),
-            );
-        }
-    };
-
-    IterationOutcome::Completed(IterationCompleted {
-        iter_text,
-        iter_tool_calls,
-        input_tokens: stream_result.input_tokens,
-        output_tokens: stream_result.output_tokens,
-        stop_reason: stream_result.stop_reason,
-        model_used: stream_result.model_used,
-    })
 }
 
 fn check_context_compaction(
@@ -744,10 +570,44 @@ async fn execute_with_blocked(
             if let Some(blocked) = build_blocked_result(i, tc, sets, state) {
                 blocked
             } else {
-                allowed_iter.next().expect("allowed_results count mismatch")
+                allowed_iter.next().unwrap_or_else(|| ToolCallResult {
+                    tool_use_id: tc.id.clone(),
+                    content: "internal error: result count mismatch".to_string(),
+                    is_error: true,
+                    stop_loop: false,
+                })
             }
         })
         .collect()
+}
+
+enum BlockReason<'a> {
+    DuplicateWrite { path: &'a str },
+    WriteFail { path: &'a str, count: usize },
+    Cooldown { path: &'a str, remaining: usize },
+    CommandBlocked { consecutive_failures: usize },
+    ReadBlocked { path: &'a str, count: usize },
+    ExplorationBlocked { total_calls: usize },
+}
+
+fn classify_block<'a>(index: usize, tc: &'a ToolCall, sets: &BlockedSets, state: &LoopState) -> Option<BlockReason<'a>> {
+    let path = || tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("unknown");
+
+    if sets.duplicate_write.contains(&index) {
+        Some(BlockReason::DuplicateWrite { path: path() })
+    } else if sets.write_fail.contains(&index) {
+        Some(BlockReason::WriteFail { path: path(), count: state.writes.file_write_failures.get(path()).copied().unwrap_or(0) })
+    } else if sets.cooldown.contains(&index) {
+        Some(BlockReason::Cooldown { path: path(), remaining: state.writes.cooldowns.get(path()).copied().unwrap_or(0) })
+    } else if sets.cmd.contains(&index) {
+        Some(BlockReason::CommandBlocked { consecutive_failures: state.consecutive_cmd_failures })
+    } else if sets.read.contains(&index) {
+        Some(BlockReason::ReadBlocked { path: path(), count: state.file_read_counts.get(path()).copied().unwrap_or(0) })
+    } else if sets.exploration.contains(&index) {
+        Some(BlockReason::ExplorationBlocked { total_calls: state.exploration.total_calls })
+    } else {
+        None
+    }
 }
 
 fn build_blocked_result(
@@ -756,12 +616,12 @@ fn build_blocked_result(
     sets: &BlockedSets,
     state: &LoopState,
 ) -> Option<ToolCallResult> {
-    if sets.duplicate_write.contains(&index) {
-        let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("unknown");
-        warn!(path, tool = %tc.name, "Blocked consecutive duplicate write/edit (2+ in a row)");
-        Some(ToolCallResult {
-            tool_use_id: tc.id.clone(),
-            content: serde_json::json!({
+    let reason = classify_block(index, tc, sets, state)?;
+
+    let content = match reason {
+        BlockReason::DuplicateWrite { path } => {
+            warn!(path, tool = %tc.name, "Blocked consecutive duplicate write/edit (2+ in a row)");
+            serde_json::json!({
                 "error": format!(
                     "You have called {} on '{}' repeatedly without success. \
                      Your output is likely being truncated due to context pressure. \
@@ -770,80 +630,56 @@ fn build_blocked_result(
                      body at a time.",
                     tc.name, path
                 )
-            }).to_string(),
-            is_error: true,
-            stop_loop: false,
-        })
-    } else if sets.write_fail.contains(&index) {
-        let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("unknown");
-        let count = state.writes.file_write_failures.get(path).copied().unwrap_or(0);
-        warn!(path, count, tool = %tc.name, "Blocked write after repeated failures");
-        Some(ToolCallResult {
-            tool_use_id: tc.id.clone(),
-            content: format!(
+            }).to_string()
+        }
+        BlockReason::WriteFail { path, count } => {
+            warn!(path, count, tool = %tc.name, "Blocked write after repeated failures");
+            format!(
                 "Writes to '{path}' blocked after {count} failures. STOP trying to write this file. \
                  Run `git checkout -- {path}` to restore it, then read_file to see the recovered content, \
                  and try a fundamentally different approach with small targeted edits."
-            ),
-            is_error: true,
-            stop_loop: false,
-        })
-    } else if sets.cooldown.contains(&index) {
-        let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("unknown");
-        let remaining = state.writes.cooldowns.get(path).copied().unwrap_or(0);
-        warn!(path, remaining, "Blocked write_file during adaptive cooldown");
-        Some(ToolCallResult {
-            tool_use_id: tc.id.clone(),
-            content: format!(
+            )
+        }
+        BlockReason::Cooldown { path, remaining } => {
+            warn!(path, remaining, "Blocked write_file during adaptive cooldown");
+            format!(
                 "write_file on '{path}' is temporarily blocked for {remaining} more iterations \
                  due to repeated rewrite stalls. Use edit_file with small, targeted chunks instead \
                  of rewriting the full file."
-            ),
-            is_error: true,
-            stop_loop: false,
-        })
-    } else if sets.cmd.contains(&index) {
-        warn!(tool = %tc.name, consecutive_failures = state.consecutive_cmd_failures,
-            "Blocked run_command after 5+ consecutive failures");
-        Some(ToolCallResult {
-            tool_use_id: tc.id.clone(),
-            content: "run_command is temporarily blocked after 5+ consecutive failures. \
-                      Use search_code, read_file, find_files, or list_files instead. \
-                      run_command will be unblocked after you successfully use another tool."
-                .to_string(),
-            is_error: true,
-            stop_loop: false,
-        })
-    } else if sets.read.contains(&index) {
-        let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("unknown");
-        let count = state.file_read_counts.get(path).copied().unwrap_or(0);
-        warn!(path, count, "Blocked fragmented re-read of same file");
-        Some(ToolCallResult {
-            tool_use_id: tc.id.clone(),
-            content: format!(
+            )
+        }
+        BlockReason::CommandBlocked { consecutive_failures } => {
+            warn!(tool = %tc.name, consecutive_failures,
+                "Blocked run_command after 5+ consecutive failures");
+            "run_command is temporarily blocked after 5+ consecutive failures. \
+             Use search_code, read_file, find_files, or list_files instead. \
+             run_command will be unblocked after you successfully use another tool."
+                .to_string()
+        }
+        BlockReason::ReadBlocked { path, count } => {
+            warn!(path, count, "Blocked fragmented re-read of same file");
+            format!(
                 "BLOCKED: You have read '{}' {} times. Use the content you already have. \
                  If you need a specific section, use search_code to find the exact lines.",
                 path, count
-            ),
-            is_error: true,
-            stop_loop: false,
-        })
-    } else if sets.exploration.contains(&index) {
-        warn!(tool = %tc.name, total = state.exploration.total_calls,
-            "Blocked exploration call (hard limit reached)");
-        Some(ToolCallResult {
-            tool_use_id: tc.id.clone(),
-            content: format!(
+            )
+        }
+        BlockReason::ExplorationBlocked { total_calls } => {
+            warn!(tool = %tc.name, total_calls, "Blocked exploration call (hard limit reached)");
+            format!(
                 "Exploration blocked after {} calls. Use the context you have and start \
                  implementing. Reads will unblock after you use write_file or edit_file.",
-                state.exploration.total_calls
-            ),
-            is_error: true,
-            stop_loop: false,
-        })
-    } else {
-        None
-    }
+                total_calls
+            )
+        }
+    };
+
+    Some(ToolCallResult {
+        tool_use_id: tc.id.clone(),
+        content,
+        is_error: true,
+        stop_loop: false,
+    })
 }
 
 fn track_write_failures(
@@ -981,7 +817,7 @@ fn sanitize_after_compaction(messages: &mut Vec<RichMessage>) {
     *messages = msgs;
 }
 
-fn append_text(total: &mut String, new: &str) {
+pub(crate) fn append_text(total: &mut String, new: &str) {
     if !new.is_empty() {
         if !total.is_empty() {
             total.push_str("\n\n");

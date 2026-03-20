@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use regex::Regex;
 
@@ -13,29 +14,39 @@ use super::{INCLUDE_EXTENSIONS, SKIP_DIRS};
 
 /// Parse task title and description for crate names, type names, and module
 /// names.  Returns a deduplicated list of keywords useful for matching files.
+fn pascal_case_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\b([A-Z][a-zA-Z0-9]+)\b").expect("static regex"))
+}
+fn crate_name_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\b(aura[_-]\w+)\b").expect("static regex"))
+}
+fn module_name_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\b([a-z][a-z0-9_]{2,})\b").expect("static regex"))
+}
+
 fn extract_task_keywords(task_title: &str, task_description: &str) -> Vec<String> {
     let combined = format!("{} {}", task_title, task_description);
     let mut keywords: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    let type_re = Regex::new(r"\b([A-Z][a-zA-Z0-9]+)\b").unwrap();
-    for cap in type_re.captures_iter(&combined) {
+    for cap in pascal_case_re().captures_iter(&combined) {
         let word = cap[1].to_string();
         if word.len() >= 3 && !COMMON_WORDS.contains(&word.as_str()) && seen.insert(word.clone()) {
             keywords.push(word);
         }
     }
 
-    let crate_re = Regex::new(r"\b(aura[_-]\w+)\b").unwrap();
-    for cap in crate_re.captures_iter(&combined) {
+    for cap in crate_name_re().captures_iter(&combined) {
         let name = cap[1].replace('-', "_");
         if seen.insert(name.clone()) {
             keywords.push(name);
         }
     }
 
-    let mod_re = Regex::new(r"\b([a-z][a-z0-9_]{2,})\b").unwrap();
-    for cap in mod_re.captures_iter(&combined) {
+    for cap in module_name_re().captures_iter(&combined) {
         let word = cap[1].to_string();
         if !COMMON_MODULE_STOP_WORDS.contains(&word.as_str()) && seen.insert(word.clone()) {
             keywords.push(word);
@@ -880,11 +891,10 @@ fn resolve_task_dep_api_context_cached_sync(
 /// Extract PascalCase type names (likely struct/trait/enum names) from text,
 /// filtering out standard library types and common English words.
 fn extract_type_names_from_text(text: &str) -> Vec<String> {
-    let type_re = Regex::new(r"\b([A-Z][a-zA-Z0-9]+)\b").unwrap();
     let mut names: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    for cap in type_re.captures_iter(text) {
+    for cap in pascal_case_re().captures_iter(text) {
         let word = cap[1].to_string();
         if word.len() >= 3
             && !COMMON_WORDS.contains(&word.as_str())

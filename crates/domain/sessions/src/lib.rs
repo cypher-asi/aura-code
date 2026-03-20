@@ -247,7 +247,12 @@ impl SessionService {
             let req = aura_storage::UpdateSessionRequest {
                 status: Some(status_str),
                 context_usage_estimate: None,
-                ended_at: Some(session.ended_at.unwrap().to_rfc3339()),
+                ended_at: Some(
+                    session
+                        .ended_at
+                        .ok_or(SessionError::Parse("ended_at missing on completed session".into()))?
+                        .to_rfc3339(),
+                ),
             };
             storage
                 .update_session(&session_id.to_string(), &jwt, &req)

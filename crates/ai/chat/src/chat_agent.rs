@@ -229,7 +229,7 @@ impl ChatService {
 
         let accumulated_blocks = match Arc::try_unwrap(tool_blocks) {
             Ok(mutex) => mutex.into_inner().unwrap_or_default(),
-            Err(arc) => arc.lock().unwrap().clone(),
+            Err(arc) => arc.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         };
         let has_tool_calls = !accumulated_blocks.is_empty();
         let content_blocks = if has_tool_calls { Some(accumulated_blocks) } else { None };
