@@ -422,25 +422,31 @@ export function TaskPreview({ task }: { task: import("../types").Task }) {
             test_verification_failed: "failed",
             test_fix_attempt: "fix_attempt",
           };
-          const loadedBuildSteps = res.build_steps?.map((s: Record<string, unknown>) => ({
-            kind: (buildKindMap[(s.type as string) ?? ""] ?? s.kind ?? "started") as BuildStep["kind"],
-            command: s.command as string | undefined,
-            stderr: s.stderr as string | undefined,
-            stdout: s.stdout as string | undefined,
-            attempt: s.attempt as number | undefined,
-            reason: (s.type === "build_verification_skipped" || s.kind === "skipped") ? (s.reason as string ?? s.stdout as string ?? undefined) : undefined,
-            timestamp: 0,
-          }));
-          const loadedTestSteps = res.test_steps?.map((s: Record<string, unknown>) => ({
-            kind: (testKindMap[(s.type as string) ?? ""] ?? s.kind ?? "started") as TestStep["kind"],
-            command: s.command as string | undefined,
-            stderr: s.stderr as string | undefined,
-            stdout: s.stdout as string | undefined,
-            attempt: s.attempt as number | undefined,
-            tests: (s.tests as { name: string; status: string; message?: string }[]) ?? [],
-            summary: s.summary as string | undefined,
-            timestamp: 0,
-          }));
+          const loadedBuildSteps = res.build_steps?.map((s) => {
+            const raw = s as unknown as { type?: string; reason?: string };
+            return {
+              kind: (buildKindMap[raw.type ?? ""] ?? s.kind ?? "started") as BuildStep["kind"],
+              command: s.command,
+              stderr: s.stderr,
+              stdout: s.stdout,
+              attempt: s.attempt,
+              reason: (raw.type === "build_verification_skipped" || s.kind === "skipped") ? (raw.reason ?? s.stdout) : undefined,
+              timestamp: 0,
+            };
+          });
+          const loadedTestSteps = res.test_steps?.map((s) => {
+            const raw = s as unknown as { type?: string };
+            return {
+              kind: (testKindMap[raw.type ?? ""] ?? s.kind ?? "started") as TestStep["kind"],
+              command: s.command,
+              stderr: s.stderr,
+              stdout: s.stdout,
+              attempt: s.attempt,
+              tests: s.tests ?? [],
+              summary: s.summary,
+              timestamp: 0,
+            };
+          });
           if (res.output || loadedBuildSteps?.length || loadedTestSteps?.length) {
             seedTaskOutput(task.task_id, res.output, loadedBuildSteps, loadedTestSteps);
           }
