@@ -86,6 +86,45 @@ npm run dev
 
 Open `http://localhost:5173`. The Vite dev server proxies `/api` and `/ws` to `http://localhost:3100`, so the backend must be running.
 
+### Run mobile web / simulator
+
+For mobile browser or simulator testing, use the shared mobile dev runner from the repo root:
+
+```bash
+./scripts/run-mobile-dev.sh
+```
+
+What it does:
+
+- starts `aura-server` on `127.0.0.1:3100`
+- starts the frontend on `127.0.0.1:5173`
+- binds Vite to `127.0.0.1` so iOS Simulator / Android Emulator can reach it consistently
+- fails fast if those ports are already in use, so the printed URLs stay accurate
+
+Open:
+
+- `http://127.0.0.1:5173/projects`
+
+The same workflow supports both modes:
+
+- **Local-only mobile**: leave `AURA_NETWORK_URL`, `AURA_STORAGE_URL`, and `ORBIT_BASE_URL` unset in `.env`
+- **Remote-backed mobile**: set those URLs in `.env`, then run the same script
+
+Recommended remote-backed setup:
+
+```bash
+AURA_NETWORK_URL=https://aura-network.onrender.com
+AURA_STORAGE_URL=https://aura-storage.onrender.com
+ORBIT_BASE_URL=https://orbit-sfvu.onrender.com
+```
+
+Notes:
+
+- Mobile web uses the local Aura host (`aura-server`) even when the underlying services are remote.
+- Some capabilities remain desktop-only by design, such as linked host folders, IDE open, and other native bridge actions.
+- Imported project files do work on mobile through the shared host file APIs; true linked-workspace browsing is still a desktop capability.
+- If you need different ports, set `AURA_SERVER_PORT` and/or `AURA_FRONTEND_PORT` before running the script.
+
 ### Run desktop app
 
 Build the frontend once, then run the desktop shell (it embeds the server and frontend):
