@@ -261,7 +261,7 @@ pub(crate) fn summarize_write_file_input(input: &serde_json::Value) -> serde_jso
     let lines: Vec<&str> = content.lines().collect();
     let line_count = lines.len();
 
-    const HEAD_LINES: usize = 10;
+    const HEAD_LINES: usize = 20;
     const TAIL_LINES: usize = 5;
 
     let summary = if line_count <= HEAD_LINES + TAIL_LINES + 2 {
@@ -270,11 +270,16 @@ pub(crate) fn summarize_write_file_input(input: &serde_json::Value) -> serde_jso
         let head: Vec<&str> = lines[..HEAD_LINES].to_vec();
         let tail: Vec<&str> = lines[line_count - TAIL_LINES..].to_vec();
         format!(
-            "{}\n// ... ({} lines omitted, {} total lines, {} chars) ...\n// ... content successfully written to disk. Use read_file to see full content. ...\n{}",
+            "{}\n\
+             // [CONTEXT COMPACTED: {} lines omitted from this tool_use block to save tokens.\n\
+             //  The FULL content ({} lines, {} chars) was successfully written to disk at '{}'.\n\
+             //  This is NOT an error. Use read_file if you need to see the omitted lines.]\n\
+             {}",
             head.join("\n"),
             line_count - HEAD_LINES - TAIL_LINES,
             line_count,
             content_len,
+            path,
             tail.join("\n"),
         )
     };
