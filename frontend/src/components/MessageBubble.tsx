@@ -119,9 +119,10 @@ function ArtifactPreview({ entry }: { entry: ToolCallEntry }) {
 }
 
 function ToolCallBlock({ entry }: { entry: ToolCallEntry }) {
-  const [expanded, setExpanded] = useState(false);
+  const autoExpand = entry.started && ARTIFACT_OPS.has(entry.name);
+  const [expanded, setExpanded] = useState(autoExpand);
   const label = TOOL_LABELS[entry.name] || entry.name;
-  const inputSummary = summarizeInput(entry.name, entry.input);
+  const inputSummary = entry.started ? "" : summarizeInput(entry.name, entry.input);
   const isFileOp = FILE_OPS.has(entry.name);
   const isArtifactOp = ARTIFACT_OPS.has(entry.name);
 
@@ -130,6 +131,60 @@ function ToolCallBlock({ entry }: { entry: ToolCallEntry }) {
     : entry.isError
       ? toolStyles.taskError
       : toolStyles.taskDone;
+
+  const renderBody = () => {
+    if (entry.started) {
+      return (
+        <div className={toolStyles.toolBodyWrap} style={{ maxHeight: 28, overflow: "hidden" }}>
+          <div className={toolStyles.toolBody}>
+            <span style={{ fontSize: 11, color: "var(--color-text-muted, #888)" }}>
+              Generating…
+            </span>
+          </div>
+        </div>
+      );
+    }
+    if (isFileOp) {
+      return (
+        <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
+          <div className={toolStyles.toolBody}>
+            <FilePreviewCard entry={entry} />
+          </div>
+        </div>
+      );
+    }
+    if (isArtifactOp) {
+      return (
+        <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
+          <div className={toolStyles.toolBody}>
+            <ArtifactPreview entry={entry} />
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
+        <div className={toolStyles.toolBody}>
+          <div className={toolStyles.section}>
+            <div className={toolStyles.sectionLabel}>Input</div>
+            <pre className={toolStyles.json}>
+              {JSON.stringify(entry.input, null, 2)}
+            </pre>
+          </div>
+          {entry.result != null && (
+            <div className={toolStyles.section}>
+              <div className={toolStyles.sectionLabel}>
+                {entry.isError ? "Error" : "Result"}
+              </div>
+              <pre className={`${toolStyles.json} ${entry.isError ? toolStyles.errorText : ""}`}>
+                {formatResult(entry.result)}
+              </pre>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className={`${toolStyles.toolBlock} ${stateClass}`}>
@@ -144,40 +199,7 @@ function ToolCallBlock({ entry }: { entry: ToolCallEntry }) {
           <span className={toolStyles.toolSummary}>{inputSummary}</span>
         )}
       </button>
-      {isFileOp ? (
-        <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
-          <div className={toolStyles.toolBody}>
-            <FilePreviewCard entry={entry} />
-          </div>
-        </div>
-      ) : isArtifactOp ? (
-        <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
-          <div className={toolStyles.toolBody}>
-            <ArtifactPreview entry={entry} />
-          </div>
-        </div>
-      ) : (
-        <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
-          <div className={toolStyles.toolBody}>
-            <div className={toolStyles.section}>
-              <div className={toolStyles.sectionLabel}>Input</div>
-              <pre className={toolStyles.json}>
-                {JSON.stringify(entry.input, null, 2)}
-              </pre>
-            </div>
-            {entry.result != null && (
-              <div className={toolStyles.section}>
-                <div className={toolStyles.sectionLabel}>
-                  {entry.isError ? "Error" : "Result"}
-                </div>
-                <pre className={`${toolStyles.json} ${entry.isError ? toolStyles.errorText : ""}`}>
-                  {formatResult(entry.result)}
-                </pre>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {renderBody()}
     </div>
   );
 }
