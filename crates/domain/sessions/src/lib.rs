@@ -329,21 +329,31 @@ impl SessionService {
         Ok(session)
     }
 
+    /// Close stale active sessions for a specific agent instance (scoped)
+    /// or all agent instances in the project (broad, if `agent_instance_id` is None).
     pub async fn close_stale_sessions(
         &self,
         project_id: &ProjectId,
+        agent_instance_id: Option<&AgentInstanceId>,
     ) -> Result<Vec<Session>, SessionError> {
         let Some(ref storage) = self.storage_client else {
             return Ok(Vec::new());
         };
         let jwt = self.get_jwt()?;
-        let agents = storage
-            .list_project_agents(&project_id.to_string(), &jwt)
-            .await?;
+
+        let agent_ids: Vec<String> = if let Some(aiid) = agent_instance_id {
+            vec![aiid.to_string()]
+        } else {
+            let agents = storage
+                .list_project_agents(&project_id.to_string(), &jwt)
+                .await?;
+            agents.into_iter().map(|a| a.id).collect()
+        };
+
         let mut closed = Vec::new();
         let now = Utc::now();
-        for agent in &agents {
-            let sessions = storage.list_sessions(&agent.id, &jwt).await?;
+        for aid in &agent_ids {
+            let sessions = storage.list_sessions(aid, &jwt).await?;
             for ss in sessions {
                 if ss.status.as_deref() == Some("active") {
                     let req = aura_storage::UpdateSessionRequest {

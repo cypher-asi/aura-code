@@ -178,11 +178,6 @@ impl DevLoopEngine {
     ) -> Result<LoopHandle, EngineError> {
         let _project = self.project_service.get_project_async(&project_id).await?;
 
-        let stale = self.session_service.close_stale_sessions(&project_id).await?;
-        if !stale.is_empty() {
-            info!("closed {} stale active session(s) from previous run", stale.len());
-        }
-
         let agent = if let Some(aiid) = agent_instance_id {
             self.agent_instance_service
                 .get_instance(&project_id, &aiid)
@@ -208,6 +203,14 @@ impl DevLoopEngine {
                 .create_instance_from_agent(&project_id, &default_agent)
                 .await?
         };
+
+        let stale = self.session_service.close_stale_sessions(
+            &project_id,
+            Some(&agent.agent_instance_id),
+        ).await?;
+        if !stale.is_empty() {
+            info!("closed {} stale active session(s) for agent {}", stale.len(), agent.agent_instance_id);
+        }
 
         let agent = if agent.status == AgentStatus::Working {
             info!(
