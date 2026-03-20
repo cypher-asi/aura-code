@@ -144,6 +144,161 @@ struct TaskSessionEntry {
     session_id: aura_core::SessionId,
 }
 
+type DeltaBroadcastBuf = HashMap<aura_core::TaskId, (aura_core::ProjectId, aura_core::AgentInstanceId, String)>;
+type ReadyBroadcastBuf = Vec<(aura_core::ProjectId, aura_core::AgentInstanceId, aura_core::TaskId)>;
+
+/// Buffers a task output delta into the live output buffer and the coalesced
+/// broadcast buffer.
+fn handle_task_output_delta(
+    task_id: aura_core::TaskId,
+    project_id: aura_core::ProjectId,
+    agent_instance_id: aura_core::AgentInstanceId,
+    delta: &str,
+    task_output_buffers: &TaskOutputBuffers,
+    delta_broadcast_buf: &mut DeltaBroadcastBuf,
+    delta_count: &mut u64,
+    store: &Arc<RocksStore>,
+) {
+    if let Ok(mut bufs) = task_output_buffers.lock() {
+        bufs.entry(task_id).or_default().push_str(delta);
+    }
+    *delta_count += 1;
+    if *delta_count % LIVE_OUTPUT_FLUSH_INTERVAL == 0 {
+        flush_live_output(store, task_output_buffers);
+    }
+    let entry = delta_broadcast_buf.entry(task_id)
+        .or_insert_with(|| (project_id, agent_instance_id, String::new()));
+    entry.2.push_str(delta);
+}
+
+/// Records a build or test verification step event into the step buffer.
+fn handle_verification_event(
+    event: &EngineEvent,
+    task_id: &aura_core::TaskId,
+    is_build: bool,
+    task_step_buffers: &TaskStepBuffers,
+) {
+    if let Ok(val) = serde_json::to_value(event) {
+        if let Ok(mut steps) = task_step_buffers.lock() {
+            let entry = steps.entry(*task_id).or_default();
+            if is_build { entry.0.push(val); } else { entry.1.push(val); }
+        }
+    }
+}
+
+/// Handles task completion/failure: extracts buffered output and steps,
+/// persists to storage, and cleans up tracking state.
+async fn handle_task_end(
+    event: &EngineEvent,
+    task_id: &aura_core::TaskId,
+    task_output_buffers: &TaskOutputBuffers,
+    task_step_buffers: &TaskStepBuffers,
+    task_session_map: &mut HashMap<aura_core::TaskId, TaskSessionEntry>,
+    storage_client: &Option<Arc<StorageClient>>,
+    store: &Arc<RocksStore>,
+) -> Option<(aura_core::TaskId, String)> {
+    let output = if let Ok(mut bufs) = task_output_buffers.lock() {
+        bufs.remove(task_id).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let (build_steps, test_steps) = if let Ok(mut steps) = task_step_buffers.lock() {
+        steps.remove(task_id).unwrap_or_default()
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let log_entry = Some((*task_id, output.clone()));
+
+    if let Some(ref sc) = storage_client {
+        if let Some(jwt) = store.get_jwt() {
+            persist_task_to_storage(
+                sc, &jwt, event, &output,
+                task_session_map.get(task_id),
+                &build_steps, &test_steps,
+            ).await;
+        }
+    }
+    task_session_map.remove(task_id);
+    finalize_live_output(store, task_output_buffers, task_id);
+
+    log_entry
+}
+
+/// Fires loop_log lifecycle hooks for the given event.
+async fn write_loop_log_lifecycle(
+    loop_log: &LoopLogWriter,
+    event: &EngineEvent,
+    task_output_for_log: &mut Option<(aura_core::TaskId, String)>,
+) {
+    loop_log.on_event(event).await;
+    match event {
+        EngineEvent::LoopStarted { project_id, agent_instance_id, .. } => {
+            loop_log.on_loop_started(*project_id, *agent_instance_id).await;
+        }
+        EngineEvent::TaskStarted { project_id, agent_instance_id, task_id, .. } => {
+            loop_log.on_task_started(*project_id, *agent_instance_id, *task_id).await;
+        }
+        EngineEvent::TaskCompleted { .. } | EngineEvent::TaskFailed { .. } => {
+            if let Some((tid, ref out)) = task_output_for_log.take() {
+                loop_log.on_task_end(tid, out).await;
+            }
+        }
+        EngineEvent::LoopFinished { project_id, agent_instance_id, .. }
+        | EngineEvent::LoopStopped { project_id, agent_instance_id, .. } => {
+            loop_log.on_loop_ended(*project_id, *agent_instance_id).await;
+        }
+        _ => {}
+    }
+}
+
+/// Writes an event as a log entry to aura-storage.
+async fn write_storage_log_entry(
+    storage_client: &Option<Arc<StorageClient>>,
+    store: &Arc<RocksStore>,
+    event: &EngineEvent,
+) {
+    if let Some(ref sc) = storage_client {
+        if let Some(pid) = event_project_id(event) {
+            if let Some(jwt) = store.get_jwt() {
+                let metadata = serde_json::to_value(event).ok();
+                let req = aura_storage::CreateLogEntryRequest {
+                    level: event_log_level(event).to_string(),
+                    message: event_summary(event),
+                    metadata,
+                };
+                if let Err(e) = sc.create_log_entry(&pid.to_string(), &jwt, &req).await {
+                    debug!("Failed to write log entry to aura-storage: {e}");
+                }
+            }
+        }
+    }
+}
+
+/// Drains coalesced delta and ready buffers, broadcasting them as batched events.
+fn flush_buffered_events(
+    broadcast_tx: &broadcast::Sender<EngineEvent>,
+    delta_broadcast_buf: &mut DeltaBroadcastBuf,
+    ready_broadcast_buf: &mut ReadyBroadcastBuf,
+) {
+    for (task_id, (pid, aiid, text)) in delta_broadcast_buf.drain() {
+        let _ = broadcast_tx.send(EngineEvent::TaskOutputDelta {
+            project_id: pid,
+            agent_instance_id: aiid,
+            task_id,
+            delta: text,
+        });
+    }
+    if !ready_broadcast_buf.is_empty() {
+        let (pid, aiid, _) = ready_broadcast_buf[0];
+        let task_ids: Vec<aura_core::TaskId> = ready_broadcast_buf.drain(..).map(|(_, _, tid)| tid).collect();
+        let _ = broadcast_tx.send(EngineEvent::TasksBecameReady {
+            project_id: pid,
+            agent_instance_id: aiid,
+            task_ids,
+        });
+    }
+}
+
 fn spawn_event_rebroadcast(
     mut rx: mpsc::UnboundedReceiver<EngineEvent>,
     broadcast_tx: broadcast::Sender<EngineEvent>,
@@ -155,8 +310,8 @@ fn spawn_event_rebroadcast(
 ) {
     tokio::spawn(async move {
         let mut delta_count: u64 = 0;
-        let mut delta_broadcast_buf: HashMap<aura_core::TaskId, (aura_core::ProjectId, aura_core::AgentInstanceId, String)> = HashMap::new();
-        let mut ready_broadcast_buf: Vec<(aura_core::ProjectId, aura_core::AgentInstanceId, aura_core::TaskId)> = Vec::new();
+        let mut delta_broadcast_buf: DeltaBroadcastBuf = HashMap::new();
+        let mut ready_broadcast_buf: ReadyBroadcastBuf = Vec::new();
         let mut flush_interval = interval(Duration::from_millis(DELTA_BROADCAST_INTERVAL_MS));
         flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut task_output_for_log: Option<(aura_core::TaskId, String)> = None;
@@ -166,18 +321,14 @@ fn spawn_event_rebroadcast(
             tokio::select! {
                 maybe_event = rx.recv() => {
                     let Some(event) = maybe_event else { break };
+
                     match &event {
                         EngineEvent::TaskOutputDelta { project_id, agent_instance_id, task_id, delta } => {
-                            if let Ok(mut bufs) = task_output_buffers.lock() {
-                                bufs.entry(*task_id).or_default().push_str(delta);
-                            }
-                            delta_count += 1;
-                            if delta_count % LIVE_OUTPUT_FLUSH_INTERVAL == 0 {
-                                flush_live_output(&store, &task_output_buffers);
-                            }
-                            let entry = delta_broadcast_buf.entry(*task_id)
-                                .or_insert_with(|| (*project_id, *agent_instance_id, String::new()));
-                            entry.2.push_str(delta);
+                            handle_task_output_delta(
+                                *task_id, *project_id, *agent_instance_id, delta,
+                                &task_output_buffers, &mut delta_broadcast_buf,
+                                &mut delta_count, &store,
+                            );
                         }
                         EngineEvent::TaskBecameReady { project_id, agent_instance_id, task_id } => {
                             ready_broadcast_buf.push((*project_id, *agent_instance_id, *task_id));
@@ -197,47 +348,21 @@ fn spawn_event_rebroadcast(
                         | EngineEvent::BuildVerificationPassed { task_id, .. }
                         | EngineEvent::BuildVerificationFailed { task_id, .. }
                         | EngineEvent::BuildFixAttempt { task_id, .. } => {
-                            if let Ok(val) = serde_json::to_value(&event) {
-                                if let Ok(mut steps) = task_step_buffers.lock() {
-                                    steps.entry(*task_id).or_default().0.push(val);
-                                }
-                            }
+                            handle_verification_event(&event, task_id, true, &task_step_buffers);
                         }
                         EngineEvent::TestVerificationStarted { task_id, .. }
                         | EngineEvent::TestVerificationPassed { task_id, .. }
                         | EngineEvent::TestVerificationFailed { task_id, .. }
                         | EngineEvent::TestFixAttempt { task_id, .. } => {
-                            if let Ok(val) = serde_json::to_value(&event) {
-                                if let Ok(mut steps) = task_step_buffers.lock() {
-                                    steps.entry(*task_id).or_default().1.push(val);
-                                }
-                            }
+                            handle_verification_event(&event, task_id, false, &task_step_buffers);
                         }
                         EngineEvent::TaskCompleted { task_id, .. }
                         | EngineEvent::TaskFailed { task_id, .. } => {
-                            let output = if let Ok(mut bufs) = task_output_buffers.lock() {
-                                bufs.remove(task_id).unwrap_or_default()
-                            } else {
-                                String::new()
-                            };
-                            let (build_steps, test_steps) = if let Ok(mut steps) = task_step_buffers.lock() {
-                                steps.remove(task_id).unwrap_or_default()
-                            } else {
-                                (Vec::new(), Vec::new())
-                            };
-                            task_output_for_log = Some((*task_id, output.clone()));
-
-                            if let Some(ref sc) = storage_client {
-                                if let Some(jwt) = store.get_jwt() {
-                                    persist_task_to_storage(
-                                        sc, &jwt, &event, &output,
-                                        task_session_map.get(task_id),
-                                        &build_steps, &test_steps,
-                                    ).await;
-                                }
-                            }
-                            task_session_map.remove(task_id);
-                            finalize_live_output(&store, &task_output_buffers, task_id);
+                            task_output_for_log = handle_task_end(
+                                &event, task_id,
+                                &task_output_buffers, &task_step_buffers,
+                                &mut task_session_map, &storage_client, &store,
+                            ).await;
                         }
                         EngineEvent::LoopStopped { .. } | EngineEvent::LoopFinished { .. } => {
                             task_session_map.clear();
@@ -253,66 +378,9 @@ fn spawn_event_rebroadcast(
                         continue;
                     }
 
-                    // Loop log: write event and lifecycle hooks
-                    loop_log.on_event(&event).await;
-                    match &event {
-                        EngineEvent::LoopStarted { project_id, agent_instance_id, .. } => {
-                            loop_log.on_loop_started(*project_id, *agent_instance_id).await;
-                        }
-                        EngineEvent::TaskStarted { project_id, agent_instance_id, task_id, .. } => {
-                            loop_log.on_task_started(*project_id, *agent_instance_id, *task_id).await;
-                        }
-                        EngineEvent::TaskCompleted { .. } | EngineEvent::TaskFailed { .. } => {
-                            if let Some((tid, ref out)) = task_output_for_log.take() {
-                                loop_log.on_task_end(tid, out).await;
-                            }
-                        }
-                        EngineEvent::LoopFinished { project_id, agent_instance_id, .. }
-                        | EngineEvent::LoopStopped { project_id, agent_instance_id, .. } => {
-                            loop_log.on_loop_ended(*project_id, *agent_instance_id).await;
-                        }
-                        _ => {}
-                    }
-
-                    // Write to aura-storage
-                    if let Some(ref sc) = storage_client {
-                        if let Some(pid) = event_project_id(&event) {
-                            if let Some(jwt) = store.get_jwt() {
-                                let metadata = serde_json::to_value(&event).ok();
-                                let req = aura_storage::CreateLogEntryRequest {
-                                    level: event_log_level(&event).to_string(),
-                                    message: event_summary(&event),
-                                    metadata,
-                                };
-                                if let Err(e) = sc.create_log_entry(&pid.to_string(), &jwt, &req).await {
-                                    debug!("Failed to write log entry to aura-storage: {e}");
-                                }
-                            }
-                        }
-                    }
-
-                    // Flush any buffered deltas before broadcasting a non-delta event,
-                    // so the WS client always sees deltas before the event that follows them.
-                    for (task_id, (pid, aiid, text)) in delta_broadcast_buf.drain() {
-                        let coalesced = EngineEvent::TaskOutputDelta {
-                            project_id: pid,
-                            agent_instance_id: aiid,
-                            task_id,
-                            delta: text,
-                        };
-                        let _ = broadcast_tx.send(coalesced);
-                    }
-
-                    // Flush buffered TaskBecameReady as a single batched event
-                    if !ready_broadcast_buf.is_empty() {
-                        let (pid, aiid, _) = ready_broadcast_buf[0];
-                        let task_ids: Vec<aura_core::TaskId> = ready_broadcast_buf.drain(..).map(|(_, _, tid)| tid).collect();
-                        let _ = broadcast_tx.send(EngineEvent::TasksBecameReady {
-                            project_id: pid,
-                            agent_instance_id: aiid,
-                            task_ids,
-                        });
-                    }
+                    write_loop_log_lifecycle(&loop_log, &event, &mut task_output_for_log).await;
+                    write_storage_log_entry(&storage_client, &store, &event).await;
+                    flush_buffered_events(&broadcast_tx, &mut delta_broadcast_buf, &mut ready_broadcast_buf);
 
                     debug!(?event, "Broadcasting engine event");
                     if broadcast_tx.send(event).is_err() {
@@ -320,25 +388,7 @@ fn spawn_event_rebroadcast(
                     }
                 }
                 _ = flush_interval.tick() => {
-                    for (task_id, (pid, aiid, text)) in delta_broadcast_buf.drain() {
-                        debug!(%task_id, len = text.len(), "Flushing coalesced delta");
-                        let _ = broadcast_tx.send(EngineEvent::TaskOutputDelta {
-                            project_id: pid,
-                            agent_instance_id: aiid,
-                            task_id,
-                            delta: text,
-                        });
-                    }
-                    if !ready_broadcast_buf.is_empty() {
-                        let (pid, aiid, _) = ready_broadcast_buf[0];
-                        let task_ids: Vec<aura_core::TaskId> = ready_broadcast_buf.drain(..).map(|(_, _, tid)| tid).collect();
-                        debug!(count = task_ids.len(), "Flushing coalesced TasksBecameReady");
-                        let _ = broadcast_tx.send(EngineEvent::TasksBecameReady {
-                            project_id: pid,
-                            agent_instance_id: aiid,
-                            task_ids,
-                        });
-                    }
+                    flush_buffered_events(&broadcast_tx, &mut delta_broadcast_buf, &mut ready_broadcast_buf);
                 }
             }
         }
