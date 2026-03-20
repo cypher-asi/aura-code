@@ -442,7 +442,7 @@ pub(crate) fn build_fix_prompt_with_history(
         for (t, _) in &error_refs.methods_not_found {
             *type_counts.entry(t.as_str()).or_insert(0) += 1;
         }
-        if type_counts.values().any(|&c| c >= 5) || error_refs.wrong_arg_counts.len() >= 3 {
+        if type_counts.values().any(|&c| c >= 3) || error_refs.wrong_arg_counts.len() >= 3 {
             categories.push(super::build_fix::ErrorCategory::RustApiHallucination);
         }
     }
@@ -471,9 +471,9 @@ pub(crate) fn build_fix_prompt_with_history(
         prompt.push_str(&format!("## stdout\n```\n{}\n```\n\n", truncated_stdout));
     }
 
-    if error_refs.methods_not_found.len() > 5 {
+    if error_refs.methods_not_found.len() > 3 {
         prompt.push_str(
-            "WARNING: You are calling 5+ methods that do not exist. You MUST use ONLY \
+            "WARNING: You are calling 3+ methods that do not exist. You MUST use ONLY \
              the methods listed in the \"Actual API Reference\" section below. Do NOT \
              invent or guess method names.\n\n",
         );
