@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use aura_core::*;
 
 use crate::chat_tool_executor::{ChatToolExecutor, ToolExecResult};
-use crate::tool_loop_helpers::looks_truncated;
+use crate::tool_loop_blocking::looks_truncated;
 use super::str_field;
 
 const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10 MB

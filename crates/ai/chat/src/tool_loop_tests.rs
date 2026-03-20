@@ -4,10 +4,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use aura_claude::mock::{MockLlmProvider, MockResponse};
 use aura_billing::testutil;
-use crate::tool_loop_helpers::{
-    apply_cmd_failure_tracking, build_tool_result_blocks, detect_blocked_commands,
-    detect_blocked_exploration, detect_blocked_reads, detect_blocked_write_failures,
-    detect_blocked_writes, looks_truncated, summarize_write_file_input,
+use crate::tool_loop_blocking::{
+    apply_cmd_failure_tracking, build_tool_result_blocks, collect_duplicate_write_paths,
+    detect_blocked_commands, detect_blocked_exploration, detect_blocked_reads,
+    detect_blocked_write_failures, detect_blocked_writes, detect_same_target_stall,
+    detect_write_file_cooldowns, looks_truncated, summarize_write_file_input,
 };
 
 fn default_config(max_iterations: usize) -> ToolLoopConfig {

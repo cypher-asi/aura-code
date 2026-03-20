@@ -11,7 +11,8 @@ mod chat_tool_handlers;
 pub mod compaction;
 pub mod message_metadata;
 mod tool_loop_types;
-mod tool_loop_helpers;
+mod tool_loop_blocking;
+mod tool_loop_budget;
 mod tool_loop_streaming;
 pub mod tool_loop;
 

@@ -12,42 +12,33 @@ use crate::constants::DEFAULT_EXPLORATION_ALLOWANCE;
 pub use crate::tool_loop_types::*;
 use crate::channel_ext::send_or_log;
 use crate::chat_sanitize;
-use crate::tool_loop_helpers::{
-    detect_blocked_writes, detect_blocked_commands, detect_blocked_reads,
-    detect_blocked_exploration, detect_blocked_write_failures,
-    apply_cmd_failure_tracking,
-    build_tool_result_blocks, summarize_write_file_input,
+use crate::tool_loop_blocking::{
+    BlockedResultContext, BlockingContext, WriteTrackingState,
+    apply_cmd_failure_tracking, build_tool_result_blocks, decrement_write_file_cooldowns,
+    detect_all_blocked, detect_stall_fail_fast, execute_with_blocked,
+    summarize_write_file_input, track_write_failures,
+};
+use crate::tool_loop_budget::{
+    BudgetState, ExplorationState,
+    check_budget_warnings, inject_exploration_warnings, update_exploration_counts,
 };
 use crate::tool_loop_streaming::{
     run_single_iteration, IterationOutcome, IterationCompleted,
 };
 
-pub(crate) struct ExplorationState {
-    pub(crate) total_calls: usize,
-    pub(crate) allowance: usize,
-    pub(crate) warning_mild_sent: bool,
-    pub(crate) warning_strong_sent: bool,
-}
-
-pub(crate) struct BudgetState {
-    pub(crate) cumulative_credits: u64,
-    pub(crate) warning_30_sent: bool,
-    pub(crate) warning_60_sent: bool,
-}
-
-pub(crate) struct WriteTrackingState {
-    pub(crate) consecutive_write_tracker: HashMap<String, usize>,
-    pub(crate) file_write_failures: HashMap<String, usize>,
-    pub(crate) cooldowns: HashMap<String, usize>,
-    pub(crate) last_target_signature: Option<String>,
-    pub(crate) no_progress_streak: usize,
-}
+// ---------------------------------------------------------------------------
+// Build state (auto-build cooldown and checkpoint tracking)
+// ---------------------------------------------------------------------------
 
 pub(crate) struct BuildState {
     pub(crate) auto_build_cooldown: usize,
     pub(crate) baseline: Option<BuildBaseline>,
     pub(crate) plan_checkpoint_sent: bool,
 }
+
+// ---------------------------------------------------------------------------
+// Composite loop state
+// ---------------------------------------------------------------------------
 
 pub(crate) struct LoopState {
     pub(crate) api_messages: Vec<RichMessage>,
@@ -84,6 +75,10 @@ impl LoopState {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Main tool loop
+// ---------------------------------------------------------------------------
 
 pub async fn run_tool_loop(
     llm: Arc<MeteredLlm>,
@@ -206,88 +201,94 @@ pub async fn run_tool_loop(
     state.build_result(config.max_iterations, false, false, None)
 }
 
-fn inject_exploration_warnings(
-    exploration: &mut ExplorationState,
-    api_messages: &mut Vec<RichMessage>,
-) {
-    let strong_threshold = exploration.allowance.saturating_sub(2);
-    let mild_threshold = exploration.allowance.saturating_sub(4);
+// ---------------------------------------------------------------------------
+// Per-iteration tool call processing
+// ---------------------------------------------------------------------------
 
-    if exploration.total_calls >= strong_threshold && !exploration.warning_strong_sent {
-        exploration.warning_strong_sent = true;
-        let warning = format!(
-            "[EXPLORATION WARNING] {} of ~{} exploration calls used. Further reads will be limited. \
-             Begin writing immediately.",
-            exploration.total_calls, exploration.allowance,
-        );
-        info!(total_exploration = exploration.total_calls, allowance = exploration.allowance, "Injecting strong exploration warning");
-        api_messages.push(RichMessage::user(&warning));
-    } else if exploration.total_calls >= mild_threshold && !exploration.warning_mild_sent {
-        exploration.warning_mild_sent = true;
-        let warning = format!(
-            "[EXPLORATION WARNING] You have done {} of ~{} exploration calls. \
-             Start implementing now.",
-            exploration.total_calls, exploration.allowance,
-        );
-        info!(total_exploration = exploration.total_calls, allowance = exploration.allowance, "Injecting exploration warning");
-        api_messages.push(RichMessage::user(&warning));
-    }
-}
-
-/// Check credit budget utilization and inject warnings or stop the loop.
-/// Returns `None` to continue, `Some(None)` to stop with insufficient_credits,
-/// or `Some(Some(result))` to return a specific result.
-fn check_budget_warnings(
-    budget_state: &mut BudgetState,
-    budget: u64,
-    billing_model: &str,
-    iter_input_tokens: u64,
-    llm: &MeteredLlm,
+async fn process_tool_calls(
+    iter: &IterationCompleted,
+    executor: &dyn ToolExecutor,
     event_tx: &mpsc::UnboundedSender<ToolLoopEvent>,
-    api_messages: &mut Vec<RichMessage>,
-) -> Option<Option<ToolLoopResult>> {
-    let utilization = if budget > 0 {
-        budget_state.cumulative_credits as f64 / budget as f64
-    } else {
-        0.0
+    state: &mut LoopState,
+) -> bool {
+    const STALL_FAIL_FAST_STREAK: usize = 3;
+
+    push_assistant_tool_message(&iter.iter_tool_calls, &iter.iter_text, &mut state.api_messages);
+
+    let (all_blocked, blocked_sets, deferred_recovery_msgs) = {
+        let mut ctx = BlockingContext {
+            consecutive_write_tracker: &mut state.writes.consecutive_write_tracker,
+            cooldowns: &mut state.writes.cooldowns,
+            file_write_failures: &state.writes.file_write_failures,
+            consecutive_cmd_failures: state.consecutive_cmd_failures,
+            file_read_counts: &mut state.file_read_counts,
+            exploration: &state.exploration,
+        };
+        detect_all_blocked(&iter.iter_tool_calls, &mut ctx)
     };
 
-    if utilization >= 0.60 && !budget_state.warning_60_sent {
-        budget_state.warning_60_sent = true;
-        let warning = format!(
-            "[BUDGET WARNING] You have used ~{:.0}% of your credit budget. \
-             Wrap up immediately: finish the current edit, verify it compiles, \
-             and call task_done. Do NOT start new explorations.",
-            utilization * 100.0,
-        );
-        info!(utilization_pct = (utilization * 100.0) as u32, "Injecting 60% budget warning");
-        api_messages.push(RichMessage::user(&warning));
-    } else if utilization >= 0.30 && !budget_state.warning_30_sent {
-        budget_state.warning_30_sent = true;
-        let warning = format!(
-            "[BUDGET WARNING] You have used ~{:.0}% of your credit budget. \
-             Prioritize completing the implementation over further exploration. \
-             Focus on writing and verifying code.",
-            utilization * 100.0,
-        );
-        info!(utilization_pct = (utilization * 100.0) as u32, "Injecting 30% budget warning");
-        api_messages.push(RichMessage::user(&warning));
+    let blocked_ctx = BlockedResultContext {
+        file_write_failures: &state.writes.file_write_failures,
+        cooldowns: &state.writes.cooldowns,
+        consecutive_cmd_failures: state.consecutive_cmd_failures,
+        file_read_counts: &state.file_read_counts,
+        exploration_total_calls: state.exploration.total_calls,
+    };
+    let results = execute_with_blocked(
+        &iter.iter_tool_calls, executor, &all_blocked, &blocked_sets, &blocked_ctx,
+    ).await;
+
+    track_write_failures(&iter.iter_tool_calls, &results, &mut state.writes.file_write_failures);
+
+    let results = apply_cmd_failure_tracking(
+        &iter.iter_tool_calls,
+        results,
+        &mut state.consecutive_cmd_failures,
+    );
+
+    let (result_blocks, should_stop) = build_tool_result_blocks(
+        &iter.iter_tool_calls, &results, &mut state.file_read_cache, event_tx,
+    );
+    state.api_messages.push(RichMessage::tool_results(result_blocks));
+
+    for recovery in deferred_recovery_msgs {
+        state.api_messages.push(RichMessage::user(&recovery));
     }
 
-    let next_estimate = llm.estimate_credits(billing_model, iter_input_tokens, 0);
-    if budget_state.cumulative_credits + next_estimate > budget {
-        warn!(
-            budget_state.cumulative_credits, next_estimate, budget,
-            "Credit budget would be exceeded, stopping tool loop"
-        );
-        send_or_log(&event_tx, ToolLoopEvent::Error(
-            "Stopping: credit budget for this session would be exceeded.".to_string(),
-        ));
-        return Some(None);
+    if detect_stall_fail_fast(
+        &iter.iter_tool_calls, &results, &mut state.writes,
+        STALL_FAIL_FAST_STREAK, event_tx, &mut state.api_messages,
+    ) {
+        return true;
     }
 
-    None
+    update_exploration_counts(&iter.iter_tool_calls, &all_blocked, &mut state.exploration);
+
+    let had_write = iter.iter_tool_calls
+        .iter()
+        .enumerate()
+        .any(|(i, tc)| {
+            !all_blocked.contains(&i)
+                && matches!(tc.name.as_str(), "write_file" | "edit_file")
+        });
+    if had_write {
+        state.exploration.allowance = state.exploration.total_calls + 4;
+        maybe_emit_checkpoint(&mut state.build, &mut state.api_messages);
+        maybe_run_auto_build(executor, &mut state.build, &mut state.api_messages).await;
+    }
+
+    maybe_compact_after_exploration(
+        &state.exploration,
+        &state.writes.cooldowns,
+        &mut state.api_messages,
+    );
+
+    should_stop
 }
+
+// ---------------------------------------------------------------------------
+// Compaction and sanitization helpers
+// ---------------------------------------------------------------------------
 
 fn check_context_compaction(
     config: &ToolLoopConfig,
@@ -404,71 +405,6 @@ fn handle_truncated_tool_calls(
     state.api_messages.push(RichMessage::tool_results(result_blocks));
 }
 
-async fn process_tool_calls(
-    iter: &IterationCompleted,
-    executor: &dyn ToolExecutor,
-    event_tx: &mpsc::UnboundedSender<ToolLoopEvent>,
-    state: &mut LoopState,
-) -> bool {
-    const STALL_FAIL_FAST_STREAK: usize = 3;
-
-    push_assistant_tool_message(&iter.iter_tool_calls, &iter.iter_text, &mut state.api_messages);
-
-    let (all_blocked, blocked_sets, deferred_recovery_msgs) =
-        detect_all_blocked(&iter.iter_tool_calls, state);
-
-    let results = execute_with_blocked(
-        &iter.iter_tool_calls, executor, &all_blocked, &blocked_sets, state,
-    ).await;
-
-    track_write_failures(&iter.iter_tool_calls, &results, &mut state.writes.file_write_failures);
-
-    let results = apply_cmd_failure_tracking(
-        &iter.iter_tool_calls,
-        results,
-        &mut state.consecutive_cmd_failures,
-    );
-
-    let (result_blocks, should_stop) = build_tool_result_blocks(
-        &iter.iter_tool_calls, &results, &mut state.file_read_cache, event_tx,
-    );
-    state.api_messages.push(RichMessage::tool_results(result_blocks));
-
-    for recovery in deferred_recovery_msgs {
-        state.api_messages.push(RichMessage::user(&recovery));
-    }
-
-    if detect_stall_fail_fast(
-        &iter.iter_tool_calls, &results, &mut state.writes,
-        STALL_FAIL_FAST_STREAK, event_tx, &mut state.api_messages,
-    ) {
-        return true;
-    }
-
-    update_exploration_counts(&iter.iter_tool_calls, &all_blocked, &mut state.exploration);
-
-    let had_write = iter.iter_tool_calls
-        .iter()
-        .enumerate()
-        .any(|(i, tc)| {
-            !all_blocked.contains(&i)
-                && matches!(tc.name.as_str(), "write_file" | "edit_file")
-        });
-    if had_write {
-        state.exploration.allowance = state.exploration.total_calls + 4;
-        maybe_emit_checkpoint(&mut state.build, &mut state.api_messages);
-        maybe_run_auto_build(executor, &mut state.build, &mut state.api_messages).await;
-    }
-
-    maybe_compact_after_exploration(
-        &state.exploration,
-        &state.writes.cooldowns,
-        &mut state.api_messages,
-    );
-
-    should_stop
-}
-
 fn push_assistant_tool_message(
     tool_calls: &[ToolCall],
     iter_text: &str,
@@ -493,263 +429,9 @@ fn push_assistant_tool_message(
     api_messages.push(RichMessage::assistant_blocks(assistant_blocks));
 }
 
-struct BlockedSets {
-    duplicate_write: Vec<usize>,
-    write_fail: Vec<usize>,
-    cooldown: Vec<usize>,
-    cmd: Vec<usize>,
-    read: Vec<usize>,
-    exploration: Vec<usize>,
-}
-
-fn detect_all_blocked(
-    tool_calls: &[ToolCall],
-    state: &mut LoopState,
-) -> (Vec<usize>, BlockedSets, Vec<String>) {
-    const FULL_REWRITE_BLOCK_ITERS: usize = 3;
-
-    let duplicate_write = detect_blocked_writes(tool_calls, &mut state.writes.consecutive_write_tracker);
-    let cooldown = detect_write_file_cooldowns(tool_calls, &state.writes.cooldowns);
-    let write_fail = detect_blocked_write_failures(tool_calls, &state.writes.file_write_failures);
-    let cmd = detect_blocked_commands(tool_calls, state.consecutive_cmd_failures);
-    let read = detect_blocked_reads(tool_calls, &mut state.file_read_counts);
-    let exploration_is_blocked = state.exploration.total_calls >= state.exploration.allowance;
-    let exploration = detect_blocked_exploration(tool_calls, exploration_is_blocked);
-
-    let all_blocked: Vec<usize> = {
-        let mut v = duplicate_write.clone();
-        for i in write_fail.iter()
-            .chain(cooldown.iter())
-            .chain(cmd.iter())
-            .chain(read.iter())
-            .chain(exploration.iter())
-        {
-            if !v.contains(i) {
-                v.push(*i);
-            }
-        }
-        v
-    };
-
-    let duplicate_paths = collect_duplicate_write_paths(tool_calls, &duplicate_write);
-    let mut deferred_recovery_msgs: Vec<String> = Vec::new();
-    for path in &duplicate_paths {
-        state.writes.cooldowns.insert(path.clone(), FULL_REWRITE_BLOCK_ITERS);
-        let recovery = format!(
-            "[STALL RECOVERY] Repeated full-file write_file attempts detected for '{path}'. \
-             For the next {FULL_REWRITE_BLOCK_ITERS} iterations, write_file is blocked for this path. \
-             Use edit_file instead: (1) read_file with a line range, (2) edit_file for one small \
-             section/function at a time, (3) verify before the next edit. Do NOT rewrite the full file."
-        );
-        info!(path = path.as_str(), "Injecting adaptive rewrite recovery instruction");
-        deferred_recovery_msgs.push(recovery);
-    }
-
-    let sets = BlockedSets { duplicate_write, write_fail, cooldown, cmd, read, exploration };
-    (all_blocked, sets, deferred_recovery_msgs)
-}
-
-async fn execute_with_blocked(
-    tool_calls: &[ToolCall],
-    executor: &dyn ToolExecutor,
-    all_blocked: &[usize],
-    sets: &BlockedSets,
-    state: &LoopState,
-) -> Vec<ToolCallResult> {
-    let allowed_calls: Vec<ToolCall> = tool_calls
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| !all_blocked.contains(i))
-        .map(|(_, tc)| tc.clone())
-        .collect();
-    let allowed_results = executor.execute(&allowed_calls).await;
-
-    let mut allowed_iter = allowed_results.into_iter();
-    tool_calls
-        .iter()
-        .enumerate()
-        .map(|(i, tc)| {
-            if let Some(blocked) = build_blocked_result(i, tc, sets, state) {
-                blocked
-            } else {
-                allowed_iter.next().unwrap_or_else(|| ToolCallResult {
-                    tool_use_id: tc.id.clone(),
-                    content: "internal error: result count mismatch".to_string(),
-                    is_error: true,
-                    stop_loop: false,
-                })
-            }
-        })
-        .collect()
-}
-
-enum BlockReason<'a> {
-    DuplicateWrite { path: &'a str },
-    WriteFail { path: &'a str, count: usize },
-    Cooldown { path: &'a str, remaining: usize },
-    CommandBlocked { consecutive_failures: usize },
-    ReadBlocked { path: &'a str, count: usize },
-    ExplorationBlocked { total_calls: usize },
-}
-
-fn classify_block<'a>(index: usize, tc: &'a ToolCall, sets: &BlockedSets, state: &LoopState) -> Option<BlockReason<'a>> {
-    let path = || tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("unknown");
-
-    if sets.duplicate_write.contains(&index) {
-        Some(BlockReason::DuplicateWrite { path: path() })
-    } else if sets.write_fail.contains(&index) {
-        Some(BlockReason::WriteFail { path: path(), count: state.writes.file_write_failures.get(path()).copied().unwrap_or(0) })
-    } else if sets.cooldown.contains(&index) {
-        Some(BlockReason::Cooldown { path: path(), remaining: state.writes.cooldowns.get(path()).copied().unwrap_or(0) })
-    } else if sets.cmd.contains(&index) {
-        Some(BlockReason::CommandBlocked { consecutive_failures: state.consecutive_cmd_failures })
-    } else if sets.read.contains(&index) {
-        Some(BlockReason::ReadBlocked { path: path(), count: state.file_read_counts.get(path()).copied().unwrap_or(0) })
-    } else if sets.exploration.contains(&index) {
-        Some(BlockReason::ExplorationBlocked { total_calls: state.exploration.total_calls })
-    } else {
-        None
-    }
-}
-
-fn build_blocked_result(
-    index: usize,
-    tc: &ToolCall,
-    sets: &BlockedSets,
-    state: &LoopState,
-) -> Option<ToolCallResult> {
-    let reason = classify_block(index, tc, sets, state)?;
-
-    let content = match reason {
-        BlockReason::DuplicateWrite { path } => {
-            warn!(path, tool = %tc.name, "Blocked consecutive duplicate write/edit (2+ in a row)");
-            serde_json::json!({
-                "error": format!(
-                    "You have called {} on '{}' repeatedly without success. \
-                     Your output is likely being truncated due to context pressure. \
-                     Break the file into smaller writes: write a skeleton first with \
-                     function signatures, then use edit_file to fill in one function \
-                     body at a time.",
-                    tc.name, path
-                )
-            }).to_string()
-        }
-        BlockReason::WriteFail { path, count } => {
-            warn!(path, count, tool = %tc.name, "Blocked write after repeated failures");
-            format!(
-                "Writes to '{path}' blocked after {count} failures. STOP trying to write this file. \
-                 Run `git checkout -- {path}` to restore it, then read_file to see the recovered content, \
-                 and try a fundamentally different approach with small targeted edits."
-            )
-        }
-        BlockReason::Cooldown { path, remaining } => {
-            warn!(path, remaining, "Blocked write_file during adaptive cooldown");
-            format!(
-                "write_file on '{path}' is temporarily blocked for {remaining} more iterations \
-                 due to repeated rewrite stalls. Use edit_file with small, targeted chunks instead \
-                 of rewriting the full file."
-            )
-        }
-        BlockReason::CommandBlocked { consecutive_failures } => {
-            warn!(tool = %tc.name, consecutive_failures,
-                "Blocked run_command after 5+ consecutive failures");
-            "run_command is temporarily blocked after 5+ consecutive failures. \
-             Use search_code, read_file, find_files, or list_files instead. \
-             run_command will be unblocked after you successfully use another tool."
-                .to_string()
-        }
-        BlockReason::ReadBlocked { path, count } => {
-            warn!(path, count, "Blocked fragmented re-read of same file");
-            format!(
-                "BLOCKED: You have read '{}' {} times. Use the content you already have. \
-                 If you need a specific section, use search_code to find the exact lines.",
-                path, count
-            )
-        }
-        BlockReason::ExplorationBlocked { total_calls } => {
-            warn!(tool = %tc.name, total_calls, "Blocked exploration call (hard limit reached)");
-            format!(
-                "Exploration blocked after {} calls. Use the context you have and start \
-                 implementing. Reads will unblock after you use write_file or edit_file.",
-                total_calls
-            )
-        }
-    };
-
-    Some(ToolCallResult {
-        tool_use_id: tc.id.clone(),
-        content,
-        is_error: true,
-        stop_loop: false,
-    })
-}
-
-fn track_write_failures(
-    tool_calls: &[ToolCall],
-    results: &[ToolCallResult],
-    file_write_failures: &mut HashMap<String, usize>,
-) {
-    for (tc, result) in tool_calls.iter().zip(results.iter()) {
-        if matches!(tc.name.as_str(), "write_file" | "edit_file") {
-            if let Some(path) = tc.input.get("path").and_then(|v| v.as_str()) {
-                if result.is_error {
-                    *file_write_failures.entry(path.to_string()).or_insert(0) += 1;
-                } else {
-                    file_write_failures.remove(path);
-                }
-            }
-        }
-    }
-}
-
-fn detect_stall_fail_fast(
-    tool_calls: &[ToolCall],
-    results: &[ToolCallResult],
-    writes: &mut WriteTrackingState,
-    streak_threshold: usize,
-    event_tx: &mpsc::UnboundedSender<ToolLoopEvent>,
-    api_messages: &mut Vec<RichMessage>,
-) -> bool {
-    let fail_fast_stall = detect_same_target_stall(
-        tool_calls,
-        results,
-        &mut writes.last_target_signature,
-        &mut writes.no_progress_streak,
-    );
-    if fail_fast_stall && writes.no_progress_streak >= streak_threshold {
-        let recovery = format!(
-            "[STALL FAIL-FAST] Repeated write/edit attempts are targeting the same file set \
-             without successful progress for {} iterations. Stop this loop now and restart with \
-             a recovery strategy: (1) read a narrow line range, (2) apply a single small edit_file \
-             change, (3) verify, then continue incrementally.",
-            writes.no_progress_streak
-        );
-        warn!(
-            streak = writes.no_progress_streak,
-            "Fail-fast triggered due to same-target no-progress stall"
-        );
-        send_or_log(&event_tx, ToolLoopEvent::Error(recovery.clone()));
-        api_messages.push(RichMessage::user(&recovery));
-        return true;
-    }
-    false
-}
-
-fn update_exploration_counts(
-    tool_calls: &[ToolCall],
-    all_blocked: &[usize],
-    exploration: &mut ExplorationState,
-) {
-    let count = tool_calls
-        .iter()
-        .enumerate()
-        .filter(|(i, tc)| {
-            !all_blocked.contains(i)
-                && matches!(tc.name.as_str(), "read_file" | "search_code" | "find_files" | "list_files")
-        })
-        .count();
-    exploration.total_calls += count;
-}
+// ---------------------------------------------------------------------------
+// Build and exploration post-processing
+// ---------------------------------------------------------------------------
 
 fn maybe_emit_checkpoint(build: &mut BuildState, api_messages: &mut Vec<RichMessage>) {
     if !build.plan_checkpoint_sent {
@@ -826,131 +508,6 @@ pub(crate) fn append_text(total: &mut String, new: &str) {
         }
         total.push_str(new);
     }
-}
-
-fn detect_write_file_cooldowns(
-    tool_calls: &[ToolCall],
-    cooldowns: &HashMap<String, usize>,
-) -> Vec<usize> {
-    tool_calls
-        .iter()
-        .enumerate()
-        .filter_map(|(i, tc)| {
-            if tc.name != "write_file" {
-                return None;
-            }
-            let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            if cooldowns.get(path).copied().unwrap_or(0) > 0 {
-                Some(i)
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-fn collect_duplicate_write_paths(tool_calls: &[ToolCall], blocked_indices: &[usize]) -> Vec<String> {
-    let mut paths: Vec<String> = Vec::new();
-    for i in blocked_indices {
-        if let Some(tc) = tool_calls.get(*i) {
-            if tc.name == "write_file" {
-                if let Some(path) = tc.input.get("path").and_then(|v| v.as_str()) {
-                    if !paths.contains(&path.to_string()) {
-                        paths.push(path.to_string());
-                    }
-                }
-            }
-        }
-    }
-    paths
-}
-
-fn decrement_write_file_cooldowns(cooldowns: &mut HashMap<String, usize>) {
-    cooldowns.retain(|_, remaining| {
-        if *remaining == 0 {
-            return false;
-        }
-        *remaining -= 1;
-        *remaining > 0
-    });
-}
-
-fn detect_same_target_stall(
-    tool_calls: &[ToolCall],
-    results: &[ToolCallResult],
-    last_signature: &mut Option<String>,
-    no_progress_streak: &mut usize,
-) -> bool {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut write_paths: Vec<String> = Vec::new();
-    let mut had_write_success = false;
-    let mut had_edit_success = false;
-    let mut content_hasher = DefaultHasher::new();
-
-    for (tc, result) in tool_calls.iter().zip(results.iter()) {
-        if matches!(tc.name.as_str(), "write_file" | "edit_file") {
-            if let Some(path) = tc.input.get("path").and_then(|v| v.as_str()) {
-                write_paths.push(path.to_string());
-            }
-            if !result.is_error {
-                if tc.name == "edit_file" {
-                    had_edit_success = true;
-                }
-                had_write_success = true;
-            }
-            if let Some(c) = tc.input.get("content").and_then(|v| v.as_str()) {
-                c.hash(&mut content_hasher);
-            }
-            if let Some(c) = tc.input.get("new_text").and_then(|v| v.as_str()) {
-                c.hash(&mut content_hasher);
-            }
-        }
-    }
-
-    if write_paths.is_empty() {
-        *last_signature = None;
-        *no_progress_streak = 0;
-        return false;
-    }
-
-    // Successful edit_file calls always represent forward progress (appending
-    // new code sections, patching different spots), so reset the streak.
-    // Only successful write_file to different content also resets.
-    if had_edit_success {
-        *last_signature = None;
-        *no_progress_streak = 0;
-        return false;
-    }
-
-    // Any successful write_file with different content = progress
-    if had_write_success {
-        write_paths.sort();
-        write_paths.dedup();
-        let content_hash = content_hasher.finish();
-        let signature = format!("{}#{:x}", write_paths.join("|"), content_hash);
-        if last_signature.as_deref() != Some(signature.as_str()) {
-            *last_signature = Some(signature);
-            *no_progress_streak = 0;
-            return false;
-        }
-    }
-
-    // All writes failed, or successful but identical content = no progress
-    write_paths.sort();
-    write_paths.dedup();
-    let content_hash = content_hasher.finish();
-    let signature = format!("{}#{:x}", write_paths.join("|"), content_hash);
-
-    if last_signature.as_deref() == Some(signature.as_str()) {
-        *no_progress_streak += 1;
-    } else {
-        *last_signature = Some(signature);
-        *no_progress_streak = 1;
-    }
-
-    *no_progress_streak >= 3
 }
 
 #[cfg(test)]
