@@ -155,18 +155,26 @@ pub(crate) fn sanitize_tool_use_results(messages: Vec<RichMessage>) -> Vec<RichM
 
             if let Some(m) = next {
                 if m.role == "user" {
-                    if let MessageContent::Blocks(blocks) = &m.content {
-                        let mut merged = blocks.clone();
-                        for b in &synthetic {
-                            merged.push(b.clone());
+                    match &m.content {
+                        MessageContent::Blocks(blocks) => {
+                            let mut merged = blocks.clone();
+                            merged.extend(synthetic);
+                            result.push(RichMessage {
+                                role: "user".into(),
+                                content: MessageContent::Blocks(merged),
+                            });
                         }
-                        result.push(RichMessage {
-                            role: "user".into(),
-                            content: MessageContent::Blocks(merged),
-                        });
-                        i += 2;
-                        continue;
+                        MessageContent::Text(text) => {
+                            let mut merged = vec![ContentBlock::Text { text: text.clone() }];
+                            merged.extend(synthetic);
+                            result.push(RichMessage {
+                                role: "user".into(),
+                                content: MessageContent::Blocks(merged),
+                            });
+                        }
                     }
+                    i += 2;
+                    continue;
                 }
             }
             result.push(RichMessage::tool_results(synthetic));
@@ -217,6 +225,12 @@ fn remove_empty_messages(messages: Vec<RichMessage>) -> Vec<RichMessage> {
             }
         })
         .collect()
+}
+
+/// Public entry point for merging consecutive same-role messages,
+/// used by `sanitize_after_compaction` in tool_loop.rs.
+pub(crate) fn merge_consecutive_same_role_pub(messages: Vec<RichMessage>) -> Vec<RichMessage> {
+    merge_consecutive_same_role(messages)
 }
 
 /// Claude requires strict user/assistant alternation.  When compaction

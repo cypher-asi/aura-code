@@ -769,11 +769,13 @@ async fn process_tool_calls(
 }
 
 /// Re-run message sanitization after any compaction pass to fix orphaned
-/// tool_use / tool_result pairs that compaction may have created.
+/// tool_use / tool_result pairs and broken role alternation that
+/// compaction may have created.
 fn sanitize_after_compaction(messages: &mut Vec<RichMessage>) {
     let msgs = std::mem::take(messages);
     let msgs = chat_sanitize::sanitize_orphan_tool_results(msgs);
     let msgs = chat_sanitize::sanitize_tool_use_results(msgs);
+    let msgs = chat_sanitize::merge_consecutive_same_role_pub(msgs);
     *messages = msgs;
 }
 
