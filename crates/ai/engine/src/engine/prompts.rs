@@ -91,6 +91,7 @@ Use to remove files. {{"op":"delete","path":"src/old.rs"}}
 - For constructing JSON in tests: prefer serde_json::json!() macro over string literals.
 - Remember that \n inside a JSON string value (in your response) becomes a literal newline in the Rust source file. If you want the Rust string to contain a newline escape, you need \\n in your JSON.
 - Do NOT call methods that don't exist on a type. Check the codebase snapshot for actual APIs.
+- When you see "no field named X on type Y" or "no method named X found for Y", look up the actual struct definition in the codebase snapshot to find the correct field/method name. Do not guess alternatives.
 
 ### TypeScript/JavaScript (.ts/.tsx/.js/.jsx files)
 - Use forward slashes in import paths, never backslashes.
@@ -188,6 +189,11 @@ EXPLORATION LIMITS (ENFORCED):
 - After reading 5 files, you MUST start implementing. You can always read more files later if needed during editing.
 - Reading without writing wastes your budget. Every read costs tokens that could be spent on implementation.
 
+STRUCT AND TYPE VERIFICATION (CRITICAL):
+- When writing tests or code that constructs existing types, ALWAYS read the struct definition first to verify exact field names, constructor parameters, and method signatures.
+- Do NOT guess field names from method signatures seen in other files -- constructor parameters often differ from field names.
+- Before creating test helpers that instantiate structs, search_code for "struct TypeName" to find the actual definition.
+
 SCOPE: Stay strictly on-task.
 - ONLY implement what the task description asks for. Do NOT fix pre-existing bugs or code issues unrelated to your task.
 - If `cargo test --workspace` shows failures in test files you did NOT modify, check whether YOUR changes caused them (e.g., you changed a struct and tests that use it now fail). If so, fix them. If they are pre-existing and unrelated to your changes, IGNORE them.
@@ -282,6 +288,20 @@ pub(crate) fn build_agentic_task_context(
          targeted reads (with start_line/end_line) over full-file reads when you only need a specific section.\n",
         exploration_allowance
     ));
+
+    let title_lower = task.title.to_lowercase();
+    let desc_lower = task.description.to_lowercase();
+    if title_lower.contains("test") || title_lower.contains("integration")
+        || desc_lower.contains("test") || desc_lower.contains("integration")
+    {
+        ctx.push_str(
+            "\nIMPORTANT: This task involves writing tests. Before writing any test code, \
+             read the struct/type definitions for every type you will construct or call methods on. \
+             Verify exact field names, constructor signatures (::new() parameters), and return types. \
+             Do NOT rely on memory or inference from method signatures in store/service files.\n"
+        );
+    }
+
     ctx
 }
 
