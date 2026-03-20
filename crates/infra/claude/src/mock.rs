@@ -137,6 +137,10 @@ impl MockLlmProvider {
             let _ = event_tx.send(ClaudeStreamEvent::Delta(resp.text.clone()));
         }
         for tc in &resp.tool_calls {
+            let _ = event_tx.send(ClaudeStreamEvent::ToolUseStarted {
+                id: tc.id.clone(),
+                name: tc.name.clone(),
+            });
             let _ = event_tx.send(ClaudeStreamEvent::ToolUse {
                 id: tc.id.clone(),
                 name: tc.name.clone(),

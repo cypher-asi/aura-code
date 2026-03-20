@@ -285,6 +285,10 @@ pub trait LlmProvider: Send + Sync {
 pub enum ClaudeStreamEvent {
     Delta(String),
     ThinkingDelta(String),
+    ToolUseStarted {
+        id: String,
+        name: String,
+    },
     ToolUse {
         id: String,
         name: String,
@@ -930,6 +934,10 @@ pub(crate) async fn parse_sse_events(
                                     current_tool_id = cb.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
                                     current_tool_name = cb.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
                                     current_tool_json.clear();
+                                    let _ = event_tx.send(ClaudeStreamEvent::ToolUseStarted {
+                                        id: current_tool_id.clone(),
+                                        name: current_tool_name.clone(),
+                                    });
                                 }
                                 "thinking" => {
                                     in_thinking_block = true;
