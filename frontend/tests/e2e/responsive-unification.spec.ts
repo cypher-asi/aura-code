@@ -219,16 +219,14 @@ test("project work route uses the combined mobile work view while desktop keeps 
   }
 });
 
-test("project back navigation exits to the project root state on smaller form factors", async ({ page }, testInfo) => {
+test("primary project destinations keep the title drawer instead of a back button on smaller form factors", async ({ page }, testInfo) => {
   const factor = formFactor(testInfo.project.name);
   test.skip(factor === "desktop", "Desktop keeps the persistent sidebar model.");
 
   await mockProjectWorkApp(page);
   await page.goto("/projects/proj-1/work");
 
-  await expect(page.getByRole("button", { name: "Back to project" })).toBeVisible({ timeout: 10000 });
-  await page.getByRole("button", { name: "Back to project" }).click();
-  await expect(page).toHaveURL(/\/projects\/proj-1$/);
+  await expect(page.getByRole("button", { name: "Back to project" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Open project navigation for Demo Project/i })).toBeVisible();
 });
 
