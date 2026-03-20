@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use chrono::Utc;
 use tokio::sync::{mpsc, watch};
-use tracing::{error, info, warn};
+use tracing::{error, info, info_span, warn, Instrument};
 
 use aura_core::*;
 use aura_agents::AgentInstanceService;
@@ -220,6 +220,11 @@ impl DevLoopEngine {
 
         let engine = self.clone();
         let aiid = agent.agent_instance_id;
+        let loop_span = info_span!(
+            "engine_loop",
+            %project_id,
+            agent_instance_id = %aiid,
+        );
         let join_handle = tokio::spawn(async move {
             let result = engine
                 .run_loop(project_id, aiid, session, stop_rx)
@@ -262,7 +267,7 @@ impl DevLoopEngine {
                 }
             }
             result
-        });
+        }.instrument(loop_span));
 
         Ok(LoopHandle {
             project_id,
@@ -272,6 +277,54 @@ impl DevLoopEngine {
         })
     }
 
+    /// Execute the main task loop for a project.
+    ///
+    /// ## State machine
+    ///
+    /// ```text
+    ///  ┌────────────────────────────────────────────────────────┐
+    ///  │                    run_loop                            │
+    ///  │                                                       │
+    ///  │   ┌──────────────┐                                    │
+    ///  │   │ reset +      │  (in_progress→ready, pending→ready)│
+    ///  │   │ promote      │                                    │
+    ///  │   └──────┬───────┘                                    │
+    ///  │          ▼                                             │
+    ///  │   ┌──────────────┐  no tasks  ┌──────────────────┐   │
+    ///  │   │ claim_next   │──────────▶│ try_retry_failed  │   │
+    ///  │   │ _task        │           └──────┬───────────┘   │
+    ///  │   └──────┬───────┘                  │ no retries    │
+    ///  │          │ task                      ▼               │
+    ///  │          ▼                    ┌──────────────┐       │
+    ///  │   ┌──────────────┐           │ Finished     │       │
+    ///  │   │ begin_task   │           │ (complete/   │       │
+    ///  │   │ + execute    │           │  blocked)    │       │
+    ///  │   └──────┬───────┘           └──────────────┘       │
+    ///  │          │                                           │
+    ///  │          ▼                                           │
+    ///  │   ┌──────────────┐                                  │
+    ///  │   │ finalize +   │──failed──▶ continue (retry)      │
+    ///  │   │ process      │                                  │
+    ///  │   │ outcome      │──ok──▶ push + rollover check     │
+    ///  │   └──────────────┘           │                      │
+    ///  │                              ▼                      │
+    ///  │                    ┌──────────────────┐             │
+    ///  │                    │try_session_      │             │
+    ///  │                    │rollover          │             │
+    ///  │                    └──────┬───────────┘             │
+    ///  │                          │ (loop back to claim)     │
+    ///  │                          ▼                          │
+    ///  │                    claim_next_task ...              │
+    ///  └────────────────────────────────────────────────────┘
+    ///
+    /// Invariants:
+    ///   - Exactly one task is InProgress at a time per agent
+    ///   - Session rollover only occurs after successful task completion
+    ///   - Credits are checked after every task finalization
+    ///   - Failed tasks are retried (up to max_loop_task_retries) only
+    ///     when no Ready tasks remain
+    ///   - Stop/Pause commands are checked at the top of every loop iteration
+    /// ```
     async fn run_loop(
         &self,
         project_id: ProjectId,

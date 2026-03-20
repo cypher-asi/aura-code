@@ -80,6 +80,51 @@ impl LoopState {
 // Main tool loop
 // ---------------------------------------------------------------------------
 
+/// Run the LLM tool loop, iterating between LLM calls and tool execution.
+///
+/// ## State machine
+///
+/// ```text
+///  ┌──────────────────────────────────────────────────────────┐
+///  │                     run_tool_loop                        │
+///  │                                                         │
+///  │   ┌─────────────┐    tool_use     ┌──────────────────┐  │
+///  │   │ LLM call    │───────────────▶│ process_tool_calls│  │
+///  │   │ (iteration) │                │ (execute+block)   │  │
+///  │   └──────┬──────┘                └────────┬─────────┘  │
+///  │          │                                 │            │
+///  │          │ end_turn/                       │ continue   │
+///  │          │ max_tokens/                     │            │
+///  │          │ timeout/error                   ▼            │
+///  │          │                       ┌──────────────────┐  │
+///  │          │                       │ compaction +     │  │
+///  │          │                       │ budget/explore   │  │
+///  │          │                       │ warnings         │  │
+///  │          │                       └────────┬─────────┘  │
+///  │          │                                 │            │
+///  │          │         ┌──────────────────────┘            │
+///  │          │         │ next iteration                    │
+///  │          │         ▼                                    │
+///  │          │   ┌─────────────┐                           │
+///  │          │   │ LLM call    │ (loop continues)          │
+///  │          ▼   └─────────────┘                           │
+///  │   ┌─────────────┐                                      │
+///  │   │ Return      │                                      │
+///  │   │ ToolLoop    │                                      │
+///  │   │ Result      │                                      │
+///  │   └─────────────┘                                      │
+///  └──────────────────────────────────────────────────────────┘
+///
+/// Invariants:
+///   - Each iteration calls LLM exactly once (via run_single_iteration)
+///   - Tool calls are only executed when stop_reason == "tool_use"
+///   - Blocked tools return error results without execution
+///   - Exploration, write, and command counters are monotonically updated
+///   - Context compaction only removes older messages, never the latest
+///   - Budget check runs after every tool execution round
+///   - Loop exits on: end_turn, max_iterations, timeout, budget exceeded,
+///     stop_loop flag from executor, stall fail-fast, or LLM error
+/// ```
 pub async fn run_tool_loop(
     llm: Arc<MeteredLlm>,
     api_key: &str,
@@ -126,6 +171,8 @@ pub async fn run_tool_loop(
     };
 
     for iteration in 0..config.max_iterations {
+        info!(iteration, billing_reason = config.billing_reason, "tool_loop_iteration start");
+
         decrement_write_file_cooldowns(&mut state.writes.cooldowns);
         state.build.auto_build_cooldown = state.build.auto_build_cooldown.saturating_sub(1);
         let iter = match run_single_iteration(
@@ -213,6 +260,9 @@ async fn process_tool_calls(
 ) -> bool {
     const STALL_FAIL_FAST_STREAK: usize = 3;
 
+    let tool_names: Vec<&str> = iter.iter_tool_calls.iter().map(|tc| tc.name.as_str()).collect();
+    info!(num_calls = iter.iter_tool_calls.len(), tools = ?tool_names, "process_tool_calls start");
+
     push_assistant_tool_message(&iter.iter_tool_calls, &iter.iter_text, &mut state.api_messages);
 
     let (all_blocked, blocked_sets, deferred_recovery_msgs) = {
@@ -298,6 +348,13 @@ fn check_context_compaction(
 ) {
     if let Some(max_ctx) = config.max_context_tokens {
         let utilization = iteration_input_tokens as f64 / max_ctx as f64;
+        info!(
+            input_tokens = iteration_input_tokens,
+            max_context = max_ctx,
+            utilization_pct = (utilization * 100.0) as u32,
+            message_count = api_messages.len(),
+            "context_compaction check"
+        );
         if utilization > 0.85 {
             info!(
                 input_tokens = iteration_input_tokens,

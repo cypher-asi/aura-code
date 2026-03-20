@@ -313,6 +313,12 @@ impl LoopRunContext {
     // ------------------------------------------------------------------
 
     pub async fn begin_task(&self, engine: &DevLoopEngine, task: &Task) -> Result<(), EngineError> {
+        info!(
+            task_id = %task.task_id,
+            title = %task.title,
+            session_id = %self.session.session_id,
+            "Beginning task execution"
+        );
         engine.session_service.record_task_worked(
             &self.project_id,
             &self.agent_instance_id,
@@ -565,11 +571,64 @@ impl LoopRunContext {
     // Session rollover
     // ------------------------------------------------------------------
 
+    /// Check if the current session needs to be rolled over and perform
+    /// the rollover if so.
+    ///
+    /// ## State machine
+    ///
+    /// ```text
+    ///  ┌────────────────────────────────────────────────┐
+    ///  │            try_session_rollover                │
+    ///  │                                                │
+    ///  │   ┌─────────────┐                             │
+    ///  │   │ fetch       │                             │
+    ///  │   │ session     │                             │
+    ///  │   └──────┬──────┘                             │
+    ///  │          │                                     │
+    ///  │          ▼                                     │
+    ///  │   ┌─────────────┐  no   ┌─────────┐          │
+    ///  │   │ should_     │─────▶│ Ok(None) │          │
+    ///  │   │ rollover?   │      └─────────┘          │
+    ///  │   └──────┬──────┘                            │
+    ///  │          │ yes                                │
+    ///  │          ▼                                    │
+    ///  │   ┌─────────────┐  stop   ┌──────────┐      │
+    ///  │   │ generate    │───────▶│ Ok(Some) │      │
+    ///  │   │ summary     │        │ (paused/ │      │
+    ///  │   │ (LLM call)  │        │  stopped)│      │
+    ///  │   └──────┬──────┘        └──────────┘      │
+    ///  │          │ ok                               │
+    ///  │          ▼                                  │
+    ///  │   ┌─────────────┐                          │
+    ///  │   │ rollover    │ old session → rolled_over│
+    ///  │   │ session     │ new session → active     │
+    ///  │   └──────┬──────┘                          │
+    ///  │          │                                  │
+    ///  │          ▼                                  │
+    ///  │   emit SessionRolledOver                   │
+    ///  │   update ctx.session                       │
+    ///  │   clear work_log                           │
+    ///  │   Ok(None) → loop continues                │
+    ///  └────────────────────────────────────────────┘
+    ///
+    /// Invariants:
+    ///   - Old session is always marked rolled_over before new one is created
+    ///   - work_log is cleared after rollover so new session starts fresh
+    ///   - sessions_used counter is monotonically incremented
+    ///   - Stop/Pause commands can interrupt the summary generation
+    /// ```
     pub async fn try_session_rollover(
         &mut self,
         engine: &DevLoopEngine,
         stop_rx: &mut watch::Receiver<LoopCommand>,
     ) -> Result<Option<LoopOutcome>, EngineError> {
+        info!(
+            %self.project_id,
+            session_id = %self.session.session_id,
+            sessions_used = self.sessions_used,
+            "Checking session rollover"
+        );
+
         let current_session = engine.session_service.get_session(
             &self.project_id,
             &self.agent_instance_id,
@@ -601,6 +660,14 @@ impl LoopRunContext {
         };
         let summary_duration_ms = summary_start.elapsed().as_millis() as u64;
         let context_usage_pct = current_session.context_usage_estimate * 100.0;
+        info!(
+            %self.project_id,
+            old_session_id = %self.session.session_id,
+            context_usage_pct = context_usage_pct as u32,
+            summary_duration_ms,
+            tasks_completed = self.completed_count,
+            "Performing session rollover"
+        );
         let new_session = engine.session_service.rollover_session(
             &self.project_id,
             &self.agent_instance_id,

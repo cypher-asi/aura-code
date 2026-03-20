@@ -35,6 +35,13 @@ pub(crate) async fn run_single_iteration(
     state: &mut LoopState,
     iteration: usize,
 ) -> IterationOutcome {
+    info!(
+        iteration,
+        message_count = state.api_messages.len(),
+        timeout_secs = config.stream_timeout.as_secs(),
+        "llm_iteration start"
+    );
+
     // Validate and repair message history before every API call to prevent
     // 400 errors from orphaned tool blocks or broken alternation.
     let repaired = chat_sanitize::validate_and_repair_messages(state.api_messages.clone());
