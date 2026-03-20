@@ -436,12 +436,12 @@ fn check_context_compaction(
                 "Context >60% full, moderate compaction (keep last 4)"
             );
             compaction::compact_older_tool_results(api_messages, 4);
-        } else if utilization > 0.40 {
+        } else if utilization > 0.30 {
             info!(
                 input_tokens = iteration_input_tokens,
                 max_context = max_ctx,
                 utilization_pct = (utilization * 100.0) as u32,
-                "Context >40% full, early compaction (keep last 5)"
+                "Context >30% full, early compaction (keep last 5)"
             );
             compaction::compact_older_tool_results_tiered(
                 api_messages, 5, &compaction::MICRO,

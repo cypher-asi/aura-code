@@ -199,7 +199,9 @@ impl SessionService {
     }
 
     pub fn should_rollover(&self, session: &Session) -> bool {
+        const MAX_TASKS_PER_SESSION: usize = 8;
         session.context_usage_estimate >= self.rollover_threshold
+            || session.tasks_worked.len() >= MAX_TASKS_PER_SESSION
     }
 
     pub async fn rollover_session(

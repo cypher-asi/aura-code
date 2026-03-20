@@ -102,6 +102,8 @@ impl DevLoopEngine {
             task_context.push_str(&format!("\n# Dependency API Surface\n{}\n", dep_api_context));
         }
 
+        cap_task_context(&mut task_context, MAX_TASK_CONTEXT_CHARS);
+
         let tools = engine_tool_definitions();
         let api_messages: Vec<RichMessage> = vec![RichMessage::user(&task_context)];
 
@@ -249,6 +251,7 @@ impl DevLoopEngine {
     }
 }
 
+const MAX_TASK_CONTEXT_CHARS: usize = 160_000; // ~40K tokens
 const MAX_WORK_LOG_TASK_CONTEXT: usize = 4_000;
 
 fn build_work_log_summary(work_log: &[String]) -> String {
@@ -261,6 +264,51 @@ fn build_work_log_summary(work_log: &[String]) -> String {
         summary.push_str("\n... (truncated) ...");
     }
     summary
+}
+
+/// Trim `task_context` to at most `budget` characters by progressively removing
+/// lower-priority sections (codebase snapshot first, then dep API, then workspace
+/// map), preserving the core task description, spec, and work log.
+fn cap_task_context(task_context: &mut String, budget: usize) {
+    if task_context.len() <= budget {
+        return;
+    }
+
+    // Priority order for trimming (lowest first):
+    const SECTIONS: &[&str] = &[
+        "\n# Current Codebase Files\n",
+        "\n# Dependency API Surface\n",
+        "\n# Workspace Structure\n",
+        "\n# Type Definitions Referenced in Task\n",
+    ];
+
+    for section_header in SECTIONS {
+        if task_context.len() <= budget {
+            return;
+        }
+        if let Some(start) = task_context.find(section_header) {
+            let next_section = task_context[start + section_header.len()..]
+                .find("\n# ")
+                .map(|pos| start + section_header.len() + pos);
+            let end = next_section.unwrap_or(task_context.len());
+
+            let section_len = end - start;
+            let overshoot = task_context.len().saturating_sub(budget);
+
+            if overshoot >= section_len {
+                task_context.replace_range(start..end, "");
+            } else {
+                let keep = section_len - overshoot;
+                let trim_start = start + keep;
+                task_context.replace_range(trim_start..end, "\n... (truncated to fit context budget) ...\n");
+            }
+        }
+    }
+
+    if task_context.len() > budget {
+        task_context.truncate(budget);
+        task_context.push_str("\n... (context truncated) ...\n");
+    }
 }
 
 fn compute_thinking_budget(base: u32, member_count: usize) -> u32 {
