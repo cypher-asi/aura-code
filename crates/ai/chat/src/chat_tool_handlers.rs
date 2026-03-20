@@ -277,6 +277,12 @@ impl ChatToolExecutor {
         let existing = self.task_service.list_tasks_by_spec(project_id, &spec_id).await.unwrap_or_default();
         let order = existing.iter().map(|t| t.order_index).max().unwrap_or(0) + 1;
 
+        let dep_ids: Option<Vec<String>> = input
+            .get("dependency_ids")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+        let has_deps = dep_ids.as_ref().is_some_and(|d| !d.is_empty());
+        let status = if has_deps { "pending" } else { "ready" };
+
         let storage = match self.require_storage() {
             Ok(s) => s,
             Err(e) => return e,
@@ -289,9 +295,9 @@ impl ChatToolExecutor {
             spec_id: spec_id.to_string(),
             title: title.clone(),
             description: Some(description),
-            status: Some("ready".to_string()),
+            status: Some(status.to_string()),
             order_index: Some(order as i32),
-            dependency_ids: None,
+            dependency_ids: dep_ids,
         };
         match storage.create_task(&project_id.to_string(), &jwt, &req).await {
             Ok(st) => {
@@ -528,20 +534,42 @@ impl ChatToolExecutor {
                 return ToolExecResult::err(format!("Failed to create directories: {e}"));
             }
         }
+        let is_new_file = !abs.exists();
+        let truncation_warning = if is_new_file && looks_truncated(&content) {
+            Some("Warning: content may be truncated (unbalanced delimiters). \
+                  Consider using read_file to verify, or use edit_file to append missing sections.")
+        } else {
+            None
+        };
+
         match std::fs::write(&abs, &content) {
             Ok(()) => {
                 let line_count = content.lines().count();
+                match std::fs::metadata(&abs) {
+                    Ok(meta) if meta.len() as usize != content.len() => {
+                        return ToolExecResult::err(format!(
+                            "Post-write verification failed for {rel}: wrote {} bytes but \
+                             file on disk is {} bytes. The file may be corrupted.",
+                            content.len(), meta.len()
+                        ));
+                    }
+                    _ => {}
+                }
+                let mut message = format!(
+                    "Successfully wrote {} lines ({} bytes) to {}. \
+                     Proceed to compilation to catch any issues.",
+                    line_count, content.len(), rel,
+                );
+                if let Some(warn) = truncation_warning {
+                    message.push(' ');
+                    message.push_str(warn);
+                }
                 ToolExecResult::ok(json!({
                     "status": "ok",
                     "path": rel,
                     "bytes_written": content.len(),
                     "line_count": line_count,
-                    "message": format!(
-                        "Successfully wrote {} lines ({} bytes) to {}. \
-                         The file is complete and correct -- do NOT re-read to verify. \
-                         Proceed to compilation to catch any issues.",
-                        line_count, content.len(), rel,
-                    ),
+                    "message": message,
                 }))
             }
             Err(e) => ToolExecResult::err(format!("Failed to write {rel}: {e}")),

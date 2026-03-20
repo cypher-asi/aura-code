@@ -70,7 +70,7 @@ pub fn core_tool_definitions() -> Vec<ToolDefinition> {
         ),
         tool(
             "write_file",
-            "Write (create or overwrite) a file relative to the project folder.",
+            "Write (create or overwrite) a file relative to the project folder. Best for files under ~150 lines. For larger files, write a skeleton first then use edit_file to fill in sections incrementally.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -324,7 +324,12 @@ fn chat_management_tools() -> Vec<ToolDefinition> {
                 "properties": {
                     "spec_id": { "type": "string" },
                     "title": { "type": "string" },
-                    "description": { "type": "string" }
+                    "description": { "type": "string" },
+                    "dependency_ids": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "UUIDs of tasks this task depends on (from list_tasks)"
+                    }
                 },
                 "required": ["spec_id", "title", "description"]
             }),
