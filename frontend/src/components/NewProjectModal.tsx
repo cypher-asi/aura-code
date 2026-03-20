@@ -137,7 +137,7 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
   const [folderPath, setFolderPath] = useState(storedDraft?.folderPath ?? "");
   const [importCandidates, setImportCandidates] = useState<ImportCandidate[]>([]);
   const [orbitRepoName, setOrbitRepoName] = useState("");
-  const [orbitRepoMode, setOrbitRepoMode] = useState<OrbitRepoMode>("default");
+  const [orbitRepoMode, setOrbitRepoMode] = useState<OrbitRepoMode>("none");
   const [orbitRepos, setOrbitRepos] = useState<OrbitRepo[]>([]);
   const [orbitReposLoading, setOrbitReposLoading] = useState(false);
   const [selectedOrbitRepo, setSelectedOrbitRepo] = useState<OrbitRepo | null>(null);
@@ -222,7 +222,7 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
     setFolderPath("");
     setImportCandidates([]);
     setOrbitRepoName("");
-    setOrbitRepoMode(isAuthenticated ? "default" : "none");
+    setOrbitRepoMode("none");
     setOrbitRepos([]);
     setSelectedOrbitRepo(null);
     setLoading(false);
@@ -262,7 +262,10 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
     setLoading(true);
 
     try {
-      if (!resolvedOrgId) return;
+      if (!resolvedOrgId) {
+        setError("No team found. Log out and back in to create a default team.");
+        return;
+      }
 
       const repoSlug =
         orbitRepoMode === "custom"
@@ -350,6 +353,39 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
       ];
   const selectedWorkspaceMode = workspaceModeOptions.find((option) => option.id === workspaceMode) ?? workspaceModeOptions[0];
   const showWorkspaceModePicker = workspaceModeOptions.length > 1;
+  const needsImportedFiles = workspaceMode === "imported" && importCandidates.length === 0;
+  const needsLinkedFolder = workspaceMode === "linked" && !folderPath.trim();
+  const submitBlocker = useMemo(() => {
+    if (orgLoading) return "Loading your team...";
+    if (!resolvedOrgId) return "No team found. Log out and back in to create a default team.";
+    if (!name.trim()) return "Project name is required.";
+    if (workspaceMode === "linked") {
+      if (!features.linkedWorkspace) {
+        return "Linking a live local folder stays in the desktop app.";
+      }
+      if (!folderPath.trim()) {
+        return "Choose a linked folder to create this project.";
+      }
+    }
+    if (workspaceMode === "imported" && importCandidates.length === 0) {
+      return "Choose files or a folder to import before creating the project.";
+    }
+    if (orbitRepoMode === "existing" && !selectedOrbitRepo) {
+      return "Select an existing Orbit repo to continue.";
+    }
+    return "";
+  }, [
+    features.linkedWorkspace,
+    folderPath,
+    importCandidates.length,
+    name,
+    orbitRepoMode,
+    orgLoading,
+    resolvedOrgId,
+    selectedOrbitRepo,
+    workspaceMode,
+  ]);
+  const canSubmit = !loading && !submitBlocker;
 
   return (
     <Modal
@@ -366,15 +402,17 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
           <Button
             variant="primary"
             onClick={handleSubmit}
-            disabled={
-              loading ||
-              orgLoading ||
-              !resolvedOrgId ||
-              (workspaceMode === "linked" && !features.linkedWorkspace) ||
-              (orbitRepoMode === "existing" && !selectedOrbitRepo)
-            }
+            disabled={!canSubmit}
           >
-            {loading ? <><Spinner size="sm" /> Creating...</> : "Create Project"}
+            {loading ? (
+              <><Spinner size="sm" /> Creating...</>
+            ) : needsImportedFiles ? (
+              "Choose Files to Continue"
+            ) : needsLinkedFolder ? (
+              "Choose Folder to Continue"
+            ) : (
+              "Create Project"
+            )}
           </Button>
         </>
       }
@@ -467,6 +505,11 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
                 Choose files
               </Button>
             </div>
+            {importSummary.count === 0 && (
+              <Text size="sm" style={{ color: "var(--color-warning)" }}>
+                Choose a folder or files to enable project creation.
+              </Text>
+            )}
             <Text variant="muted" size="sm">
               Aura prepares a workspace from the selected local files on the connected host so you can keep working from the browser.
             </Text>
@@ -507,6 +550,14 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
               Sign in to create a new repo or choose an existing one.
             </Text>
           )}
+          <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
+            <input
+              type="radio"
+              checked={orbitRepoMode === "none"}
+              onChange={() => setOrbitRepoMode("none")}
+            />
+            <span>No Orbit repo</span>
+          </label>
           {isAuthenticated && orbitOwner && (
             <>
               <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
@@ -601,14 +652,6 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
               )}
             </>
           )}
-          <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
-            <input
-              type="radio"
-              checked={orbitRepoMode === "none"}
-              onChange={() => setOrbitRepoMode("none")}
-            />
-            <span>No Orbit repo</span>
-          </label>
         </div>
 
         {!orgLoading && !resolvedOrgId && (
@@ -619,6 +662,11 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
         {error && (
           <Text variant="muted" size="sm" style={{ color: "var(--color-danger)" }}>
             {error}
+          </Text>
+        )}
+        {!error && submitBlocker && (
+          <Text variant="muted" size="sm" style={{ color: "var(--color-text-secondary)" }}>
+            {submitBlocker}
           </Text>
         )}
       </div>
