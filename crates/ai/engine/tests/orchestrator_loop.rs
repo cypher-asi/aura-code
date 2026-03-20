@@ -1,19 +1,12 @@
 // Engine orchestrator loop integration tests.
 //
-// These tests depend on seeding tasks via local RocksDB (`store.put_task`),
-// which was removed in Phase 5e (task storage migrated to aura-storage).
-// They will be rewritten to use a StorageClient mock in Phase 9e.
-//
-// Gated behind the `_local_task_tests` feature which is never set,
-// so they are excluded from compilation until Phase 9e.
+// Uses the mock storage server from `aura_storage::testutil` to seed tasks
+// and specs, replacing the old RocksDB-based `store.put_task` / `store.put_spec`.
 
-#[allow(unexpected_cfgs)]
-#[cfg(feature = "_local_task_tests")]
 mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use chrono::Utc;
     use tokio::sync::{mpsc, Mutex};
 
     use aura_billing::testutil;
@@ -25,51 +18,83 @@ mod tests {
     use aura_projects::{CreateProjectInput, ProjectService};
     use aura_sessions::SessionService;
     use aura_settings::SettingsService;
+    use aura_storage::{CreateSpecRequest, CreateTaskRequest, StorageClient};
     use aura_store::RocksStore;
     use aura_tasks::TaskService;
 
     struct TestHarness {
         engine: Arc<DevLoopEngine>,
         event_rx: mpsc::UnboundedReceiver<EngineEvent>,
+        #[allow(dead_code)]
         store: Arc<RocksStore>,
+        storage_client: Arc<StorageClient>,
         project_id: ProjectId,
-        spec_id: SpecId,
+        spec_id: String,
         _tmp: tempfile::TempDir,
     }
 
-    async fn setup_with_auth(mock: Arc<MockLlmProvider>, store_auth: bool) -> TestHarness {
-        let billing_url = testutil::start_mock_billing_server().await;
-        let billing = Arc::new(testutil::billing_client_for_url(&billing_url));
+    /// Start a mock storage server + billing, wire everything together.
+    ///
+    /// When `zero_balance` is true the billing mock starts with 0 credits so the
+    /// first LLM call triggers InsufficientCredits.
+    async fn setup_with_billing(
+        mock: Arc<MockLlmProvider>,
+        zero_balance: bool,
+    ) -> TestHarness {
         let tmp = tempfile::TempDir::new().unwrap();
         let store = Arc::new(RocksStore::open(tmp.path()).unwrap());
-        if store_auth {
-            testutil::store_zero_auth_session(&store);
-        }
+
+        // JWT is always needed for storage operations
+        testutil::store_zero_auth_session(&store);
 
         std::env::set_var("ANTHROPIC_API_KEY", "test-key");
+
+        // Billing: use stateful mock so we can control balance
+        let billing_state = Arc::new(tokio::sync::Mutex::new(
+            testutil::MockBillingState::new(if zero_balance { 0 } else { 10_000_000 }),
+        ));
+        let billing_url = testutil::start_stateful_mock_billing_server(billing_state).await;
+        let billing = Arc::new(testutil::billing_client_for_url(&billing_url));
+
+        // Storage: mock HTTP server
+        let (storage_url, _mock_db) = aura_storage::testutil::start_mock_storage().await;
+        let storage_client = Arc::new(StorageClient::with_base_url(&storage_url));
 
         let llm = Arc::new(aura_billing::MeteredLlm::new(mock, billing, store.clone()));
         let settings = Arc::new(SettingsService::new(store.clone()));
         let project_service = Arc::new(ProjectService::new(store.clone()));
         let pricing_service = Arc::new(aura_billing::PricingService::new(store.clone()));
-        let task_service = Arc::new(TaskService::new(store.clone(), None, pricing_service));
+        let task_service = Arc::new(TaskService::new(
+            store.clone(),
+            Some(storage_client.clone()),
+            pricing_service,
+        ));
         let runtime_agent_state = Arc::new(Mutex::new(HashMap::new()));
         let agent_instance_service = Arc::new(AgentInstanceService::new(
-            store.clone(), None, runtime_agent_state,
+            store.clone(),
+            Some(storage_client.clone()),
+            runtime_agent_state,
+            None,
         ));
-        let session_service = Arc::new(SessionService::new(store.clone(), 0.8, 200_000));
+        let session_service = Arc::new(
+            SessionService::new(store.clone(), 0.8, 200_000)
+                .with_storage_client(Some(storage_client.clone())),
+        );
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
-        let engine = Arc::new(DevLoopEngine::new(
-            store.clone(),
-            settings,
-            llm,
-            project_service.clone(),
-            task_service.clone(),
-            agent_instance_service,
-            session_service,
-            event_tx,
-        ));
+        let engine = Arc::new(
+            DevLoopEngine::new(
+                store.clone(),
+                settings,
+                llm,
+                project_service.clone(),
+                task_service.clone(),
+                agent_instance_service,
+                session_service,
+                event_tx,
+            )
+            .with_storage_client(Some(storage_client.clone())),
+        );
 
         let project_dir = tmp.path().join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
@@ -80,64 +105,68 @@ mod tests {
                 name: "test-project".into(),
                 description: "test".into(),
                 linked_folder_path: project_dir.to_string_lossy().to_string(),
+                workspace_source: None,
+                workspace_display_path: None,
                 build_command: None,
                 test_command: None,
             })
             .unwrap();
 
-        let spec_id = SpecId::new();
-        let spec = Spec {
-            spec_id,
-            project_id: project.project_id,
-            title: "Test spec".into(),
-            order_index: 0,
-            markdown_contents: "Test specification".into(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        };
-        store.put_spec(&spec).unwrap();
+        let jwt = store.get_jwt().unwrap();
+        let pid = project.project_id.to_string();
+
+        let spec = storage_client
+            .create_spec(
+                &pid,
+                &jwt,
+                &CreateSpecRequest {
+                    title: "Test spec".into(),
+                    order_index: Some(0),
+                    markdown_contents: Some("Test specification".into()),
+                },
+            )
+            .await
+            .unwrap();
 
         TestHarness {
             engine,
             event_rx,
             store,
+            storage_client,
             project_id: project.project_id,
-            spec_id,
+            spec_id: spec.id,
             _tmp: tmp,
         }
     }
 
     async fn setup(mock: Arc<MockLlmProvider>) -> TestHarness {
-        setup_with_auth(mock, true).await
+        setup_with_billing(mock, false).await
     }
 
-    fn make_task(project_id: ProjectId, spec_id: SpecId, title: &str, status: TaskStatus) -> Task {
-        let now = Utc::now();
-        Task {
-            task_id: TaskId::new(),
-            project_id,
-            spec_id,
-            title: title.into(),
-            description: format!("Description for {title}"),
-            status,
-            order_index: 0,
-            dependency_ids: vec![],
-            parent_task_id: None,
-            assigned_agent_instance_id: None,
-            completed_by_agent_instance_id: None,
-            session_id: None,
-            execution_notes: String::new(),
-            files_changed: vec![],
-            build_steps: vec![],
-            test_steps: vec![],
-            live_output: String::new(),
-            user_id: None,
-            model: None,
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-            created_at: now,
-            updated_at: now,
-        }
+    /// Create a task in mock storage with the given status string.
+    async fn create_storage_task(
+        h: &TestHarness,
+        title: &str,
+        status: &str,
+    ) -> String {
+        let jwt = h.store.get_jwt().unwrap();
+        let task = h
+            .storage_client
+            .create_task(
+                &h.project_id.to_string(),
+                &jwt,
+                &CreateTaskRequest {
+                    spec_id: h.spec_id.clone(),
+                    title: title.into(),
+                    description: Some(format!("Description for {title}")),
+                    status: Some(status.into()),
+                    order_index: Some(0),
+                    dependency_ids: None,
+                },
+            )
+            .await
+            .unwrap();
+        task.id
     }
 
     fn collect_events(rx: &mut mpsc::UnboundedReceiver<EngineEvent>) -> Vec<EngineEvent> {
@@ -155,8 +184,8 @@ mod tests {
         ]));
         let mut h = setup(mock).await;
 
-        let task = make_task(h.project_id, h.spec_id, "Implement feature A", TaskStatus::Ready);
-        h.store.put_task(&task).unwrap();
+        let task_id_str =
+            create_storage_task(&h, "Implement feature A", "ready").await;
 
         let handle = h.engine.clone().start(h.project_id, None).await.unwrap();
         let outcome = handle.wait().await.unwrap();
@@ -171,8 +200,9 @@ mod tests {
         assert!(events.iter().any(|e| matches!(e, EngineEvent::TaskCompleted { .. })));
         assert!(events.iter().any(|e| matches!(e, EngineEvent::LoopFinished { .. })));
 
-        let stored = h.store.find_task_by_id(&task.task_id).unwrap().unwrap();
-        assert_eq!(stored.status, TaskStatus::Done);
+        let jwt = h.store.get_jwt().unwrap();
+        let stored = h.storage_client.get_task(&task_id_str, &jwt).await.unwrap();
+        assert_eq!(stored.status.as_deref(), Some("done"));
     }
 
     #[tokio::test]
@@ -203,10 +233,8 @@ mod tests {
         ]));
         let mut h = setup(mock).await;
 
-        let t1 = make_task(h.project_id, h.spec_id, "Task 1", TaskStatus::Ready);
-        let t2 = make_task(h.project_id, h.spec_id, "Task 2", TaskStatus::Ready);
-        h.store.put_task(&t1).unwrap();
-        h.store.put_task(&t2).unwrap();
+        create_storage_task(&h, "Task 1", "ready").await;
+        create_storage_task(&h, "Task 2", "ready").await;
 
         let handle = h.engine.clone().start(h.project_id, None).await.unwrap();
         handle.stop();
@@ -231,16 +259,15 @@ mod tests {
         ]));
         let mut h = setup(mock).await;
 
-        let task = make_task(h.project_id, h.spec_id, "Flaky task", TaskStatus::Failed);
-        h.store.put_task(&task).unwrap();
+        create_storage_task(&h, "Flaky task", "failed").await;
 
         let handle = h.engine.clone().start(h.project_id, None).await.unwrap();
         let outcome = handle.wait().await.unwrap();
 
         let events = collect_events(&mut h.event_rx);
-        let has_retry_ready = events.iter().any(|e| {
-            matches!(e, EngineEvent::TaskBecameReady { task_id, .. } if *task_id == task.task_id)
-        });
+        let has_retry_ready = events
+            .iter()
+            .any(|e| matches!(e, EngineEvent::TaskBecameReady { .. }));
         assert!(has_retry_ready, "expected TaskBecameReady for the failed task");
 
         assert!(
@@ -254,12 +281,8 @@ mod tests {
         let mock = Arc::new(MockLlmProvider::new());
         let mut h = setup(mock).await;
 
-        let task = make_task(
-            h.project_id, h.spec_id,
-            "Run cargo --version",
-            TaskStatus::Ready,
-        );
-        h.store.put_task(&task).unwrap();
+        let task_id_str =
+            create_storage_task(&h, "Run cargo --version", "ready").await;
 
         let handle = h.engine.clone().start(h.project_id, None).await.unwrap();
         let outcome = handle.wait().await.unwrap();
@@ -269,8 +292,9 @@ mod tests {
             "expected AllTasksComplete for shell task, got {outcome:?}"
         );
 
-        let stored = h.store.find_task_by_id(&task.task_id).unwrap().unwrap();
-        assert_eq!(stored.status, TaskStatus::Done);
+        let jwt = h.store.get_jwt().unwrap();
+        let stored = h.storage_client.get_task(&task_id_str, &jwt).await.unwrap();
+        assert_eq!(stored.status.as_deref(), Some("done"));
 
         let events = collect_events(&mut h.event_rx);
         assert!(
@@ -288,31 +312,54 @@ mod tests {
         let mock = Arc::new(MockLlmProvider::with_responses(vec![
             MockResponse::text("Task completed successfully"),
         ]));
-        let billing_url = testutil::start_mock_billing_server().await;
-        let billing = Arc::new(testutil::billing_client_for_url(&billing_url));
+
         let tmp = tempfile::TempDir::new().unwrap();
         let store = Arc::new(RocksStore::open(tmp.path()).unwrap());
         testutil::store_zero_auth_session(&store);
 
         std::env::set_var("ANTHROPIC_API_KEY", "test-key");
 
+        let billing_url = testutil::start_mock_billing_server().await;
+        let billing = Arc::new(testutil::billing_client_for_url(&billing_url));
+
+        let (storage_url, _mock_db) = aura_storage::testutil::start_mock_storage().await;
+        let storage_client = Arc::new(StorageClient::with_base_url(&storage_url));
+
         let llm = Arc::new(aura_billing::MeteredLlm::new(mock, billing, store.clone()));
         let settings = Arc::new(SettingsService::new(store.clone()));
         let project_service = Arc::new(ProjectService::new(store.clone()));
         let pricing_service = Arc::new(aura_billing::PricingService::new(store.clone()));
-        let task_service = Arc::new(TaskService::new(store.clone(), None, pricing_service));
+        let task_service = Arc::new(TaskService::new(
+            store.clone(),
+            Some(storage_client.clone()),
+            pricing_service,
+        ));
         let runtime_agent_state = Arc::new(Mutex::new(HashMap::new()));
         let agent_instance_service = Arc::new(AgentInstanceService::new(
-            store.clone(), None, runtime_agent_state,
+            store.clone(),
+            Some(storage_client.clone()),
+            runtime_agent_state,
+            None,
         ));
-        let session_service = Arc::new(SessionService::new(store.clone(), 0.8, 200_000));
+        let session_service = Arc::new(
+            SessionService::new(store.clone(), 0.8, 200_000)
+                .with_storage_client(Some(storage_client.clone())),
+        );
         let (event_tx, mut event_rx) = mpsc::unbounded_channel();
 
-        let engine = Arc::new(DevLoopEngine::new(
-            store.clone(), settings, llm,
-            project_service.clone(), task_service.clone(),
-            agent_instance_service, session_service, event_tx,
-        ));
+        let engine = Arc::new(
+            DevLoopEngine::new(
+                store.clone(),
+                settings,
+                llm,
+                project_service.clone(),
+                task_service.clone(),
+                agent_instance_service,
+                session_service,
+                event_tx,
+            )
+            .with_storage_client(Some(storage_client.clone())),
+        );
 
         let project_dir = tmp.path().join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
@@ -323,25 +370,44 @@ mod tests {
                 name: "build-test-project".into(),
                 description: "test".into(),
                 linked_folder_path: project_dir.to_string_lossy().to_string(),
+                workspace_source: None,
+                workspace_display_path: None,
                 build_command: Some("cargo --version".into()),
                 test_command: None,
             })
             .unwrap();
 
-        let spec_id = SpecId::new();
-        let spec = Spec {
-            spec_id,
-            project_id: project.project_id,
-            title: "Test spec".into(),
-            order_index: 0,
-            markdown_contents: "Test specification".into(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        };
-        store.put_spec(&spec).unwrap();
+        let jwt = store.get_jwt().unwrap();
+        let pid = project.project_id.to_string();
 
-        let task = make_task(project.project_id, spec_id, "Implement feature A", TaskStatus::Ready);
-        store.put_task(&task).unwrap();
+        let spec = storage_client
+            .create_spec(
+                &pid,
+                &jwt,
+                &CreateSpecRequest {
+                    title: "Test spec".into(),
+                    order_index: Some(0),
+                    markdown_contents: Some("Test specification".into()),
+                },
+            )
+            .await
+            .unwrap();
+
+        storage_client
+            .create_task(
+                &pid,
+                &jwt,
+                &CreateTaskRequest {
+                    spec_id: spec.id,
+                    title: "Implement feature A".into(),
+                    description: Some("Description for Implement feature A".into()),
+                    status: Some("ready".into()),
+                    order_index: Some(0),
+                    dependency_ids: None,
+                },
+            )
+            .await
+            .unwrap();
 
         let handle = engine.clone().start(project.project_id, None).await.unwrap();
         let outcome = handle.wait().await.unwrap();
@@ -363,14 +429,159 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn loop_triggers_session_rollover() {
+        // Response order: task exec → rollover summary → task exec → rollover summary → task exec
+        // High token counts on task responses ensure context_usage_estimate exceeds the threshold.
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![
+            MockResponse::text("Task 1 done").with_tokens(5_000, 5_000),
+            MockResponse::text("Summary after task 1").with_tokens(100, 50),
+            MockResponse::text("Task 2 done").with_tokens(5_000, 5_000),
+            MockResponse::text("Summary after task 2").with_tokens(100, 50),
+            MockResponse::text("Task 3 done").with_tokens(5_000, 5_000),
+            MockResponse::text("Extra summary").with_tokens(100, 50),
+            MockResponse::text("Extra response").with_tokens(100, 50),
+        ]));
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Arc::new(RocksStore::open(tmp.path()).unwrap());
+        testutil::store_zero_auth_session(&store);
+
+        std::env::set_var("ANTHROPIC_API_KEY", "test-key");
+
+        let billing_state = Arc::new(tokio::sync::Mutex::new(
+            testutil::MockBillingState::new(10_000_000),
+        ));
+        let billing_url = testutil::start_stateful_mock_billing_server(billing_state).await;
+        let billing = Arc::new(testutil::billing_client_for_url(&billing_url));
+
+        let (storage_url, _mock_db) = aura_storage::testutil::start_mock_storage().await;
+        let storage_client = Arc::new(StorageClient::with_base_url(&storage_url));
+
+        let llm = Arc::new(aura_billing::MeteredLlm::new(mock, billing, store.clone()));
+        let settings = Arc::new(SettingsService::new(store.clone()));
+        let project_service = Arc::new(ProjectService::new(store.clone()));
+        let pricing_service = Arc::new(aura_billing::PricingService::new(store.clone()));
+        let task_service = Arc::new(TaskService::new(
+            store.clone(),
+            Some(storage_client.clone()),
+            pricing_service,
+        ));
+        let runtime_agent_state = Arc::new(Mutex::new(HashMap::new()));
+        let agent_instance_service = Arc::new(AgentInstanceService::new(
+            store.clone(),
+            Some(storage_client.clone()),
+            runtime_agent_state,
+            None,
+        ));
+        // Low threshold (0.01) + small context window (10k tokens) so rollover triggers
+        // after first task (10k tokens / 10k window = 1.0 usage >> 0.01 threshold).
+        let session_service = Arc::new(
+            SessionService::new(store.clone(), 0.01, 10_000)
+                .with_storage_client(Some(storage_client.clone())),
+        );
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+
+        let engine = Arc::new(
+            DevLoopEngine::new(
+                store.clone(),
+                settings,
+                llm,
+                project_service.clone(),
+                task_service.clone(),
+                agent_instance_service,
+                session_service,
+                event_tx,
+            )
+            .with_storage_client(Some(storage_client.clone())),
+        );
+
+        let project_dir = tmp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        let project = project_service
+            .create_project(CreateProjectInput {
+                org_id: OrgId::new(),
+                name: "rollover-test".into(),
+                description: "test".into(),
+                linked_folder_path: project_dir.to_string_lossy().to_string(),
+                workspace_source: None,
+                workspace_display_path: None,
+                build_command: None,
+                test_command: None,
+            })
+            .unwrap();
+
+        let jwt = store.get_jwt().unwrap();
+        let pid = project.project_id.to_string();
+
+        let spec = storage_client
+            .create_spec(
+                &pid,
+                &jwt,
+                &CreateSpecRequest {
+                    title: "Multi-task spec".into(),
+                    order_index: Some(0),
+                    markdown_contents: Some("Spec for rollover test".into()),
+                },
+            )
+            .await
+            .unwrap();
+
+        for i in 0..3 {
+            storage_client
+                .create_task(
+                    &pid,
+                    &jwt,
+                    &CreateTaskRequest {
+                        spec_id: spec.id.clone(),
+                        title: format!("Task {}", i + 1),
+                        description: Some(format!("Task {} desc", i + 1)),
+                        status: Some("ready".into()),
+                        order_index: Some(i),
+                        dependency_ids: None,
+                    },
+                )
+                .await
+                .unwrap();
+        }
+
+        let handle = engine.clone().start(project.project_id, None).await.unwrap();
+        let outcome = handle.wait().await.unwrap();
+
+        assert!(
+            matches!(outcome, LoopOutcome::AllTasksComplete),
+            "expected AllTasksComplete, got {outcome:?}"
+        );
+
+        let events = collect_events(&mut event_rx);
+
+        let rollover_count = events
+            .iter()
+            .filter(|e| matches!(e, EngineEvent::SessionRolledOver { .. }))
+            .count();
+        assert!(
+            rollover_count >= 1,
+            "expected at least one SessionRolledOver event, got {rollover_count}"
+        );
+
+        let tasks_completed = events
+            .iter()
+            .filter(|e| matches!(e, EngineEvent::TaskCompleted { .. }))
+            .count();
+        assert!(
+            tasks_completed >= 2,
+            "expected at least 2 tasks completed despite rollover, got {tasks_completed}"
+        );
+    }
+
+    #[tokio::test]
     async fn loop_stops_on_credits_exhausted() {
         let mock = Arc::new(MockLlmProvider::with_responses(vec![
             MockResponse::text("unreachable"),
         ]));
-        let mut h = setup_with_auth(mock, false).await;
+        let mut h = setup_with_billing(mock, true).await;
 
-        let task = make_task(h.project_id, h.spec_id, "Task that needs credits", TaskStatus::Ready);
-        h.store.put_task(&task).unwrap();
+        create_storage_task(&h, "Task that needs credits", "ready").await;
 
         let handle = h.engine.clone().start(h.project_id, None).await.unwrap();
         let outcome = handle.wait().await.unwrap();

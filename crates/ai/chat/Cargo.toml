@@ -30,3 +30,6 @@ regex = "1"
 tempfile = "3"
 axum = "0.7"
 aura-billing = { path = "../../domain/billing", features = ["test-utils"] }
+aura-storage = { path = "../../infra/storage", features = ["test-utils"] }
+aura-specs = { path = "../../domain/specs" }
+aura-claude = { path = "../../infra/claude" }
