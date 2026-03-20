@@ -30,16 +30,49 @@ struct ChatToolLoopExecutor {
 #[async_trait]
 impl ToolExecutor for ChatToolLoopExecutor {
     async fn execute(&self, tool_calls: &[ToolCall]) -> Vec<ToolCallResult> {
-        let futures: Vec<_> = tool_calls
-            .iter()
-            .map(|tc| self.inner.execute(&self.project_id, &tc.name, tc.input.clone()))
-            .collect();
-        let results = futures::future::join_all(futures).await;
+        let mut indexed_results: Vec<(usize, crate::chat_tool_executor::ToolExecResult)> =
+            Vec::with_capacity(tool_calls.len());
 
-        results
+        // Partition into create_task (sequential) vs everything else (concurrent)
+        let mut concurrent_indices = Vec::new();
+        let mut sequential_indices = Vec::new();
+        for (i, tc) in tool_calls.iter().enumerate() {
+            if tc.name == "create_task" {
+                sequential_indices.push(i);
+            } else {
+                concurrent_indices.push(i);
+            }
+        }
+
+        // Run non-create_task calls concurrently
+        if !concurrent_indices.is_empty() {
+            let futures: Vec<_> = concurrent_indices
+                .iter()
+                .map(|&i| {
+                    let tc = &tool_calls[i];
+                    self.inner.execute(&self.project_id, &tc.name, tc.input.clone())
+                })
+                .collect();
+            let results = futures::future::join_all(futures).await;
+            for (result, &i) in results.into_iter().zip(&concurrent_indices) {
+                indexed_results.push((i, result));
+            }
+        }
+
+        // Run create_task calls sequentially to prevent order_index races
+        for &i in &sequential_indices {
+            let tc = &tool_calls[i];
+            let result = self.inner.execute(&self.project_id, &tc.name, tc.input.clone()).await;
+            indexed_results.push((i, result));
+        }
+
+        // Sort back into original order
+        indexed_results.sort_by_key(|(i, _)| *i);
+
+        indexed_results
             .into_iter()
-            .zip(tool_calls)
-            .map(|(result, tc)| {
+            .map(|(i, result)| {
+                let tc = &tool_calls[i];
                 if let Some(spec) = &result.saved_spec {
                     if let Ok(mut acc) = self.blocks.lock() {
                         acc.push(ChatContentBlock::SpecRef {
