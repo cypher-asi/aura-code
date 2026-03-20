@@ -1,6 +1,8 @@
 use aura_core::*;
 use serde::Serialize;
 
+use crate::git_ops::CommitInfo;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct FileOpSummary {
     pub op: String,
@@ -266,6 +268,23 @@ pub enum EngineEvent {
         agent_instance_id: AgentInstanceId,
         task_id: TaskId,
         attempt: u32,
+    },
+
+    GitCommitted {
+        project_id: ProjectId,
+        agent_instance_id: AgentInstanceId,
+        task_id: TaskId,
+        commit_sha: String,
+        message: String,
+    },
+    GitPushed {
+        project_id: ProjectId,
+        agent_instance_id: AgentInstanceId,
+        spec_id: SpecId,
+        repo: String,
+        branch: String,
+        commits: Vec<CommitInfo>,
+        summary: String,
     },
 
     /// Event bridged from aura-network WebSocket (feed activity, follows, usage updates).

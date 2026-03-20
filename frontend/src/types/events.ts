@@ -29,6 +29,8 @@ export type EngineEventType =
   | "test_verification_passed"
   | "test_verification_failed"
   | "test_fix_attempt"
+  | "git_committed"
+  | "git_pushed"
   | "network_event";
 
 export interface PhaseTimingEntry {
@@ -105,6 +107,13 @@ export interface EngineEvent {
 
   // Observability: iteration summary
   phase_timings?: PhaseTimingEntry[];
+
+  // Git events
+  commit_sha?: string;
+  spec_id?: string;
+  repo?: string;
+  branch?: string;
+  commits?: { sha: string; message: string }[];
 
   // Network events (bridged from aura-network WebSocket)
   network_event_type?: string;
