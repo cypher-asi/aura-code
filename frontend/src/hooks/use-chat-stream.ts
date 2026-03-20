@@ -54,7 +54,7 @@ interface UseChatStreamOptions {
 
 interface StreamCtx {
   projectId: string;
-  sidekick: ReturnType<typeof useSidekick>;
+  sidekickRef: { current: ReturnType<typeof useSidekick> };
   projectCtxRef: { current: ReturnType<typeof useProjectContext> };
   capturedThinkingDurationMs: number | null;
   capturedIsStreaming: boolean;
@@ -150,7 +150,7 @@ function buildAttachmentLabel(attachments: ChatAttachment[] | undefined): string
 function pushPendingSpec(
   info: ToolCallInfo,
   projectId: string,
-  sidekick: StreamCtx["sidekick"],
+  sidekick: ReturnType<typeof useSidekick>,
   pendingSpecIdsRef: { current: string[] },
 ) {
   const pendingId = `pending-${info.id}`;
@@ -170,7 +170,7 @@ function pushPendingSpec(
 function pushPendingTask(
   info: ToolCallInfo,
   projectId: string,
-  sidekick: StreamCtx["sidekick"],
+  sidekick: ReturnType<typeof useSidekick>,
   pendingTaskIdsRef: { current: string[] },
 ) {
   const pendingId = `pending-${info.id}`;
@@ -279,10 +279,10 @@ function handleToolCall(ctx: StreamCtx, info: ToolCallInfo) {
   }
   ctx.setActiveToolCalls([...ctx.toolCallsRef.current]);
   if (info.name === "create_spec" && ctx.projectId) {
-    pushPendingSpec(info, ctx.projectId, ctx.sidekick, ctx.pendingSpecIdsRef);
+    pushPendingSpec(info, ctx.projectId, ctx.sidekickRef.current, ctx.pendingSpecIdsRef);
   }
   if (info.name === "create_task" && ctx.projectId) {
-    pushPendingTask(info, ctx.projectId, ctx.sidekick, ctx.pendingTaskIdsRef);
+    pushPendingTask(info, ctx.projectId, ctx.sidekickRef.current, ctx.pendingTaskIdsRef);
   }
 }
 
@@ -295,15 +295,15 @@ function handleToolResult(ctx: StreamCtx, info: ToolResultInfo) {
   ctx.setActiveToolCalls([...ctx.toolCallsRef.current]);
   ctx.needsSeparatorRef.current = true;
   if (info.name === "create_spec" && info.is_error) {
-    removePendingArtifact(info.id, ctx.pendingSpecIdsRef, (id) => ctx.sidekick.removeSpec(id));
+    removePendingArtifact(info.id, ctx.pendingSpecIdsRef, (id) => ctx.sidekickRef.current.removeSpec(id));
   }
   if (info.name === "create_task" && info.is_error) {
-    removePendingArtifact(info.id, ctx.pendingTaskIdsRef, (id) => ctx.sidekick.removeTask(id));
+    removePendingArtifact(info.id, ctx.pendingTaskIdsRef, (id) => ctx.sidekickRef.current.removeTask(id));
   }
   if (info.name === "delete_spec" && !info.is_error) {
     try {
       const parsed = JSON.parse(info.result) as { deleted?: string };
-      if (typeof parsed?.deleted === "string") ctx.sidekick.removeSpec(parsed.deleted);
+      if (typeof parsed?.deleted === "string") ctx.sidekickRef.current.removeSpec(parsed.deleted);
     } catch {
       /* ignore parse errors */
     }
@@ -396,7 +396,7 @@ function handleStreamDone(ctx: StreamCtx) {
   ctx.thinkingStartRef.current = null;
   ctx.setThinkingDurationMs(null);
   ctx.setIsStreaming(false);
-  ctx.sidekick.setStreamingAgentInstanceId(null);
+  ctx.sidekickRef.current.setStreamingAgentInstanceId(null);
   ctx.abortRef.current = null;
 }
 
@@ -410,8 +410,8 @@ function createStreamCallbacks(ctx: StreamCtx): ChatStreamCallbacks {
     onToolResult: (info) => handleToolResult(ctx, info),
     onSpecSaved(spec) {
       const pendingId = ctx.pendingSpecIdsRef.current.shift();
-      if (pendingId) ctx.sidekick.removeSpec(pendingId);
-      ctx.sidekick.pushSpec(spec);
+      if (pendingId) ctx.sidekickRef.current.removeSpec(pendingId);
+      ctx.sidekickRef.current.pushSpec(spec);
     },
     onSpecsTitle(title) {
       const pctx = ctx.projectCtxRef.current;
@@ -423,11 +423,11 @@ function createStreamCallbacks(ctx: StreamCtx): ChatStreamCallbacks {
     },
     onTaskSaved(task) {
       const pendingId = ctx.pendingTaskIdsRef.current.shift();
-      if (pendingId) ctx.sidekick.removeTask(pendingId);
-      ctx.sidekick.pushTask(task);
+      if (pendingId) ctx.sidekickRef.current.removeTask(pendingId);
+      ctx.sidekickRef.current.pushTask(task);
     },
     onMessageSaved: (msg) => handleMessageSaved(ctx, msg),
-    onAgentInstanceUpdated: (instance) => ctx.sidekick.notifyAgentInstanceUpdate(instance),
+    onAgentInstanceUpdated: (instance) => ctx.sidekickRef.current.notifyAgentInstanceUpdate(instance),
     onTokenUsage() {},
     onError: (message) => handleStreamError(ctx, message),
     onDone: () => handleStreamDone(ctx),
@@ -436,9 +436,11 @@ function createStreamCallbacks(ctx: StreamCtx): ChatStreamCallbacks {
 
 export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptions) {
   const sidekick = useSidekick();
+  const sidekickRef = useRef(sidekick);
   const projectCtx = useProjectContext();
   const projectCtxRef = useRef(projectCtx);
 
+  useEffect(() => { sidekickRef.current = sidekick; }, [sidekick]);
   useEffect(() => {
     projectCtxRef.current = projectCtx;
   }, [projectCtx]);
@@ -487,9 +489,9 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
       setActiveToolCalls([]);
       setIsStreaming(false);
       setProgressText("");
-      sidekick.setStreamingAgentInstanceId(null);
+      sidekickRef.current.setStreamingAgentInstanceId(null);
     };
-  }, [projectId, agentInstanceId, sidekick]);
+  }, [projectId, agentInstanceId]);
 
   const resetMessages = useCallback((msgs: DisplayMessage[]) => {
     setMessages(msgs);
@@ -514,10 +516,10 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
       };
       setMessages((prev) => [...prev, userMsg]);
       setIsStreaming(true);
-      sidekick.setStreamingAgentInstanceId(agentInstanceId);
+      sidekickRef.current.setStreamingAgentInstanceId(agentInstanceId);
 
       const ctx: StreamCtx = {
-        projectId: projectId!, sidekick, projectCtxRef,
+        projectId: projectId!, sidekickRef, projectCtxRef,
         capturedThinkingDurationMs: thinkingDurationMsRef.current, capturedIsStreaming: isStreamingRef.current,
         streamBufferRef, thinkingBufferRef, thinkingStartRef, thinkingRafRef, rafRef,
         toolCallsRef, needsSeparatorRef, pendingSpecIdsRef, pendingTaskIdsRef, abortRef,
@@ -530,8 +532,8 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
       pendingTaskIdsRef.current = [];
 
       if (action === "generate_specs") {
-        sidekick.clearGeneratedArtifacts();
-        sidekick.setActiveTab("specs");
+        sidekickRef.current.clearGeneratedArtifacts();
+        sidekickRef.current.setActiveTab("specs");
       }
 
       const controller = new AbortController();
@@ -541,10 +543,10 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
         attachments, createStreamCallbacks(ctx), controller.signal,
       );
       setIsStreaming(false);
-      sidekick.setStreamingAgentInstanceId(null);
+      sidekickRef.current.setStreamingAgentInstanceId(null);
       abortRef.current = null;
     },
-    [projectId, agentInstanceId, sidekick],
+    [projectId, agentInstanceId],
   );
 
   const stopStreaming = useCallback(() => {
@@ -570,19 +572,19 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
       setStreamingText, setThinkingText, setThinkingDurationMs, setActiveToolCalls,
     });
     setIsStreaming(false);
-    sidekick.setStreamingAgentInstanceId(null);
+    sidekickRef.current.setStreamingAgentInstanceId(null);
     abortRef.current = null;
 
     if (projectId && agentInstanceId) {
       const refetch = () => {
         api.getAgentInstance(projectId, agentInstanceId).then((instance) => {
-          sidekick.notifyAgentInstanceUpdate(instance);
+          sidekickRef.current.notifyAgentInstanceUpdate(instance);
         }).catch(() => {});
       };
       setTimeout(refetch, 2000);
       setTimeout(refetch, 5000);
     }
-  }, [sidekick, projectId, agentInstanceId]);
+  }, [projectId, agentInstanceId]);
 
   return {
     messages,
