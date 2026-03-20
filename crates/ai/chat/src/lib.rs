@@ -16,4 +16,4 @@ pub use error::ChatError;
 pub use chat::{ChatAttachment, ChatService, ChatStreamEvent};
 pub use chat_tool_executor::{ChatToolExecutor, ToolExecResult};
 pub use message_metadata::{encode_message_content, decode_message_content, DecodedMessage};
-pub use tool_loop::{run_tool_loop, AutoBuildResult, ToolCallResult, ToolExecutor, ToolLoopConfig, ToolLoopEvent, ToolLoopResult};
+pub use tool_loop::{run_tool_loop, AutoBuildResult, BuildBaseline, ToolCallResult, ToolExecutor, ToolLoopConfig, ToolLoopEvent, ToolLoopResult};

@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 
 use aura_core::*;
 use aura_claude::ToolCall;
-use aura_chat::{AutoBuildResult, ChatToolExecutor, ToolCallResult, ToolExecResult, ToolExecutor};
+use aura_chat::{AutoBuildResult, BuildBaseline, ChatToolExecutor, ToolCallResult, ToolExecResult, ToolExecutor};
 
 use super::build_fix::{
     infer_default_build_command,
@@ -79,6 +79,30 @@ impl ToolExecutor for EngineToolLoopExecutor {
             }
             Err(e) => {
                 tracing::warn!(error = %e, "auto-build check failed to execute");
+                None
+            }
+        }
+    }
+
+    async fn capture_build_baseline(&self) -> Option<BuildBaseline> {
+        let project_root = std::path::Path::new(&self.project.linked_folder_path);
+        let cmd = self.project.build_command.as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(String::from)
+            .or_else(|| infer_default_build_command(project_root))?;
+
+        match build_verify::run_build_command(project_root, &cmd, None).await {
+            Ok(result) if !result.success => {
+                let sigs = BuildBaseline::extract_signatures(&result.stderr);
+                tracing::info!(
+                    count = sigs.len(),
+                    "captured build baseline with pre-existing errors"
+                );
+                Some(BuildBaseline { error_signatures: sigs })
+            }
+            Ok(_) => Some(BuildBaseline::default()),
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to capture build baseline");
                 None
             }
         }
@@ -326,3 +350,4 @@ fn looks_like_compiler_errors(output: &str) -> bool {
     let has_ts_errors = output.contains("TS2") && output.contains("error TS");
     has_rust_errors || has_generic_errors || has_ts_errors
 }
+
