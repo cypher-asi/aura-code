@@ -84,6 +84,28 @@ impl DevLoopEngine {
                 .collect()
         };
 
+        let complexity = classify_task_complexity(&task.title, &task.description);
+        if complexity == TaskComplexity::Simple {
+            if let Some(skip_reason) = check_already_completed(
+                &project, task, &completed_deps,
+            ).await {
+                tracing::info!(
+                    task_id = %task.task_id,
+                    reason = %skip_reason,
+                    "Skipping redundant simple task"
+                );
+                return Ok(TaskExecution {
+                    notes: format!("Task skipped as redundant: {}", skip_reason),
+                    file_ops: Vec::new(),
+                    follow_up_tasks: Vec::new(),
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    parse_retries: 0,
+                    files_already_applied: true,
+                });
+            }
+        }
+
         let work_log_summary = build_work_log_summary(work_log);
 
         let mut task_context = build_agentic_task_context(
@@ -139,7 +161,6 @@ impl DevLoopEngine {
             exploration_allowance,
         };
 
-        let complexity = classify_task_complexity(&task.title, &task.description);
         let thinking_budget = match complexity {
             TaskComplexity::Simple => 2_000.min(self.llm_config.thinking_budget),
             TaskComplexity::Standard => compute_thinking_budget(
@@ -360,6 +381,56 @@ fn classify_task_complexity(title: &str, description: &str) -> TaskComplexity {
     }
 
     TaskComplexity::Standard
+}
+
+/// Conservative pre-check: skip simple tasks whose deliverables already exist
+/// in the workspace (e.g. a struct/module defined by a predecessor task).
+async fn check_already_completed(
+    project: &Project,
+    task: &Task,
+    completed_deps: &[Task],
+) -> Option<String> {
+    if completed_deps.is_empty() {
+        return None;
+    }
+
+    let desc_lower = format!("{} {}", task.title, task.description).to_lowercase();
+    let base = &project.linked_folder_path;
+
+    let define_patterns: &[(&str, &str)] = &[
+        ("define struct ", "struct "),
+        ("define enum ", "enum "),
+        ("define type ", "type "),
+        ("create struct ", "struct "),
+        ("create enum ", "enum "),
+    ];
+    for (trigger, code_prefix) in define_patterns {
+        if let Some(pos) = desc_lower.find(trigger) {
+            let after = &desc_lower[pos + trigger.len()..];
+            let name: String = after.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+            if name.is_empty() { continue; }
+
+            let dep_files: Vec<&str> = completed_deps.iter()
+                .flat_map(|d| d.files_changed.iter())
+                .map(|f| f.path.as_str())
+                .collect();
+
+            for file_path in &dep_files {
+                let full_path = std::path::Path::new(base).join(file_path);
+                if let Ok(content) = tokio::fs::read_to_string(&full_path).await {
+                    let needle = format!("{}{}", code_prefix, name);
+                    if content.to_lowercase().contains(&needle.to_lowercase()) {
+                        return Some(format!(
+                            "`{}{}` already exists in {} (created by a predecessor task)",
+                            code_prefix, name, file_path
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }
 
 fn resolve_simple_model() -> String {
