@@ -9,7 +9,7 @@ import { StatusBadge } from "./StatusBadge";
 import type { ProjectId } from "../types";
 import styles from "./Sidekick.module.css";
 
-type AutomationStatus = "idle" | "starting" | "active" | "paused" | "stopped";
+type AutomationStatus = "idle" | "starting" | "preparing" | "active" | "paused" | "stopped";
 
 interface AutomationBarProps {
   projectId: ProjectId;
@@ -22,6 +22,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
   const [activeAgents, setActiveAgents] = useState<string[]>([]);
   const [paused, setPaused] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [preparing, setPreparing] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
 
   const isForProject = useCallback(
@@ -40,6 +41,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
           setActiveAgents([]);
           setPaused(false);
           setStarting(false);
+          setPreparing(false);
         }
       })
       .catch(() => {});
@@ -68,10 +70,16 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
         }
         setPaused(false);
         setStarting(false);
+        setPreparing(true);
+      }),
+      subscribe("task_started", (e) => {
+        if (!isForProject(e)) return;
+        setPreparing(false);
       }),
       subscribe("loop_paused", (e) => {
         if (!isForProject(e)) return;
         setPaused(true);
+        setPreparing(false);
       }),
       subscribe("loop_stopped", (e) => {
         if (!isForProject(e)) return;
@@ -83,6 +91,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
         }
         setPaused(false);
         setStarting(false);
+        setPreparing(false);
       }),
       subscribe("loop_finished", (e) => {
         if (!isForProject(e)) return;
@@ -94,6 +103,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
         }
         setPaused(false);
         setStarting(false);
+        setPreparing(false);
         if (e.outcome === "insufficient_credits") {
           dispatchInsufficientCredits();
         }
@@ -106,6 +116,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
 
   let status: AutomationStatus = "idle";
   if (starting) status = "starting";
+  else if (preparing) status = "preparing";
   else if (paused) status = "paused";
   else if (running) status = "active";
 
@@ -119,8 +130,10 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
       if (res.active_agent_instances) setActiveAgents(res.active_agent_instances);
       setPaused(false);
       setStarting(false);
+      setPreparing(true);
     } catch (err) {
       setStarting(false);
+      setPreparing(false);
       if (isInsufficientCreditsError(err)) {
         dispatchInsufficientCredits();
       }
@@ -173,7 +186,7 @@ export function AutomationBar({ projectId }: AutomationBarProps) {
             variant="ghost"
             size="sm"
             iconOnly
-            icon={starting ? <Loader2 size={14} className={styles.automationSpinner} /> : <Play size={14} />}
+            icon={starting || preparing ? <Loader2 size={14} className={styles.automationSpinner} /> : <Play size={14} />}
             onClick={handleStart}
             disabled={!canPlay}
             title={paused ? "Resume" : "Start"}
