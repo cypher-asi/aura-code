@@ -361,20 +361,6 @@ impl DevLoopEngine {
         });
     }
 
-    pub(crate) fn update_task_tracking(
-        &self,
-        project_id: &ProjectId,
-        task: &Task,
-        user_id: &Option<String>,
-        model: &Option<String>,
-        input_tokens: u64,
-        output_tokens: u64,
-    ) {
-        // Token tracking fields are not stored in aura-storage's StorageTask.
-        // They live on agent instances / sessions instead.
-        let _ = (project_id, task, user_id, model, input_tokens, output_tokens);
-    }
-
     pub(crate) fn current_user_id(&self) -> Option<String> {
         self.store
             .get_setting("zero_auth_session")

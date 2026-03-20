@@ -144,7 +144,7 @@ impl DevLoopEngine {
         task: &Task,
         session: &Session,
         api_key: &str,
-        user_id: &Option<String>,
+        _user_id: &Option<String>,
         model: &Option<String>,
         task_start: Instant,
         baseline_test_failures: &HashSet<String>,
@@ -177,11 +177,6 @@ impl DevLoopEngine {
             .unwrap_or_default()
         };
 
-        self.update_task_tracking(
-            &project_id, task, user_id, model,
-            execution.input_tokens, execution.output_tokens,
-        );
-
         let _write_guard = self.write_coordinator.acquire(&project_id).await;
 
         let file_ops_start = Instant::now();
@@ -204,8 +199,6 @@ impl DevLoopEngine {
             ).await?;
         let build_verify_duration_ms = build_start.elapsed().as_millis() as u64;
         let task_duration_ms = task_start.elapsed().as_millis() as u64;
-
-        self.update_task_tracking(&project_id, task, user_id, model, fix_inp, fix_out);
 
         let total_input = execution.input_tokens + fix_inp;
         let total_output = execution.output_tokens + fix_out;

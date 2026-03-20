@@ -146,10 +146,6 @@ pub(crate) fn infer_default_build_command(project_root: &Path) -> Option<String>
 }
 
 impl DevLoopEngine {
-    pub(crate) fn persist_build_step(&self, _task: &Task, _step: BuildStepRecord) {
-        // build_steps are not stored in aura-storage
-    }
-
     /// Run the build command once and return the set of pre-existing error
     /// signatures. Mirrors `capture_test_baseline` for build errors.
     pub(crate) async fn capture_build_baseline(&self, project: &Project) -> HashSet<String> {
@@ -189,13 +185,6 @@ impl DevLoopEngine {
                         command = %fallback,
                         "build_command missing; using inferred safe default for verification"
                     );
-                    self.persist_build_step(task, BuildStepRecord {
-                        kind: "fallback_command".into(),
-                        command: Some(fallback.clone()),
-                        stderr: None,
-                        stdout: Some("build_command missing; inferred fallback command".into()),
-                        attempt: None,
-                    });
                     return Some(fallback);
                 }
                 self.emit(EngineEvent::BuildVerificationSkipped {
@@ -203,13 +192,6 @@ impl DevLoopEngine {
                     agent_instance_id: session.agent_instance_id,
                     task_id: task.task_id,
                     reason: "no build_command configured on project".into(),
-                });
-                self.persist_build_step(task, BuildStepRecord {
-                    kind: "skipped".into(),
-                    command: None,
-                    stderr: None,
-                    stdout: Some("no build_command configured on project".into()),
-                    attempt: None,
                 });
                 return None;
             }
@@ -236,7 +218,7 @@ impl DevLoopEngine {
 
     async fn run_build_with_streaming(
         &self, project: &Project, session: &Session, task: &Task,
-        base_path: &Path, build_command: &str, attempt: u32,
+        base_path: &Path, build_command: &str, _attempt: u32,
     ) -> Result<(build_verify::BuildResult, u64), EngineError> {
         let build_step_start = Instant::now();
         self.emit(EngineEvent::BuildVerificationStarted {
@@ -244,13 +226,6 @@ impl DevLoopEngine {
             agent_instance_id: session.agent_instance_id,
             task_id: task.task_id,
             command: build_command.to_string(),
-        });
-        self.persist_build_step(task, BuildStepRecord {
-            kind: "started".into(),
-            command: Some(build_command.to_string()),
-            stderr: None,
-            stdout: None,
-            attempt: Some(attempt),
         });
         let (line_tx, mut line_rx) = tokio::sync::mpsc::unbounded_channel();
         let fwd_event_tx = self.event_tx.clone();
@@ -296,7 +271,7 @@ impl DevLoopEngine {
 
     fn record_build_passed(
         &self, project: &Project, session: &Session, task: &Task,
-        build_command: &str, stdout: &str, duration_ms: u64, attempt: u32,
+        build_command: &str, stdout: &str, duration_ms: u64, _attempt: u32,
     ) {
         self.emit(EngineEvent::BuildVerificationPassed {
             project_id: project.project_id,
@@ -305,13 +280,6 @@ impl DevLoopEngine {
             command: build_command.to_string(),
             stdout: stdout.to_string(),
             duration_ms: Some(duration_ms),
-        });
-        self.persist_build_step(task, BuildStepRecord {
-            kind: "passed".into(),
-            command: Some(build_command.to_string()),
-            stderr: None,
-            stdout: Some(stdout.to_string()),
-            attempt: Some(attempt),
         });
     }
 
@@ -336,13 +304,6 @@ impl DevLoopEngine {
             attempt,
             duration_ms: Some(duration_ms),
             error_hash,
-        });
-        self.persist_build_step(task, BuildStepRecord {
-            kind: "failed".into(),
-            command: Some(build_command.to_string()),
-            stderr: Some(stderr.to_string()),
-            stdout: Some(stdout.to_string()),
-            attempt: Some(attempt),
         });
     }
 
@@ -380,13 +341,6 @@ impl DevLoopEngine {
             agent_instance_id: session.agent_instance_id,
             task_id: task.task_id,
             attempt,
-        });
-        self.persist_build_step(task, BuildStepRecord {
-            kind: "fix_attempt".into(),
-            command: None,
-            stderr: None,
-            stdout: None,
-            attempt: Some(attempt),
         });
         let spec = self.load_spec(&task.project_id, &task.spec_id).await?;
 

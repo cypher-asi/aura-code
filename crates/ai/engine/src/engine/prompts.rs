@@ -5,7 +5,7 @@ use aura_core::*;
 use super::build_fix::{classify_build_errors, error_category_guidance, parse_error_references, BuildFixAttemptRecord};
 use crate::file_ops::{self, StubReport};
 
-pub(crate) fn task_execution_system_prompt() -> String {
+fn _task_execution_system_prompt() -> String {
     format!(r#"
 You are an expert software engineer executing a single implementation task.
 
@@ -312,7 +312,7 @@ pub(crate) fn build_agentic_task_context(
     ctx
 }
 
-pub(crate) fn build_execution_prompt(
+fn _build_execution_prompt(
     project: &Project,
     spec: &Spec,
     task: &Task,

@@ -110,12 +110,6 @@ impl DevLoopEngine {
             task_id: task.task_id,
             command: command.to_string(),
         });
-        self.persist_build_step(task, BuildStepRecord {
-            kind: "started".into(),
-            command: Some(command.to_string()),
-            stderr: None, stdout: None,
-            attempt: Some(attempt),
-        });
         send_or_log(&self.event_tx, EngineEvent::TaskOutputDelta {
             project_id: project.project_id,
             agent_instance_id,
@@ -150,13 +144,6 @@ impl DevLoopEngine {
                 command: command.to_string(),
                 stdout: result.stdout.clone(),
                 duration_ms: Some(shell_step_duration_ms),
-            });
-            self.persist_build_step(task, BuildStepRecord {
-                kind: "passed".into(),
-                command: Some(command.to_string()),
-                stderr: None,
-                stdout: Some(result.stdout.clone()),
-                attempt: Some(attempt),
             });
         }
         Ok(result)
@@ -247,13 +234,6 @@ impl DevLoopEngine {
             duration_ms: None,
             error_hash: shell_error_hash,
         });
-        self.persist_build_step(task, BuildStepRecord {
-            kind: "failed".into(),
-            command: Some(command.to_string()),
-            stderr: Some(result.stderr.clone()),
-            stdout: Some(result.stdout.clone()),
-            attempt: Some(attempt),
-        });
         let detail = if !result.stderr.is_empty() { &result.stderr } else { &result.stdout };
         send_or_log(&self.event_tx, EngineEvent::TaskOutputDelta {
             project_id: project.project_id,
@@ -281,12 +261,6 @@ impl DevLoopEngine {
             task_id: task.task_id,
             attempt,
         });
-        self.persist_build_step(task, BuildStepRecord {
-            kind: "fix_attempt".into(),
-            command: None, stderr: None, stdout: None,
-            attempt: Some(attempt),
-        });
-
         let spec = self.load_spec(&task.project_id, &task.spec_id).await?;
         let codebase_snapshot = file_ops::read_relevant_files(&project.linked_folder_path, 30_000)?;
         let dummy_session = Session::dummy(project.project_id);

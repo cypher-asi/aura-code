@@ -18,10 +18,6 @@ use crate::events::EngineEvent;
 use crate::file_ops::{self, FileOp, WorkspaceCache};
 
 impl DevLoopEngine {
-    pub(crate) fn persist_test_step(&self, _task: &Task, _step: TestStepRecord) {
-        // test_steps are not stored in aura-storage
-    }
-
     /// Run the test suite and return the names of currently-failing tests.
     ///
     /// Used before task execution to establish a baseline so that
@@ -76,13 +72,6 @@ impl DevLoopEngine {
             task_id: task.task_id,
             command: test_command.to_string(),
         });
-        self.persist_test_step(task, TestStepRecord {
-            kind: "started".into(),
-            command: Some(test_command.to_string()),
-            stderr: None, stdout: None,
-            attempt: Some(attempt),
-            tests: vec![], summary: None,
-        });
         let test_start = Instant::now();
         let test_result = build_verify::run_build_command(base_path, test_command, None).await?;
         let dur = test_start.elapsed().as_millis() as u64;
@@ -117,7 +106,7 @@ impl DevLoopEngine {
     fn record_test_passed(
         &self, project: &Project, session: &Session, task: &Task,
         test_command: &str, result: &build_verify::BuildResult,
-        tests: &[IndividualTestResult], summary: &str, duration_ms: u64, attempt: u32,
+        tests: &[IndividualTestResult], summary: &str, duration_ms: u64, _attempt: u32,
     ) {
         self.emit(EngineEvent::TestVerificationPassed {
             project_id: project.project_id,
@@ -129,15 +118,6 @@ impl DevLoopEngine {
             summary: summary.to_string(),
             duration_ms: Some(duration_ms),
         });
-        self.persist_test_step(task, TestStepRecord {
-            kind: "passed".into(),
-            command: Some(test_command.to_string()),
-            stderr: None,
-            stdout: Some(result.stdout.clone()),
-            attempt: Some(attempt),
-            tests: tests.to_vec(),
-            summary: Some(summary.to_string()),
-        });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -145,7 +125,7 @@ impl DevLoopEngine {
         &self, project: &Project, session: &Session, task: &Task,
         test_command: &str, result: &build_verify::BuildResult,
         tests: &[IndividualTestResult], summary: &str, duration_ms: u64,
-        attempt: u32, baseline: &HashSet<String>,
+        _attempt: u32, baseline: &HashSet<String>,
     ) -> bool {
         if baseline.is_empty() { return false; }
         let current_failures: HashSet<String> = tests.iter()
@@ -175,15 +155,6 @@ impl DevLoopEngine {
             summary: adjusted.clone(),
             duration_ms: Some(duration_ms),
         });
-        self.persist_test_step(task, TestStepRecord {
-            kind: "passed_with_baseline_failures".into(),
-            command: Some(test_command.to_string()),
-            stderr: Some(result.stderr.clone()),
-            stdout: Some(result.stdout.clone()),
-            attempt: Some(attempt),
-            tests: tests.to_vec(),
-            summary: Some(adjusted),
-        });
         true
     }
 
@@ -205,26 +176,11 @@ impl DevLoopEngine {
             summary: summary.to_string(),
             duration_ms: Some(duration_ms),
         });
-        self.persist_test_step(task, TestStepRecord {
-            kind: "failed".into(),
-            command: Some(test_command.to_string()),
-            stderr: Some(result.stderr.clone()),
-            stdout: Some(result.stdout.clone()),
-            attempt: Some(attempt),
-            tests: tests.to_vec(),
-            summary: Some(summary.to_string()),
-        });
         self.emit(EngineEvent::TestFixAttempt {
             project_id: project.project_id,
             agent_instance_id: session.agent_instance_id,
             task_id: task.task_id,
             attempt,
-        });
-        self.persist_test_step(task, TestStepRecord {
-            kind: "fix_attempt".into(),
-            command: None, stderr: None, stdout: None,
-            attempt: Some(attempt),
-            tests: vec![], summary: None,
         });
     }
 

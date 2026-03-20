@@ -3,7 +3,6 @@ mod build_fix_types;
 mod executor;
 mod executor_agentic;
 mod executor_shell;
-mod executor_single_shot;
 mod loop_context;
 pub(crate) mod orchestrator;
 pub mod parser;
