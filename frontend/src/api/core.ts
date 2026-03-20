@@ -1,0 +1,58 @@
+import type { ApiError } from "../types";
+import { resolveApiUrl } from "../lib/host-config";
+
+export class ApiClientError extends Error {
+  status: number;
+  body: ApiError;
+
+  constructor(status: number, body: ApiError) {
+    super(body.error);
+    this.name = "ApiClientError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+export const INSUFFICIENT_CREDITS_EVENT = "insufficient-credits";
+
+export function isInsufficientCreditsError(err: unknown): boolean {
+  if (err instanceof ApiClientError) {
+    return err.status === 402 || err.body.code === "insufficient_credits";
+  }
+  if (typeof err === "string") {
+    return err.toLowerCase().includes("insufficient credits");
+  }
+  if (err instanceof Error) {
+    return err.message.toLowerCase().includes("insufficient credits");
+  }
+  return false;
+}
+
+export function dispatchInsufficientCredits(): void {
+  window.dispatchEvent(new CustomEvent(INSUFFICIENT_CREDITS_EVENT));
+}
+
+export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(resolveApiUrl(path), {
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    ...options,
+  });
+  if (!res.ok) {
+    const err: ApiError = await res.json().catch(() => ({
+      error: res.statusText,
+      code: "unknown",
+      details: null,
+    }));
+    throw new ApiClientError(res.status, err);
+  }
+  const contentLength = res.headers.get("content-length");
+  if (
+    res.status === 204 ||
+    contentLength === "0" ||
+    (contentLength === null && res.status === 202)
+  ) {
+    return undefined as T;
+  }
+  return res.json();
+}

@@ -1,0 +1,162 @@
+import type { Follow, DailyCommitActivity } from "../types";
+import { apiFetch } from "./core";
+
+export const followsApi = {
+  follow: (targetProfileId: string) =>
+    apiFetch<Follow>("/api/follows", {
+      method: "POST",
+      body: JSON.stringify({ target_profile_id: targetProfileId }),
+    }),
+  unfollow: (targetProfileId: string) =>
+    apiFetch<void>(`/api/follows/${targetProfileId}`, {
+      method: "DELETE",
+    }),
+  list: () => apiFetch<Follow[]>("/api/follows"),
+  check: (targetProfileId: string) =>
+    apiFetch<{ following: boolean }>(`/api/follows/check/${targetProfileId}`),
+};
+
+export const usersApi = {
+  me: () => apiFetch<{
+    id: string;
+    zos_user_id: string | null;
+    display_name: string | null;
+    avatar_url: string | null;
+    bio: string | null;
+    location: string | null;
+    website: string | null;
+    profile_id: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+  }>("/api/users/me"),
+  get: (userId: string) => apiFetch<{
+    id: string;
+    zos_user_id: string | null;
+    display_name: string | null;
+    avatar_url: string | null;
+    bio: string | null;
+    location: string | null;
+    website: string | null;
+    profile_id: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+  }>(`/api/users/${userId}`),
+  updateMe: (data: { display_name?: string; avatar_url?: string; bio?: string; location?: string; website?: string }) =>
+    apiFetch<{
+      id: string;
+      zos_user_id: string | null;
+      display_name: string | null;
+      avatar_url: string | null;
+      bio: string | null;
+      location: string | null;
+      website: string | null;
+      profile_id: string | null;
+      created_at: string | null;
+      updated_at: string | null;
+    }>("/api/users/me", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+};
+
+export const profilesApi = {
+  get: (profileId: string) => apiFetch<{
+    id: string;
+    display_name: string | null;
+    avatar_url: string | null;
+    bio: string | null;
+    profile_type: string | null;
+    entity_id: string | null;
+  }>(`/api/profiles/${profileId}`),
+};
+
+export const feedApi = {
+  list: (filter?: string) =>
+    apiFetch<{
+      id: string;
+      profile_id: string;
+      event_type: string;
+      metadata: Record<string, unknown> | null;
+      created_at: string | null;
+    }[]>(filter ? `/api/feed?filter=${filter}` : "/api/feed"),
+  getComments: (eventId: string) =>
+    apiFetch<{
+      id: string;
+      activity_event_id: string;
+      profile_id: string;
+      content: string;
+      created_at: string | null;
+    }[]>(`/api/activity/${eventId}/comments`),
+  addComment: (eventId: string, content: string) =>
+    apiFetch<{
+      id: string;
+      activity_event_id: string;
+      profile_id: string;
+      content: string;
+      created_at: string | null;
+    }>(`/api/activity/${eventId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
+  deleteComment: (commentId: string) =>
+    apiFetch<void>(`/api/comments/${commentId}`, {
+      method: "DELETE",
+    }),
+};
+
+export const leaderboardApi = {
+  get: (period: string, orgId?: string) => {
+    const params = new URLSearchParams({ period });
+    if (orgId) params.set("org_id", orgId);
+    return apiFetch<{
+      profile_id: string;
+      display_name: string | null;
+      avatar_url: string | null;
+      tokens_used: number;
+      rank: number;
+      profile_type: string | null;
+    }[]>(`/api/leaderboard?${params}`);
+  },
+};
+
+export const usageApi = {
+  personal: (period: string) =>
+    apiFetch<{
+      total_tokens: number;
+      total_input_tokens: number;
+      total_output_tokens: number;
+      total_cost_usd: number;
+    }>(`/api/users/me/usage?period=${period}`),
+  org: (orgId: string, period: string) =>
+    apiFetch<{
+      total_tokens: number;
+      total_input_tokens: number;
+      total_output_tokens: number;
+      total_cost_usd: number;
+    }>(`/api/orgs/${orgId}/usage?period=${period}`),
+  orgMembers: (orgId: string) =>
+    apiFetch<{
+      user_id: string;
+      display_name: string | null;
+      avatar_url: string | null;
+      total_tokens: number;
+      total_cost_usd: number;
+    }[]>(`/api/orgs/${orgId}/usage/members`),
+};
+
+export const activityApi = {
+  getCommitHistory: (params: {
+    user_ids?: string[];
+    agent_ids?: string[];
+    start_date?: string;
+    end_date?: string;
+  }) => {
+    const qp = new URLSearchParams();
+    if (params.user_ids?.length) qp.set("user_ids", params.user_ids.join(","));
+    if (params.agent_ids?.length) qp.set("agent_ids", params.agent_ids.join(","));
+    if (params.start_date) qp.set("start_date", params.start_date);
+    if (params.end_date) qp.set("end_date", params.end_date);
+    const qs = qp.toString();
+    return apiFetch<DailyCommitActivity[]>(`/api/activity/commits${qs ? `?${qs}` : ""}`);
+  },
+};
