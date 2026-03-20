@@ -421,6 +421,30 @@ impl LoopRunContext {
             notes,
             changed_files.join(", "),
         ));
+
+        if let Ok(project) = engine.project_service.get_project_async(&self.project_id).await {
+            if project.git_repo_url.is_some() && crate::git_ops::is_git_repo(&self.project_root) {
+                let commit_msg = format!("Task: {}\n\n{}", task.title, notes);
+                match crate::git_ops::git_commit(&self.project_root, &commit_msg).await {
+                    Ok(Some(sha)) => {
+                        engine.emit(EngineEvent::GitCommitted {
+                            project_id: self.project_id,
+                            agent_instance_id: self.agent_instance_id,
+                            task_id: task.task_id,
+                            commit_sha: sha,
+                            message: commit_msg,
+                        });
+                    }
+                    Ok(None) => {
+                        info!("no changes to commit after task completion");
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "git commit after task completion failed");
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
