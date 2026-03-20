@@ -592,7 +592,7 @@ impl LoopRunContext {
         let summary_start = Instant::now();
         let summary = tokio::select! {
             res = engine.session_service.generate_rollover_summary(
-                &engine.llm, &self.api_key, &history,
+                engine.llm.as_ref(), &self.api_key, &history,
             ) => { res? }
             _ = stop_rx.changed() => {
                 self.finish_working(engine).await;

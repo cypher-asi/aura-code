@@ -10,7 +10,7 @@ use aura_core::*;
 pub use aura_core::parse_dt;
 use aura_store::RocksStore;
 use aura_storage::StorageClient;
-use aura_billing::MeteredLlm;
+use aura_claude::LlmProvider;
 
 pub use aura_core::SESSION_SUMMARY_SYSTEM_PROMPT as SUMMARY_SYSTEM_PROMPT;
 
@@ -372,7 +372,7 @@ impl SessionService {
 
     pub async fn generate_rollover_summary(
         &self,
-        llm: &MeteredLlm,
+        llm: &dyn LlmProvider,
         api_key: &str,
         conversation_history: &str,
     ) -> Result<String, SessionError> {
@@ -383,8 +383,6 @@ impl SessionService {
                 SUMMARY_SYSTEM_PROMPT,
                 conversation_history,
                 2048,
-                "aura_session_rollover",
-                None,
             )
             .await?;
         Ok(resp.text)
@@ -396,70 +394,6 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use aura_claude::mock::{MockLlmProvider, MockResponse};
-    use aura_billing::BillingClient;
-
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    async fn start_mock_billing_server() -> String {
-        use axum::{routing::{get, post}, Json, Router};
-        use tokio::net::TcpListener;
-
-        let app = Router::new()
-            .route(
-                "/api/credits/balance",
-                get(|| async {
-                    Json(serde_json::json!({"balance": 999999, "purchases": []}))
-                }),
-            )
-            .route(
-                "/api/credits/debit",
-                post(|| async {
-                    Json(serde_json::json!({
-                        "success": true,
-                        "balance": 999998,
-                        "transactionId": "tx-1"
-                    }))
-                }),
-            );
-
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(async move { axum::serve(listener, app).await.ok() });
-        url
-    }
-
-    async fn make_test_llm(
-        mock: Arc<MockLlmProvider>,
-    ) -> (MeteredLlm, tempfile::TempDir) {
-        let url = start_mock_billing_server().await;
-        let billing = {
-            let _guard = ENV_LOCK.lock().unwrap();
-            std::env::set_var("BILLING_SERVER_URL", &url);
-            Arc::new(BillingClient::new())
-        };
-
-        let tmp = tempfile::TempDir::new().unwrap();
-        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
-
-        let session = serde_json::to_vec(&aura_core::ZeroAuthSession {
-            user_id: "u1".into(),
-            network_user_id: None,
-            profile_id: None,
-            display_name: "Test".into(),
-            profile_image: String::new(),
-            primary_zid: "zid-1".into(),
-            zero_wallet: "w1".into(),
-            wallets: vec![],
-            access_token: "test-token".into(),
-            created_at: chrono::Utc::now(),
-            validated_at: chrono::Utc::now(),
-        })
-        .unwrap();
-        store.put_setting("zero_auth_session", &session).unwrap();
-
-        let llm = MeteredLlm::new(mock, billing, store);
-        (llm, tmp)
-    }
 
     // -----------------------------------------------------------------------
     // SessionService pure-logic tests (no StorageClient or local persistence)
@@ -522,10 +456,6 @@ mod tests {
         assert_eq!(session.context_usage_estimate, 0.0);
     }
 
-    // Full session CRUD + rollover tests require a running aura-storage instance.
-    // Local store session methods are now stubs. End-to-end session lifecycle
-    // is tested via the test script (scripts/test-aura-storage.mjs).
-
     // -----------------------------------------------------------------------
     // generate_rollover_summary with MockLlmProvider
     // -----------------------------------------------------------------------
@@ -537,7 +467,7 @@ mod tests {
                 .with_tokens(200, 100),
         ]));
 
-        let (llm, _tmp_llm) = make_test_llm(mock.clone()).await;
+        let (llm, _tmp_llm) = aura_billing::testutil::make_test_llm(mock.clone()).await;
 
         let tmp = tempfile::TempDir::new().unwrap();
         let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
@@ -545,7 +475,7 @@ mod tests {
 
         let summary = svc
             .generate_rollover_summary(
-                &llm,
+                llm.as_ref(),
                 "test-key",
                 "User: How do I set up auth?\nAssistant: Use JWT tokens.",
             )

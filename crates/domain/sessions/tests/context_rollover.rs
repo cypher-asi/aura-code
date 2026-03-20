@@ -137,36 +137,6 @@ fn store_test_jwt(store: &aura_store::RocksStore) {
 }
 
 // ---------------------------------------------------------------------------
-// Mock billing server (needed for MeteredLlm)
-// ---------------------------------------------------------------------------
-
-static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-async fn start_mock_billing() -> String {
-    let app = Router::new()
-        .route(
-            "/api/credits/balance",
-            get(|| async {
-                Json(serde_json::json!({"balance": 999999, "purchases": []}))
-            }),
-        )
-        .route(
-            "/api/credits/debit",
-            post(|| async {
-                Json(serde_json::json!({
-                    "success": true,
-                    "balance": 999998,
-                    "transactionId": "tx-1"
-                }))
-            }),
-        );
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, app).await.ok() });
-    url
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -456,23 +426,15 @@ async fn generate_rollover_summary_calls_llm() {
             .with_tokens(200, 80),
     ]));
 
-    let billing_url = start_mock_billing().await;
-    let billing = {
-        let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("BILLING_SERVER_URL", &billing_url);
-        Arc::new(aura_billing::BillingClient::new())
-    };
+    let (llm, _tmp_llm) = aura_billing::testutil::make_test_llm(mock.clone()).await;
 
-    let tmp_llm = tempfile::TempDir::new().unwrap();
-    let store_llm = Arc::new(aura_store::RocksStore::open(tmp_llm.path()).unwrap());
-    store_test_jwt(&store_llm);
-    let llm = aura_billing::MeteredLlm::new(mock.clone(), billing, store_llm.clone());
-
-    let svc = SessionService::new(store_llm, 0.5, 200_000);
+    let tmp = tempfile::TempDir::new().unwrap();
+    let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+    let svc = SessionService::new(store, 0.5, 200_000);
 
     let summary = svc
         .generate_rollover_summary(
-            &llm,
+            llm.as_ref(),
             "test-key",
             "User asked about auth. Assistant set up JWT-based auth.",
         )

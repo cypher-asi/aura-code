@@ -669,7 +669,7 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         llm.clone(),
         storage_client.clone(),
     ));
-    let task_service = Arc::new(TaskService::new(store.clone(), storage_client.clone()));
+    let task_service = Arc::new(TaskService::new(store.clone(), storage_client.clone(), pricing_service.clone()));
     let agent_service = Arc::new(AgentService::new(
         store.clone(),
         network_client.clone(),

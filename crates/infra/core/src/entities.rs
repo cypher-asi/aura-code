@@ -305,6 +305,12 @@ pub struct FeeScheduleEntry {
     pub effective_date: String,
 }
 
+/// Abstracts cost computation so domain crates (tasks, sessions) don't
+/// depend directly on the billing crate's `PricingService`.
+pub trait CostCalculator: Send + Sync {
+    fn compute_task_cost(&self, model: &str, input_tokens: u64, output_tokens: u64) -> f64;
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CreditTier {
     pub id: String,

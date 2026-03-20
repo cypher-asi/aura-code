@@ -87,6 +87,12 @@ impl PricingService {
     }
 }
 
+impl aura_core::CostCalculator for PricingService {
+    fn compute_task_cost(&self, model: &str, input_tokens: u64, output_tokens: u64) -> f64 {
+        self.compute_cost(model, input_tokens, output_tokens)
+    }
+}
+
 /// Pure function: look up rate for a model in a schedule.
 /// Picks the entry with the latest effective_date for the given model.
 /// Falls back to substring matching, then first entry, then hardcoded defaults.

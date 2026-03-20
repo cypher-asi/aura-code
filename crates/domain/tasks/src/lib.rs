@@ -19,14 +19,20 @@ use aura_store::RocksStore;
 pub struct TaskService {
     store: Arc<RocksStore>,
     storage_client: Option<Arc<StorageClient>>,
+    cost_calculator: Arc<dyn CostCalculator>,
     claim_locks: Mutex<HashMap<ProjectId, Arc<Mutex<()>>>>,
 }
 
 impl TaskService {
-    pub fn new(store: Arc<RocksStore>, storage_client: Option<Arc<StorageClient>>) -> Self {
+    pub fn new(
+        store: Arc<RocksStore>,
+        storage_client: Option<Arc<StorageClient>>,
+        cost_calculator: Arc<dyn CostCalculator>,
+    ) -> Self {
         Self {
             store,
             storage_client,
+            cost_calculator,
             claim_locks: Mutex::new(HashMap::new()),
         }
     }

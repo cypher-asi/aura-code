@@ -1,4 +1,3 @@
-use aura_billing::MeteredLlmError;
 use aura_claude::ClaudeClientError;
 use aura_storage::StorageError;
 
@@ -16,12 +15,11 @@ pub enum SessionError {
     InsufficientCredits,
 }
 
-impl From<MeteredLlmError> for SessionError {
-    fn from(e: MeteredLlmError) -> Self {
+impl From<ClaudeClientError> for SessionError {
+    fn from(e: ClaudeClientError) -> Self {
         match e {
-            MeteredLlmError::InsufficientCredits => SessionError::InsufficientCredits,
-            MeteredLlmError::Llm(e) => SessionError::Claude(e),
-            MeteredLlmError::Billing(_) => SessionError::InsufficientCredits,
+            ClaudeClientError::InsufficientCredits => SessionError::InsufficientCredits,
+            other => SessionError::Claude(other),
         }
     }
 }
