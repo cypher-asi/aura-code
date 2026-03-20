@@ -275,17 +275,16 @@ pub(crate) async fn list_all_projects_from_network(state: &AppState) -> ApiResul
     Ok(projects)
 }
 
-pub async fn create_project(
-    State(state): State<AppState>,
-    Json(req): Json<CreateProjectRequest>,
+/// Shared implementation for both `create_project` and `create_imported_project`.
+///
+/// Handles the network → Orbit → local-shadow flow that both endpoints share.
+/// `network_folder` controls what goes into the network request's `folder` field
+/// (directory basename for regular projects, `None` for imported).
+async fn create_project_impl(
+    state: &AppState,
+    req: &CreateProjectRequest,
+    network_folder: Option<String>,
 ) -> ApiResult<(StatusCode, Json<Project>)> {
-    if req.name.trim().is_empty() {
-        return Err(ApiError::bad_request("name must not be empty"));
-    }
-    if req.linked_folder_path.trim().is_empty() {
-        return Err(ApiError::bad_request("linked_folder_path must not be empty"));
-    }
-
     if let Some(client) = &state.network_client {
         let jwt = state.get_jwt()?;
 
@@ -298,7 +297,7 @@ pub async fn create_project(
             name: req.name.clone(),
             org_id: req.org_id.to_string(),
             description: Some(req.description.clone()),
-            folder: folder_name_from_path(&req.linked_folder_path),
+            folder: network_folder,
             git_repo_url: req.git_repo_url.clone(),
             git_branch: req.git_branch.clone(),
             orbit_base_url: req.orbit_base_url.clone(),
@@ -349,7 +348,7 @@ pub async fn create_project(
                 .id
                 .parse::<ProjectId>()
                 .unwrap_or_else(|_| ProjectId::new()),
-            &req,
+            req,
             git_repo_url,
             git_branch,
             orbit_base_url,
@@ -357,11 +356,11 @@ pub async fn create_project(
             orbit_repo,
         );
         let project = project_from_network(&net_project, Some(&local_shadow));
-        ensure_local_shadow(&state, &project);
+        ensure_local_shadow(state, &project);
         return Ok((StatusCode::CREATED, Json(project)));
     }
 
-    let input = to_project_input(&req);
+    let input = to_project_input(req);
     let project = state
         .project_service
         .create_project(input)
@@ -370,6 +369,21 @@ pub async fn create_project(
             _ => ApiError::internal(e.to_string()),
         })?;
     Ok((StatusCode::CREATED, Json(project)))
+}
+
+pub async fn create_project(
+    State(state): State<AppState>,
+    Json(req): Json<CreateProjectRequest>,
+) -> ApiResult<(StatusCode, Json<Project>)> {
+    if req.name.trim().is_empty() {
+        return Err(ApiError::bad_request("name must not be empty"));
+    }
+    if req.linked_folder_path.trim().is_empty() {
+        return Err(ApiError::bad_request("linked_folder_path must not be empty"));
+    }
+
+    let folder = folder_name_from_path(&req.linked_folder_path);
+    create_project_impl(&state, &req, folder).await
 }
 
 pub async fn create_imported_project(
@@ -407,97 +421,6 @@ pub async fn create_imported_project(
 
     let local_req = CreateProjectRequest {
         org_id,
-        name: name.clone(),
-        description: description.clone(),
-        linked_folder_path: workspace_root.to_string_lossy().to_string(),
-        workspace_source: Some("imported".to_string()),
-        workspace_display_path: Some("Imported workspace snapshot".to_string()),
-        build_command: build_command.clone(),
-        test_command: test_command.clone(),
-        git_repo_url: git_repo_url.clone(),
-        git_branch: git_branch.clone(),
-        orbit_base_url: orbit_base_url.clone(),
-        orbit_owner: orbit_owner.clone(),
-        orbit_repo: orbit_repo.clone(),
-    };
-
-    if let Some(client) = &state.network_client {
-        let jwt = state.get_jwt()?;
-
-        let wants_orbit = should_create_new_orbit_repo(&git_repo_url, &orbit_owner, &orbit_repo);
-        if wants_orbit && state.orbit_base_url.is_none() {
-            return Err(ApiError::service_unavailable("Orbit repo creation is not configured (ORBIT_BASE_URL)"));
-        }
-
-        let net_req = aura_network::CreateProjectRequest {
-            name: name.clone(),
-            org_id: org_id.to_string(),
-            description: Some(description.clone()),
-            folder: None,
-            git_repo_url: git_repo_url.clone(),
-            git_branch: git_branch.clone(),
-            orbit_base_url: orbit_base_url.clone(),
-            orbit_owner: orbit_owner.clone(),
-            orbit_repo: orbit_repo.clone(),
-        };
-        let net_project = client
-            .create_project(&jwt, &net_req)
-            .await
-            .map_err(map_network_error)?;
-
-        let (git_repo_url, git_branch, orbit_base_url, orbit_owner, orbit_repo) =
-            if wants_orbit {
-                let base_url = state.orbit_base_url.as_deref().unwrap();
-                let owner = orbit_owner.as_deref().unwrap_or(&net_project.org_id);
-                let repo = orbit_repo.as_deref().unwrap_or(&name);
-                let created = state
-                    .orbit_client
-                    .create_repo(
-                        base_url,
-                        &net_project.org_id,
-                        &net_project.id,
-                        repo,
-                        (!description.trim().is_empty()).then_some(description.as_str()),
-                        &jwt,
-                    )
-                    .await
-                    .map_err(|err| ApiError::internal(err.message_for_api()))?;
-                (
-                    Some(orbit_create_repo_url(base_url, owner, &created.name, &created)),
-                    git_branch.clone().or_else(|| Some("main".into())),
-                    Some(base_url.to_string()),
-                    Some(owner.to_string()),
-                    Some(created.name),
-                )
-            } else {
-                (
-                    git_repo_url.clone(),
-                    git_branch.clone(),
-                    orbit_base_url.clone(),
-                    orbit_owner.clone(),
-                    orbit_repo.clone(),
-                )
-            };
-
-        let local_shadow = build_local_shadow(
-            net_project
-                .id
-                .parse::<ProjectId>()
-                .unwrap_or_else(|_| ProjectId::new()),
-            &local_req,
-            git_repo_url,
-            git_branch,
-            orbit_base_url,
-            orbit_owner,
-            orbit_repo,
-        );
-        let project = project_from_network(&net_project, Some(&local_shadow));
-        ensure_local_shadow(&state, &project);
-        return Ok((StatusCode::CREATED, Json(project)));
-    }
-
-    let input = CreateProjectInput {
-        org_id,
         name,
         description,
         linked_folder_path: workspace_root.to_string_lossy().to_string(),
@@ -505,16 +428,14 @@ pub async fn create_imported_project(
         workspace_display_path: Some("Imported workspace snapshot".to_string()),
         build_command,
         test_command,
+        git_repo_url,
+        git_branch,
+        orbit_base_url,
+        orbit_owner,
+        orbit_repo,
     };
 
-    let project = state
-        .project_service
-        .create_project(input)
-        .map_err(|e| match &e {
-            aura_projects::ProjectError::InvalidInput(msg) => ApiError::bad_request(msg.clone()),
-            _ => ApiError::internal(e.to_string()),
-        })?;
-    Ok((StatusCode::CREATED, Json(project)))
+    create_project_impl(&state, &local_req, None).await
 }
 
 pub async fn list_projects(
