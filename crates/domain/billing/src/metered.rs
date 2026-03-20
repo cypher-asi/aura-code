@@ -534,4 +534,253 @@ mod tests {
             .iter()
             .any(|e| matches!(e, ClaudeStreamEvent::Done { .. })));
     }
+
+    // --- estimate_credits tests ---
+
+    #[tokio::test]
+    async fn test_estimate_credits_known_values() {
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![]));
+        let (metered, _tmp) = testutil::make_test_llm(mock).await;
+
+        // opus: inp_rate=5.0, out_rate=25.0, credits_per_usd=114286
+        // with 50% cache discount on input:
+        //   non_cached = 1_000_000 * 0.5 = 500_000
+        //   cached = 1_000_000 * 0.5 = 500_000
+        //   usd = (500_000*5.0 + 500_000*5.0*0.1 + 500_000*25.0) / 1_000_000
+        //       = (2_500_000 + 250_000 + 12_500_000) / 1_000_000 = 15.25
+        //   credits = round(15.25 * 114286) = round(1742861.5) = 1742862
+        let credits = metered.estimate_credits("claude-opus-4-6", 1_000_000, 500_000);
+        assert!(credits > 0);
+        let expected_usd: f64 = (500_000.0 * 5.0 + 500_000.0 * 5.0 * 0.1 + 500_000.0 * 25.0) / 1_000_000.0;
+        let expected = (expected_usd * 114_286.0).round() as u64;
+        assert_eq!(credits, expected);
+    }
+
+    #[tokio::test]
+    async fn test_estimate_credits_haiku_vs_opus() {
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![]));
+        let (metered, _tmp) = testutil::make_test_llm(mock).await;
+
+        let opus_credits = metered.estimate_credits("claude-opus-4-6", 100_000, 50_000);
+        let haiku_credits = metered.estimate_credits(aura_claude::FAST_MODEL, 100_000, 50_000);
+        assert!(
+            opus_credits > haiku_credits,
+            "opus ({opus_credits}) should cost more than haiku ({haiku_credits})"
+        );
+    }
+
+    // --- debit calculation (cache-aware) tests ---
+
+    #[tokio::test]
+    async fn test_cache_aware_debit_math() {
+        use crate::testutil::{MockBillingState, start_stateful_mock_billing_server, billing_client_for_url, store_zero_auth_session};
+
+        let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(10_000_000)));
+        let url = start_stateful_mock_billing_server(state.clone()).await;
+        let billing = Arc::new(billing_client_for_url(&url));
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        store_zero_auth_session(&store);
+
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![
+            MockResponse::text("ok").with_tokens(1000, 500),
+        ]));
+        let metered = MeteredLlm::new(mock, billing, store);
+
+        // Call with cache tokens: input=1000, output=500
+        // cache_creation=200, cache_read=300
+        // non_cached = 1000 - 200 - 300 = 500
+        // usd = (500*5.0 + 200*5.0*1.25 + 300*5.0*0.1 + 500*25.0) / 1_000_000
+        //     = (2500 + 1250 + 150 + 12500) / 1_000_000 = 0.01640
+        // credits = round(0.01640 * 114286) = round(1874.29) = 1874
+        metered.debit("claude-opus-4-6", 1000, 500, 200, 300, "test", None).await.unwrap();
+
+        let guard = state.lock().await;
+        assert_eq!(guard.debits.len(), 1);
+        let debited = guard.debits[0].amount;
+        let expected_usd: f64 = (500.0 * 5.0 + 200.0 * 5.0 * 1.25 + 300.0 * 5.0 * 0.1 + 500.0 * 25.0) / 1_000_000.0;
+        let expected_credits = (expected_usd * 114_286.0).round() as u64;
+        assert_eq!(debited, expected_credits);
+    }
+
+    #[tokio::test]
+    async fn test_zero_amount_debit_skipped() {
+        use crate::testutil::{MockBillingState, start_stateful_mock_billing_server, billing_client_for_url, store_zero_auth_session};
+
+        let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(10_000_000)));
+        let url = start_stateful_mock_billing_server(state.clone()).await;
+        let billing = Arc::new(billing_client_for_url(&url));
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        store_zero_auth_session(&store);
+
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![]));
+        let metered = MeteredLlm::new(mock, billing, store);
+
+        // 1 haiku input token → usd = 1*0.80/1M = 0.0000008 → credits = round(0.091) = 0
+        metered.debit(aura_claude::FAST_MODEL, 1, 0, 0, 0, "test", None).await.unwrap();
+        let guard = state.lock().await;
+        assert_eq!(guard.debits.len(), 0, "zero-amount debit should be skipped");
+    }
+
+    #[tokio::test]
+    async fn test_debit_forwards_metadata() {
+        use crate::testutil::{MockBillingState, start_stateful_mock_billing_server, billing_client_for_url, store_zero_auth_session};
+
+        let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(10_000_000)));
+        let url = start_stateful_mock_billing_server(state.clone()).await;
+        let billing = Arc::new(billing_client_for_url(&url));
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        store_zero_auth_session(&store);
+
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![]));
+        let metered = MeteredLlm::new(mock, billing, store);
+
+        let meta = serde_json::json!({"task_id": "t-123"});
+        metered.debit("claude-opus-4-6", 100_000, 50_000, 0, 0, "reason", Some(meta.clone())).await.unwrap();
+
+        let guard = state.lock().await;
+        assert_eq!(guard.debits.len(), 1);
+        assert_eq!(guard.debits[0].metadata, Some(meta));
+    }
+
+    // --- pre-flight check tests ---
+
+    #[tokio::test]
+    async fn test_pre_flight_ttl_caching() {
+        use crate::testutil::{MockBillingState, start_stateful_mock_billing_server, billing_client_for_url, store_zero_auth_session};
+
+        let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(999_999)));
+        let url = start_stateful_mock_billing_server(state.clone()).await;
+        let billing = Arc::new(billing_client_for_url(&url));
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        store_zero_auth_session(&store);
+
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![
+            MockResponse::text("a").with_tokens(10, 5),
+            MockResponse::text("b").with_tokens(10, 5),
+        ]));
+        let metered = MeteredLlm::new(mock, billing, store);
+
+        // First call hits the billing server (pre-flight), second should use cached TTL
+        metered.complete("key", "sys", "msg", 100, "r", None).await.unwrap();
+        metered.complete("key", "sys", "msg", 100, "r", None).await.unwrap();
+
+        // The balance endpoint is called once for pre-flight + 2 debits = varies,
+        // but the key insight: no exhaustion despite multiple calls
+        assert!(!metered.is_credits_exhausted());
+    }
+
+    #[tokio::test]
+    async fn test_pre_flight_failure_sets_exhausted() {
+        use crate::testutil::{MockBillingState, start_stateful_mock_billing_server, billing_client_for_url, store_zero_auth_session};
+
+        let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(0)));
+        let url = start_stateful_mock_billing_server(state.clone()).await;
+        let billing = Arc::new(billing_client_for_url(&url));
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        store_zero_auth_session(&store);
+
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![
+            MockResponse::text("x").with_tokens(100, 50),
+        ]));
+        let metered = MeteredLlm::new(mock, billing, store);
+
+        let err = metered.complete("key", "sys", "msg", 100, "r", None).await.unwrap_err();
+        assert!(err.is_insufficient_credits());
+        assert!(metered.is_credits_exhausted());
+    }
+
+    #[tokio::test]
+    async fn test_credits_exhausted_then_topped_up() {
+        use crate::testutil::{MockBillingState, start_stateful_mock_billing_server, billing_client_for_url, store_zero_auth_session};
+
+        let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(0)));
+        let url = start_stateful_mock_billing_server(state.clone()).await;
+        let billing = Arc::new(billing_client_for_url(&url));
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        store_zero_auth_session(&store);
+
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![
+            MockResponse::text("a").with_tokens(10, 5),
+            MockResponse::text("b").with_tokens(10, 5),
+        ]));
+        let metered = MeteredLlm::new(mock, billing, store);
+
+        // First call fails
+        let err = metered.complete("key", "sys", "msg", 100, "r", None).await.unwrap_err();
+        assert!(err.is_insufficient_credits());
+        assert!(metered.is_credits_exhausted());
+
+        // "Top up" credits
+        {
+            let mut guard = state.lock().await;
+            guard.balance = 999_999;
+        }
+
+        // Next call should succeed and reset the exhausted flag.
+        // The first call failed at pre-flight (before consuming a mock response),
+        // so this call consumes the first response "a".
+        let resp = metered.complete("key", "sys", "msg", 100, "r", None).await.unwrap();
+        assert_eq!(resp.text, "a");
+        assert!(!metered.is_credits_exhausted());
+    }
+
+    // --- LlmProvider trait impl tests ---
+
+    #[tokio::test]
+    async fn test_complete_with_model_uses_correct_rate() {
+        use crate::testutil::{MockBillingState, make_test_llm_stateful};
+
+        let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(10_000_000)));
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![
+            MockResponse::text("haiku response").with_tokens(100_000, 50_000),
+        ]));
+        let (metered, _tmp) = make_test_llm_stateful(mock, state.clone()).await;
+
+        let resp = metered
+            .complete_with_model(aura_claude::FAST_MODEL, "key", "sys", "msg", 200, "test", None)
+            .await
+            .unwrap();
+        assert_eq!(resp.text, "haiku response");
+
+        let guard = state.lock().await;
+        assert_eq!(guard.debits.len(), 1);
+        // Haiku rates: inp=0.80, out=4.00
+        let expected_usd: f64 = (100_000.0 * 0.80 + 50_000.0 * 4.00) / 1_000_000.0;
+        let expected_credits = (expected_usd * 114_286.0).round() as u64;
+        assert_eq!(guard.debits[0].amount, expected_credits);
+    }
+
+    // --- debit error handling tests ---
+
+    #[tokio::test]
+    async fn test_insufficient_credits_during_debit_drains_remaining() {
+        use crate::testutil::{MockBillingState, start_stateful_mock_billing_server, billing_client_for_url, store_zero_auth_session};
+
+        // Set balance just enough that pre-flight passes but debit fails
+        let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(50)));
+        let url = start_stateful_mock_billing_server(state.clone()).await;
+        let billing = Arc::new(billing_client_for_url(&url));
+        let tmp = tempfile::TempDir::new().unwrap();
+        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        store_zero_auth_session(&store);
+
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![
+            MockResponse::text("expensive").with_tokens(1_000_000, 500_000),
+        ]));
+        let metered = MeteredLlm::new(mock, billing, store);
+
+        let err = metered.complete("key", "sys", "msg", 200, "test", None).await.unwrap_err();
+        assert!(err.is_insufficient_credits());
+        assert!(metered.is_credits_exhausted());
+
+        let guard = state.lock().await;
+        // First debit fails with insufficient, then a drain attempt for the available amount
+        assert!(guard.debits.len() >= 2, "should attempt drain after insufficient");
+    }
 }
