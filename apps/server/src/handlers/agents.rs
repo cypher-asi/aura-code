@@ -613,6 +613,10 @@ pub async fn send_agent_message_stream(
                 .event("progress")
                 .json_data(serde_json::json!({ "stage": stage }))
                 .unwrap(),
+            ChatStreamEvent::ToolCallStarted { id, name } => Event::default()
+                .event("tool_call_started")
+                .json_data(serde_json::json!({ "id": id, "name": name }))
+                .unwrap(),
             ChatStreamEvent::ToolCall { id, name, input } => Event::default()
                 .event("tool_call")
                 .json_data(serde_json::json!({ "id": id, "name": name, "input": input }))
@@ -768,6 +772,10 @@ pub async fn send_message_stream(
             ChatStreamEvent::Progress(stage) => Event::default()
                 .event("progress")
                 .json_data(serde_json::json!({ "stage": stage }))
+                .unwrap(),
+            ChatStreamEvent::ToolCallStarted { id, name } => Event::default()
+                .event("tool_call_started")
+                .json_data(serde_json::json!({ "id": id, "name": name }))
                 .unwrap(),
             ChatStreamEvent::ToolCall { id, name, input } => Event::default()
                 .event("tool_call")
