@@ -215,6 +215,17 @@ pub(crate) fn parse_error_references(stderr: &str) -> file_ops::ErrorReferences 
         }
     }
 
+    let no_field_re =
+        Regex::new(r"struct `(?:\w+::)*(\w+)` has no field named `(\w+)`").unwrap();
+    for cap in no_field_re.captures_iter(stderr) {
+        let type_name = cap[1].to_string();
+        let field = cap[2].to_string();
+        refs.missing_fields.push((type_name.clone(), field));
+        if !refs.types_referenced.contains(&type_name) {
+            refs.types_referenced.push(type_name);
+        }
+    }
+
     let loc_re = Regex::new(r"-->\s*([\w\\/._-]+):(\d+):\d+").unwrap();
     for cap in loc_re.captures_iter(stderr) {
         let file = cap[1].to_string();
