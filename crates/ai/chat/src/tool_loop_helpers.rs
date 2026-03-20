@@ -10,10 +10,13 @@ pub(crate) fn detect_blocked_writes(
     tool_calls: &[ToolCall],
     tracker: &mut HashMap<String, usize>,
 ) -> Vec<usize> {
+    // Only track full-rewrite write_file calls for consecutive-duplicate
+    // blocking. edit_file calls (targeted appends/patches) to the same file
+    // in a single batch are legitimate incremental building, not stalls.
     let write_paths: Vec<Option<String>> = tool_calls
         .iter()
         .map(|tc| {
-            if tc.name == "write_file" || tc.name == "edit_file" {
+            if tc.name == "write_file" {
                 tc.input.get("path").and_then(|v| v.as_str()).map(String::from)
             } else {
                 None
@@ -32,7 +35,7 @@ pub(crate) fn detect_blocked_writes(
         .iter()
         .enumerate()
         .filter_map(|(i, tc)| {
-            if tc.name == "write_file" || tc.name == "edit_file" {
+            if tc.name == "write_file" {
                 let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("");
                 if tracker.get(path).copied().unwrap_or(0) >= 2 {
                     return Some(i);

@@ -846,6 +846,7 @@ fn detect_same_target_stall(
 
     let mut write_paths: Vec<String> = Vec::new();
     let mut had_write_success = false;
+    let mut had_edit_success = false;
     let mut content_hasher = DefaultHasher::new();
 
     for (tc, result) in tool_calls.iter().zip(results.iter()) {
@@ -854,10 +855,11 @@ fn detect_same_target_stall(
                 write_paths.push(path.to_string());
             }
             if !result.is_error {
+                if tc.name == "edit_file" {
+                    had_edit_success = true;
+                }
                 had_write_success = true;
             }
-            // Hash the content being written/edited so different content
-            // produces a different signature (incremental building vs stall).
             if let Some(c) = tc.input.get("content").and_then(|v| v.as_str()) {
                 c.hash(&mut content_hasher);
             }
@@ -867,12 +869,35 @@ fn detect_same_target_stall(
         }
     }
 
-    if write_paths.is_empty() || had_write_success {
+    if write_paths.is_empty() {
         *last_signature = None;
         *no_progress_streak = 0;
         return false;
     }
 
+    // Successful edit_file calls always represent forward progress (appending
+    // new code sections, patching different spots), so reset the streak.
+    // Only successful write_file to different content also resets.
+    if had_edit_success {
+        *last_signature = None;
+        *no_progress_streak = 0;
+        return false;
+    }
+
+    // Any successful write_file with different content = progress
+    if had_write_success {
+        write_paths.sort();
+        write_paths.dedup();
+        let content_hash = content_hasher.finish();
+        let signature = format!("{}#{:x}", write_paths.join("|"), content_hash);
+        if last_signature.as_deref() != Some(signature.as_str()) {
+            *last_signature = Some(signature);
+            *no_progress_streak = 0;
+            return false;
+        }
+    }
+
+    // All writes failed, or successful but identical content = no progress
     write_paths.sort();
     write_paths.dedup();
     let content_hash = content_hasher.finish();
