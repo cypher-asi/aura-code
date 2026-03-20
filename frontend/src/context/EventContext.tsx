@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useCallback, useRef, useSyncExternalStore } from "react";
+import { createContext, useContext, useCallback, useRef, useMemo, useSyncExternalStore } from "react";
 import type { EngineEvent, EngineEventType } from "../types/events";
 import { useEventStream } from "../hooks/use-event-stream";
 
@@ -37,8 +37,6 @@ type TaskOutputListener = () => void;
 
 interface EventContextValue {
   connected: boolean;
-  events: EngineEvent[];
-  latestEvent: EngineEvent | null;
   getLastEventAt: () => number | null;
   subscribe: (type: EngineEventType, callback: EventCallback) => () => void;
   getTaskOutput: (taskId: string) => TaskOutputEntry;
@@ -218,19 +216,20 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
     [notifyTaskOutputListeners],
   );
 
+  const value = useMemo<EventContextValue>(
+    () => ({
+      connected: stream.connected,
+      getLastEventAt,
+      subscribe,
+      getTaskOutput,
+      subscribeTaskOutput,
+      seedTaskOutput,
+    }),
+    [stream.connected, getLastEventAt, subscribe, getTaskOutput, subscribeTaskOutput, seedTaskOutput],
+  );
+
   return (
-    <EventContext.Provider
-      value={{
-        connected: stream.connected,
-        events: stream.events,
-        latestEvent: stream.latestEvent,
-        getLastEventAt,
-        subscribe,
-        getTaskOutput,
-        subscribeTaskOutput,
-        seedTaskOutput,
-      }}
-    >
+    <EventContext.Provider value={value}>
       {children}
     </EventContext.Provider>
   );

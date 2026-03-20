@@ -165,6 +165,11 @@ export function ChatView() {
     };
   }, [rafRef]);
 
+  const handleRemoveAttachment = useCallback(
+    (id: string) => setAttachments((prev) => prev.filter((a) => a.id !== id)),
+    [],
+  );
+
   const handleSend = useCallback(
     (content: string, action?: string, atts?: AttachmentItem[]) => {
       setInput("");
@@ -234,7 +239,7 @@ export function ChatView() {
           agentName={agentName}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
-          onRemoveAttachment={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
+          onRemoveAttachment={handleRemoveAttachment}
           contextUsagePercent={projectId && agentInstanceId ? contextUsagePercent : undefined}
         />
       </div>

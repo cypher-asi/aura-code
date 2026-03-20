@@ -1,4 +1,4 @@
-import { useRef, useState, useImperativeHandle, forwardRef, useCallback, useEffect } from "react";
+import { useRef, useState, useImperativeHandle, forwardRef, memo, useCallback, useEffect } from "react";
 import { ArrowUp, Plus, X, FileText } from "lucide-react";
 import styles from "./ChatView.module.css";
 
@@ -41,7 +41,7 @@ interface Props {
   contextUsagePercent?: number | null;
 }
 
-export const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatInputBar({
+export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function ChatInputBar({
   input,
   onInputChange,
   onSend,
@@ -291,4 +291,4 @@ export const ChatInputBar = forwardRef<ChatInputBarHandle, Props>(function ChatI
       </div>
     </div>
   );
-});
+}));

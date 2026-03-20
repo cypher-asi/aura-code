@@ -5,8 +5,6 @@ import { useEventContext, EventProvider } from "./EventContext";
 vi.mock("../hooks/use-event-stream", () => ({
   useEventStream: () => ({
     connected: false,
-    events: [],
-    latestEvent: null,
   }),
 }));
 
@@ -22,8 +20,6 @@ describe("useEventContext", () => {
       wrapper: ({ children }) => <EventProvider>{children}</EventProvider>,
     });
     expect(result.current.connected).toBe(false);
-    expect(result.current.events).toEqual([]);
-    expect(result.current.latestEvent).toBeNull();
     expect(typeof result.current.subscribe).toBe("function");
     expect(typeof result.current.getTaskOutput).toBe("function");
     expect(typeof result.current.subscribeTaskOutput).toBe("function");

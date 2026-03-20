@@ -2,20 +2,15 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import type { EngineEvent } from "../types/events";
 import { createReconnectingWebSocket } from "./ws-reconnect";
 import { resolveWsUrl } from "../lib/host-config";
-const MAX_EVENTS = 500;
 
 export interface EventStreamState {
   connected: boolean;
-  events: EngineEvent[];
-  latestEvent: EngineEvent | null;
 }
 
 export function useEventStream(
   onEvent?: (event: EngineEvent) => void,
 ): EventStreamState {
   const [connected, setConnected] = useState(false);
-  const [events, setEvents] = useState<EngineEvent[]>([]);
-  const [latestEvent, setLatestEvent] = useState<EngineEvent | null>(null);
   const wsRef = useRef<{ close: () => void } | null>(null);
   const onEventRef = useRef(onEvent);
 
@@ -26,14 +21,6 @@ export function useEventStream(
   const handleMessage = useCallback((data: string) => {
     try {
       const event: EngineEvent = JSON.parse(data);
-      setLatestEvent(event);
-      // Skip high-volume, low-value events from the history array to avoid allocation churn
-      if (event.type !== "task_became_ready" && event.type !== "tasks_became_ready") {
-        setEvents((prev) => {
-          const next = [...prev, event];
-          return next.length > MAX_EVENTS ? next.slice(-MAX_EVENTS) : next;
-        });
-      }
       onEventRef.current?.(event);
     } catch {
       // ignore malformed events
@@ -57,5 +44,5 @@ export function useEventStream(
     };
   }, [handleMessage]);
 
-  return { connected, events, latestEvent };
+  return { connected };
 }
