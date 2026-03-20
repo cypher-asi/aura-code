@@ -471,3 +471,122 @@ fn compute_exploration_allowance(
         base
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_work_log_summary_empty() {
+        assert_eq!(build_work_log_summary(&[]), "");
+    }
+
+    #[test]
+    fn build_work_log_summary_joins_entries() {
+        let log = vec!["Task 1 done".into(), "Task 2 done".into()];
+        let summary = build_work_log_summary(&log);
+        assert!(summary.contains("Task 1 done"));
+        assert!(summary.contains("---"));
+        assert!(summary.contains("Task 2 done"));
+    }
+
+    #[test]
+    fn build_work_log_summary_truncates_long_input() {
+        let log: Vec<String> = (0..500).map(|i| format!("Entry {i}: some work done here")).collect();
+        let summary = build_work_log_summary(&log);
+        assert!(summary.len() <= MAX_WORK_LOG_TASK_CONTEXT + 30);
+        assert!(summary.contains("(truncated)"));
+    }
+
+    #[test]
+    fn cap_task_context_within_budget_unchanged() {
+        let mut ctx = "Short context".to_string();
+        let original = ctx.clone();
+        cap_task_context(&mut ctx, 1000);
+        assert_eq!(ctx, original);
+    }
+
+    #[test]
+    fn cap_task_context_trims_codebase_section_first() {
+        let mut ctx = String::new();
+        ctx.push_str("# Task\nDo something\n");
+        ctx.push_str("\n# Current Codebase Files\n");
+        ctx.push_str(&"x".repeat(5000));
+        ctx.push_str("\n# Dependency API Surface\n");
+        ctx.push_str("dep info here");
+
+        let original_len = ctx.len();
+        let budget = 200;
+        cap_task_context(&mut ctx, budget);
+        assert!(ctx.len() < original_len, "context should be smaller after capping");
+        assert!(!ctx.contains(&"x".repeat(4000)), "bulk of codebase section should be trimmed");
+        assert!(ctx.contains("truncated"), "should contain truncation marker");
+    }
+
+    #[test]
+    fn cap_task_context_hard_truncate_last_resort() {
+        let mut ctx = "x".repeat(10_000);
+        cap_task_context(&mut ctx, 500);
+        assert!(ctx.len() <= 550);
+        assert!(ctx.contains("(context truncated)"));
+    }
+
+    #[test]
+    fn classify_task_complexity_simple_patterns() {
+        assert_eq!(classify_task_complexity("Add dependency for serde", ""), TaskComplexity::Simple);
+        assert_eq!(classify_task_complexity("Define enum Status", ""), TaskComplexity::Simple);
+        assert_eq!(classify_task_complexity("Rename the module", "short"), TaskComplexity::Simple);
+        assert_eq!(classify_task_complexity("Update Cargo.toml", ""), TaskComplexity::Simple);
+    }
+
+    #[test]
+    fn classify_task_complexity_complex_patterns() {
+        assert_eq!(classify_task_complexity("Refactor auth module", ""), TaskComplexity::Complex);
+        assert_eq!(classify_task_complexity("Add integration test for API", ""), TaskComplexity::Complex);
+        assert_eq!(classify_task_complexity("Implement service layer", ""), TaskComplexity::Complex);
+        assert_eq!(classify_task_complexity("Migrate to new storage", ""), TaskComplexity::Complex);
+    }
+
+    #[test]
+    fn classify_task_complexity_standard_for_moderate_descriptions() {
+        let desc = "a".repeat(500);
+        assert_eq!(classify_task_complexity("Add handler", &desc), TaskComplexity::Standard);
+    }
+
+    #[test]
+    fn classify_task_complexity_long_desc_is_complex() {
+        let desc = "a".repeat(1500);
+        assert_eq!(classify_task_complexity("Add handler", &desc), TaskComplexity::Complex);
+    }
+
+    #[test]
+    fn compute_thinking_budget_base_for_small_workspace() {
+        assert_eq!(compute_thinking_budget(8000, 3), 8000);
+    }
+
+    #[test]
+    fn compute_thinking_budget_scales_for_medium_workspace() {
+        assert_eq!(compute_thinking_budget(8000, 10), 10_000);
+    }
+
+    #[test]
+    fn compute_thinking_budget_scales_for_large_workspace() {
+        assert_eq!(compute_thinking_budget(8000, 20), 16_000);
+    }
+
+    #[test]
+    fn compute_exploration_allowance_simple_small_workspace() {
+        assert_eq!(compute_exploration_allowance("Add dependency for serde", "", 3), 8);
+    }
+
+    #[test]
+    fn compute_exploration_allowance_complex_refactoring_large_workspace() {
+        assert_eq!(compute_exploration_allowance("Refactor the auth module", "", 20), 26);
+    }
+
+    #[test]
+    fn compute_exploration_allowance_standard_medium_workspace() {
+        let desc = "a".repeat(500);
+        assert_eq!(compute_exploration_allowance("Add handler", &desc, 10), 14);
+    }
+}
