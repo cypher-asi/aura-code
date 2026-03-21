@@ -275,8 +275,9 @@ fn multi_project_tool_definitions_inner() -> Vec<ToolDefinition> {
     chat_tool_definitions_inner()
         .into_iter()
         .map(|mut td| {
-            if let Some(props) = td.input_schema.get_mut("properties") {
-                props.as_object_mut().unwrap().insert(
+            if let Some(props) = td.input_schema.get_mut("properties").and_then(|p| p.as_object_mut())
+            {
+                props.insert(
                     "project_id".to_string(),
                     serde_json::json!({
                         "type": "string",
