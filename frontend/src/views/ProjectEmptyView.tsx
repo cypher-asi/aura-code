@@ -4,7 +4,7 @@ import { EmptyState } from "../components/EmptyState";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
-import { useProjectContext } from "../context/ProjectContext";
+import { useProjectContext } from "../stores/project-action-store";
 import { useProjectsList } from "../apps/projects/useProjectsList";
 import { projectAgentRoute, projectFilesRoute, projectWorkRoute } from "../utils/mobileNavigation";
 import { AgentSelectorModal } from "../components/AgentSelectorModal";

@@ -13,7 +13,7 @@ import { useAppContext } from "../context/AppContext";
 import { useSidebarSearch } from "../context/SidebarSearchContext";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { useMobileDrawers } from "../hooks/use-mobile-drawers";
-import { useProjectContext } from "../context/ProjectContext";
+import { useProjectContext } from "../stores/project-action-store";
 import { useProjectsList } from "../apps/projects/useProjectsList";
 import { getLastAgent } from "../utils/storage";
 import {

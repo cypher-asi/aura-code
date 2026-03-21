@@ -6,7 +6,7 @@ import { EmptyState } from "./EmptyState";
 import { PanelSearch } from "./PanelSearch";
 import { AutomationBar } from "./AutomationBar";
 import { useSidekick, type SidekickTab } from "../stores/sidekick-store";
-import { useProjectContext } from "../context/ProjectContext";
+import { useProjectContext } from "../stores/project-action-store";
 import { useClickOutside } from "../hooks/use-click-outside";
 import { StatusBadge } from "./StatusBadge";
 import { SpecList } from "../views/SpecList";

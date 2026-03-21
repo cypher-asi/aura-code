@@ -4,7 +4,7 @@ import { useParams, useNavigate, Outlet } from "react-router-dom";
 import { api } from "../api/client";
 import type { Project, Spec, Task } from "../types";
 import type { EngineEvent } from "../types/events";
-import { useProjectRegister } from "../context/ProjectContext";
+import { useProjectRegister } from "../stores/project-action-store";
 import { useEventContext } from "../context/EventContext";
 import { EmptyState } from "../components/EmptyState";
 import { useProjectsList } from "../apps/projects/useProjectsList";

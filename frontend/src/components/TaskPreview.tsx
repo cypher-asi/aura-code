@@ -7,7 +7,7 @@ import { Button, GroupCollapsible } from "@cypher-asi/zui";
 import { Loader2, Play } from "lucide-react";
 import { api, isInsufficientCreditsError, dispatchInsufficientCredits } from "../api/client";
 import { useSidekick } from "../stores/sidekick-store";
-import { useProjectContext } from "../context/ProjectContext";
+import { useProjectContext } from "../stores/project-action-store";
 import { useEventContext, useTaskOutput } from "../context/EventContext";
 import { useLoopActive } from "../hooks/use-loop-active";
 import { useTaskStatus } from "../hooks/use-task-status";

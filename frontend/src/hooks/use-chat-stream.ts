@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect } from "react";
 import { api } from "../api/client";
 import { useSidekick } from "../stores/sidekick-store";
-import { useProjectContext } from "../context/ProjectContext";
+import { useProjectContext } from "../stores/project-action-store";
 import type { ChatStreamCallbacks, ChatAttachment, ToolCallInfo } from "../api/streams";
 import {
   useStreamCore,

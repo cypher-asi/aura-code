@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { api } from "../api/client";
 import { useSidekick } from "../stores/sidekick-store";
-import { useProjectContext } from "../context/ProjectContext";
+import { useProjectContext } from "../stores/project-action-store";
 import { TaskStatusIcon } from "./TaskStatusIcon";
 import { formatRelativeTime, formatTokens, formatModelName } from "../utils/format";
 import { formatCostFromTokens, getCostEstimateLabel } from "../utils/pricing";

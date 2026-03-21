@@ -4,7 +4,7 @@ import { ConnectionTaskbar } from "../../components/ConnectionTaskbar";
 import { ResponsiveMainLane } from "../../components/ResponsiveMainLane";
 import { TerminalPanelHeader, TerminalPanelBody } from "../../components/TerminalPanel";
 import { useTerminalPanelStore } from "../../stores/terminal-panel-store";
-import { useProjectContext } from "../../context/ProjectContext";
+import { useProjectContext } from "../../stores/project-action-store";
 
 export function ProjectMainPanel({ children }: { children?: ReactNode }) {
   const ctx = useProjectContext();

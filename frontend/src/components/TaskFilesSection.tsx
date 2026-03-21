@@ -1,7 +1,7 @@
 import { Text, GroupCollapsible, Item } from "@cypher-asi/zui";
 import { FilePlus, FilePen, FileX } from "lucide-react";
 import { api } from "../api/client";
-import { useProjectContext } from "../context/ProjectContext";
+import { useProjectContext } from "../stores/project-action-store";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { getLinkedWorkspaceRoot } from "../utils/projectWorkspace";
 import styles from "./Preview.module.css";

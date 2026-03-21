@@ -5,7 +5,7 @@ import rehypeHighlight from "rehype-highlight";
 import { Button, Text, GroupCollapsible, Item } from "@cypher-asi/zui";
 import { X, ArrowLeft, FileText } from "lucide-react";
 import { useSidekick } from "../stores/sidekick-store";
-import { useProjectContext } from "../context/ProjectContext";
+import { useProjectContext } from "../stores/project-action-store";
 import { TaskPreview, RunTaskButton } from "./TaskPreview";
 import { SessionPreview } from "./SessionPreview";
 import { LogPreview } from "./LogDetail";

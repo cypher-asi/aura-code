@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { PanelSearch } from "../components/PanelSearch";
 import { FileExplorer } from "../components/FileExplorer";
-import { useProjectContext } from "../context/ProjectContext";
+import { useProjectContext } from "../stores/project-action-store";
 import { useProjectsList } from "../apps/projects/useProjectsList";
 import { getProjectWorkspaceRoot } from "../utils/projectWorkspace";
 

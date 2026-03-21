@@ -6,7 +6,7 @@ import { LoopControls } from "./LoopControls";
 import { ExecutionView } from "./ExecutionView";
 import { TaskFeed } from "./TaskFeed";
 import { LogPanel } from "./LogPanel";
-import { useProjectContext } from "../context/ProjectContext";
+import { useProjectContext } from "../stores/project-action-store";
 import { useEventContext } from "../context/EventContext";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { useSidekick } from "../stores/sidekick-store";

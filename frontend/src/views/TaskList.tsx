@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { api } from "../api/client";
 import type { Spec, Task, TaskStatus } from "../types";
 import { TaskStatusIcon } from "../components/TaskStatusIcon";
-import { useProjectContext } from "../context/ProjectContext";
+import { useProjectContext } from "../stores/project-action-store";
 import { useEventContext } from "../context/EventContext";
 import { useSidekick } from "../stores/sidekick-store";
 import { useDelayedEmpty } from "../hooks/use-delayed-empty";
