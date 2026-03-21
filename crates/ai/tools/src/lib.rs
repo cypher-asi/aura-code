@@ -53,8 +53,14 @@ fn strip_property_descriptions(mut schema: serde_json::Value) -> serde_json::Val
 
 /// Core filesystem, search, and shell tools shared by both chat agent and engine.
 pub fn core_tool_definitions() -> Vec<ToolDefinition> {
+    let mut tools = filesystem_tools();
+    tools.extend(shell_tools());
+    tools.extend(search_tools());
+    tools
+}
+
+fn filesystem_tools() -> Vec<ToolDefinition> {
     vec![
-        // ── Filesystem ─────────────────────────────────────────────────
         tool(
             "read_file",
             "Read the contents of a file relative to the project folder. Optionally read a specific line range (1-indexed) to avoid truncation in large files.",
@@ -102,7 +108,6 @@ pub fn core_tool_definitions() -> Vec<ToolDefinition> {
                 "required": []
             }),
         ),
-        // ── Targeted editing ──────────────────────────────────────────
         tool(
             "edit_file",
             "Make targeted edits to a file by replacing specific text. More efficient than write_file for small changes in large files. The old_text must be an exact match of existing content.",
@@ -117,7 +122,11 @@ pub fn core_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["path", "old_text", "new_text"]
             }),
         ),
-        // ── Shell ──────────────────────────────────────────────────────
+    ]
+}
+
+fn shell_tools() -> Vec<ToolDefinition> {
+    vec![
         tool(
             "run_command",
             "Execute a shell command in the project directory. Use ONLY for build, test, git, and package manager commands. Do NOT use for searching code (use search_code), reading files (use read_file), or finding files (use find_files). Commands time out after 60 seconds by default.",
@@ -131,7 +140,11 @@ pub fn core_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["command"]
             }),
         ),
-        // ── Search ─────────────────────────────────────────────────────
+    ]
+}
+
+fn search_tools() -> Vec<ToolDefinition> {
+    vec![
         tool(
             "search_code",
             "Search for a regex pattern across files in the project. Returns matching lines with file paths and line numbers. Use context_lines to include surrounding code (e.g. to see a full struct or function body around a match).",
@@ -246,210 +259,46 @@ fn multi_project_tool_definitions_inner() -> Vec<ToolDefinition> {
 }
 
 fn chat_management_tools() -> Vec<ToolDefinition> {
+    let mut tools = spec_tool_definitions();
+    tools.extend(task_tool_definitions());
+    tools.extend(project_tool_definitions());
+    tools.extend(dev_loop_tool_definitions());
+    tools
+}
+
+fn spec_tool_definitions() -> Vec<ToolDefinition> {
     vec![
-        // ── Specs ──────────────────────────────────────────────────────
-        compact_tool(
-            "list_specs",
-            "List all specs in the current project.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        ),
-        compact_tool(
-            "get_spec",
-            "Get a single spec by its UUID spec_id (from list_specs or create_spec output, NOT the title number).",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "spec_id": { "type": "string", "description": "The spec ID" }
-                },
-                "required": ["spec_id"]
-            }),
-        ),
-        compact_tool(
-            "create_spec",
-            "Create a new spec. When creating from a requirements document, create one spec per logical phase (multiple calls); title format '01: Name', '02: Name'; markdown: Purpose, Interfaces, Tasks table (1.0/1.1), Test criteria. Do not create tasks in the same step — task creation is always a separate step after all specs exist.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "title": { "type": "string" },
-                    "markdown_contents": { "type": "string" }
-                },
-                "required": ["title", "markdown_contents"]
-            }),
-        ),
-        compact_tool(
-            "update_spec",
-            "Update an existing spec's title or contents. Use the UUID spec_id from list_specs.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "spec_id": { "type": "string" },
-                    "title": { "type": "string" },
-                    "markdown_contents": { "type": "string" }
-                },
-                "required": ["spec_id"]
-            }),
-        ),
-        compact_tool(
-            "delete_spec",
-            "Delete a spec and its tasks from the project. Use the UUID spec_id from list_specs.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "spec_id": { "type": "string" }
-                },
-                "required": ["spec_id"]
-            }),
-        ),
-        // ── Tasks ──────────────────────────────────────────────────────
-        compact_tool(
-            "list_tasks",
-            "List all tasks in the project, optionally filtered by UUID spec_id from list_specs.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "spec_id": { "type": "string" }
-                },
-                "required": []
-            }),
-        ),
-        compact_tool(
-            "create_task",
-            "Create a new task under a spec. Use the UUID spec_id from list_specs. Only use after specs exist; never create tasks in the same turn as creating specs — spec creation and task creation are two distinct steps.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "spec_id": { "type": "string" },
-                    "title": { "type": "string" },
-                    "description": { "type": "string" },
-                    "dependency_ids": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "UUIDs of tasks this task depends on (from list_tasks)"
-                    }
-                },
-                "required": ["spec_id", "title", "description"]
-            }),
-        ),
-        compact_tool(
-            "update_task",
-            "Update a task's title, description, or status.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "task_id": { "type": "string" },
-                    "title": { "type": "string" },
-                    "description": { "type": "string" },
-                    "status": {
-                        "type": "string",
-                        "enum": ["pending", "ready", "in_progress", "blocked", "done", "failed"]
-                    }
-                },
-                "required": ["task_id"]
-            }),
-        ),
-        compact_tool(
-            "delete_task",
-            "Delete a task from the project. Requires UUID task_id and parent UUID spec_id from list_tasks.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "task_id": { "type": "string" },
-                    "spec_id": { "type": "string" }
-                },
-                "required": ["task_id", "spec_id"]
-            }),
-        ),
-        compact_tool(
-            "transition_task",
-            "Transition a task to a new status (e.g. pending -> ready, ready -> done).",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "task_id": { "type": "string" },
-                    "status": {
-                        "type": "string",
-                        "enum": ["pending", "ready", "in_progress", "blocked", "done", "failed"]
-                    }
-                },
-                "required": ["task_id", "status"]
-            }),
-        ),
-        compact_tool(
-            "run_task",
-            "Trigger execution of a single task by the dev-loop engine.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "task_id": { "type": "string" }
-                },
-                "required": ["task_id"]
-            }),
-        ),
-        // ── Project ────────────────────────────────────────────────────
-        compact_tool(
-            "get_project",
-            "Get the current project's details (name, folder, status, etc.).",
-            serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        ),
-        compact_tool(
-            "update_project",
-            "Update the current project's name, description, build_command, or test_command. Commands must be valid shell commands with no extra text.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "name": { "type": "string" },
-                    "description": { "type": "string" },
-                    "build_command": { "type": "string" },
-                    "test_command": { "type": "string" }
-                },
-                "required": []
-            }),
-        ),
-        // ── Dev loop ───────────────────────────────────────────────────
-        compact_tool(
-            "start_dev_loop",
-            "Start the autonomous dev loop for the project. It will pick up ready tasks and execute them.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        ),
-        compact_tool(
-            "pause_dev_loop",
-            "Pause the currently running dev loop.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        ),
-        compact_tool(
-            "stop_dev_loop",
-            "Stop the currently running dev loop.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        ),
-        // ── Progress ───────────────────────────────────────────────────
-        compact_tool(
-            "get_progress",
-            "Get task progress summary for the project (counts by status).",
-            serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        ),
+        compact_tool("list_specs", "List all specs in the current project.", serde_json::json!({"type":"object","properties":{},"required":[]})),
+        compact_tool("get_spec", "Get a single spec by its UUID spec_id (from list_specs or create_spec output, NOT the title number).", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string","description":"The spec ID"}},"required":["spec_id"]})),
+        compact_tool("create_spec", "Create a new spec. When creating from a requirements document, create one spec per logical phase (multiple calls); title format '01: Name', '02: Name'; markdown: Purpose, Interfaces, Tasks table (1.0/1.1), Test criteria. Do not create tasks in the same step — task creation is always a separate step after all specs exist.", serde_json::json!({"type":"object","properties":{"title":{"type":"string"},"markdown_contents":{"type":"string"}},"required":["title","markdown_contents"]})),
+        compact_tool("update_spec", "Update an existing spec's title or contents. Use the UUID spec_id from list_specs.", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string"},"title":{"type":"string"},"markdown_contents":{"type":"string"}},"required":["spec_id"]})),
+        compact_tool("delete_spec", "Delete a spec and its tasks from the project. Use the UUID spec_id from list_specs.", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string"}},"required":["spec_id"]})),
+    ]
+}
+
+fn task_tool_definitions() -> Vec<ToolDefinition> {
+    vec![
+        compact_tool("list_tasks", "List all tasks in the project, optionally filtered by UUID spec_id from list_specs.", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string"}},"required":[]})),
+        compact_tool("create_task", "Create a new task under a spec. Use the UUID spec_id from list_specs. Only use after specs exist; never create tasks in the same turn as creating specs — spec creation and task creation are two distinct steps.", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"dependency_ids":{"type":"array","items":{"type":"string"},"description":"UUIDs of tasks this task depends on (from list_tasks)"}},"required":["spec_id","title","description"]})),
+        compact_tool("update_task", "Update a task's title, description, or status.", serde_json::json!({"type":"object","properties":{"task_id":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"status":{"type":"string","enum":["pending","ready","in_progress","blocked","done","failed"]}},"required":["task_id"]})),
+        compact_tool("delete_task", "Delete a task from the project. Requires UUID task_id and parent UUID spec_id from list_tasks.", serde_json::json!({"type":"object","properties":{"task_id":{"type":"string"},"spec_id":{"type":"string"}},"required":["task_id","spec_id"]})),
+        compact_tool("transition_task", "Transition a task to a new status (e.g. pending -> ready, ready -> done).", serde_json::json!({"type":"object","properties":{"task_id":{"type":"string"},"status":{"type":"string","enum":["pending","ready","in_progress","blocked","done","failed"]}},"required":["task_id","status"]})),
+        compact_tool("run_task", "Trigger execution of a single task by the dev-loop engine.", serde_json::json!({"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"]})),
+    ]
+}
+
+fn project_tool_definitions() -> Vec<ToolDefinition> {
+    vec![
+        compact_tool("get_project", "Get the current project's details (name, folder, status, etc.).", serde_json::json!({"type":"object","properties":{},"required":[]})),
+        compact_tool("update_project", "Update the current project's name, description, build_command, or test_command. Commands must be valid shell commands with no extra text.", serde_json::json!({"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"},"build_command":{"type":"string"},"test_command":{"type":"string"}},"required":[]})),
+        compact_tool("get_progress", "Get task progress summary for the project (counts by status).", serde_json::json!({"type":"object","properties":{},"required":[]})),
+    ]
+}
+
+fn dev_loop_tool_definitions() -> Vec<ToolDefinition> {
+    vec![
+        compact_tool("start_dev_loop", "Start the autonomous dev loop for the project. It will pick up ready tasks and execute them.", serde_json::json!({"type":"object","properties":{},"required":[]})),
+        compact_tool("pause_dev_loop", "Pause the currently running dev loop.", serde_json::json!({"type":"object","properties":{},"required":[]})),
+        compact_tool("stop_dev_loop", "Stop the currently running dev loop.", serde_json::json!({"type":"object","properties":{},"required":[]})),
     ]
 }
