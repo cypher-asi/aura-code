@@ -8,12 +8,12 @@ import { useEventContext } from "../context/EventContext";
 import { EmptyState } from "../components/EmptyState";
 import { useProjectsList } from "../apps/projects/useProjectsList";
 import { Button } from "@cypher-asi/zui";
-import { FolderPlus, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 export function ProjectLayout() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const { projects, openNewProjectModal } = useProjectsList();
+  const { projects } = useProjectsList();
   const cachedProject = useMemo(
     () => projects.find((candidate) => candidate.project_id === projectId) ?? null,
     [projectId, projects],
@@ -129,9 +129,6 @@ export function ProjectLayout() {
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--space-3)" }}>
             <strong>No project selected</strong>
             <span>Create a project to get started.</span>
-            <Button icon={<FolderPlus size={16} />} onClick={openNewProjectModal}>
-              Create Project
-            </Button>
           </div>
         </EmptyState>
       );
