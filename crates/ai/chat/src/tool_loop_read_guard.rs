@@ -129,14 +129,6 @@ pub(crate) fn build_shell_read_blocked_msg() -> String {
         .to_string()
 }
 
-pub(crate) fn build_read_blocked_msg(path: &str, full_count: usize, range_count: usize) -> String {
-    format!(
-        "BLOCKED: You have read '{path}' {full_count} full time(s) and {range_count} \
-         range read(s). Use the content you already have. If you need a specific \
-         section, use search_code to find the exact lines.",
-    )
-}
-
 /// Combine full + range counts into a single value for backward-compatible
 /// `BlockedResultContext::file_read_counts` usage.
 pub(crate) fn combined_read_counts(state: &ReadGuardState) -> HashMap<String, usize> {
