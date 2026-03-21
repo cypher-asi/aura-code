@@ -1,8 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect } from "react";
 import { useAuthStore } from "./stores/auth-store";
-import { EventProvider } from "./context/EventContext";
-import { FollowProvider } from "./context/FollowContext";
 import { RequireAuth } from "./components/RequireAuth";
 import { AppShell } from "./components/AppShell";
 import { HomeView } from "./views/HomeView";
@@ -20,52 +18,43 @@ import { ProjectAgentRedirectView } from "./views/ProjectAgentRedirectView";
 import { ProjectWorkView } from "./views/ProjectWorkView";
 import { ProjectFilesView } from "./views/ProjectFilesView";
 
+import "./stores/event-store";
+import "./stores/follow-store";
+
 export default function App() {
   const restoreSession = useAuthStore((s) => s.restoreSession);
   useEffect(() => { restoreSession(); }, [restoreSession]);
 
   return (
     <BrowserRouter>
-      <EventProvider>
-        <FollowProvider>
-            <Routes>
-                <Route path="login" element={<LoginView />} />
-                <Route path="ide" element={<IdeView />} />
-                <Route element={<RequireAuth />}>
-                  <Route path="invite/:token" element={<InviteAcceptView />} />
-                  <Route element={<AppShell />}>
-                    {/* Redirect root to /projects */}
-                    <Route index element={<Navigate to="/projects" replace />} />
+      <Routes>
+        <Route path="login" element={<LoginView />} />
+        <Route path="ide" element={<IdeView />} />
+        <Route element={<RequireAuth />}>
+          <Route path="invite/:token" element={<InviteAcceptView />} />
+          <Route element={<AppShell />}>
+            <Route index element={<Navigate to="/agents" replace />} />
 
-                    {/* Projects app routes */}
-                    <Route path="projects" element={<HomeView />} />
-                    <Route path="projects/settings" element={<SettingsView />} />
-                    <Route path="projects/:projectId" element={<ProjectLayout />}>
-                      <Route index element={<ProjectEmptyView />} />
-                      <Route path="agent" element={<ProjectAgentRedirectView />} />
-                      <Route path="agents/:agentInstanceId" element={<ChatView />} />
-                      <Route path="execution" element={<ExecutionView />} />
-                      <Route path="work" element={<ProjectWorkView />} />
-                      <Route path="files" element={<ProjectFilesView />} />
-                    </Route>
+            <Route path="projects" element={<HomeView />} />
+            <Route path="projects/settings" element={<SettingsView />} />
+            <Route path="projects/:projectId" element={<ProjectLayout />}>
+              <Route index element={<ProjectEmptyView />} />
+              <Route path="agent" element={<ProjectAgentRedirectView />} />
+              <Route path="agents/:agentInstanceId" element={<ChatView />} />
+              <Route path="execution" element={<ExecutionView />} />
+              <Route path="work" element={<ProjectWorkView />} />
+              <Route path="files" element={<ProjectFilesView />} />
+            </Route>
 
-                    {/* Agents app routes */}
-                    <Route path="agents" element={<AgentIndexRedirect />} />
-                    <Route path="agents/:agentId" element={<AgentChatView />} />
+            <Route path="agents" element={<AgentIndexRedirect />} />
+            <Route path="agents/:agentId" element={<AgentChatView />} />
 
-                    {/* Leaderboard app routes */}
-                    <Route path="leaderboard" element={null} />
-
-                    {/* Feed app routes */}
-                    <Route path="feed" element={null} />
-
-                    {/* Profile app routes */}
-                    <Route path="profile" element={null} />
-                  </Route>
-                </Route>
-              </Routes>
-          </FollowProvider>
-        </EventProvider>
+            <Route path="leaderboard" element={null} />
+            <Route path="feed" element={null} />
+            <Route path="profile" element={null} />
+          </Route>
+        </Route>
+      </Routes>
     </BrowserRouter>
   );
 }
