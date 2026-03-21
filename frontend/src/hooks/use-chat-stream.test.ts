@@ -1,0 +1,185 @@
+import { renderHook, act } from "@testing-library/react";
+import { useChatStream } from "./use-chat-stream";
+import { useStreamStore, streamMetaMap } from "./stream/store";
+
+const mockSetStreamingAgentInstanceId = vi.fn();
+const mockClearGeneratedArtifacts = vi.fn();
+const mockSetActiveTab = vi.fn();
+const mockPushSpec = vi.fn();
+const mockPushTask = vi.fn();
+const mockRemoveSpec = vi.fn();
+const mockRemoveTask = vi.fn();
+const mockNotifyAgentInstanceUpdate = vi.fn();
+
+vi.mock("../stores/sidekick-store", () => ({
+  useSidekick: () => ({
+    previewItem: null,
+    setStreamingAgentInstanceId: mockSetStreamingAgentInstanceId,
+    clearGeneratedArtifacts: mockClearGeneratedArtifacts,
+    setActiveTab: mockSetActiveTab,
+    pushSpec: mockPushSpec,
+    pushTask: mockPushTask,
+    removeSpec: mockRemoveSpec,
+    removeTask: mockRemoveTask,
+    notifyAgentInstanceUpdate: mockNotifyAgentInstanceUpdate,
+  }),
+}));
+
+vi.mock("../stores/project-action-store", () => ({
+  useProjectContext: () => ({
+    setProject: vi.fn(),
+  }),
+}));
+
+vi.mock("../api/client", () => ({
+  api: {
+    sendMessageStream: vi.fn().mockResolvedValue(undefined),
+    getAgentInstance: vi.fn().mockResolvedValue({}),
+  },
+  isInsufficientCreditsError: vi.fn(() => false),
+  dispatchInsufficientCredits: vi.fn(),
+}));
+
+import { api } from "../api/client";
+
+describe("useChatStream", () => {
+  beforeEach(() => {
+    streamMetaMap.clear();
+    useStreamStore.setState({ entries: {} });
+    vi.clearAllMocks();
+    vi.mocked(api.sendMessageStream).mockReset().mockResolvedValue(undefined);
+  });
+
+  it("returns streamKey, sendMessage, stopStreaming, resetMessages", () => {
+    const { result } = renderHook(() =>
+      useChatStream({ projectId: "p-1", agentInstanceId: "ai-1" }),
+    );
+
+    expect(result.current.streamKey).toBeTruthy();
+    expect(typeof result.current.sendMessage).toBe("function");
+    expect(typeof result.current.stopStreaming).toBe("function");
+    expect(typeof result.current.resetMessages).toBe("function");
+  });
+
+  it("does nothing when projectId is undefined", async () => {
+    const { result } = renderHook(() =>
+      useChatStream({ projectId: undefined, agentInstanceId: "ai-1" }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("hello");
+    });
+
+    expect(api.sendMessageStream).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when agentInstanceId is undefined", async () => {
+    const { result } = renderHook(() =>
+      useChatStream({ projectId: "p-1", agentInstanceId: undefined }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("hello");
+    });
+
+    expect(api.sendMessageStream).not.toHaveBeenCalled();
+  });
+
+  it("sends a message and creates a user message", async () => {
+    const { result } = renderHook(() =>
+      useChatStream({ projectId: "p-1", agentInstanceId: "ai-1" }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("hello");
+    });
+
+    expect(api.sendMessageStream).toHaveBeenCalled();
+    const entry = useStreamStore.getState().entries[result.current.streamKey];
+    expect(entry.messages[0].role).toBe("user");
+    expect(entry.messages[0].content).toBe("hello");
+  });
+
+  it("does nothing for empty content without action", async () => {
+    const { result } = renderHook(() =>
+      useChatStream({ projectId: "p-1", agentInstanceId: "ai-1" }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("   ");
+    });
+
+    expect(api.sendMessageStream).not.toHaveBeenCalled();
+  });
+
+  it("sets streaming agent instance ID during send", async () => {
+    const { result } = renderHook(() =>
+      useChatStream({ projectId: "p-1", agentInstanceId: "ai-1" }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("hello");
+    });
+
+    expect(mockSetStreamingAgentInstanceId).toHaveBeenCalledWith("ai-1");
+  });
+
+  it("handles generate_specs action", async () => {
+    const { result } = renderHook(() =>
+      useChatStream({ projectId: "p-1", agentInstanceId: "ai-1" }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("", "generate_specs");
+    });
+
+    expect(mockClearGeneratedArtifacts).toHaveBeenCalled();
+    expect(mockSetActiveTab).toHaveBeenCalledWith("specs");
+  });
+
+  it("handles stream errors gracefully", async () => {
+    vi.mocked(api.sendMessageStream).mockRejectedValue(new Error("fail"));
+
+    const { result } = renderHook(() =>
+      useChatStream({ projectId: "p-1", agentInstanceId: "ai-1" }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("hello");
+    });
+
+    const entry = useStreamStore.getState().entries[result.current.streamKey];
+    const errorMsg = entry.messages.find((m) => m.content.includes("Error"));
+    expect(errorMsg).toBeTruthy();
+  });
+
+  it("ignores AbortError", async () => {
+    vi.mocked(api.sendMessageStream).mockRejectedValue(
+      new DOMException("Aborted", "AbortError"),
+    );
+
+    const { result } = renderHook(() =>
+      useChatStream({ projectId: "p-1", agentInstanceId: "ai-1" }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("hello");
+    });
+
+    const entry = useStreamStore.getState().entries[result.current.streamKey];
+    const errorMsgs = entry.messages.filter((m) => m.content.includes("Error"));
+    expect(errorMsgs).toHaveLength(0);
+  });
+
+  it("clears streaming agent ID after completion", async () => {
+    const { result } = renderHook(() =>
+      useChatStream({ projectId: "p-1", agentInstanceId: "ai-1" }),
+    );
+
+    await act(async () => {
+      await result.current.sendMessage("hello");
+    });
+
+    expect(mockSetStreamingAgentInstanceId).toHaveBeenCalledWith(null);
+  });
+});

@@ -1,0 +1,150 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import type { AuthSession, ZeroUser } from "../types";
+
+const { mockApi } = vi.hoisted(() => {
+  const mockApi = {
+    auth: {
+      getSession: vi.fn(),
+      validate: vi.fn(),
+      login: vi.fn(),
+      register: vi.fn(),
+      logout: vi.fn(),
+    },
+  };
+  return { mockApi };
+});
+
+vi.mock("../api/client", () => ({
+  api: mockApi,
+  ApiClientError: class ApiClientError extends Error {
+    status: number;
+    constructor(msg: string, status: number) {
+      super(msg);
+      this.status = status;
+    }
+  },
+}));
+
+const mockSession: AuthSession = {
+  user_id: "u1",
+  network_user_id: "nu1",
+  profile_id: "p1",
+  display_name: "Test User",
+  profile_image: "https://img.test/avatar.png",
+  primary_zid: "zid-1",
+  zero_wallet: "0xabc",
+  wallets: ["0xabc"],
+  created_at: "2025-01-01T00:00:00Z",
+  validated_at: "2025-01-01T00:00:00Z",
+};
+
+import { useAuthStore } from "./auth-store";
+import { ApiClientError } from "../api/client";
+
+function expectedUser(session: AuthSession): ZeroUser {
+  return {
+    user_id: session.user_id,
+    network_user_id: session.network_user_id,
+    profile_id: session.profile_id,
+    display_name: session.display_name,
+    profile_image: session.profile_image,
+    primary_zid: session.primary_zid,
+    zero_wallet: session.zero_wallet,
+    wallets: session.wallets,
+  };
+}
+
+beforeEach(() => {
+  useAuthStore.setState({ user: null, isLoading: true });
+  vi.clearAllMocks();
+});
+
+describe("auth-store", () => {
+  describe("initial state", () => {
+    it("has no user", () => {
+      expect(useAuthStore.getState().user).toBeNull();
+    });
+
+    it("starts loading", () => {
+      expect(useAuthStore.getState().isLoading).toBe(true);
+    });
+  });
+
+  describe("restoreSession", () => {
+    it("sets user from validated session", async () => {
+      mockApi.auth.getSession.mockResolvedValue(mockSession);
+      mockApi.auth.validate.mockResolvedValue(mockSession);
+
+      await useAuthStore.getState().restoreSession();
+
+      expect(useAuthStore.getState().user).toEqual(expectedUser(mockSession));
+      expect(useAuthStore.getState().isLoading).toBe(false);
+    });
+
+    it("falls back to getSession when validate fails", async () => {
+      mockApi.auth.getSession.mockResolvedValue(mockSession);
+      mockApi.auth.validate.mockRejectedValue(new Error("validation failed"));
+
+      await useAuthStore.getState().restoreSession();
+
+      expect(useAuthStore.getState().user).toEqual(expectedUser(mockSession));
+      expect(useAuthStore.getState().isLoading).toBe(false);
+    });
+
+    it("clears user on 401", async () => {
+      mockApi.auth.getSession.mockRejectedValue(new ApiClientError("unauth", 401));
+
+      await useAuthStore.getState().restoreSession();
+
+      expect(useAuthStore.getState().user).toBeNull();
+      expect(useAuthStore.getState().isLoading).toBe(false);
+    });
+
+    it("does not clear user on non-401 errors", async () => {
+      useAuthStore.setState({ user: expectedUser(mockSession) });
+      mockApi.auth.getSession.mockRejectedValue(new Error("network error"));
+
+      await useAuthStore.getState().restoreSession();
+
+      expect(useAuthStore.getState().user).toEqual(expectedUser(mockSession));
+      expect(useAuthStore.getState().isLoading).toBe(false);
+    });
+  });
+
+  describe("login", () => {
+    it("sets user from session", async () => {
+      mockApi.auth.login.mockResolvedValue(mockSession);
+
+      await useAuthStore.getState().login("a@b.com", "pass");
+
+      expect(mockApi.auth.login).toHaveBeenCalledWith("a@b.com", "pass");
+      expect(useAuthStore.getState().user).toEqual(expectedUser(mockSession));
+    });
+
+    it("propagates errors", async () => {
+      mockApi.auth.login.mockRejectedValue(new Error("bad creds"));
+      await expect(useAuthStore.getState().login("a@b.com", "x")).rejects.toThrow("bad creds");
+    });
+  });
+
+  describe("register", () => {
+    it("sets user from session", async () => {
+      mockApi.auth.register.mockResolvedValue(mockSession);
+
+      await useAuthStore.getState().register("a@b.com", "pass");
+
+      expect(useAuthStore.getState().user).toEqual(expectedUser(mockSession));
+    });
+  });
+
+  describe("logout", () => {
+    it("clears the user", async () => {
+      useAuthStore.setState({ user: expectedUser(mockSession) });
+      mockApi.auth.logout.mockResolvedValue(undefined);
+
+      await useAuthStore.getState().logout();
+
+      expect(useAuthStore.getState().user).toBeNull();
+    });
+  });
+});
