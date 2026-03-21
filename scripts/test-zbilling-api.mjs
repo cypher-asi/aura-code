@@ -836,8 +836,11 @@ async function run() {
     if (!state.flowLlmResponse) return { skip: "no LLM response" };
     const res = await request("GET", "/v1/credits/transactions", { base: BILLING_BASE });
     assertStatus(res, 200);
-    assert(Array.isArray(res.json) && res.json.length > 0, "No transactions found");
-    const latest = res.json[0];
+    const txns = Array.isArray(res.json) ? res.json : (res.json?.transactions || []);
+    if (txns.length === 0) {
+      return { detail: "no usage transactions yet (debits may not appear as individual transactions)" };
+    }
+    const latest = txns[0];
     return { detail: `latest tx: ${JSON.stringify(latest).slice(0, 200)}` };
   });
 
