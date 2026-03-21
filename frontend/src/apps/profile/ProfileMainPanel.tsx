@@ -13,13 +13,13 @@ export function ProfileMainPanel() {
     <Lane flex style={{ borderLeft: "1px solid var(--color-border)" }}>
       <div className={styles.container}>
         <div className={styles.scrollArea}>
-          <div className={styles.commitGridWrapper}>
-            <CommitGrid data={commitActivity} />
-          </div>
-
           {filteredEvents.length === 0 ? (
             <EmptyState icon={<GitCommitVertical size={32} />}>No activity yet</EmptyState>
           ) : (
+            <>
+            <div className={styles.commitGridWrapper}>
+              <CommitGrid data={commitActivity} />
+            </div>
             <div className={styles.feedList}>
               {filteredEvents.map((evt, i) => (
                 <ActivityCard
@@ -32,6 +32,7 @@ export function ProfileMainPanel() {
                 />
               ))}
             </div>
+            </>
           )}
         </div>
       </div>
