@@ -4,6 +4,80 @@ use tracing::warn;
 
 use aura_claude::{ContentBlock, MessageContent, RichMessage};
 
+// ── Shared helpers ──────────────────────────────────────────────────
+
+fn tool_use_ids_from_blocks(blocks: &[ContentBlock]) -> Vec<String> {
+    blocks
+        .iter()
+        .filter_map(|b| match b {
+            ContentBlock::ToolUse { id, .. } => Some(id.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn tool_result_ids_from_blocks(blocks: &[ContentBlock]) -> HashSet<String> {
+    blocks
+        .iter()
+        .filter_map(|b| match b {
+            ContentBlock::ToolResult { tool_use_id, .. } => Some(tool_use_id.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+// ── sanitize_orphan_tool_results helpers ────────────────────────────
+
+/// Collect tool_use IDs from the message immediately preceding `index`.
+fn collect_valid_tool_use_ids(messages: &[RichMessage], index: usize) -> HashSet<String> {
+    match messages.get(index.wrapping_sub(1)) {
+        Some(prev) if prev.role == "assistant" => match &prev.content {
+            MessageContent::Blocks(prev_blocks) => {
+                tool_use_ids_from_blocks(prev_blocks).into_iter().collect()
+            }
+            _ => HashSet::new(),
+        },
+        _ => HashSet::new(),
+    }
+}
+
+/// Build a replacement message after filtering tool_result blocks.
+/// Returns `None` when the original message should be kept as-is.
+fn rebuild_filtered_message(
+    blocks: &[ContentBlock],
+    kept: Vec<ContentBlock>,
+    other_blocks: Vec<ContentBlock>,
+    orig_count: usize,
+) -> Option<RichMessage> {
+    if kept.is_empty() && other_blocks.is_empty() {
+        let preview: String = blocks
+            .iter()
+            .filter_map(|b| match b {
+                ContentBlock::ToolResult { content, .. } => Some(content.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(200)
+            .collect();
+        warn!(preview = %preview, "Converting orphan tool_result message to text");
+        Some(RichMessage::user(&format!(
+            "[Previous tool result was lost due to context: {}]",
+            preview
+        )))
+    } else if kept.len() != orig_count {
+        let mut new_blocks = other_blocks;
+        new_blocks.extend(kept);
+        Some(RichMessage {
+            role: "user".into(),
+            content: MessageContent::Blocks(new_blocks),
+        })
+    } else {
+        None
+    }
+}
+
 /// Remove orphan tool_result blocks whose matching tool_use no longer exists
 /// in the preceding assistant message (e.g. after context compaction).
 pub(crate) fn sanitize_orphan_tool_results(messages: Vec<RichMessage>) -> Vec<RichMessage> {
@@ -16,29 +90,15 @@ pub(crate) fn sanitize_orphan_tool_results(messages: Vec<RichMessage>) -> Vec<Ri
         };
         let tool_result_blocks: Vec<_> = blocks
             .iter()
-            .filter_map(|b| match b {
-                ContentBlock::ToolResult { .. } => Some(b.clone()),
-                _ => None,
-            })
+            .filter(|b| matches!(b, ContentBlock::ToolResult { .. }))
+            .cloned()
             .collect();
         if tool_result_blocks.is_empty() || msg.role != "user" {
             result.push(msg.clone());
             continue;
         }
         let orig_count = tool_result_blocks.len();
-        let valid_ids: HashSet<String> = match messages.get(i.wrapping_sub(1)) {
-            Some(prev) if prev.role == "assistant" => match &prev.content {
-                MessageContent::Blocks(prev_blocks) => prev_blocks
-                    .iter()
-                    .filter_map(|b| match b {
-                        ContentBlock::ToolUse { id, .. } => Some(id.clone()),
-                        _ => None,
-                    })
-                    .collect(),
-                _ => HashSet::new(),
-            },
-            _ => HashSet::new(),
-        };
+        let valid_ids = collect_valid_tool_use_ids(&messages, i);
         let kept: Vec<ContentBlock> = tool_result_blocks
             .into_iter()
             .filter_map(|b| match &b {
@@ -59,35 +119,77 @@ pub(crate) fn sanitize_orphan_tool_results(messages: Vec<RichMessage>) -> Vec<Ri
             .filter(|b| !matches!(b, ContentBlock::ToolResult { .. }))
             .cloned()
             .collect();
-        if kept.is_empty() && other_blocks.is_empty() {
-            let preview: String = blocks
-                .iter()
-                .filter_map(|b| match b {
-                    ContentBlock::ToolResult { content, .. } => Some(content.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join(" ")
-                .chars()
-                .take(200)
-                .collect();
-            warn!(preview = %preview, "Converting orphan tool_result message to text");
-            result.push(RichMessage::user(&format!(
-                "[Previous tool result was lost due to context: {}]",
-                preview
-            )));
-        } else if kept.len() != orig_count {
-            let mut new_blocks = other_blocks;
-            new_blocks.extend(kept);
-            result.push(RichMessage {
-                role: "user".into(),
-                content: MessageContent::Blocks(new_blocks),
-            });
-        } else {
-            result.push(msg.clone());
+        match rebuild_filtered_message(blocks, kept, other_blocks, orig_count) {
+            Some(replacement) => result.push(replacement),
+            None => result.push(msg.clone()),
         }
     }
     result
+}
+
+// ── sanitize_tool_use_results helpers ───────────────────────────────
+
+fn extract_tool_use_ids(msg: &RichMessage) -> Vec<String> {
+    match &msg.content {
+        MessageContent::Blocks(blocks) => tool_use_ids_from_blocks(blocks),
+        MessageContent::Text(_) => vec![],
+    }
+}
+
+fn collect_existing_result_ids(next_msg: Option<&RichMessage>) -> HashSet<String> {
+    match next_msg {
+        Some(m) if m.role == "user" => match &m.content {
+            MessageContent::Blocks(blocks) => tool_result_ids_from_blocks(blocks),
+            _ => HashSet::new(),
+        },
+        _ => HashSet::new(),
+    }
+}
+
+/// Inject synthetic error results for missing tool_use IDs.
+/// Returns the messages to append and whether the next message was consumed.
+fn inject_missing_tool_results(
+    missing_ids: Vec<String>,
+    next_msg: Option<&RichMessage>,
+) -> (Vec<RichMessage>, bool) {
+    warn!(
+        orphaned_count = missing_ids.len(),
+        ids = ?missing_ids,
+        "Adding synthetic tool_result for orphaned tool_use"
+    );
+    let synthetic: Vec<ContentBlock> = missing_ids
+        .into_iter()
+        .map(|tool_use_id| ContentBlock::ToolResult {
+            tool_use_id: tool_use_id.clone(),
+            content: "Tool execution was interrupted or not completed.".to_string(),
+            is_error: Some(true),
+        })
+        .collect();
+
+    if let Some(m) = next_msg {
+        if m.role == "user" {
+            let merged = match &m.content {
+                MessageContent::Blocks(blocks) => {
+                    let mut merged = blocks.clone();
+                    merged.extend(synthetic);
+                    merged
+                }
+                MessageContent::Text(text) => {
+                    let mut merged = vec![ContentBlock::Text { text: text.clone() }];
+                    merged.extend(synthetic);
+                    merged
+                }
+            };
+            return (
+                vec![RichMessage {
+                    role: "user".into(),
+                    content: MessageContent::Blocks(merged),
+                }],
+                true,
+            );
+        }
+    }
+    (vec![RichMessage::tool_results(synthetic)], false)
 }
 
 /// Ensure every tool_use block in an assistant message has a corresponding
@@ -98,16 +200,7 @@ pub(crate) fn sanitize_tool_use_results(messages: Vec<RichMessage>) -> Vec<RichM
     let mut i = 0;
     while i < messages.len() {
         let msg = &messages[i];
-        let tool_use_ids: Vec<String> = match &msg.content {
-            MessageContent::Blocks(blocks) => blocks
-                .iter()
-                .filter_map(|b| match b {
-                    ContentBlock::ToolUse { id, .. } => Some(id.clone()),
-                    _ => None,
-                })
-                .collect(),
-            MessageContent::Text(_) => vec![],
-        };
+        let tool_use_ids = extract_tool_use_ids(msg);
 
         result.push(msg.clone());
 
@@ -117,21 +210,7 @@ pub(crate) fn sanitize_tool_use_results(messages: Vec<RichMessage>) -> Vec<RichM
         }
 
         let next = messages.get(i + 1);
-        let existing_ids: HashSet<String> = match next {
-            Some(m) if m.role == "user" => match &m.content {
-                MessageContent::Blocks(blocks) => blocks
-                    .iter()
-                    .filter_map(|b| match b {
-                        ContentBlock::ToolResult { tool_use_id, .. } => {
-                            Some(tool_use_id.clone())
-                        }
-                        _ => None,
-                    })
-                    .collect(),
-                _ => HashSet::new(),
-            },
-            _ => HashSet::new(),
-        };
+        let existing_ids = collect_existing_result_ids(next);
 
         let missing: Vec<String> = tool_use_ids
             .into_iter()
@@ -139,45 +218,12 @@ pub(crate) fn sanitize_tool_use_results(messages: Vec<RichMessage>) -> Vec<RichM
             .collect();
 
         if !missing.is_empty() {
-            warn!(
-                orphaned_count = missing.len(),
-                ids = ?missing,
-                "Adding synthetic tool_result for orphaned tool_use"
-            );
-            let synthetic: Vec<ContentBlock> = missing
-                .into_iter()
-                .map(|tool_use_id| ContentBlock::ToolResult {
-                    tool_use_id: tool_use_id.clone(),
-                    content: "Tool execution was interrupted or not completed.".to_string(),
-                    is_error: Some(true),
-                })
-                .collect();
-
-            if let Some(m) = next {
-                if m.role == "user" {
-                    match &m.content {
-                        MessageContent::Blocks(blocks) => {
-                            let mut merged = blocks.clone();
-                            merged.extend(synthetic);
-                            result.push(RichMessage {
-                                role: "user".into(),
-                                content: MessageContent::Blocks(merged),
-                            });
-                        }
-                        MessageContent::Text(text) => {
-                            let mut merged = vec![ContentBlock::Text { text: text.clone() }];
-                            merged.extend(synthetic);
-                            result.push(RichMessage {
-                                role: "user".into(),
-                                content: MessageContent::Blocks(merged),
-                            });
-                        }
-                    }
-                    i += 2;
-                    continue;
-                }
+            let (to_append, consumed_next) = inject_missing_tool_results(missing, next);
+            result.extend(to_append);
+            if consumed_next {
+                i += 2;
+                continue;
             }
-            result.push(RichMessage::tool_results(synthetic));
         }
         i += 1;
     }
@@ -301,474 +347,5 @@ fn ensure_starts_with_user(mut messages: Vec<RichMessage>) -> Vec<RichMessage> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // -------------------------------------------------------------------
-    // remove_empty_messages
-    // -------------------------------------------------------------------
-
-    #[test]
-    fn remove_empty_text_messages() {
-        let msgs = vec![
-            RichMessage::user("hello"),
-            RichMessage::user(""),
-            RichMessage::assistant_text("response"),
-        ];
-        let result = remove_empty_messages(msgs);
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].role, "user");
-        assert_eq!(result[1].role, "assistant");
-    }
-
-    #[test]
-    fn remove_messages_with_empty_blocks_vec() {
-        let msgs = vec![
-            RichMessage::user("hello"),
-            RichMessage {
-                role: "user".into(),
-                content: MessageContent::Blocks(vec![]),
-            },
-        ];
-        let result = remove_empty_messages(msgs);
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn keep_messages_with_tool_use_blocks() {
-        let msgs = vec![RichMessage {
-            role: "assistant".into(),
-            content: MessageContent::Blocks(vec![ContentBlock::ToolUse {
-                id: "t1".into(),
-                name: "read_file".into(),
-                input: serde_json::json!({"path": "a.rs"}),
-            }]),
-        }];
-        let result = remove_empty_messages(msgs);
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn remove_messages_where_all_blocks_have_empty_content() {
-        let msgs = vec![RichMessage {
-            role: "user".into(),
-            content: MessageContent::Blocks(vec![
-                ContentBlock::Text { text: "".into() },
-                ContentBlock::ToolResult {
-                    tool_use_id: "t1".into(),
-                    content: "".into(),
-                    is_error: None,
-                },
-            ]),
-        }];
-        let result = remove_empty_messages(msgs);
-        assert_eq!(result.len(), 0);
-    }
-
-    // -------------------------------------------------------------------
-    // merge_consecutive_same_role
-    // -------------------------------------------------------------------
-
-    #[test]
-    fn no_merging_when_roles_alternate() {
-        let msgs = vec![
-            RichMessage::user("a"),
-            RichMessage::assistant_text("b"),
-            RichMessage::user("c"),
-        ];
-        let result = merge_consecutive_same_role(msgs);
-        assert_eq!(result.len(), 3);
-    }
-
-    #[test]
-    fn merge_two_consecutive_user_text_messages() {
-        let msgs = vec![
-            RichMessage::user("hello"),
-            RichMessage::user("world"),
-        ];
-        let result = merge_consecutive_same_role(msgs);
-        assert_eq!(result.len(), 1);
-        match &result[0].content {
-            MessageContent::Text(t) => assert!(t.contains("hello") && t.contains("world")),
-            _ => panic!("expected text"),
-        }
-    }
-
-    #[test]
-    fn merge_two_consecutive_assistant_blocks_messages() {
-        let msgs = vec![
-            RichMessage::assistant_blocks(vec![ContentBlock::Text { text: "a".into() }]),
-            RichMessage::assistant_blocks(vec![ContentBlock::Text { text: "b".into() }]),
-        ];
-        let result = merge_consecutive_same_role(msgs);
-        assert_eq!(result.len(), 1);
-        match &result[0].content {
-            MessageContent::Blocks(blocks) => assert_eq!(blocks.len(), 2),
-            _ => panic!("expected blocks"),
-        }
-    }
-
-    #[test]
-    fn merge_text_and_blocks_different_content_types() {
-        let msgs = vec![
-            RichMessage::user("text message"),
-            RichMessage {
-                role: "user".into(),
-                content: MessageContent::Blocks(vec![ContentBlock::ToolResult {
-                    tool_use_id: "t1".into(),
-                    content: "result".into(),
-                    is_error: None,
-                }]),
-            },
-        ];
-        let result = merge_consecutive_same_role(msgs);
-        assert_eq!(result.len(), 1);
-        match &result[0].content {
-            MessageContent::Blocks(blocks) => {
-                assert!(blocks.len() >= 2, "should have text + tool_result blocks");
-            }
-            _ => panic!("expected blocks after mixed merge"),
-        }
-    }
-
-    #[test]
-    fn merge_three_plus_consecutive_same_role() {
-        let msgs = vec![
-            RichMessage::user("a"),
-            RichMessage::user("b"),
-            RichMessage::user("c"),
-        ];
-        let result = merge_consecutive_same_role(msgs);
-        assert_eq!(result.len(), 1);
-        match &result[0].content {
-            MessageContent::Text(t) => {
-                assert!(t.contains("a") && t.contains("b") && t.contains("c"));
-            }
-            _ => panic!("expected text"),
-        }
-    }
-
-    #[test]
-    fn merge_empty_input_returns_empty() {
-        let result = merge_consecutive_same_role(vec![]);
-        assert!(result.is_empty());
-    }
-
-    // -------------------------------------------------------------------
-    // sanitize_orphan_tool_results
-    // -------------------------------------------------------------------
-
-    #[test]
-    fn passes_through_matched_tool_use_tool_result_pairs() {
-        let msgs = vec![
-            RichMessage::user("do something"),
-            RichMessage::assistant_blocks(vec![ContentBlock::ToolUse {
-                id: "t1".into(),
-                name: "read_file".into(),
-                input: serde_json::json!({"path": "a.rs"}),
-            }]),
-            RichMessage::tool_results(vec![ContentBlock::ToolResult {
-                tool_use_id: "t1".into(),
-                content: "file content".into(),
-                is_error: None,
-            }]),
-        ];
-        let result = sanitize_orphan_tool_results(msgs);
-        assert_eq!(result.len(), 3);
-    }
-
-    #[test]
-    fn drops_orphan_tool_result_with_no_preceding_assistant() {
-        let msgs = vec![
-            RichMessage::tool_results(vec![ContentBlock::ToolResult {
-                tool_use_id: "orphan".into(),
-                content: "lost result".into(),
-                is_error: None,
-            }]),
-        ];
-        let result = sanitize_orphan_tool_results(msgs);
-        // Should convert to text placeholder since the entire message is orphaned
-        assert_eq!(result.len(), 1);
-        match &result[0].content {
-            MessageContent::Text(t) => {
-                assert!(t.contains("lost due to context") || t.contains("lost result"));
-            }
-            _ => {
-                // The block might have been kept if there are other blocks; check content
-            }
-        }
-    }
-
-    #[test]
-    fn drops_tool_result_when_tool_use_id_not_in_previous_assistant() {
-        let msgs = vec![
-            RichMessage::user("start"),
-            RichMessage::assistant_blocks(vec![ContentBlock::ToolUse {
-                id: "t1".into(),
-                name: "read_file".into(),
-                input: serde_json::json!({"path": "a.rs"}),
-            }]),
-            RichMessage::tool_results(vec![
-                ContentBlock::ToolResult {
-                    tool_use_id: "t1".into(),
-                    content: "valid".into(),
-                    is_error: None,
-                },
-                ContentBlock::ToolResult {
-                    tool_use_id: "t_unknown".into(),
-                    content: "orphan".into(),
-                    is_error: None,
-                },
-            ]),
-        ];
-        let result = sanitize_orphan_tool_results(msgs);
-        assert_eq!(result.len(), 3);
-        // The third message should only have the valid tool_result
-        match &result[2].content {
-            MessageContent::Blocks(blocks) => {
-                let tool_results: Vec<_> = blocks.iter().filter(|b| matches!(b, ContentBlock::ToolResult { .. })).collect();
-                assert_eq!(tool_results.len(), 1);
-            }
-            _ => panic!("expected blocks"),
-        }
-    }
-
-    #[test]
-    fn converts_fully_orphaned_tool_result_message_to_text() {
-        let msgs = vec![
-            RichMessage::user("start"),
-            RichMessage::assistant_text("some text"),
-            RichMessage::tool_results(vec![ContentBlock::ToolResult {
-                tool_use_id: "orphan".into(),
-                content: "lost data".into(),
-                is_error: None,
-            }]),
-        ];
-        let result = sanitize_orphan_tool_results(msgs);
-        // The orphaned message should be converted to text placeholder
-        let last = result.last().unwrap();
-        match &last.content {
-            MessageContent::Text(t) => assert!(t.contains("lost due to context")),
-            _ => panic!("expected text placeholder for fully orphaned tool_result"),
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // sanitize_tool_use_results
-    // -------------------------------------------------------------------
-
-    #[test]
-    fn no_change_when_all_tool_use_have_matching_results() {
-        let msgs = vec![
-            RichMessage::user("go"),
-            RichMessage::assistant_blocks(vec![ContentBlock::ToolUse {
-                id: "t1".into(),
-                name: "read_file".into(),
-                input: serde_json::json!({}),
-            }]),
-            RichMessage::tool_results(vec![ContentBlock::ToolResult {
-                tool_use_id: "t1".into(),
-                content: "data".into(),
-                is_error: None,
-            }]),
-        ];
-        let result = sanitize_tool_use_results(msgs.clone());
-        assert_eq!(result.len(), 3);
-    }
-
-    #[test]
-    fn injects_synthetic_error_result_for_orphaned_tool_use() {
-        let msgs = vec![
-            RichMessage::user("go"),
-            RichMessage::assistant_blocks(vec![ContentBlock::ToolUse {
-                id: "t1".into(),
-                name: "read_file".into(),
-                input: serde_json::json!({}),
-            }]),
-            // No tool_result follows
-            RichMessage::assistant_text("continued without result"),
-        ];
-        let result = sanitize_tool_use_results(msgs);
-        // Should inject a synthetic tool_result between the two assistant messages
-        let has_synthetic = result.iter().any(|m| {
-            match &m.content {
-                MessageContent::Blocks(blocks) => blocks.iter().any(|b| match b {
-                    ContentBlock::ToolResult { content, is_error, .. } =>
-                        content.contains("interrupted") && *is_error == Some(true),
-                    _ => false,
-                }),
-                _ => false,
-            }
-        });
-        assert!(has_synthetic, "should inject synthetic error result");
-    }
-
-    #[test]
-    fn merges_synthetic_results_with_existing_user_message() {
-        let msgs = vec![
-            RichMessage::user("go"),
-            RichMessage::assistant_blocks(vec![
-                ContentBlock::ToolUse { id: "t1".into(), name: "a".into(), input: serde_json::json!({}) },
-                ContentBlock::ToolUse { id: "t2".into(), name: "b".into(), input: serde_json::json!({}) },
-            ]),
-            RichMessage::tool_results(vec![ContentBlock::ToolResult {
-                tool_use_id: "t1".into(),
-                content: "ok".into(),
-                is_error: None,
-            }]),
-            // t2 has no result
-        ];
-        let result = sanitize_tool_use_results(msgs);
-        // The existing user message should be extended with t2's synthetic result
-        let user_msg = result.iter().find(|m| {
-            m.role == "user" && match &m.content {
-                MessageContent::Blocks(blocks) => blocks.iter().any(|b| match b {
-                    ContentBlock::ToolResult { tool_use_id, .. } => tool_use_id == "t2",
-                    _ => false,
-                }),
-                _ => false,
-            }
-        });
-        assert!(user_msg.is_some(), "should merge synthetic t2 result into existing user message");
-    }
-
-    #[test]
-    fn handles_text_user_message_following_tool_use() {
-        let msgs = vec![
-            RichMessage::user("go"),
-            RichMessage::assistant_blocks(vec![ContentBlock::ToolUse {
-                id: "t1".into(),
-                name: "read_file".into(),
-                input: serde_json::json!({}),
-            }]),
-            RichMessage::user("text follow-up without tool_result"),
-        ];
-        let result = sanitize_tool_use_results(msgs);
-        // Should convert the text user message to blocks and add synthetic result
-        let has_both = result.iter().any(|m| {
-            m.role == "user" && match &m.content {
-                MessageContent::Blocks(blocks) => {
-                    let has_text = blocks.iter().any(|b| matches!(b, ContentBlock::Text { .. }));
-                    let has_result = blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. }));
-                    has_text && has_result
-                }
-                _ => false,
-            }
-        });
-        assert!(has_both, "should convert text user msg to blocks and merge with synthetic result");
-    }
-
-    #[test]
-    fn handles_tool_use_at_end_of_messages_with_no_next() {
-        let msgs = vec![
-            RichMessage::user("go"),
-            RichMessage::assistant_blocks(vec![ContentBlock::ToolUse {
-                id: "t1".into(),
-                name: "read_file".into(),
-                input: serde_json::json!({}),
-            }]),
-        ];
-        let result = sanitize_tool_use_results(msgs);
-        // Should append a synthetic tool_result message
-        assert!(result.len() >= 3, "should add synthetic result message");
-        let last = result.last().unwrap();
-        assert_eq!(last.role, "user");
-        match &last.content {
-            MessageContent::Blocks(blocks) => {
-                assert!(blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. })));
-            }
-            _ => panic!("expected blocks with tool_result"),
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // validate_and_repair_messages
-    // -------------------------------------------------------------------
-
-    #[test]
-    fn already_valid_messages_pass_through() {
-        let msgs = vec![
-            RichMessage::user("hello"),
-            RichMessage::assistant_text("hi"),
-        ];
-        let result = validate_and_repair_messages(msgs.clone());
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].role, "user");
-        assert_eq!(result[1].role, "assistant");
-    }
-
-    #[test]
-    fn messages_starting_with_assistant_get_user_prepended() {
-        let msgs = vec![
-            RichMessage::assistant_text("hi"),
-            RichMessage::user("hello"),
-        ];
-        let result = validate_and_repair_messages(msgs);
-        assert_eq!(result[0].role, "user");
-        match &result[0].content {
-            MessageContent::Text(t) => assert!(t.contains("Continue")),
-            _ => panic!("expected text placeholder"),
-        }
-    }
-
-    #[test]
-    fn complex_scenario_empty_broken_alternation_orphans_missing_results() {
-        let msgs = vec![
-            RichMessage::user(""),                // empty, should be removed
-            RichMessage::user("go"),
-            RichMessage::user("also go"),         // consecutive user, should merge
-            RichMessage::assistant_blocks(vec![ContentBlock::ToolUse {
-                id: "t1".into(),
-                name: "read_file".into(),
-                input: serde_json::json!({}),
-            }]),
-            // Missing tool_result for t1
-            RichMessage::assistant_text("done"),  // consecutive assistant
-        ];
-        let result = validate_and_repair_messages(msgs);
-
-        // Should start with user
-        assert_eq!(result[0].role, "user");
-
-        // Should have alternating roles
-        for i in 1..result.len() {
-            assert_ne!(
-                result[i].role, result[i - 1].role,
-                "messages at index {} and {} have same role '{}'",
-                i - 1, i, result[i].role
-            );
-        }
-
-        // Should have a synthetic tool_result somewhere
-        let has_tool_result = result.iter().any(|m| match &m.content {
-            MessageContent::Blocks(blocks) => blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. })),
-            _ => false,
-        });
-        assert!(has_tool_result, "should have injected synthetic tool_result");
-    }
-
-    // -------------------------------------------------------------------
-    // ensure_starts_with_user
-    // -------------------------------------------------------------------
-
-    #[test]
-    fn no_change_when_first_is_user() {
-        let msgs = vec![RichMessage::user("hello")];
-        let result = ensure_starts_with_user(msgs);
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn prepends_placeholder_when_first_is_assistant() {
-        let msgs = vec![RichMessage::assistant_text("hi")];
-        let result = ensure_starts_with_user(msgs);
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].role, "user");
-    }
-
-    #[test]
-    fn empty_input_returns_empty() {
-        let result = ensure_starts_with_user(vec![]);
-        assert!(result.is_empty());
-    }
-}
+#[path = "chat_sanitize_tests.rs"]
+mod tests;
