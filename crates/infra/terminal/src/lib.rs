@@ -8,7 +8,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TerminalId(pub Uuid);
+pub struct TerminalId(pub(crate) Uuid);
 
 impl Default for TerminalId {
     fn default() -> Self {
@@ -78,17 +78,19 @@ fn default_cwd() -> String {
         .unwrap_or_else(|| ".".into())
 }
 
+struct PtyComponents {
+    child: Box<dyn portable_pty::Child + Send + Sync>,
+    master: Box<dyn MasterPty + Send>,
+    reader: Box<dyn Read + Send>,
+    writer: Box<dyn Write + Send>,
+}
+
 fn open_pty_session(
     shell: &str,
     working_dir: &str,
     cols: u16,
     rows: u16,
-) -> Result<(
-    Box<dyn portable_pty::Child + Send + Sync>,
-    Box<dyn MasterPty + Send>,
-    Box<dyn Read + Send>,
-    Box<dyn Write + Send>,
-), String> {
+) -> Result<PtyComponents, String> {
     let pty_system = native_pty_system();
     let size = PtySize { rows, cols, pixel_width: 0, pixel_height: 0 };
     let pair = pty_system.openpty(size).map_err(|e| format!("Failed to open PTY: {e}"))?;
@@ -99,7 +101,7 @@ fn open_pty_session(
     let child = pair.slave.spawn_command(cmd).map_err(|e| format!("Failed to spawn shell: {e}"))?;
     let reader = pair.master.try_clone_reader().map_err(|e| format!("Failed to clone PTY reader: {e}"))?;
     let writer = pair.master.take_writer().map_err(|e| format!("Failed to take PTY writer: {e}"))?;
-    Ok((child, pair.master, reader, writer))
+    Ok(PtyComponents { child, master: pair.master, reader, writer })
 }
 
 impl TerminalManager {
@@ -117,7 +119,7 @@ impl TerminalManager {
     ) -> Result<TerminalInfo, String> {
         let shell = default_shell();
         let working_dir = cwd.unwrap_or_else(default_cwd);
-        let (child, master, reader, writer) = open_pty_session(&shell, &working_dir, cols, rows)?;
+        let PtyComponents { child, master, reader, writer } = open_pty_session(&shell, &working_dir, cols, rows)?;
 
         let id = TerminalId::new();
         let now = std::time::SystemTime::now()
