@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { SettingsModal } from "./SettingsModal";
 import { OrgSettingsPanel } from "./OrgSettingsPanel";
+import { BuyCreditsModal } from "./BuyCreditsModal";
 import { AppProviders } from "./AppProviders";
 import { useSidekick } from "../context/SidekickContext";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
@@ -63,11 +64,15 @@ function AppContent() {
   const [orgSettingsOpen, setOrgSettingsOpen] = useState(false);
   const [orgInitialSection, setOrgInitialSection] = useState<"billing" | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [buyCreditsOpen, setBuyCreditsOpen] = useState(false);
 
   const openOrgBilling = useCallback(() => {
     setOrgInitialSection("billing");
     setOrgSettingsOpen(true);
   }, []);
+
+  const openBuyCredits = useCallback(() => setBuyCreditsOpen(true), []);
+  const closeBuyCredits = useCallback(() => setBuyCreditsOpen(false), []);
 
   const openOrgSettings = useCallback(() => setOrgSettingsOpen(true), []);
   const openSettings = useCallback(() => setSettingsOpen(true), []);
@@ -78,10 +83,10 @@ function AppContent() {
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   useEffect(() => {
-    const handler = () => openOrgBilling();
+    const handler = () => openBuyCredits();
     window.addEventListener(INSUFFICIENT_CREDITS_EVENT, handler);
     return () => window.removeEventListener(INSUFFICIENT_CREDITS_EVENT, handler);
-  }, [openOrgBilling]);
+  }, [openBuyCredits]);
 
   return (
     <>
@@ -95,6 +100,11 @@ function AppContent() {
         isOpen={orgSettingsOpen}
         onClose={closeOrgSettings}
         initialSection={orgInitialSection}
+      />
+      <BuyCreditsModal
+        isOpen={buyCreditsOpen}
+        onClose={closeBuyCredits}
+        onOpenBilling={openOrgBilling}
       />
       <SettingsModal isOpen={settingsOpen} onClose={closeSettings} />
       <ProjectCreationModalHost />
