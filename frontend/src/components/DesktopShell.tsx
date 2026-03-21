@@ -41,9 +41,13 @@ function SidebarSearchInput() {
 
 function SidekickLane() {
   const { activeApp } = useAppContext();
-  const { SidekickPanel, SidekickTaskbar, SidekickHeader: SidekickHeaderComp } = activeApp;
+  const visitedAppIds = useAppUIStore((s) => s.visitedAppIds);
+  const { SidekickTaskbar, SidekickHeader: SidekickHeaderComp } = activeApp;
 
-  if (!SidekickPanel) return null;
+  const hasAnySidekick = apps.some(
+    (app) => app.SidekickPanel && (visitedAppIds.has(app.id) || app.id === activeApp.id),
+  );
+  if (!hasAnySidekick) return null;
 
   return (
     <Lane
@@ -57,7 +61,17 @@ function SidekickLane() {
       taskbar={SidekickHeaderComp && <SidekickHeaderComp />}
       style={{ boxShadow: "-1px 0 0 0 var(--color-border)" }}
     >
-      <SidekickPanel />
+      {apps.map((app) => {
+        if (!app.SidekickPanel || !visitedAppIds.has(app.id)) return null;
+        return (
+          <div
+            key={app.id}
+            className={app.id === activeApp.id ? styles.panelActive : styles.panelHidden}
+          >
+            <app.SidekickPanel />
+          </div>
+        );
+      })}
     </Lane>
   );
 }
