@@ -8,10 +8,10 @@ import { EmptyState } from "../../components/EmptyState";
 import { AgentEditorModal } from "../../components/AgentEditorModal";
 import { AgentConversationRow } from "./AgentConversationRow";
 import { api, ApiClientError } from "../../api/client";
-import { useAgents, useSelectedAgent, useAgentStore, LAST_AGENT_ID_KEY } from "./stores";
+import { useAgents, useSelectedAgent, useAgentStore, useSortedAgents, LAST_AGENT_ID_KEY } from "./stores";
 import { useChatHistoryStore, agentHistoryKey } from "../../stores/chat-history-store";
 import { useSidebarSearch } from "../../context/SidebarSearchContext";
-import { dbg } from "../../lib/dbg";
+
 import type { Agent } from "../../types";
 import styles from "./AgentList.module.css";
 
@@ -35,9 +35,6 @@ export function AgentList() {
   const [showEditor, setShowEditor] = useState(false);
 
   useEffect(() => {
-    // #region agent log
-    dbg('AgentList:mount', 'AgentList mount - fetchAgents', {status,agentCount:agents.length});
-    // #endregion
     fetchAgents();
   }, [fetchAgents]);
 
@@ -160,13 +157,14 @@ export function AgentList() {
     }
   }, [deleteTarget, agentId, setSelectedAgent, navigate]);
 
+  const sortedAgents = useSortedAgents();
   const entries = useChatHistoryStore((s) => s.entries);
 
   const filteredAgents = useMemo(() => {
-    if (!searchQuery) return agents;
+    if (!searchQuery) return sortedAgents;
     const q = searchQuery.toLowerCase();
-    return agents.filter((a) => a.name.toLowerCase().includes(q));
-  }, [agents, searchQuery]);
+    return sortedAgents.filter((a) => a.name.toLowerCase().includes(q));
+  }, [sortedAgents, searchQuery]);
 
   if (loading && agents.length === 0) {
     return (

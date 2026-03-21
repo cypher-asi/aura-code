@@ -1,4 +1,4 @@
 export { useAgentStore } from "./agent-store";
-export { useAgents, useAgentHistory, useSelectedAgent } from "./agent-selectors";
+export { useAgents, useAgentHistory, useSelectedAgent, useSortedAgents } from "./agent-selectors";
 
 export const LAST_AGENT_ID_KEY = "aura:lastAgentId";

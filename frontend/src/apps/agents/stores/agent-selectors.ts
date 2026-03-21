@@ -1,9 +1,14 @@
+import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useAgentStore } from "./agent-store";
+import { useChatHistoryStore, agentHistoryKey } from "../../../stores/chat-history-store";
 import type { Agent } from "../../../types";
 import type { DisplayMessage } from "../../../types/stream";
 
 type FetchStatus = "idle" | "loading" | "ready" | "error";
+
+const EMPTY_MESSAGES: DisplayMessage[] = [];
+const IDLE_HISTORY = { messages: EMPTY_MESSAGES, status: "idle" as const, error: null };
 
 type AgentsSlice = {
   agents: Agent[];
@@ -32,11 +37,11 @@ type HistorySlice = {
 export function useAgentHistory(agentId: string | undefined): HistorySlice {
   return useAgentStore(
     useShallow((s) => {
-      if (!agentId) return { messages: [] as DisplayMessage[], status: "idle" as const, error: null };
+      if (!agentId) return IDLE_HISTORY;
       const entry = s.history[agentId];
       return entry
         ? { messages: entry.messages, status: entry.status, error: entry.error }
-        : { messages: [] as DisplayMessage[], status: "idle" as const, error: null };
+        : IDLE_HISTORY;
     }),
   );
 }
@@ -56,4 +61,17 @@ export function useSelectedAgent(): SelectedAgentSlice {
       setSelectedAgent: s.setSelectedAgent,
     })),
   );
+}
+
+/** Agents sorted by most-recent message first, falling back to updated_at. */
+export function useSortedAgents(): Agent[] {
+  const agents = useAgentStore((s) => s.agents);
+  const entries = useChatHistoryStore((s) => s.entries);
+  return useMemo(() => {
+    return [...agents].sort((a, b) => {
+      const tA = entries[agentHistoryKey(a.agent_id)]?.lastMessageAt ?? a.updated_at;
+      const tB = entries[agentHistoryKey(b.agent_id)]?.lastMessageAt ?? b.updated_at;
+      return tB.localeCompare(tA);
+    });
+  }, [agents, entries]);
 }
