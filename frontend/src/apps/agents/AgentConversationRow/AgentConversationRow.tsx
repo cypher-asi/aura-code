@@ -1,0 +1,55 @@
+import { Bot } from "lucide-react";
+import { formatRelativeTime } from "../../../utils/format";
+import type { Agent } from "../../../types";
+import type { DisplayMessage } from "../../../types/stream";
+import styles from "./AgentConversationRow.module.css";
+
+interface AgentConversationRowProps {
+  agent: Agent;
+  lastMessage: DisplayMessage | undefined;
+  isSelected: boolean;
+  onClick: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onMouseOver: (e: React.MouseEvent) => void;
+}
+
+export function AgentConversationRow({
+  agent,
+  lastMessage,
+  isSelected,
+  onClick,
+  onContextMenu,
+  onMouseOver,
+}: AgentConversationRowProps) {
+  const preview = lastMessage
+    ? `${lastMessage.role === "user" ? "You: " : ""}${lastMessage.content}`
+    : agent.role;
+
+  return (
+    <button
+      id={agent.agent_id}
+      className={`${styles.row} ${isSelected ? styles.selected : ""}`}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      onMouseOver={onMouseOver}
+    >
+      <span className={styles.avatar}>
+        {agent.icon ? (
+          <img src={agent.icon} alt="" className={styles.avatarImg} />
+        ) : (
+          <Bot size={20} />
+        )}
+      </span>
+
+      <span className={styles.body}>
+        <span className={styles.top}>
+          <span className={styles.name}>{agent.name}</span>
+          <span className={styles.time}>
+            {formatRelativeTime(agent.updated_at)}
+          </span>
+        </span>
+        <span className={styles.preview}>{preview}</span>
+      </span>
+    </button>
+  );
+}

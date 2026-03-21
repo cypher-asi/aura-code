@@ -21,14 +21,6 @@
   to { transform: rotate(360deg); }
 }
 
-.agentAvatar {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
 .contextMenuOverlay {
   position: fixed;
   z-index: 9999;
