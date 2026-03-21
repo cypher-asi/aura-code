@@ -6,17 +6,9 @@ import { EntityCard } from "../../components/EntityCard";
 import { FollowEditButton } from "../../components/FollowEditButton";
 import { useLeaderboard } from "./LeaderboardContext";
 import { useAuth } from "../../context/AuthContext";
-import { formatTokens } from "../../utils/format";
+import { formatTokens, formatCurrency } from "../../utils/format";
 import { api } from "../../api/client";
 import styles from "./LeaderboardSidekickPanel.module.css";
-
-function formatCost(n: number): string {
-  if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
-  if (n >= 1_000) return "$" + (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
-  if (n >= 1) return "$" + n.toFixed(2);
-  if (n > 0) return "$" + n.toFixed(2);
-  return "$0.00";
-}
 
 interface PlatformStats {
   daily_active_users: number;
@@ -39,9 +31,9 @@ export function LeaderboardSidekickPanel() {
   const [platformStats, setPlatformStats] = useState<PlatformStats | null>(null);
 
   useEffect(() => {
-    if (user) return;
+    if (selectedUserId) return;
     api.platformStats.get().then((s) => setPlatformStats(s ?? null)).catch(() => setPlatformStats(null));
-  }, [user]);
+  }, [selectedUserId]);
 
   if (!user) {
     if (!platformStats) {
@@ -61,19 +53,20 @@ export function LeaderboardSidekickPanel() {
           <StatTile value={platformStats.new_signups.toLocaleString()} label="New Signups" />
           <StatTile value={platformStats.projects_created.toLocaleString()} label="Projects" />
           <StatTile value={formatTokens(platformStats.total_input_tokens + platformStats.total_output_tokens)} label="Total Tokens" />
-          <StatTile value={formatCost(platformStats.total_revenue_usd)} label="Revenue" />
+          <StatTile value={formatCurrency(platformStats.total_revenue_usd)} label="Revenue" />
         </div>
       </div>
     );
   }
 
   const isAgent = user.type === "agent";
-  const isOwnProfile = !isAgent && authUser?.display_name === user.name;
+  const isOwnProfile = !isAgent && !!authUser?.profile_id && authUser.profile_id === user.profileId;
 
   return (
     <EntityCard
       headerLabel={isAgent ? "AGENT" : "USER"}
       headerStatus="ACTIVE"
+      image={user.avatarUrl}
       fallbackIcon={isAgent ? <Bot size={48} /> : <User size={48} />}
       name={user.name}
       nameAction={
@@ -86,7 +79,7 @@ export function LeaderboardSidekickPanel() {
       }
       stats={[
         { value: formatTokens(user.tokens), label: "Tokens" },
-        { value: formatCost(user.estimatedCostUsd), label: "Cost" },
+        { value: formatCurrency(user.estimatedCostUsd), label: "Cost" },
         { value: user.eventCount.toLocaleString(), label: "Events" },
       ]}
       footer="CYPHER-ASI // AURA"

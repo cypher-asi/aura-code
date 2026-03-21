@@ -3,15 +3,8 @@ import { Text } from "@cypher-asi/zui";
 import { Lane } from "../../components/Lane";
 import { useLeaderboard } from "./LeaderboardContext";
 import { useFollow } from "../../context/FollowContext";
-import { formatTokens } from "../../utils/format";
+import { formatTokens, formatCurrency } from "../../utils/format";
 import styles from "./LeaderboardMainPanel.module.css";
-
-function formatCost(n: number): string {
-  if (n >= 1_000) return "$" + (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
-  if (n >= 1) return "$" + n.toFixed(2);
-  if (n > 0) return "$" + n.toFixed(2);
-  return "$0.00";
-}
 
 export function LeaderboardMainPanel() {
   const { filter, selectedUserId, selectUser, entries } = useLeaderboard();
@@ -55,6 +48,9 @@ export function LeaderboardMainPanel() {
                     <span className={styles.rankBadge}>{i + 1}</span>
                   </div>
                   <div className={styles.nameCell}>
+                    {user.avatarUrl && (
+                      <img src={user.avatarUrl} alt="" className={styles.avatar} />
+                    )}
                     <Text size="sm" style={{ fontWeight: 500 }}>{user.name}</Text>
                     {user.type === "agent" && (
                       <span className={styles.typeBadge}>agent</span>
@@ -69,7 +65,7 @@ export function LeaderboardMainPanel() {
                     </span>
                     <span className={styles.metaSep}>·</span>
                     <span className={styles.metaValue} title={`$${user.estimatedCostUsd.toFixed(4)}`}>
-                      {formatCost(user.estimatedCostUsd)}
+                      {formatCurrency(user.estimatedCostUsd)}
                     </span>
                     <span className={styles.metaSep}>·</span>
                     <span className={styles.metaValue}>

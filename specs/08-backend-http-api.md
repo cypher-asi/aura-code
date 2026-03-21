@@ -92,8 +92,6 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/projects/:project_id/tasks/extract", post(extract_tasks))
         .route("/api/projects/:project_id/tasks/:task_id/transition", post(transition_task))
         .route("/api/projects/:project_id/tasks/:task_id/retry", post(retry_task))
-        .route("/api/projects/:project_id/progress", get(get_progress))
-
         // Agents
         .route("/api/projects/:project_id/agents", get(list_agents))
         .route("/api/projects/:project_id/agents/:agent_id", get(get_agent))
@@ -103,6 +101,13 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/projects/:project_id/loop/start", post(start_loop))
         .route("/api/projects/:project_id/loop/pause", post(pause_loop))
         .route("/api/projects/:project_id/loop/stop", post(stop_loop))
+
+        // Social / Analytics (proxied from aura-network)
+        .route("/api/leaderboard", get(get_leaderboard))
+        .route("/api/stats", get(get_platform_stats))
+        .route("/api/users/me/usage", get(get_personal_usage))
+        .route("/api/orgs/:org_id/usage", get(get_org_usage))
+        .route("/api/orgs/:org_id/usage/members", get(get_org_usage_members))
 
         // WebSocket
         .route("/ws/events", get(ws_events))
@@ -159,9 +164,6 @@ pub struct TransitionTaskRequest {
 }
 
 // Response: Task entity directly
-
-// --- Progress ---
-// Response: ProjectProgress (from Spec 05)
 
 // --- Loop ---
 
@@ -347,7 +349,6 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
 | `POST` | `/api/projects/:project_id/tasks/extract` | `extract_tasks` | Extract tasks from all specs |
 | `POST` | `/api/projects/:project_id/tasks/:task_id/transition` | `transition_task` | Transition task status |
 | `POST` | `/api/projects/:project_id/tasks/:task_id/retry` | `retry_task` | Retry a failed task |
-| `GET` | `/api/projects/:project_id/progress` | `get_progress` | Get project progress summary |
 
 ### Agents & Sessions
 
@@ -364,6 +365,16 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
 | `POST` | `/api/projects/:project_id/loop/start` | `start_loop` | Start autonomous dev loop |
 | `POST` | `/api/projects/:project_id/loop/pause` | `pause_loop` | Pause the dev loop |
 | `POST` | `/api/projects/:project_id/loop/stop` | `stop_loop` | Stop the dev loop |
+
+### Social / Analytics (proxied from aura-network)
+
+| Method | Path | Handler | Description |
+|--------|------|---------|-------------|
+| `GET` | `/api/leaderboard` | `get_leaderboard` | Leaderboard entries (tokens, cost, events) |
+| `GET` | `/api/stats` | `get_platform_stats` | Platform-wide stats (DAU, users, revenue) |
+| `GET` | `/api/users/me/usage` | `get_personal_usage` | Personal token usage and cost |
+| `GET` | `/api/orgs/:org_id/usage` | `get_org_usage` | Org-wide token usage and cost |
+| `GET` | `/api/orgs/:org_id/usage/members` | `get_org_usage_members` | Per-member usage within an org |
 
 ### WebSocket
 
@@ -394,7 +405,7 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
 | Spec 02 | `RocksStore` (indirectly via services) |
 | Spec 03 | `SettingsService` for API key endpoints |
 | Spec 04 | `ProjectService`, `SpecGenerationService` |
-| Spec 05 | `TaskService`, `TaskExtractionService`, `ProjectProgress` |
+| Spec 05 | `TaskService`, `TaskExtractionService` |
 | Spec 06 | `AgentService`, `SessionService` |
 | Spec 07 | `DevLoopEngine`, `EngineEvent`, `LoopHandle` |
 
@@ -419,7 +430,7 @@ async fn handle_ws(mut socket: WebSocket, state: AppState) {
 | T08.4 | Implement settings handlers | `set_api_key`, `get_api_key_info`, `delete_api_key`, `get_setting`, `set_setting` |
 | T08.5 | Implement project handlers | `create_project`, `list_projects`, `get_project`, `update_project`, `archive_project` |
 | T08.6 | Implement spec handlers | `list_specs`, `get_spec`, `generate_specs` |
-| T08.7 | Implement task handlers | `list_tasks`, `list_tasks_by_spec`, `extract_tasks`, `transition_task`, `retry_task`, `get_progress` |
+| T08.7 | Implement task handlers | `list_tasks`, `list_tasks_by_spec`, `extract_tasks`, `transition_task`, `retry_task` |
 | T08.8 | Implement agent handlers | `list_agents`, `get_agent`, `list_sessions` |
 | T08.9 | Implement loop control handlers | `start_loop`, `pause_loop`, `stop_loop` with singleton guard |
 | T08.10 | Implement `ApiError` and error mapping | Consistent error responses from service errors |

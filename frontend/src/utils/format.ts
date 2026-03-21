@@ -43,6 +43,21 @@ export function formatTokens(n: number): string {
   return n.toLocaleString();
 }
 
+export function formatCompact(n: number): string {
+  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(n >= 10_000_000_000 ? 0 : 1).replace(/\.0$/, "") + "B";
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1).replace(/\.0$/, "") + "M";
+  if (n >= 10_000) return (n / 1_000).toFixed(n >= 100_000 ? 0 : 1).replace(/\.0$/, "") + "K";
+  return n.toLocaleString();
+}
+
+export function formatCurrency(n: number): string {
+  if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return "$" + (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  if (n >= 1) return "$" + n.toFixed(2);
+  if (n > 0) return "$" + n.toFixed(2);
+  return "$0.00";
+}
+
 export function formatModelName(model: string): string {
   return model.replace(/^claude-/, "").replace(/-(\d)$/, " $1");
 }

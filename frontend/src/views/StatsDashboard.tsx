@@ -4,6 +4,7 @@ import { useOrg } from "../context/OrgContext";
 import { useDelayedEmpty } from "../hooks/use-delayed-empty";
 import { Text } from "@cypher-asi/zui";
 import { EmptyState } from "../components/EmptyState";
+import { formatCompact, formatCurrency } from "../utils/format";
 import styles from "./aura.module.css";
 
 type Period = "day" | "week" | "month" | "all";
@@ -109,21 +110,6 @@ export function StatsDashboard() {
       )}
     </div>
   );
-}
-
-function formatCompact(n: number): string {
-  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(n >= 10_000_000_000 ? 0 : 1).replace(/\.0$/, "") + "B";
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1).replace(/\.0$/, "") + "M";
-  if (n >= 10_000) return (n / 1_000).toFixed(n >= 100_000 ? 0 : 1).replace(/\.0$/, "") + "K";
-  return n.toLocaleString();
-}
-
-function formatCurrency(n: number): string {
-  if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
-  if (n >= 1_000) return "$" + (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
-  if (n >= 1) return "$" + n.toFixed(2);
-  if (n > 0) return "$" + n.toFixed(2);
-  return "$0.00";
 }
 
 function StatCard({ value, label, fmt, fmtFn }: { value: number; label: string; fmt?: boolean; fmtFn?: (n: number) => string }) {
