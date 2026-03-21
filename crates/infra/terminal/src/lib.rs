@@ -72,6 +72,30 @@ fn default_cwd() -> String {
         .unwrap_or_else(|| ".".into())
 }
 
+fn open_pty_session(
+    shell: &str,
+    working_dir: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<(
+    Box<dyn portable_pty::Child + Send + Sync>,
+    Box<dyn MasterPty + Send>,
+    Box<dyn Read + Send>,
+    Box<dyn Write + Send>,
+), String> {
+    let pty_system = native_pty_system();
+    let size = PtySize { rows, cols, pixel_width: 0, pixel_height: 0 };
+    let pair = pty_system.openpty(size).map_err(|e| format!("Failed to open PTY: {e}"))?;
+
+    let mut cmd = CommandBuilder::new(shell);
+    cmd.cwd(working_dir);
+    cmd.env("TERM", "xterm-256color");
+    let child = pair.slave.spawn_command(cmd).map_err(|e| format!("Failed to spawn shell: {e}"))?;
+    let reader = pair.master.try_clone_reader().map_err(|e| format!("Failed to clone PTY reader: {e}"))?;
+    let writer = pair.master.take_writer().map_err(|e| format!("Failed to take PTY writer: {e}"))?;
+    Ok((child, pair.master, reader, writer))
+}
+
 impl TerminalManager {
     pub fn new() -> Self {
         Self {
@@ -87,67 +111,21 @@ impl TerminalManager {
     ) -> Result<TerminalInfo, String> {
         let shell = default_shell();
         let working_dir = cwd.unwrap_or_else(default_cwd);
-
-        let pty_system = native_pty_system();
-        let size = PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        };
-
-        let pair = pty_system
-            .openpty(size)
-            .map_err(|e| format!("Failed to open PTY: {e}"))?;
-
-        let mut cmd = CommandBuilder::new(&shell);
-        cmd.cwd(&working_dir);
-        cmd.env("TERM", "xterm-256color");
-
-        let child = pair
-            .slave
-            .spawn_command(cmd)
-            .map_err(|e| format!("Failed to spawn shell: {e}"))?;
-
-        let reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| format!("Failed to clone PTY reader: {e}"))?;
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|e| format!("Failed to take PTY writer: {e}"))?;
+        let (child, master, reader, writer) = open_pty_session(&shell, &working_dir, cols, rows)?;
 
         let id = TerminalId::new();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-
-        let info = TerminalInfo {
-            id,
-            shell: shell.clone(),
-            cols,
-            rows,
-            cwd: working_dir,
-            created_at: now,
-        };
-
+        let terminal_info = TerminalInfo { id, shell: shell.clone(), cols, rows, cwd: working_dir, created_at: now };
         let session = TerminalSession {
-            _child: child,
-            master: pair.master,
-            writer,
-            reader: Some(reader),
-            info: info.clone(),
+            _child: child, master, writer, reader: Some(reader), info: terminal_info.clone(),
         };
 
-        self.sessions
-            .lock()
-            .map_err(|e| format!("Lock poisoned: {e}"))?
-            .insert(id, session);
-
+        self.sessions.lock().map_err(|e| format!("Lock poisoned: {e}"))?.insert(id, session);
         info!(%id, %shell, "Terminal session spawned");
-        Ok(info)
+        Ok(terminal_info)
     }
 
     pub fn kill(&self, id: TerminalId) -> Result<(), String> {

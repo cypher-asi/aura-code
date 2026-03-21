@@ -127,62 +127,14 @@ impl ClaudeClient {
             model: model.to_string(),
             max_tokens,
             system: serde_json::Value::String(system_prompt.to_string()),
-            messages: vec![SimpleMessage {
-                role: "user".to_string(),
-                content: user_message.to_string(),
-            }],
+            messages: vec![SimpleMessage { role: "user".to_string(), content: user_message.to_string() }],
             stream: None,
         };
 
         let url = format!("{}/v1/messages", self.base_url);
-        info!(
-            model,
-            max_tokens,
-            user_msg_len = user_message.len(),
-            url = %url,
-            "Sending Claude API request"
-        );
-
+        info!(model, max_tokens, user_msg_len = user_message.len(), url = %url, "Sending Claude API request");
         let response = self.complete_non_stream_with_retry(api_key, &url, &request).await?;
-
-        let body: MessagesResponse = response
-            .json()
-            .await
-            .map_err(|e| {
-                error!(error = %e, "Failed to deserialize Claude response body");
-                ClaudeClientError::Parse(e.to_string())
-            })?;
-
-        let stop_reason = body.stop_reason.as_deref().unwrap_or("unknown");
-        info!(stop_reason, "Claude stop_reason");
-
-        if stop_reason == "max_tokens" {
-            error!(max_tokens, "Claude response truncated — hit max_tokens limit");
-            return Err(ClaudeClientError::Truncated { max_tokens });
-        }
-
-        let usage = body.usage.unwrap_or_default();
-
-        let text = body
-            .content
-            .into_iter()
-            .filter_map(|block| block.text)
-            .collect::<Vec<_>>()
-            .join("");
-
-        if text.is_empty() {
-            error!("Claude returned empty text content");
-            return Err(ClaudeClientError::Parse(
-                "no text content in response".into(),
-            ));
-        }
-
-        tracing::debug!(response_len = text.len(), input_tokens = usage.input_tokens, output_tokens = usage.output_tokens, "Claude response text extracted");
-        Ok(LlmResponse {
-            text,
-            input_tokens: usage.input_tokens,
-            output_tokens: usage.output_tokens,
-        })
+        parse_messages_response(response, max_tokens).await
     }
 
     pub async fn complete_stream(
@@ -327,6 +279,33 @@ impl ClaudeClient {
         })?;
         self.stream_with_retry_and_fallback(api_key, &url, body, &event_tx).await
     }
+}
+
+async fn parse_messages_response(
+    response: reqwest::Response,
+    max_tokens: u32,
+) -> Result<LlmResponse, ClaudeClientError> {
+    let body: MessagesResponse = response.json().await.map_err(|e| {
+        error!(error = %e, "Failed to deserialize Claude response body");
+        ClaudeClientError::Parse(e.to_string())
+    })?;
+
+    let stop_reason = body.stop_reason.as_deref().unwrap_or("unknown");
+    info!(stop_reason, "Claude stop_reason");
+    if stop_reason == "max_tokens" {
+        error!(max_tokens, "Claude response truncated — hit max_tokens limit");
+        return Err(ClaudeClientError::Truncated { max_tokens });
+    }
+
+    let usage = body.usage.unwrap_or_default();
+    let text: String = body.content.into_iter().filter_map(|block| block.text).collect::<Vec<_>>().join("");
+    if text.is_empty() {
+        error!("Claude returned empty text content");
+        return Err(ClaudeClientError::Parse("no text content in response".into()));
+    }
+
+    tracing::debug!(response_len = text.len(), input_tokens = usage.input_tokens, output_tokens = usage.output_tokens, "Claude response text extracted");
+    Ok(LlmResponse { text, input_tokens: usage.input_tokens, output_tokens: usage.output_tokens })
 }
 
 fn cached_system_blocks(text: &str) -> serde_json::Value {
