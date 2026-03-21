@@ -231,5 +231,8 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         internal_service_token: env_opt("INTERNAL_SERVICE_TOKEN"),
         runtime_agent_state: domain.runtime_agent_state,
         agent_message_cache: Arc::new(Mutex::new(HashMap::new())),
+        require_zero_pro: std::env::var("REQUIRE_ZERO_PRO")
+            .map(|v| v != "false" && v != "0")
+            .unwrap_or(true),
     }
 }
