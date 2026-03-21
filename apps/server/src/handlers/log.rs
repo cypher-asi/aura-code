@@ -19,13 +19,55 @@ pub struct PersistedLogEntry {
     pub event: serde_json::Value,
 }
 
+async fn aggregate_storage_logs(
+    storage: &aura_storage::StorageClient,
+    jwt: &str,
+    project_ids: &[String],
+) -> Vec<PersistedLogEntry> {
+    let log_futs: Vec<_> = project_ids
+        .iter()
+        .map(|pid| storage.list_log_entries(pid, jwt, None, None, None))
+        .collect();
+    let log_results = futures_util::future::join_all(log_futs).await;
+
+    let mut entries = Vec::new();
+    for (i, result) in log_results.into_iter().enumerate() {
+        match result {
+            Ok(storage_logs) => {
+                for sl in &storage_logs {
+                    let timestamp_ms = sl
+                        .created_at
+                        .as_deref()
+                        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.timestamp_millis())
+                        .unwrap_or(0);
+                    let event = sl
+                        .metadata
+                        .clone()
+                        .unwrap_or_else(|| serde_json::json!({
+                            "type": "log_line",
+                            "message": sl.message.clone().unwrap_or_default(),
+                        }));
+                    entries.push(PersistedLogEntry { timestamp_ms, event });
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    project_id = %project_ids[i], error = %e,
+                    "Failed to list log entries from storage"
+                );
+            }
+        }
+    }
+    entries
+}
+
 pub async fn list_log_entries(
     State(state): State<AppState>,
     Query(query): Query<LogEntriesQuery>,
 ) -> ApiResult<Json<Vec<PersistedLogEntry>>> {
     let limit = query.limit.unwrap_or(1000).min(5000);
 
-    // Primary: aggregate log entries from aura-storage across projects
     if let (Some(ref storage), Ok(jwt)) = (&state.storage_client, state.get_jwt()) {
         let project_ids: Vec<String> = if let Some(ref pid) = query.project_id {
             vec![pid.clone()]
@@ -38,42 +80,7 @@ pub async fn list_log_entries(
                 .collect()
         };
 
-        let log_futs: Vec<_> = project_ids
-            .iter()
-            .map(|pid| storage.list_log_entries(pid, &jwt, None, None, None))
-            .collect();
-        let log_results = futures_util::future::join_all(log_futs).await;
-
-        let mut entries = Vec::new();
-        for (i, result) in log_results.into_iter().enumerate() {
-            match result {
-                Ok(storage_logs) => {
-                    for sl in &storage_logs {
-                        let timestamp_ms = sl
-                            .created_at
-                            .as_deref()
-                            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-                            .map(|dt| dt.timestamp_millis())
-                            .unwrap_or(0);
-                        let event = sl
-                            .metadata
-                            .clone()
-                            .unwrap_or_else(|| serde_json::json!({
-                                "type": "log_line",
-                                "message": sl.message.clone().unwrap_or_default(),
-                            }));
-                        entries.push(PersistedLogEntry { timestamp_ms, event });
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        project_id = %project_ids[i], error = %e,
-                        "Failed to list log entries from storage"
-                    );
-                }
-            }
-        }
-
+        let mut entries = aggregate_storage_logs(storage, &jwt, &project_ids).await;
         entries.sort_by(|a, b| a.timestamp_ms.cmp(&b.timestamp_ms));
         if entries.len() > limit {
             entries = entries.split_off(entries.len() - limit);

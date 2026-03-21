@@ -160,28 +160,12 @@ pub async fn retry_task(
     Ok(Json(task))
 }
 
-pub async fn get_progress(
-    State(state): State<AppState>,
-    Path(project_id): Path<ProjectId>,
-) -> ApiResult<Json<ProjectProgress>> {
-    let storage = state.require_storage_client()?;
-    let jwt = state.get_jwt()?;
-
-    let storage_tasks = storage
-        .list_tasks(&project_id.to_string(), &jwt)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
-
-    let tasks: Vec<Task> = storage_tasks
-        .into_iter()
-        .filter_map(|s| storage_task_to_task(s).ok())
-        .collect();
-
+fn build_task_progress(project_id: ProjectId, tasks: &[Task]) -> ProjectProgress {
     let total = tasks.len();
     let done = tasks.iter().filter(|t| t.status == TaskStatus::Done).count();
     let pct = if total == 0 { 0.0 } else { (done as f64 / total as f64) * 100.0 };
 
-    let mut progress = ProjectProgress {
+    ProjectProgress {
         project_id,
         total_tasks: total,
         pending_tasks: tasks.iter().filter(|t| t.status == TaskStatus::Pending).count(),
@@ -207,58 +191,85 @@ pub async fn get_progress(
         build_verify_failures: 0,
         execution_failures: 0,
         file_ops_failures: 0,
+    }
+}
+
+async fn count_storage_messages(
+    storage: &aura_storage::StorageClient,
+    jwt: &str,
+    project_id: &ProjectId,
+) -> u64 {
+    let agents = match storage
+        .list_project_agents(&project_id.to_string(), jwt)
+        .await
+    {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::warn!(%project_id, error = %e, "Failed to list project agents for message count");
+            return 0;
+        }
     };
+
+    let session_futs: Vec<_> = agents
+        .iter()
+        .map(|a| storage.list_sessions(&a.id, jwt))
+        .collect();
+    let session_results = futures_util::future::join_all(session_futs).await;
+
+    let all_sessions: Vec<_> = session_results
+        .into_iter()
+        .enumerate()
+        .flat_map(|(i, result)| match result {
+            Ok(sessions) => sessions,
+            Err(e) => {
+                tracing::warn!(project_agent_id = %agents[i].id, error = %e, "Failed to list sessions for message count");
+                Vec::new()
+            }
+        })
+        .collect();
+
+    let msg_futs: Vec<_> = all_sessions
+        .iter()
+        .map(|s| storage.list_messages(&s.id, jwt, None, None))
+        .collect();
+    let msg_results = futures_util::future::join_all(msg_futs).await;
+
+    let mut msg_count: u64 = 0;
+    for (i, result) in msg_results.into_iter().enumerate() {
+        match result {
+            Ok(msgs) => msg_count += msgs.len() as u64,
+            Err(e) => {
+                tracing::warn!(session_id = %all_sessions[i].id, error = %e, "Failed to list messages for count");
+            }
+        }
+    }
+    msg_count
+}
+
+pub async fn get_progress(
+    State(state): State<AppState>,
+    Path(project_id): Path<ProjectId>,
+) -> ApiResult<Json<ProjectProgress>> {
+    let storage = state.require_storage_client()?;
+    let jwt = state.get_jwt()?;
+
+    let storage_tasks = storage
+        .list_tasks(&project_id.to_string(), &jwt)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+
+    let tasks: Vec<Task> = storage_tasks
+        .into_iter()
+        .filter_map(|s| storage_task_to_task(s).ok())
+        .collect();
+
+    let mut progress = build_task_progress(project_id, &tasks);
 
     aggregate_session_metrics(&state, &project_id, &mut progress).await;
     aggregate_agent_instance_metrics(&state, &project_id, &mut progress).await;
 
-    // Count messages from aura-storage (aggregate across agent sessions)
     if let (Some(ref storage), Ok(jwt)) = (&state.storage_client, state.get_jwt()) {
-        let agents = match storage
-            .list_project_agents(&project_id.to_string(), &jwt)
-            .await
-        {
-            Ok(a) => a,
-            Err(e) => {
-                tracing::warn!(%project_id, error = %e, "Failed to list project agents for message count");
-                Vec::new()
-            }
-        };
-
-        let session_futs: Vec<_> = agents
-            .iter()
-            .map(|a| storage.list_sessions(&a.id, &jwt))
-            .collect();
-        let session_results = futures_util::future::join_all(session_futs).await;
-
-        let all_sessions: Vec<_> = session_results
-            .into_iter()
-            .enumerate()
-            .flat_map(|(i, result)| match result {
-                Ok(sessions) => sessions,
-                Err(e) => {
-                    tracing::warn!(project_agent_id = %agents[i].id, error = %e, "Failed to list sessions for message count");
-                    Vec::new()
-                }
-            })
-            .collect();
-
-        let msg_futs: Vec<_> = all_sessions
-            .iter()
-            .map(|s| storage.list_messages(&s.id, &jwt, None, None))
-            .collect();
-        let msg_results = futures_util::future::join_all(msg_futs).await;
-
-        let mut msg_count: u64 = 0;
-        for (i, result) in msg_results.into_iter().enumerate() {
-            match result {
-                Ok(msgs) => msg_count += msgs.len() as u64,
-                Err(e) => {
-                    tracing::warn!(session_id = %all_sessions[i].id, error = %e, "Failed to list messages for count");
-                }
-            }
-        }
-        progress.total_messages = msg_count;
+        progress.total_messages = count_storage_messages(storage, &jwt, &project_id).await;
     }
 
     super::repo_metrics::aggregate_repo_metrics(&state, &project_id, &mut progress).await;
@@ -376,6 +387,47 @@ pub struct TaskOutputResponse {
     pub test_steps: Vec<serde_json::Value>,
 }
 
+async fn fetch_task_output_from_storage(
+    storage: &aura_storage::StorageClient,
+    jwt: &str,
+    task_id: &TaskId,
+) -> Option<TaskOutputResponse> {
+    let task = storage.get_task(&task_id.to_string(), jwt).await.ok()?;
+    let session_id = task.session_id?;
+    let msgs = storage.list_messages(&session_id, jwt, None, None).await.ok()?;
+
+    let content: String = msgs
+        .iter()
+        .filter(|m| m.role.as_deref() == Some("assistant"))
+        .filter_map(|m| m.content.as_deref())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let (mut build_steps, mut test_steps) = (Vec::new(), Vec::new());
+    for msg in &msgs {
+        if msg.role.as_deref() != Some("system") {
+            continue;
+        }
+        if let Some(content) = msg.content.as_deref() {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(content) {
+                if val.get("_type").and_then(|t| t.as_str()) == Some("task_steps") {
+                    if let Some(bs) = val.get("build_steps").and_then(|v| v.as_array()) {
+                        build_steps = bs.clone();
+                    }
+                    if let Some(ts) = val.get("test_steps").and_then(|v| v.as_array()) {
+                        test_steps = ts.clone();
+                    }
+                }
+            }
+        }
+    }
+
+    if content.is_empty() && build_steps.is_empty() && test_steps.is_empty() {
+        return None;
+    }
+    Some(TaskOutputResponse { output: content, build_steps, test_steps })
+}
+
 pub async fn get_task_output(
     State(state): State<AppState>,
     Path((_project_id, task_id)): Path<(ProjectId, TaskId)>,
@@ -399,40 +451,8 @@ pub async fn get_task_output(
     }
 
     if let (Some(storage), Ok(jwt)) = (state.storage_client.as_ref(), state.get_jwt()) {
-        if let Ok(task) = storage.get_task(&task_id.to_string(), &jwt).await {
-            if let Some(session_id) = task.session_id {
-                if let Ok(msgs) = storage.list_messages(&session_id, &jwt, None, None).await {
-                    let content: String = msgs
-                        .iter()
-                        .filter(|m| m.role.as_deref() == Some("assistant"))
-                        .filter_map(|m| m.content.as_deref())
-                        .collect::<Vec<_>>()
-                        .join("\n");
-
-                    let (mut build_steps, mut test_steps) = (Vec::new(), Vec::new());
-                    for msg in &msgs {
-                        if msg.role.as_deref() != Some("system") {
-                            continue;
-                        }
-                        if let Some(content) = msg.content.as_deref() {
-                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(content) {
-                                if val.get("_type").and_then(|t| t.as_str()) == Some("task_steps") {
-                                    if let Some(bs) = val.get("build_steps").and_then(|v| v.as_array()) {
-                                        build_steps = bs.clone();
-                                    }
-                                    if let Some(ts) = val.get("test_steps").and_then(|v| v.as_array()) {
-                                        test_steps = ts.clone();
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if !content.is_empty() || !build_steps.is_empty() || !test_steps.is_empty() {
-                        return Ok(Json(TaskOutputResponse { output: content, build_steps, test_steps }));
-                    }
-                }
-            }
+        if let Some(resp) = fetch_task_output_from_storage(storage, &jwt, &task_id).await {
+            return Ok(Json(resp));
         }
     }
 

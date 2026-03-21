@@ -320,6 +320,46 @@ impl DevLoopEngine {
     ///     when no Ready tasks remain
     ///   - Stop/Pause commands are checked at the top of every loop iteration
     /// ```
+    async fn try_get_agent_instance(
+        &self,
+        project_id: &ProjectId,
+        agent_instance_id: &AgentInstanceId,
+    ) -> Option<AgentInstance> {
+        match self.agent_instance_service.get_instance(project_id, agent_instance_id).await {
+            Ok(a) => Some(a),
+            Err(e) => {
+                tracing::warn!(
+                    %project_id, %agent_instance_id, error = %e,
+                    "failed to fetch agent instance for task context"
+                );
+                None
+            }
+        }
+    }
+
+    async fn dispatch_task(
+        &self,
+        task: &Task,
+        project: &Project,
+        ctx: &LoopRunContext,
+        agent: Option<&AgentInstance>,
+        agent_instance_id: AgentInstanceId,
+        stop_rx: &mut watch::Receiver<LoopCommand>,
+    ) -> Option<Result<TaskExecution, EngineError>> {
+        if let Some(cmd) = shell::extract_shell_command(task) {
+            return Some(self.execute_shell_task(project, task, &cmd, agent_instance_id).await);
+        }
+        let agentic_params = super::executor_agentic::AgenticTaskParams {
+            project_id: &ctx.project_id, task, session: &ctx.session,
+            api_key: &ctx.api_key, agent,
+            work_log: &ctx.work_log, workspace_cache: &ctx.workspace_cache,
+        };
+        tokio::select! {
+            r = self.execute_task_agentic(&agentic_params) => Some(r),
+            _ = stop_rx.changed() => None,
+        }
+    }
+
     async fn run_loop(
         &self,
         project_id: ProjectId,
@@ -345,48 +385,24 @@ impl DevLoopEngine {
             let baseline = ctx.get_or_capture_test_baseline(self, &project).await;
             let build_baseline = ctx.get_or_capture_build_baseline(self, &project).await;
             let task_start = Instant::now();
-            let agent = match self.agent_instance_service
-                .get_instance(&project_id, &agent_instance_id).await {
-                Ok(a) => Some(a),
-                Err(e) => {
-                    tracing::warn!(
-                        %project_id, %agent_instance_id, error = %e,
-                        "failed to fetch agent instance for task context"
-                    );
-                    None
-                }
-            };
-            let result = if let Some(cmd) = shell::extract_shell_command(&task) {
-                Some(self.execute_shell_task(&project, &task, &cmd, agent_instance_id).await)
-            } else {
-                let agentic_params = super::executor_agentic::AgenticTaskParams {
-                    project_id: &project_id, task: &task, session: &ctx.session,
-                    api_key: &ctx.api_key, agent: agent.as_ref(),
-                    work_log: &ctx.work_log, workspace_cache: &ctx.workspace_cache,
-                };
-                tokio::select! {
-                    r = self.execute_task_agentic(&agentic_params) => Some(r),
-                    _ = stop_rx.changed() => None,
-                }
-            };
+            let agent = self.try_get_agent_instance(&project_id, &agent_instance_id).await;
+            let result = self.dispatch_task(
+                &task, &project, &ctx, agent.as_ref(), agent_instance_id, &mut stop_rx,
+            ).await;
             let Some(result) = result else {
                 return Ok(ctx.handle_interruption(self, &task, &stop_rx).await);
             };
-            let outcome = self.finalize_task_execution(
-                super::executor::TaskFinalizationParams {
-                    project_id, agent_instance_id,
-                    task: &task, session: &ctx.session, api_key: &ctx.api_key,
-                    model: &ctx.session.model, task_start,
-                    baseline_test_failures: &baseline,
-                    baseline_build_errors: &build_baseline,
-                    workspace_cache: &ctx.workspace_cache,
-                }, result,
-            ).await?;
+            let fp = super::executor::TaskFinalizationParams {
+                project_id, agent_instance_id, task: &task,
+                session: &ctx.session, api_key: &ctx.api_key, model: &ctx.session.model,
+                task_start, baseline_test_failures: &baseline,
+                baseline_build_errors: &build_baseline, workspace_cache: &ctx.workspace_cache,
+            };
+            let outcome = self.finalize_task_execution(fp, result).await?;
             let failed = ctx.process_outcome(self, &task, outcome).await?;
             self.agent_instance_service.finish_working(&project_id, &agent_instance_id).await?;
             if self.llm.is_credits_exhausted() { return Ok(ctx.handle_credits_exhausted(self).await); }
             if failed { continue; }
-
             self.try_push_after_spec(&task, &project, agent_instance_id).await;
             if let Some(out) = ctx.try_session_rollover(self, &mut stop_rx).await? {
                 return Ok(out);

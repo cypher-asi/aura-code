@@ -62,66 +62,21 @@ impl ChatService {
             };
 
         self.maybe_generate_attachment_overview(&stored_messages, project_id, tx).await;
-
         send_or_log(tx, ChatStreamEvent::Progress("Waiting for response...".to_string()));
 
         let tool_blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
-        let executor = ForwardingToolExecutor {
-            inner: ChatToolExecutor::new(
-                self.store.clone(),
-                self.storage_client.clone(),
-                self.project_service.clone(),
-                self.task_service.clone(),
-            ),
-            resolver: SingleProjectResolver { project_id: *project_id },
-            chat_tx: tx.clone(),
-            blocks: Arc::clone(&tool_blocks),
-        };
-
-        let credit_budget = self.llm.current_balance().await.map(|b| b / 2);
-        let config = ToolLoopConfig {
-            max_iterations: ChatToolExecutor::max_iterations(),
-            max_tokens: self.llm_config.chat_max_tokens,
-            thinking: Some(ThinkingConfig::enabled(self.llm_config.thinking_budget)),
-            stream_timeout: DEFAULT_STREAM_TIMEOUT,
-            billing_reason: "aura_chat",
-            max_context_tokens: Some(self.llm_config.max_context_tokens),
-            credit_budget,
-            exploration_allowance: None,
-            model_override: None,
-            auto_build_cooldown: None,
-        };
+        let executor = self.build_forwarding_executor(project_id, tx, &tool_blocks);
+        let config = self.build_chat_tool_config().await;
 
         let thinking_start = std::time::Instant::now();
-        let tools = agent_tool_definitions();
-
-        let (loop_tx, mut loop_rx) = mpsc::unbounded_channel::<ToolLoopEvent>();
-        let tx_clone = tx.clone();
-        let fwd_blocks = Arc::clone(&tool_blocks);
-        let forwarder = tokio::spawn(async move {
-            while let Some(evt) = loop_rx.recv().await {
-                forward_tool_loop_event(evt, &tx_clone, &fwd_blocks);
-            }
-        });
-        let result = run_tool_loop(ToolLoopInput {
-            llm: self.llm.clone(),
-            api_key: &api_key,
-            system_prompt: &system,
-            initial_messages: api_messages,
-            tools,
-            config: &config,
-            executor: &executor,
-            event_tx: &loop_tx,
-        })
-        .await;
-        drop(loop_tx);
-        let _ = forwarder.await;
+        let result = self.run_chat_tool_loop(
+            &api_key, &system, api_messages, &config, &executor, tx, &tool_blocks,
+        ).await;
 
         self.update_instance_token_usage(
             project_id, agent_instance_id,
             result.total_input_tokens, result.total_output_tokens, tx,
         );
-
         info!(
             %project_id, %agent_instance_id,
             result.total_input_tokens, result.total_output_tokens,
@@ -135,6 +90,76 @@ impl ChatService {
             tx, active_session_id,
         };
         self.save_assistant_message(&chat_ctx, result, tool_blocks, thinking_start).await;
+    }
+
+    fn build_forwarding_executor(
+        &self,
+        project_id: &ProjectId,
+        tx: &mpsc::UnboundedSender<ChatStreamEvent>,
+        tool_blocks: &ContentBlockAccumulator,
+    ) -> ForwardingToolExecutor<SingleProjectResolver> {
+        ForwardingToolExecutor {
+            inner: ChatToolExecutor::new(
+                self.store.clone(),
+                self.storage_client.clone(),
+                self.project_service.clone(),
+                self.task_service.clone(),
+            ),
+            resolver: SingleProjectResolver { project_id: *project_id },
+            chat_tx: tx.clone(),
+            blocks: Arc::clone(tool_blocks),
+        }
+    }
+
+    async fn build_chat_tool_config(&self) -> ToolLoopConfig {
+        let credit_budget = self.llm.current_balance().await.map(|b| b / 2);
+        ToolLoopConfig {
+            max_iterations: ChatToolExecutor::max_iterations(),
+            max_tokens: self.llm_config.chat_max_tokens,
+            thinking: Some(ThinkingConfig::enabled(self.llm_config.thinking_budget)),
+            stream_timeout: DEFAULT_STREAM_TIMEOUT,
+            billing_reason: "aura_chat",
+            max_context_tokens: Some(self.llm_config.max_context_tokens),
+            credit_budget,
+            exploration_allowance: None,
+            model_override: None,
+            auto_build_cooldown: None,
+        }
+    }
+
+    async fn run_chat_tool_loop(
+        &self,
+        api_key: &str,
+        system: &str,
+        api_messages: Vec<aura_claude::RichMessage>,
+        config: &ToolLoopConfig,
+        executor: &ForwardingToolExecutor<SingleProjectResolver>,
+        tx: &mpsc::UnboundedSender<ChatStreamEvent>,
+        tool_blocks: &ContentBlockAccumulator,
+    ) -> ToolLoopResult {
+        let tools = agent_tool_definitions();
+        let (loop_tx, mut loop_rx) = mpsc::unbounded_channel::<ToolLoopEvent>();
+        let tx_clone = tx.clone();
+        let fwd_blocks = Arc::clone(tool_blocks);
+        let forwarder = tokio::spawn(async move {
+            while let Some(evt) = loop_rx.recv().await {
+                forward_tool_loop_event(evt, &tx_clone, &fwd_blocks);
+            }
+        });
+        let result = run_tool_loop(ToolLoopInput {
+            llm: self.llm.clone(),
+            api_key,
+            system_prompt: system,
+            initial_messages: api_messages,
+            tools,
+            config,
+            executor,
+            event_tx: &loop_tx,
+        })
+        .await;
+        drop(loop_tx);
+        let _ = forwarder.await;
+        result
     }
 
     async fn prepare_chat_context(

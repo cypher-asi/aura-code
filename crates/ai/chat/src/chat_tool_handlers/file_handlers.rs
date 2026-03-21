@@ -115,6 +115,73 @@ fn perform_replacement(
     }
 }
 
+async fn read_and_validate_size(abs: &Path, rel: &str) -> Result<String, ToolExecResult> {
+    if let Ok(meta) = tokio::fs::metadata(abs).await {
+        if meta.len() > MAX_FILE_SIZE {
+            return Err(ToolExecResult::err(format!(
+                "File {rel} is too large ({:.1} MB, limit is 10 MB).",
+                meta.len() as f64 / (1024.0 * 1024.0),
+            )));
+        }
+    }
+    tokio::fs::read_to_string(abs)
+        .await
+        .map_err(|e| ToolExecResult::err(format!("Failed to read {rel}: {e}")))
+}
+
+fn check_shrinkage(raw_content: &str, new_content: &str, rel: &str) -> Result<(), ToolExecResult> {
+    if raw_content.len() > 200 && new_content.len() < raw_content.len() / 5 {
+        return Err(ToolExecResult::err(format!(
+            "REJECTED: This edit would shrink '{rel}' from {} to {} bytes (>80% reduction). \
+             The file is unchanged. Use a more targeted old_text/new_text pair.",
+            raw_content.len(), new_content.len()
+        )));
+    }
+    Ok(())
+}
+
+async fn assemble_write_result(
+    abs: &Path, content: &str, rel: &str, truncation_warning: Option<&str>,
+) -> ToolExecResult {
+    let line_count = content.lines().count();
+    if let Err(e) = verify_post_write(abs, content, rel).await {
+        return e;
+    }
+    let mut message = format!(
+        "Successfully wrote {} lines ({} bytes) to {}. \
+         Proceed to compilation to catch any issues.",
+        line_count, content.len(), rel,
+    );
+    if let Some(warn) = truncation_warning {
+        message.push(' ');
+        message.push_str(warn);
+    }
+    ToolExecResult::ok(json!({
+        "status": "ok",
+        "path": rel,
+        "bytes_written": content.len(),
+        "line_count": line_count,
+        "message": message,
+    }))
+}
+
+async fn write_and_report_edit(abs: &Path, final_content: &str, rel: &str, replacements: usize) -> ToolExecResult {
+    match tokio::fs::write(abs, final_content).await {
+        Ok(()) => ToolExecResult::ok(json!({
+            "status": "ok",
+            "path": rel,
+            "replacements": replacements,
+            "new_size": final_content.len(),
+            "message": format!(
+                "Edit applied successfully ({} replacement{}). Do NOT re-read to verify.",
+                replacements,
+                if replacements != 1 { "s" } else { "" },
+            ),
+        })),
+        Err(e) => ToolExecResult::err(format!("Failed to write {rel}: {e}")),
+    }
+}
+
 impl ChatToolExecutor {
     pub(crate) async fn read_file(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
         let rel = str_field(input, "path").unwrap_or_default();
@@ -182,6 +249,7 @@ impl ChatToolExecutor {
                 return ToolExecResult::err(format!("Failed to create directories: {e}"));
             }
         }
+
         let is_new_file = !abs.exists();
         let truncation_warning = if is_new_file && looks_truncated(&content) {
             Some("Warning: content may be truncated (unbalanced delimiters). \
@@ -191,28 +259,7 @@ impl ChatToolExecutor {
         };
 
         match tokio::fs::write(&abs, &content).await {
-            Ok(()) => {
-                let line_count = content.lines().count();
-                if let Err(e) = verify_post_write(&abs, &content, &rel).await {
-                    return e;
-                }
-                let mut message = format!(
-                    "Successfully wrote {} lines ({} bytes) to {}. \
-                     Proceed to compilation to catch any issues.",
-                    line_count, content.len(), rel,
-                );
-                if let Some(warn) = truncation_warning {
-                    message.push(' ');
-                    message.push_str(warn);
-                }
-                ToolExecResult::ok(json!({
-                    "status": "ok",
-                    "path": rel,
-                    "bytes_written": content.len(),
-                    "line_count": line_count,
-                    "message": message,
-                }))
-            }
+            Ok(()) => assemble_write_result(&abs, &content, &rel, truncation_warning).await,
             Err(e) => ToolExecResult::err(format!("Failed to write {rel}: {e}")),
         }
     }
@@ -262,10 +309,7 @@ impl ChatToolExecutor {
         let rel = str_field(input, "path").unwrap_or_default();
         let old_text = str_field(input, "old_text").unwrap_or_default();
         let new_text = str_field(input, "new_text").unwrap_or_default();
-        let replace_all = input
-            .get("replace_all")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let replace_all = input.get("replace_all").and_then(|v| v.as_bool()).unwrap_or(false);
 
         if rel.is_empty() {
             return ToolExecResult::err("Missing required field: path");
@@ -279,18 +323,9 @@ impl ChatToolExecutor {
             Err(e) => return e,
         };
 
-        if let Ok(meta) = tokio::fs::metadata(&abs).await {
-            if meta.len() > MAX_FILE_SIZE {
-                return ToolExecResult::err(format!(
-                    "File {rel} is too large ({:.1} MB, limit is 10 MB).",
-                    meta.len() as f64 / (1024.0 * 1024.0),
-                ));
-            }
-        }
-
-        let raw_content = match tokio::fs::read_to_string(&abs).await {
+        let raw_content = match read_and_validate_size(&abs, &rel).await {
             Ok(c) => c,
-            Err(e) => return ToolExecResult::err(format!("Failed to read {rel}: {e}")),
+            Err(e) => return e,
         };
 
         let uses_crlf = raw_content.contains("\r\n");
@@ -303,29 +338,11 @@ impl ChatToolExecutor {
             Err(e) => return e,
         };
 
-        if raw_content.len() > 200 && new_content.len() < raw_content.len() / 5 {
-            return ToolExecResult::err(format!(
-                "REJECTED: This edit would shrink '{rel}' from {} to {} bytes (>80% reduction). \
-                 The file is unchanged. Use a more targeted old_text/new_text pair.",
-                raw_content.len(), new_content.len()
-            ));
+        if let Err(e) = check_shrinkage(&raw_content, &new_content, &rel) {
+            return e;
         }
 
         let final_content = normalize_line_endings(&new_content, uses_crlf);
-
-        match tokio::fs::write(&abs, &final_content).await {
-            Ok(()) => ToolExecResult::ok(json!({
-                "status": "ok",
-                "path": rel,
-                "replacements": replacements,
-                "new_size": final_content.len(),
-                "message": format!(
-                    "Edit applied successfully ({} replacement{}). Do NOT re-read to verify.",
-                    replacements,
-                    if replacements != 1 { "s" } else { "" },
-                ),
-            })),
-            Err(e) => ToolExecResult::err(format!("Failed to write {rel}: {e}")),
-        }
+        write_and_report_edit(&abs, &final_content, &rel, replacements).await
     }
 }

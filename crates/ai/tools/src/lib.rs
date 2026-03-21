@@ -183,7 +183,12 @@ fn chat_tool_definitions_inner() -> Vec<ToolDefinition> {
 
 fn engine_tool_definitions_inner() -> Vec<ToolDefinition> {
     let mut tools = core_tool_definitions();
-    tools.extend(vec![
+    tools.extend(engine_specific_tools());
+    tools
+}
+
+fn engine_specific_tools() -> Vec<ToolDefinition> {
+    vec![
         tool(
             "task_done",
             "Signal that the current task is complete. Call this when you have finished all changes and verified they compile. Provide notes summarizing what you did, optionally follow-up task suggestions, and a reasoning array with key decisions.",
@@ -212,48 +217,55 @@ fn engine_tool_definitions_inner() -> Vec<ToolDefinition> {
                 "required": ["notes"]
             }),
         ),
-        tool(
-            "get_task_context",
-            "Retrieve the full context for the current task including the spec, task description, and any prior execution notes.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        ),
-        tool(
-            "submit_plan",
-            "Submit your implementation plan before making any file changes. \
-             You MUST call this after exploration and before any write_file/edit_file \
-             calls. The plan is validated and becomes your reference during implementation.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "approach": {
-                        "type": "string",
-                        "description": "Your implementation strategy (2-4 sentences)"
-                    },
-                    "files_to_modify": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Existing files you will edit"
-                    },
-                    "files_to_create": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "New files you will create"
-                    },
-                    "key_decisions": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Key design decisions and why"
-                    }
+        engine_context_tool(),
+        engine_plan_tool(),
+    ]
+}
+
+fn engine_context_tool() -> ToolDefinition {
+    tool(
+        "get_task_context",
+        "Retrieve the full context for the current task including the spec, task description, and any prior execution notes.",
+        serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        }),
+    )
+}
+
+fn engine_plan_tool() -> ToolDefinition {
+    tool(
+        "submit_plan",
+        "Submit your implementation plan before making any file changes. \
+         You MUST call this after exploration and before any write_file/edit_file \
+         calls. The plan is validated and becomes your reference during implementation.",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "approach": {
+                    "type": "string",
+                    "description": "Your implementation strategy (2-4 sentences)"
                 },
-                "required": ["approach", "files_to_modify", "files_to_create"]
-            }),
-        ),
-    ]);
-    tools
+                "files_to_modify": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Existing files you will edit"
+                },
+                "files_to_create": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "New files you will create"
+                },
+                "key_decisions": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Key design decisions and why"
+                }
+            },
+            "required": ["approach", "files_to_modify", "files_to_create"]
+        }),
+    )
 }
 
 /// Returns the full set of tools the chat agent can invoke (lazily cached).
