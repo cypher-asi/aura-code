@@ -7,7 +7,6 @@ import {
   SidekickHeader,
 } from "../../components/Sidekick";
 import { PreviewContent, PreviewHeader } from "../../components/Preview";
-import { ProjectsProvider } from "./ProjectsProvider";
 import type { AuraApp } from "../types";
 
 export const ProjectsApp: AuraApp = {
@@ -23,6 +22,5 @@ export const ProjectsApp: AuraApp = {
   SidekickHeader: SidekickHeader,
   PreviewPanel: PreviewContent,
   PreviewHeader: PreviewHeader,
-  Provider: ProjectsProvider,
   searchPlaceholder: "Search Projects...",
 };

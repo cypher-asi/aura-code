@@ -1,10 +1,37 @@
-import { useContext } from "react";
-import { ProjectsListContext } from "./ProjectsListContext.shared";
+import { useMemo } from "react";
+import { useShallow } from "zustand/react/shallow";
+import {
+  useProjectsListStore,
+  getRecentProjects,
+} from "../../stores/projects-list-store";
 
 export function useProjectsList() {
-  const context = useContext(ProjectsListContext);
-  if (!context) {
-    throw new Error("useProjectsList must be used within ProjectsListProvider");
-  }
-  return context;
+  const store = useProjectsListStore(
+    useShallow((s) => ({
+      projects: s.projects,
+      loadingProjects: s.loadingProjects,
+      setProjects: s.setProjects,
+      refreshProjects: s.refreshProjects,
+      agentsByProject: s.agentsByProject,
+      loadingAgentsByProject: s.loadingAgentsByProject,
+      setAgentsByProject: s.setAgentsByProject,
+      refreshProjectAgents: s.refreshProjectAgents,
+      newProjectModalOpen: s.newProjectModalOpen,
+      openNewProjectModal: s.openNewProjectModal,
+      closeNewProjectModal: s.closeNewProjectModal,
+    })),
+  );
+
+  const recentProjects = useMemo(
+    () => getRecentProjects(store.projects),
+    [store.projects],
+  );
+
+  const mostRecentProject = recentProjects[0] ?? null;
+
+  return {
+    ...store,
+    recentProjects,
+    mostRecentProject,
+  };
 }

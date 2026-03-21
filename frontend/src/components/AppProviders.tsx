@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { AppProvider, useAppContext } from "../context/AppContext";
-import { ProjectsProvider } from "../apps/projects/ProjectsProvider";
 import { FeedProvider } from "../apps/feed/FeedProvider";
 import { LeaderboardProvider } from "../apps/leaderboard/LeaderboardContext";
 import { ProfileProvider } from "../apps/profile/ProfileProvider";
@@ -40,15 +39,13 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <AppProvider apps={apps}>
       <VisitTracker />
-      <ProjectsProvider>
-        <LazyAppProvider appId="feed" Provider={FeedProvider}>
-          <LazyAppProvider appId="leaderboard" Provider={LeaderboardProvider}>
-            <LazyAppProvider appId="profile" Provider={ProfileProvider}>
-              {children}
-            </LazyAppProvider>
+      <LazyAppProvider appId="feed" Provider={FeedProvider}>
+        <LazyAppProvider appId="leaderboard" Provider={LeaderboardProvider}>
+          <LazyAppProvider appId="profile" Provider={ProfileProvider}>
+            {children}
           </LazyAppProvider>
         </LazyAppProvider>
-      </ProjectsProvider>
+      </LazyAppProvider>
     </AppProvider>
   );
 }
