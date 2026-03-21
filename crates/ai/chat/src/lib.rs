@@ -22,6 +22,7 @@ mod tool_loop_budget;
 mod tool_loop_helpers;
 mod tool_loop_read_guard;
 mod tool_loop_streaming;
+mod internal_runtime;
 pub mod tool_loop;
 
 pub use error::ChatError;
@@ -29,4 +30,5 @@ pub use chat::{ChatAttachment, ChatService, ChatServiceDeps, ChatStreamEvent};
 pub use chat_streaming::{AgentMessageParams, ChatMessageParams};
 pub use chat_tool_executor::{ChatToolExecutor, ToolExecResult};
 pub use message_metadata::{encode_message_content, decode_message_content, DecodedMessage};
+pub use internal_runtime::InternalRuntime;
 pub use tool_loop::{run_tool_loop, AutoBuildResult, BuildBaseline, ToolCallResult, ToolExecutor, ToolLoopConfig, ToolLoopEvent, ToolLoopInput, ToolLoopResult};

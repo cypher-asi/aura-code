@@ -135,7 +135,8 @@ impl ChatService {
         executor: &ForwardingToolExecutor<SingleProjectResolver>,
         tx: &mpsc::UnboundedSender<ChatStreamEvent>,
     ) -> ToolLoopResult {
-        let tools = agent_tool_definitions();
+        let tools: Arc<[aura_claude::ToolDefinition]> =
+            agent_tool_definitions().iter().cloned().map(Into::into).collect::<Vec<_>>().into();
         let tool_blocks = Arc::clone(&executor.blocks);
         let (loop_tx, mut loop_rx) = mpsc::unbounded_channel::<ToolLoopEvent>();
         let tx_clone = tx.clone();

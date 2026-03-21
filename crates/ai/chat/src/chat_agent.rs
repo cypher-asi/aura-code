@@ -100,7 +100,8 @@ impl ChatService {
 
         send_or_log(tx, ChatStreamEvent::Progress("Waiting for response...".to_string()));
 
-        let tools = multi_project_tool_definitions();
+        let tools: Arc<[aura_claude::ToolDefinition]> =
+            multi_project_tool_definitions().iter().cloned().map(Into::into).collect::<Vec<_>>().into();
 
         let allowed_project_ids: HashSet<String> = projects
             .iter()
