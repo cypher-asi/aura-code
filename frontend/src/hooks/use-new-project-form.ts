@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { api, type OrbitRepo } from "../api/client";
 import { useOrg } from "../context/OrgContext";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../stores/auth-store";
 import { useProjectsList } from "../apps/projects/useProjectsList";
 import { useAuraCapabilities } from "./use-aura-capabilities";
 import {

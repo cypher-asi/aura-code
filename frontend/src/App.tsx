@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext";
+import { useEffect } from "react";
+import { useAuthStore } from "./stores/auth-store";
 import { EventProvider } from "./context/EventContext";
 import { FollowProvider } from "./context/FollowContext";
 import { HostProvider } from "./context/HostContext";
@@ -21,12 +22,14 @@ import { ProjectWorkView } from "./views/ProjectWorkView";
 import { ProjectFilesView } from "./views/ProjectFilesView";
 
 export default function App() {
+  const restoreSession = useAuthStore((s) => s.restoreSession);
+  useEffect(() => { restoreSession(); }, [restoreSession]);
+
   return (
     <BrowserRouter>
       <HostProvider>
-        <AuthProvider>
-          <EventProvider>
-            <FollowProvider>
+        <EventProvider>
+          <FollowProvider>
               <Routes>
                 <Route path="login" element={<LoginView />} />
                 <Route path="ide" element={<IdeView />} />
@@ -65,7 +68,6 @@ export default function App() {
               </Routes>
             </FollowProvider>
           </EventProvider>
-        </AuthProvider>
       </HostProvider>
     </BrowserRouter>
   );

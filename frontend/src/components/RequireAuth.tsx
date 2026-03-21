@@ -1,6 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { Spinner } from "@cypher-asi/zui";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../stores/auth-store";
 
 export function RequireAuth() {
   const { isAuthenticated, isLoading } = useAuth();

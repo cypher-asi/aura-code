@@ -3,7 +3,7 @@ import { createContext, useContext, useMemo, useState, useCallback, useEffect, u
 import type { ReactNode } from "react";
 import type { FeedEvent, FeedComment } from "../feed/FeedProvider";
 import { networkEventToFeedEvent, networkCommentToFeedComment } from "../feed/FeedProvider";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../stores/auth-store";
 import { api } from "../../api/client";
 
 export interface UserProfileData {

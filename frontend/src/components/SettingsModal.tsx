@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Modal, Heading, Button, Spinner, Text } from "@cypher-asi/zui";
 import { LogOut } from "lucide-react";
 import { api } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../stores/auth-store";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import type { ApiKeyInfo } from "../types";
 import styles from "./SettingsModal.module.css";

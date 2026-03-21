@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useOrg } from "../context/OrgContext";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../stores/auth-store";
 import { api, ApiClientError } from "../api/client";
 import { Button, Modal, Navigator, Text } from "@cypher-asi/zui";
 import type { NavigatorItemProps } from "@cypher-asi/zui";

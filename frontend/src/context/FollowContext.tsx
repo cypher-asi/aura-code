@@ -10,7 +10,7 @@ import {
 import type { ReactNode } from "react";
 import type { Follow } from "../types";
 import { api } from "../api/client";
-import { useAuth } from "./AuthContext";
+import { useAuth } from "../stores/auth-store";
 
 interface FollowContextValue {
   follows: Follow[];

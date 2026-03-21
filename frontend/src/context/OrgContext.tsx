@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { Org, OrgMember } from "../types";
 import { api } from "../api/client";
-import { useAuth } from "./AuthContext";
+import { useAuth } from "../stores/auth-store";
 import { ACTIVE_ORG_KEY } from "../constants";
 
 interface OrgContextValue {

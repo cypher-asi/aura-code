@@ -5,7 +5,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { EntityCard } from "../../components/EntityCard";
 import { FollowEditButton } from "../../components/FollowEditButton";
 import { useLeaderboard } from "./LeaderboardContext";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../stores/auth-store";
 import { formatTokens, formatCurrency } from "../../utils/format";
 import { api } from "../../api/client";
 import styles from "./LeaderboardSidekickPanel.module.css";

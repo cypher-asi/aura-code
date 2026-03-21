@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Panel, Input, Button, Tabs, Heading, Text, Spinner, Topbar, Badge } from "@cypher-asi/zui";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../stores/auth-store";
 import { useHost, type HostConnectionStatus } from "../context/HostContext";
 import { ApiClientError } from "../api/client";
 import { HostSettingsModal } from "../components/HostSettingsModal";

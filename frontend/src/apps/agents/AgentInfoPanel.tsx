@@ -9,7 +9,7 @@ import { SidekickActions } from "../../components/SidekickActions";
 import { AgentEditorModal } from "../../components/AgentEditorModal";
 import { api, ApiClientError } from "../../api/client";
 import { useSelectedAgent, useAgentStore } from "./stores";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../stores/auth-store";
 import styles from "./AgentInfoPanel.module.css";
 
 export function AgentInfoPanel() {

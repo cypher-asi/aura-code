@@ -6,7 +6,7 @@ import { EntityCard } from "../../components/EntityCard";
 import { FollowEditButton } from "../../components/FollowEditButton";
 import { Avatar } from "../../components/Avatar";
 import { useFeed } from "./FeedProvider";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../stores/auth-store";
 import { timeAgo } from "./FeedMainPanel";
 import styles from "./FeedSidekickPanel.module.css";
 

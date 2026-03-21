@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useMemo, useState, useCallback, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../stores/auth-store";
 import { useEventContext } from "../../context/EventContext";
 import { useFollow } from "../../context/FollowContext";
 import { api } from "../../api/client";

@@ -5,7 +5,7 @@ import { EntityCard } from "../../components/EntityCard";
 import { FollowEditButton } from "../../components/FollowEditButton";
 import { Avatar } from "../../components/Avatar";
 import { useProfile } from "./ProfileProvider";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../stores/auth-store";
 import { ProfileEditorModal } from "./ProfileEditorModal";
 import { timeAgo } from "../feed/FeedMainPanel";
 import styles from "./ProfileSidekickPanel.module.css";
