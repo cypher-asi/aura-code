@@ -141,10 +141,7 @@ export function ProjectList() {
       const agents = agentsByProject[projectId];
       if (agents && agents.length > 0) {
         navigate(`/projects/${projectId}/agents/${agents[0].agent_instance_id}`, { replace: true });
-        return;
       }
-
-      navigate(`/projects/${projectId}/execution`, { replace: true });
     }
   }, [agentInstanceId, agentsByProject, isMobileLayout, location.pathname, navigate, projectId]);
 
@@ -172,12 +169,14 @@ export function ProjectList() {
         const childNodes =
           projectAgents !== undefined
             ? [
-                {
-                  id: executionNodeId(p.project_id),
-                  label: "Execution",
-                  icon: <Gauge size={16} />,
-                  metadata: { type: "execution", projectId: p.project_id },
-                },
+                ...(isMobileLayout
+                  ? [{
+                      id: executionNodeId(p.project_id),
+                      label: "Execution",
+                      icon: <Gauge size={16} />,
+                      metadata: { type: "execution", projectId: p.project_id },
+                    }]
+                  : []),
                 ...projectAgents.map((s) => {
                   const isAutomating = automatingProjectId === p.project_id && automatingAgentInstanceId === s.agent_instance_id;
                   return {
@@ -222,7 +221,7 @@ export function ProjectList() {
           children: childNodes,
         };
       }),
-    [projects, agentsByProject, streamingAgentInstanceId, automatingProjectId, automatingAgentInstanceId, failedIcons, actions.handleAddAgent],
+    [projects, agentsByProject, streamingAgentInstanceId, automatingProjectId, automatingAgentInstanceId, failedIcons, isMobileLayout, actions.handleAddAgent],
   );
 
   const filteredExplorerData = useMemo(
@@ -230,22 +229,18 @@ export function ProjectList() {
     [explorerData, searchQuery],
   );
   const defaultExpandedIds = useMemo(
-    () => (isMobileLayout
-      ? (projectId ? [projectId] : [])
-      : projectId
-        ? [projectId]
-        : []),
-    [isMobileLayout, projectId],
+    () => projects.map((p) => p.project_id),
+    [projects],
   );
 
   const defaultSelectedIds = useMemo(() => {
     if (agentInstanceId) return [agentInstanceId];
-    if (projectId && (location.pathname.endsWith("/execution") || location.pathname.endsWith("/work"))) {
+    if (isMobileLayout && projectId && (location.pathname.endsWith("/execution") || location.pathname.endsWith("/work"))) {
       return [executionNodeId(projectId)];
     }
     if (projectId) return [projectId];
     return [];
-  }, [agentInstanceId, location.pathname, projectId]);
+  }, [agentInstanceId, isMobileLayout, location.pathname, projectId]);
 
   const handleSelect = useCallback(
     (ids: string[]) => {
@@ -280,13 +275,11 @@ export function ProjectList() {
         const agents = agentsByProject[id];
         if (agents && agents.length > 0) {
           navigate(`/projects/${id}/agents/${agents[0].agent_instance_id}`);
-        } else {
-          navigate(`/projects/${id}/execution`);
         }
       } else if (id.startsWith("execution:")) {
         const pid = id.slice("execution:".length);
         if (pid !== projectId) sidekick.closePreview();
-        navigate(isMobileLayout ? projectWorkRoute(pid) : `/projects/${pid}/execution`);
+        navigate(projectWorkRoute(pid));
       } else if (agentMeta.has(id)) {
         const { projectId: pid } = agentMeta.get(id)!;
         if (pid !== projectId) sidekick.closePreview();
