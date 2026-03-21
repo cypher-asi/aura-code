@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { SettingsModal } from "./SettingsModal";
 import { OrgSettingsPanel } from "./OrgSettingsPanel";
@@ -8,7 +8,7 @@ import { useSidekick } from "../stores/sidekick-store";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
 import { useProjectsList } from "../apps/projects/useProjectsList";
 import { NewProjectModal } from "./NewProjectModal";
-import { INSUFFICIENT_CREDITS_EVENT } from "../api/client";
+import { useUIModalStore } from "../stores/ui-modal-store";
 import { DesktopShell } from "./DesktopShell";
 import { MobileShell } from "./MobileShell";
 
@@ -36,65 +36,21 @@ function ProjectCreationModalHost() {
   );
 }
 
-function ResponsiveShell({
-  onOpenOrgSettings,
-  onOpenSettings,
-  onBuyCredits,
-}: {
-  onOpenOrgSettings: () => void;
-  onOpenSettings: () => void;
-  onBuyCredits: () => void;
-}) {
+function ResponsiveShell() {
   const { isMobileLayout } = useAuraCapabilities();
-
-  return isMobileLayout ? (
-    <MobileShell
-      onOpenOrgSettings={onOpenOrgSettings}
-      onOpenSettings={onOpenSettings}
-    />
-  ) : (
-    <DesktopShell
-      onOpenOrgSettings={onOpenOrgSettings}
-      onBuyCredits={onBuyCredits}
-    />
-  );
+  return isMobileLayout ? <MobileShell /> : <DesktopShell />;
 }
 
 function AppContent() {
-  const [orgSettingsOpen, setOrgSettingsOpen] = useState(false);
-  const [orgInitialSection, setOrgInitialSection] = useState<"billing" | undefined>(undefined);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [buyCreditsOpen, setBuyCreditsOpen] = useState(false);
-
-  const openOrgBilling = useCallback(() => {
-    setOrgInitialSection("billing");
-    setOrgSettingsOpen(true);
-  }, []);
-
-  const openBuyCredits = useCallback(() => setBuyCreditsOpen(true), []);
-  const closeBuyCredits = useCallback(() => setBuyCreditsOpen(false), []);
-
-  const openOrgSettings = useCallback(() => setOrgSettingsOpen(true), []);
-  const openSettings = useCallback(() => setSettingsOpen(true), []);
-  const closeOrgSettings = useCallback(() => {
-    setOrgSettingsOpen(false);
-    setOrgInitialSection(undefined);
-  }, []);
-  const closeSettings = useCallback(() => setSettingsOpen(false), []);
-
-  useEffect(() => {
-    const handler = () => openBuyCredits();
-    window.addEventListener(INSUFFICIENT_CREDITS_EVENT, handler);
-    return () => window.removeEventListener(INSUFFICIENT_CREDITS_EVENT, handler);
-  }, [openBuyCredits]);
+  const {
+    orgSettingsOpen, orgInitialSection, closeOrgSettings,
+    settingsOpen, closeSettings,
+    buyCreditsOpen, closeBuyCredits, openOrgBilling,
+  } = useUIModalStore();
 
   return (
     <>
-      <ResponsiveShell
-        onOpenOrgSettings={openOrgSettings}
-        onOpenSettings={openSettings}
-        onBuyCredits={openOrgBilling}
-      />
+      <ResponsiveShell />
 
       <OrgSettingsPanel
         isOpen={orgSettingsOpen}
