@@ -46,14 +46,14 @@ impl NetworkClient {
         jwt: &str,
     ) -> Result<Vec<NetworkFeedEvent>, NetworkError> {
         let mut params = Vec::new();
-        if let Some(f) = filter {
-            params.push(format!("filter={}", f));
+        if let Some(filter_val) = filter {
+            params.push(format!("filter={filter_val}"));
         }
-        if let Some(l) = limit {
-            params.push(format!("limit={}", l));
+        if let Some(limit_val) = limit {
+            params.push(format!("limit={limit_val}"));
         }
-        if let Some(o) = offset {
-            params.push(format!("offset={}", o));
+        if let Some(offset_val) = offset {
+            params.push(format!("offset={offset_val}"));
         }
         let qs = if params.is_empty() {
             String::new()
@@ -77,14 +77,14 @@ impl NetworkClient {
         jwt: &str,
     ) -> Result<NetworkFeedEvent, NetworkError> {
         let mut body = serde_json::json!({ "title": title });
-        if let Some(s) = summary {
-            body["summary"] = serde_json::Value::String(s.to_string());
+        if let Some(summary_val) = summary {
+            body["summary"] = serde_json::Value::String(summary_val.to_string());
         }
         if let Some(pt) = post_type {
             body["postType"] = serde_json::Value::String(pt.to_string());
         }
-        if let Some(m) = metadata {
-            body["metadata"] = m;
+        if let Some(meta) = metadata {
+            body["metadata"] = meta;
         }
         self.post_authed(
             &format!("{}/api/posts", self.base_url),

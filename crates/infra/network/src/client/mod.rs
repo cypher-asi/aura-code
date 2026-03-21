@@ -89,7 +89,8 @@ impl NetworkClient {
 
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            warn!(status = status.as_u16(), elapsed_ms, %body, "aura-network health check failed");
+            let body_preview: String = body.chars().take(200).collect();
+            warn!(status = status.as_u16(), elapsed_ms, body = %body_preview, "aura-network health check failed");
             return Err(NetworkError::HealthCheckFailed(format!(
                 "status {}: {}",
                 status.as_u16(),
@@ -199,7 +200,8 @@ impl NetworkClient {
         }
         let body = resp.text().await.map_err(|e| NetworkError::Deserialize(e.to_string()))?;
         serde_json::from_str::<T>(&body).map_err(|e| {
-            warn!(%url, error = %e, body_preview = &body[..body.len().min(500)], "Deserialization failed");
+            let preview: String = body.chars().take(200).collect();
+            warn!(%url, error = %e, body_preview = %preview, "Deserialization failed");
             NetworkError::Deserialize(e.to_string())
         })
     }
