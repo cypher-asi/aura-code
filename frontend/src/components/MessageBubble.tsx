@@ -1,7 +1,4 @@
 import { memo, useMemo } from "react";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
-import rehypeHighlight from "rehype-highlight";
 import { FileText } from "lucide-react";
 import type { ArtifactRef, DisplayMessage, ToolCallEntry, TimelineItem } from "../types/stream";
 import { stripEmojis, normalizeMidSentenceBreaks } from "../utils/text-normalize";
@@ -147,11 +144,7 @@ export const MessageBubble = memo(function MessageBubble({ message }: Props) {
                   <ToolCallsList entries={message.toolCalls!} />
                 )}
                 {hasContent && (
-                  <SegmentedContent
-                    content={normalizedContent}
-                    remarkPlugins={[remarkGfm, remarkBreaks]}
-                    rehypePlugins={[rehypeHighlight]}
-                  />
+                  <SegmentedContent content={normalizedContent} />
                 )}
               </>
             )}
@@ -223,11 +216,7 @@ export function StreamingBubble({ text, toolCalls, thinkingText, thinkingDuratio
                 <ToolCallsList entries={toolCalls} />
               )}
               {text && (
-                <SegmentedContent
-                  content={normalizeMidSentenceBreaks(stripEmojis(text))}
-                  remarkPlugins={[remarkGfm, remarkBreaks]}
-                  rehypePlugins={[rehypeHighlight]}
-                />
+                <SegmentedContent content={normalizeMidSentenceBreaks(stripEmojis(text))} />
               )}
             </>
           )}

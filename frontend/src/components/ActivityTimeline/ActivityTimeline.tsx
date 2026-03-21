@@ -1,7 +1,4 @@
 import { useMemo } from "react";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
-import rehypeHighlight from "rehype-highlight";
 import type { TimelineItem, ToolCallEntry } from "../../types/stream";
 import { stripEmojis, normalizeMidSentenceBreaks } from "../../utils/text-normalize";
 import { ThinkingRow } from "../ThinkingRow";
@@ -64,11 +61,7 @@ export function ActivityTimeline({
         const normalized = normalizeMidSentenceBreaks(stripEmojis(item.content));
         return (
           <div key={`text-${i}`} className={styles.timelineItem}>
-            <SegmentedContent
-              content={normalized}
-              remarkPlugins={[remarkGfm, remarkBreaks]}
-              rehypePlugins={[rehypeHighlight]}
-            />
+            <SegmentedContent content={normalized} />
           </div>
         );
       })}
