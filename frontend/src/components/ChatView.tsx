@@ -6,12 +6,10 @@ import { api } from "../api/client";
 import { useChatStream } from "../hooks/use-chat-stream";
 import { useAutoScroll } from "../hooks/use-auto-scroll";
 import { setLastAgent } from "../utils/storage";
-import { MessageBubble, StreamingBubble } from "./MessageBubble";
-import { CookingIndicator } from "./CookingIndicator";
+import { buildDisplayMessages } from "../utils/build-display-messages";
+import { ChatMessageList } from "./ChatMessageList";
 import { ChatInputBar } from "./ChatInputBar";
 import type { ChatInputBarHandle, AttachmentItem } from "./ChatInputBar";
-import type { Message } from "../types";
-import { extractToolCalls, extractArtifactRefs } from "../utils/chat-history";
 import styles from "./ChatView.module.css";
 
 export function ChatView() {
@@ -128,29 +126,7 @@ export function ChatView() {
       .getMessages(projectId, agentInstanceId)
       .then((msgs) => {
         if (cancelled) return;
-
-        resetMessages(
-          msgs
-            .filter((m: Message) => (m.content && m.content.trim().length > 0) || (m.content_blocks && m.content_blocks.length > 0) || m.thinking)
-            .map((m: Message) => {
-              const allBlocks = m.content_blocks ?? [];
-              const displayBlocks = allBlocks
-                .filter((b) => b.type === "text" || b.type === "image")
-                .map((b) =>
-                  b.type === "text" ? { type: "text" as const, text: b.text ?? "" } : { type: "image" as const, media_type: b.media_type ?? "image/png", data: b.data ?? "" }
-                );
-              return {
-                id: m.message_id,
-                role: m.role,
-                content: m.content,
-                contentBlocks: displayBlocks.length > 0 ? displayBlocks : undefined,
-                toolCalls: extractToolCalls(allBlocks),
-                artifactRefs: extractArtifactRefs(allBlocks),
-                thinkingText: m.thinking || undefined,
-                thinkingDurationMs: m.thinking_duration_ms ?? null,
-              };
-            }),
-        );
+        resetMessages(buildDisplayMessages(msgs));
       })
       .catch(console.error);
 
@@ -186,8 +162,6 @@ export function ChatView() {
     return null;
   }
 
-  const hasMessages = messages.length > 0 || isStreaming || streamingText || thinkingText;
-
   return (
     <div className={styles.container}>
       <div className={styles.chatArea}>
@@ -197,29 +171,20 @@ export function ChatView() {
           onScroll={handleScroll}
         >
           <div className={styles.messageContent}>
-            {!hasMessages ? (
-              <EmptyState icon={<MessageSquare size={40} />}>
-                {`Start chatting with ${agentName ?? "this agent"}.`}
-              </EmptyState>
-            ) : (
-              <>
-                {messages.map((msg) => (
-                  <MessageBubble key={msg.id} message={msg} />
-                ))}
-                {isStreaming && !streamingText && !thinkingText && activeToolCalls.length === 0 && (
-                  <CookingIndicator label={progressText || "Cooking..."} />
-                )}
-                {(streamingText || thinkingText || activeToolCalls.length > 0) && (
-                  <StreamingBubble
-                    text={streamingText}
-                    toolCalls={activeToolCalls}
-                    thinkingText={thinkingText}
-                    thinkingDurationMs={thinkingDurationMs}
-                    progressText={progressText}
-                  />
-                )}
-              </>
-            )}
+            <ChatMessageList
+              messages={messages}
+              isStreaming={isStreaming}
+              streamingText={streamingText}
+              thinkingText={thinkingText}
+              thinkingDurationMs={thinkingDurationMs}
+              activeToolCalls={activeToolCalls}
+              progressText={progressText}
+              emptyState={
+                <EmptyState icon={<MessageSquare size={40} />}>
+                  {`Start chatting with ${agentName ?? "this agent"}.`}
+                </EmptyState>
+              }
+            />
           </div>
         </div>
 

@@ -6,12 +6,10 @@ import { api } from "../../api/client";
 import { useAgentChatStream } from "../../hooks/use-agent-chat-stream";
 import { useAutoScroll } from "../../hooks/use-auto-scroll";
 import { useAgentApp } from "./AgentAppProvider";
-import { MessageBubble, StreamingBubble } from "../../components/MessageBubble";
-import { CookingIndicator } from "../../components/CookingIndicator";
+import { buildDisplayMessages } from "../../utils/build-display-messages";
+import { ChatMessageList } from "../../components/ChatMessageList";
 import { ChatInputBar } from "../../components/ChatInputBar";
 import type { ChatInputBarHandle, AttachmentItem } from "../../components/ChatInputBar";
-import type { Message } from "../../types";
-import { extractArtifactRefs, extractToolCalls } from "../../utils/chat-history";
 import styles from "../../components/ChatView.module.css";
 
 export function AgentChatView() {
@@ -65,34 +63,7 @@ export function AgentChatView() {
       .listMessages(agentId as never)
       .then((msgs) => {
         if (cancelled) return;
-        resetMessages(
-          msgs
-            .filter((m: Message) =>
-              (m.content && m.content.trim().length > 0) ||
-              (m.content_blocks && m.content_blocks.length > 0) ||
-              m.thinking,
-            )
-            .map((m: Message) => {
-              const allBlocks = m.content_blocks ?? [];
-              const blocks = allBlocks
-                .filter((b) => b.type === "text" || b.type === "image")
-                .map((b) =>
-                  b.type === "text"
-                    ? { type: "text" as const, text: b.text ?? "" }
-                    : { type: "image" as const, media_type: b.media_type ?? "image/png", data: b.data ?? "" },
-                );
-              return {
-                id: m.message_id,
-                role: m.role,
-                content: m.content,
-                contentBlocks: blocks.length > 0 ? blocks : undefined,
-                toolCalls: extractToolCalls(allBlocks),
-                artifactRefs: extractArtifactRefs(allBlocks),
-                thinkingText: m.thinking || undefined,
-                thinkingDurationMs: m.thinking_duration_ms ?? null,
-              };
-            }),
-        );
+        resetMessages(buildDisplayMessages(msgs));
       })
       .catch(console.error);
 
@@ -127,7 +98,6 @@ export function AgentChatView() {
   }
 
   const agentName = selectedAgent?.name;
-  const hasMessages = messages.length > 0 || isStreaming || streamingText || thinkingText;
 
   return (
     <div className={styles.container}>
@@ -138,32 +108,23 @@ export function AgentChatView() {
           onScroll={handleScroll}
         >
           <div className={styles.messageContent}>
-            {!hasMessages ? (
-              <div className={styles.emptyState}>
-                <MessageSquare size={40} className={styles.emptyIcon} />
-                <Text variant="muted" size="sm">
-                  Send a message to chat with {agentName ?? "this agent"} across all linked projects
-                </Text>
-              </div>
-            ) : (
-              <>
-                {messages.map((msg) => (
-                  <MessageBubble key={msg.id} message={msg} />
-                ))}
-                {isStreaming && !streamingText && !thinkingText && activeToolCalls.length === 0 && (
-                  <CookingIndicator label={progressText || "Cooking..."} />
-                )}
-                {(streamingText || thinkingText || activeToolCalls.length > 0) && (
-                  <StreamingBubble
-                    text={streamingText}
-                    toolCalls={activeToolCalls}
-                    thinkingText={thinkingText}
-                    thinkingDurationMs={thinkingDurationMs}
-                    progressText={progressText}
-                  />
-                )}
-              </>
-            )}
+            <ChatMessageList
+              messages={messages}
+              isStreaming={isStreaming}
+              streamingText={streamingText}
+              thinkingText={thinkingText}
+              thinkingDurationMs={thinkingDurationMs}
+              activeToolCalls={activeToolCalls}
+              progressText={progressText}
+              emptyState={
+                <div className={styles.emptyState}>
+                  <MessageSquare size={40} />
+                  <Text variant="muted" size="sm">
+                    Send a message to chat with {agentName ?? "this agent"} across all linked projects
+                  </Text>
+                </div>
+              }
+            />
           </div>
         </div>
 
