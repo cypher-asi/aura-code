@@ -5,6 +5,8 @@ import rehypeHighlight from "rehype-highlight";
 import { FileText } from "lucide-react";
 import type { ArtifactRef, DisplayMessage, ToolCallEntry, TimelineItem } from "../types/stream";
 import { stripEmojis, normalizeMidSentenceBreaks } from "../utils/text-normalize";
+import { langFromPath } from "../ide/lang";
+import { useHighlightedHtml } from "../hooks/use-highlighted-html";
 import styles from "./MessageBubble.module.css";
 import toolStyles from "./ToolCallBlock.module.css";
 import { ResponseBlock } from "./ResponseBlock";
@@ -43,6 +45,10 @@ const FILE_PREFIX_RE = /^\[File:\s*(.+?)\]\n\n([\s\S]*)$/;
 
 function FileAttachmentBlock({ text }: { text: string }) {
   const match = text.match(FILE_PREFIX_RE);
+  const fileName = match?.[1] ?? "";
+  const language = langFromPath(fileName);
+  const highlightedHtml = useHighlightedHtml(match?.[2] ?? "", language);
+
   if (!match) return <span>{text}</span>;
 
   return (
@@ -50,12 +56,17 @@ function FileAttachmentBlock({ text }: { text: string }) {
       header={
         <>
           <FileText size={14} className={styles.fileAttachmentIcon} />
-          <span className={styles.fileAttachmentName}>{match[1]}</span>
+          <span className={styles.fileAttachmentName}>{fileName}</span>
         </>
       }
       contentClassName={styles.fileAttachmentContent}
     >
-      <pre>{match[2]}</pre>
+      <pre>
+        <code
+          className={language ? `hljs language-${language}` : "hljs"}
+          dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+        />
+      </pre>
     </ResponseBlock>
   );
 }
