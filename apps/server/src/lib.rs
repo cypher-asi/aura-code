@@ -97,24 +97,28 @@ pub(crate) struct TaskSessionEntry {
 type DeltaBroadcastBuf = HashMap<aura_core::TaskId, (aura_core::ProjectId, aura_core::AgentInstanceId, String)>;
 type ReadyBroadcastBuf = Vec<(aura_core::ProjectId, aura_core::AgentInstanceId, aura_core::TaskId)>;
 
+struct DeltaContext<'a> {
+    task_output_buffers: &'a TaskOutputBuffers,
+    delta_broadcast_buf: &'a mut DeltaBroadcastBuf,
+    delta_count: &'a mut u64,
+    store: &'a Arc<RocksStore>,
+}
+
 fn handle_task_output_delta(
     task_id: aura_core::TaskId,
     project_id: aura_core::ProjectId,
     agent_instance_id: aura_core::AgentInstanceId,
     delta: &str,
-    task_output_buffers: &TaskOutputBuffers,
-    delta_broadcast_buf: &mut DeltaBroadcastBuf,
-    delta_count: &mut u64,
-    store: &Arc<RocksStore>,
+    ctx: &mut DeltaContext<'_>,
 ) {
-    if let Ok(mut bufs) = task_output_buffers.lock() {
+    if let Ok(mut bufs) = ctx.task_output_buffers.lock() {
         bufs.entry(task_id).or_default().push_str(delta);
     }
-    *delta_count += 1;
-    if (*delta_count).is_multiple_of(LIVE_OUTPUT_FLUSH_INTERVAL) {
-        flush_live_output(store, task_output_buffers);
+    *ctx.delta_count += 1;
+    if (*ctx.delta_count).is_multiple_of(LIVE_OUTPUT_FLUSH_INTERVAL) {
+        flush_live_output(ctx.store, ctx.task_output_buffers);
     }
-    let entry = delta_broadcast_buf.entry(task_id)
+    let entry = ctx.delta_broadcast_buf.entry(task_id)
         .or_insert_with(|| (project_id, agent_instance_id, String::new()));
     entry.2.push_str(delta);
 }
@@ -273,8 +277,12 @@ async fn dispatch_engine_event(
         EngineEvent::TaskOutputDelta { project_id, agent_instance_id, task_id, delta } => {
             handle_task_output_delta(
                 *task_id, *project_id, *agent_instance_id, delta,
-                task_output_buffers, &mut rbs.delta_broadcast_buf,
-                &mut rbs.delta_count, store,
+                &mut DeltaContext {
+                    task_output_buffers,
+                    delta_broadcast_buf: &mut rbs.delta_broadcast_buf,
+                    delta_count: &mut rbs.delta_count,
+                    store,
+                },
             );
         }
         EngineEvent::TaskBecameReady { project_id, agent_instance_id, task_id } => {

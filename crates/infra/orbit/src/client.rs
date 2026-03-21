@@ -9,6 +9,16 @@ use crate::types::{CreateRepoResponse, OrbitCollaborator, OrbitRepo, OrbitRepoAp
 /// Default timeout for Orbit API calls (e.g. create_repo can be slow if Orbit's DB is busy).
 const ORBIT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
+pub struct CreateRepoInternalParams<'a> {
+    pub base_url: &'a str,
+    pub internal_token: &'a str,
+    pub org_id: &'a str,
+    pub project_id: &'a str,
+    pub owner_id: &'a str,
+    pub repo: &'a str,
+    pub description: Option<&'a str>,
+}
+
 /// HTTP client for Orbit REST API.
 /// Uses JWT (Bearer) for auth; owner is always org_id or user_id (UUID).
 #[derive(Clone)]
@@ -77,14 +87,11 @@ impl OrbitClient {
     /// Create a repository using Orbit's internal service-to-service endpoint.
     pub async fn create_repo_internal(
         &self,
-        base_url: &str,
-        internal_token: &str,
-        org_id: &str,
-        project_id: &str,
-        owner_id: &str,
-        repo: &str,
-        description: Option<&str>,
+        params: &CreateRepoInternalParams<'_>,
     ) -> Result<CreateRepoResponse, OrbitError> {
+        let CreateRepoInternalParams {
+            base_url, internal_token, org_id, project_id, owner_id, repo, description,
+        } = params;
         let url = format!("{}/internal/repos", base_url.trim_end_matches('/'));
         debug!(%url, org_id, project_id, owner_id, repo, "Orbit create_repo_internal");
 
@@ -100,7 +107,7 @@ impl OrbitClient {
         let resp = self
             .http
             .post(&url)
-            .header("X-Internal-Token", internal_token)
+            .header("X-Internal-Token", *internal_token)
             .json(&body)
             .send()
             .await?;

@@ -11,6 +11,7 @@ pub mod orbit;
 pub mod orgs;
 pub mod pricing;
 pub mod projects;
+mod projects_helpers;
 pub mod settings;
 pub mod specs;
 pub mod sse;
