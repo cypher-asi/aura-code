@@ -21,7 +21,8 @@ use crate::tool_loop_blocking::{
 use crate::tool_loop_read_guard::{self as read_guard, ReadGuardState};
 use crate::tool_loop_budget::{
     BudgetState, ExplorationState,
-    check_budget_warnings, inject_exploration_warnings, update_exploration_counts,
+    check_budget_warnings, check_no_write_budget_warning, inject_exploration_warnings,
+    update_exploration_counts,
 };
 use crate::tool_loop_streaming::{
     run_single_iteration, IterationOutcome, IterationCompleted,
@@ -50,6 +51,7 @@ pub(crate) struct LoopState {
     pub(crate) file_read_cache: HashMap<String, u64>,
     pub(crate) consecutive_cmd_failures: usize,
     pub(crate) read_guard: ReadGuardState,
+    pub(crate) had_any_write: bool,
     pub(crate) exploration: ExplorationState,
     pub(crate) budget: BudgetState,
     pub(crate) writes: WriteTrackingState,
@@ -146,6 +148,7 @@ pub async fn run_tool_loop(
         file_read_cache: HashMap::new(),
         consecutive_cmd_failures: 0,
         read_guard: ReadGuardState::new(),
+        had_any_write: false,
         exploration: ExplorationState {
             total_calls: 0,
             allowance: config.exploration_allowance.unwrap_or(DEFAULT_EXPLORATION_ALLOWANCE),
@@ -234,6 +237,9 @@ pub async fn run_tool_loop(
         inject_exploration_warnings(&mut state.exploration, &mut state.api_messages);
 
         if let Some(budget) = config.credit_budget {
+            check_no_write_budget_warning(
+                &mut state.budget, budget, state.had_any_write, &mut state.api_messages,
+            );
             if let Some(result) = check_budget_warnings(
                 &mut state.budget, budget, billing_model, iter.input_tokens,
                 &llm, event_tx, &mut state.api_messages,
@@ -325,7 +331,18 @@ async fn process_tool_calls(
                 && matches!(tc.name.as_str(), "write_file" | "edit_file")
         });
     if had_write {
+        state.had_any_write = true;
         state.exploration.allowance = state.exploration.total_calls + 4;
+        for (i, tc) in iter.iter_tool_calls.iter().enumerate() {
+            if !all_blocked.contains(&i)
+                && matches!(tc.name.as_str(), "write_file" | "edit_file")
+                && !results[i].is_error
+            {
+                if let Some(path) = tc.input.get("path").and_then(|v| v.as_str()) {
+                    read_guard::reset_reads_for_path(&mut state.read_guard, path);
+                }
+            }
+        }
         maybe_emit_checkpoint(&mut state.build, &mut state.api_messages);
         maybe_run_auto_build(executor, &mut state.build, &mut state.api_messages).await;
     }
