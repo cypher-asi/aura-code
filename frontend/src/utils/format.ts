@@ -7,12 +7,17 @@ export function formatTime(date: Date): string {
   });
 }
 
-const LIST_OR_HEADING = /^(?:[-*+]\s|\d+\.\s|#)/;
+const STRUCTURED_MD = /^(?:[-*+]\s|\d+\.\s|#{1,6}\s|\*\*)/;
 
 /**
- * Convert plain text into a markdown bullet list, splitting paragraphs at
- * sentence boundaries so each distinct idea gets its own bullet.
- * Lines that are already list items or headings are left untouched.
+ * Normalize text into a markdown bullet list.
+ *
+ * Lines that are already markdown (bullets, numbered items, headings, bold
+ * labels like `**Section:**`) are preserved as-is.  Lines containing inline
+ * code (backticks) are converted to a single bullet without sentence
+ * splitting, since periods inside code would produce wrong breaks.
+ * Plain-text lines are split at sentence boundaries so each idea gets its
+ * own bullet.
  */
 export function toBullets(text: string): string {
   const out: string[] = [];
@@ -21,9 +26,13 @@ export function toBullets(text: string): string {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
 
-    if (LIST_OR_HEADING.test(trimmed)) {
-      const endsWithPunctuation = /[.!?:;)\]}>]$/.test(trimmed);
-      out.push(endsWithPunctuation ? line : `${line.trimEnd()}.`);
+    if (STRUCTURED_MD.test(trimmed)) {
+      out.push(line);
+      continue;
+    }
+
+    if (trimmed.includes("`")) {
+      out.push(`- ${trimmed}`);
       continue;
     }
 
