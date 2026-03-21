@@ -133,9 +133,9 @@ export function useStreamCore(resetDeps: unknown[]) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, resetDeps);
 
-  const resetMessages = useCallback((msgs: DisplayMessage[]) => {
+  const resetMessages = useCallback((msgs: DisplayMessage[], options?: { allowWhileStreaming?: boolean }) => {
     const e = entryRef.current!.entry;
-    if (e.isStreaming) return;
+    if (e.isStreaming && !options?.allowWhileStreaming) return;
     e.messages = msgs;
     setMessages(msgs);
   }, []);
