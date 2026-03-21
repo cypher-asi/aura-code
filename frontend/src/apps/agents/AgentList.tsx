@@ -7,7 +7,7 @@ import { Bot, Loader2, Trash2 } from "lucide-react";
 import { EmptyState } from "../../components/EmptyState";
 import { AgentEditorModal } from "../../components/AgentEditorModal";
 import { api, ApiClientError } from "../../api/client";
-import { useAgentApp } from "./AgentAppProvider";
+import { useAgents, useSelectedAgent, useAgentStore } from "./stores";
 import { useSidebarSearch } from "../../context/SidebarSearchContext";
 import type { Agent } from "../../types";
 import styles from "./AgentList.module.css";
@@ -23,7 +23,9 @@ interface CtxMenuState {
 }
 
 export function AgentList() {
-  const { agents, loading, refresh, selectAgent } = useAgentApp();
+  const { agents, status, fetchAgents } = useAgents();
+  const { setSelectedAgent } = useSelectedAgent();
+  const loading = status === "loading";
   const { query: searchQuery, setAction } = useSidebarSearch();
   const navigate = useNavigate();
   const { agentId } = useParams();
@@ -71,10 +73,10 @@ export function AgentList() {
   const handleAgentSaved = useCallback(
     (agent: Agent) => {
       setShowEditor(false);
-      refresh();
+      fetchAgents();
       navigate(`/agents/${agent.agent_id}`);
     },
-    [refresh, navigate],
+    [fetchAgents, navigate],
   );
 
   const handleContextMenu = useCallback(
@@ -109,11 +111,11 @@ export function AgentList() {
     try {
       await api.agents.delete(deleteTarget.agent_id);
       if (agentId === deleteTarget.agent_id) {
-        selectAgent(null);
+        setSelectedAgent(null);
         navigate("/agents");
       }
       setDeleteTarget(null);
-      refresh();
+      useAgentStore.getState().fetchAgents();
     } catch (err) {
       if (err instanceof ApiClientError) {
         setDeleteError(err.body.error);
@@ -123,7 +125,7 @@ export function AgentList() {
     } finally {
       setDeleteLoading(false);
     }
-  }, [deleteTarget, agentId, selectAgent, navigate, refresh]);
+  }, [deleteTarget, agentId, setSelectedAgent, navigate]);
 
   const data: ExplorerNode[] = useMemo(
     () =>

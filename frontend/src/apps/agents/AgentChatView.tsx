@@ -2,28 +2,18 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { Text } from "@cypher-asi/zui";
 import { MessageSquare } from "lucide-react";
-import { api } from "../../api/client";
 import { useAgentChatStream } from "../../hooks/use-agent-chat-stream";
 import { useAutoScroll } from "../../hooks/use-auto-scroll";
-import { useAgentApp } from "./AgentAppProvider";
-import { buildDisplayMessages } from "../../utils/build-display-messages";
 import { ChatMessageList } from "../../components/ChatMessageList";
 import { ChatInputBar } from "../../components/ChatInputBar";
 import type { ChatInputBarHandle, AttachmentItem } from "../../components/ChatInputBar";
-import type { DisplayMessage } from "../../types/stream";
 import styles from "../../components/ChatView.module.css";
-
-const historyCache = new Map<string, DisplayMessage[]>();
-
-function debugSwitchLog(message: string, details: Record<string, unknown>) {
-  if (import.meta.env.DEV) {
-    console.debug(`[AgentChatView] ${message}`, details);
-  }
-}
+import { useAgentStore, useAgentHistory, useSelectedAgent } from "./stores";
 
 export function AgentChatView() {
   const { agentId } = useParams<{ agentId: string }>();
-  const { agents, selectedAgent, selectAgent } = useAgentApp();
+  const { selectedAgent, setSelectedAgent } = useSelectedAgent();
+  const { messages: historyMessages, status: historyStatus } = useAgentHistory(agentId);
 
   const {
     messages,
@@ -41,89 +31,35 @@ export function AgentChatView() {
 
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(() => Boolean(agentId));
 
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const inputBarRef = useRef<ChatInputBarHandle>(null);
-  const historyLoadIdRef = useRef(0);
   const attachmentsRef = useRef(attachments);
   useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+  const resetMessagesRef = useRef(resetMessages);
+  useEffect(() => { resetMessagesRef.current = resetMessages; }, [resetMessages]);
   const { handleScroll } = useAutoScroll(messageAreaRef, agentId);
 
   useEffect(() => {
-    if (agentId) {
-      localStorage.setItem("aura:lastAgentId", agentId);
-      requestAnimationFrame(() => inputBarRef.current?.focus());
-    }
-  }, [agentId]);
-
-  useEffect(() => {
     if (!agentId) return;
-    const cachedAgent = agents.find((agent) => agent.agent_id === agentId);
-    if (cachedAgent && selectedAgent?.agent_id !== agentId) {
-      selectAgent(cachedAgent);
-    }
-  }, [agentId, agents, selectedAgent?.agent_id, selectAgent]);
+    useAgentStore.getState().fetchHistory(agentId);
+    setSelectedAgent(agentId);
+    localStorage.setItem("aura:lastAgentId", agentId);
+    requestAnimationFrame(() => inputBarRef.current?.focus());
+  }, [agentId, setSelectedAgent]);
 
   useEffect(() => {
-    const loadId = ++historyLoadIdRef.current;
-    const controller = new AbortController();
-
-    if (!agentId) {
-      setIsHistoryLoading(false);
-      resetMessages([], { allowWhileStreaming: true });
-      return () => {
-        controller.abort();
-      };
-    }
-
-    const reveal = () => {
-      requestAnimationFrame(() => {
-        const el = messageAreaRef.current;
-        if (el) {
-          el.scrollTop = el.scrollHeight;
-          el.style.visibility = "";
-        }
-      });
-    };
-
-    const cached = historyCache.get(agentId);
-    if (cached) {
-      if (messageAreaRef.current) messageAreaRef.current.style.visibility = "hidden";
-      resetMessages(cached, { allowWhileStreaming: true });
-      setIsHistoryLoading(false);
-      reveal();
-    } else {
-      setIsHistoryLoading(true);
-    }
-
-    api.agents
-      .listMessages(agentId as never, { signal: controller.signal })
-      .then((msgs) => {
-        if (loadId !== historyLoadIdRef.current) {
-          debugSwitchLog("discarded stale history response", { loadId, agentId });
-          return;
-        }
-        const display = buildDisplayMessages(msgs);
-        historyCache.set(agentId, display);
-        if (messageAreaRef.current) messageAreaRef.current.style.visibility = "hidden";
-        resetMessages(display, { allowWhileStreaming: true });
-        setIsHistoryLoading(false);
-        reveal();
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        if (loadId === historyLoadIdRef.current) {
-          setIsHistoryLoading(false);
-          if (messageAreaRef.current) messageAreaRef.current.style.visibility = "";
-        }
-        console.error(error);
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [agentId, resetMessages]);
+    if (historyMessages.length === 0) return;
+    const el = messageAreaRef.current;
+    if (el) el.style.visibility = "hidden";
+    resetMessagesRef.current(historyMessages, { allowWhileStreaming: true });
+    requestAnimationFrame(() => {
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+        el.style.visibility = "";
+      }
+    });
+  }, [historyMessages]);
 
   const handleRemoveAttachment = useCallback(
     (id: string) => setAttachments((prev) => prev.filter((a) => a.id !== id)),
@@ -153,6 +89,7 @@ export function AgentChatView() {
   }
 
   const agentName = selectedAgent?.name;
+  const isHistoryLoading = historyStatus === "loading";
 
   return (
     <div className={styles.container}>

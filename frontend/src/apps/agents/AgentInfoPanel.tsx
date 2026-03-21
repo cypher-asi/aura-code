@@ -8,12 +8,12 @@ import { FollowEditButton } from "../../components/FollowEditButton";
 import { SidekickActions } from "../../components/SidekickActions";
 import { AgentEditorModal } from "../../components/AgentEditorModal";
 import { api, ApiClientError } from "../../api/client";
-import { useAgentApp } from "./AgentAppProvider";
+import { useSelectedAgent, useAgentStore } from "./stores";
 import { useAuth } from "../../context/AuthContext";
 import styles from "./AgentInfoPanel.module.css";
 
 export function AgentInfoPanel() {
-  const { selectedAgent, selectAgent, refresh } = useAgentApp();
+  const { selectedAgent, setSelectedAgent } = useSelectedAgent();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [showEditor, setShowEditor] = useState(false);
@@ -43,8 +43,8 @@ export function AgentInfoPanel() {
     try {
       await api.agents.delete(selectedAgent.agent_id);
       setShowDeleteConfirm(false);
-      selectAgent(null);
-      refresh();
+      setSelectedAgent(null);
+      useAgentStore.getState().fetchAgents();
       navigate("/agents");
     } catch (err) {
       if (err instanceof ApiClientError) {
@@ -55,7 +55,7 @@ export function AgentInfoPanel() {
     } finally {
       setDeleting(false);
     }
-  }, [selectedAgent, selectAgent, refresh, navigate]);
+  }, [selectedAgent, setSelectedAgent, navigate]);
 
   if (!selectedAgent) {
     return (
@@ -143,8 +143,8 @@ export function AgentInfoPanel() {
         agent={selectedAgent}
         onClose={() => setShowEditor(false)}
         onSaved={(updated) => {
-          selectAgent(updated);
-          refresh();
+          setSelectedAgent(updated.agent_id);
+          useAgentStore.getState().fetchAgents();
         }}
       />
 

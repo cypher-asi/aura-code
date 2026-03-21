@@ -1,51 +1,30 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 import type { Agent } from "../../types";
-import { api } from "../../api/client";
+import { useAgentStore, useAgents, useSelectedAgent } from "./stores";
 
-interface AgentAppContextValue {
+export function AgentAppProvider({ children }: { children: ReactNode }): ReactNode {
+  useEffect(() => {
+    useAgentStore.getState().fetchAgents();
+  }, []);
+  return <>{children}</>;
+}
+
+export function useAgentApp(): {
   agents: Agent[];
   loading: boolean;
   selectedAgent: Agent | null;
-  selectAgent: (agent: Agent | null) => void;
-  refresh: () => void;
-}
-
-const AgentAppCtx = createContext<AgentAppContextValue | null>(null);
-let cachedAgents: Agent[] = [];
-
-export function AgentAppProvider({ children }: { children: ReactNode }) {
-  const [agents, setAgents] = useState<Agent[]>(() => cachedAgents);
-  const [loading, setLoading] = useState(() => cachedAgents.length === 0);
-  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
-
-  const refresh = useCallback(() => {
-    if (cachedAgents.length === 0) {
-      setLoading(true);
-    }
-    api.agents.list().then((list) => {
-      const sorted = list.sort((a, b) => a.name.localeCompare(b.name));
-      cachedAgents = sorted;
-      setAgents(sorted);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const value = useMemo(
-    () => ({ agents, loading, selectedAgent, selectAgent: setSelectedAgent, refresh }),
-    [agents, loading, selectedAgent, refresh],
-  );
-
-  return <AgentAppCtx.Provider value={value}>{children}</AgentAppCtx.Provider>;
-}
-
-export function useAgentApp() {
-  const ctx = useContext(AgentAppCtx);
-  if (!ctx) throw new Error("useAgentApp must be used within AgentAppProvider");
-  return ctx;
+  selectAgent: (a: Agent | null) => void;
+  refresh: () => Promise<void>;
+} {
+  const { agents, status, fetchAgents } = useAgents();
+  const { selectedAgent, setSelectedAgent } = useSelectedAgent();
+  return {
+    agents,
+    loading: status === "loading",
+    selectedAgent,
+    selectAgent: (a) => setSelectedAgent(a?.agent_id ?? null),
+    refresh: fetchAgents,
+  };
 }
