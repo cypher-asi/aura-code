@@ -39,13 +39,16 @@ function CodeView({ content, language }: { content: string; language?: string })
     ? lines.slice(0, COLLAPSED_LINE_LIMIT).join("\n")
     : content;
 
+  const highlightedHtml = useHighlightedHtml(displayContent, language);
+
   return (
     <>
       <div className={`${styles.codeArea} ${!expanded && needsCollapse ? styles.collapsed : ""}`}>
         <pre>
-          <code className={language ? `hljs language-${language}` : undefined}>
-            {displayContent}
-          </code>
+          <code
+            className={language ? `hljs language-${language}` : "hljs"}
+            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+          />
         </pre>
       </div>
       {needsCollapse && (
