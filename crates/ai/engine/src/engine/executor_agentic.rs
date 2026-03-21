@@ -275,6 +275,110 @@ async fn finalize_tool_loop_result(
     })
 }
 
+struct AgenticTaskSetup {
+    project: Project,
+    spec: Spec,
+    system_prompt: String,
+    task_context: String,
+    complexity: TaskComplexity,
+    completed_deps: Vec<Task>,
+    work_log_summary: String,
+    exploration_allowance: usize,
+}
+
+async fn prepare_agentic_task(
+    engine: &DevLoopEngine,
+    project_id: &ProjectId,
+    task: &Task,
+    session: &Session,
+    agent: Option<&AgentInstance>,
+    work_log: &[String],
+    workspace_cache: &WorkspaceCache,
+) -> Result<AgenticTaskSetup, EngineError> {
+    let project = engine.project_service.get_project_async(project_id).await?;
+    let spec = engine.load_spec(project_id, &task.spec_id).await?;
+
+    let exploration_allowance = compute_exploration_allowance(
+        &task.title, &task.description, workspace_cache.member_count,
+    );
+    let workspace_map = &workspace_cache.workspace_map_text;
+    let workspace_info = if workspace_map.is_empty() { None } else { Some(workspace_map.as_str()) };
+    let system_prompt = agentic_execution_system_prompt(&project, agent, workspace_info, exploration_allowance);
+
+    let ctx = fetch_codebase_context(&project, task, &spec, workspace_cache, workspace_map).await;
+    let completed_deps = resolve_completed_deps(&engine.task_service, project_id, task).await;
+    let complexity = classify_task_complexity(&task.title, &task.description);
+
+    let work_log_summary = build_work_log_summary(work_log);
+    let base_context = build_agentic_task_context(
+        &project, &spec, task, session, &completed_deps, &work_log_summary, exploration_allowance,
+    );
+    let task_context = build_full_task_context(
+        base_context, workspace_map, &ctx.type_defs_context, &ctx.codebase_snapshot, &ctx.dep_api_context,
+    );
+
+    Ok(AgenticTaskSetup {
+        project, spec, system_prompt, task_context, complexity,
+        completed_deps, work_log_summary, exploration_allowance,
+    })
+}
+
+fn build_executor(
+    engine: &DevLoopEngine,
+    setup: &AgenticTaskSetup,
+    task: &Task,
+    session: &Session,
+    tracked_file_ops: Arc<Mutex<Vec<FileOp>>>,
+    notes: Arc<Mutex<String>>,
+    follow_ups: Arc<Mutex<Vec<FollowUpSuggestion>>>,
+) -> EngineToolLoopExecutor {
+    let pid = setup.project.project_id;
+    let aiid = session.agent_instance_id;
+    EngineToolLoopExecutor {
+        inner: ChatToolExecutor::new(
+            engine.store.clone(), engine.storage_client.clone(),
+            engine.project_service.clone(), engine.task_service.clone(),
+        ),
+        project_id: pid,
+        project: setup.project.clone(),
+        spec: setup.spec.clone(),
+        task: task.clone(),
+        session: session.clone(),
+        engine_event_tx: engine.event_tx.clone(),
+        agent_instance_id: aiid,
+        task_id: task.task_id,
+        tracked_file_ops,
+        notes,
+        follow_ups,
+        stub_fix_attempts: Arc::new(Mutex::new(0)),
+        completed_deps: setup.completed_deps.clone(),
+        work_log_summary: setup.work_log_summary.clone(),
+        exploration_allowance: setup.exploration_allowance,
+        task_phase: Arc::new(Mutex::new(
+            if setup.complexity == TaskComplexity::Simple {
+                TaskPhase::Implementing { plan: TaskPlan::empty() }
+            } else {
+                TaskPhase::Exploring
+            }
+        )),
+        self_review_done: Arc::new(AtomicBool::new(false)),
+    }
+}
+
+fn build_tool_loop_config(params: ToolLoopParams) -> ToolLoopConfig {
+    ToolLoopConfig {
+        max_iterations: params.max_iterations,
+        max_tokens: params.max_tokens,
+        thinking: params.thinking,
+        stream_timeout: params.stream_timeout,
+        billing_reason: "aura_task",
+        max_context_tokens: params.max_context_tokens,
+        credit_budget: params.credit_budget,
+        exploration_allowance: Some(params.exploration_allowance),
+        model_override: params.model_override,
+    }
+}
+
 impl DevLoopEngine {
     pub(crate) async fn execute_task_agentic(
         &self,
@@ -286,105 +390,44 @@ impl DevLoopEngine {
         work_log: &[String],
         workspace_cache: &WorkspaceCache,
     ) -> Result<TaskExecution, EngineError> {
-        let project = self.project_service.get_project_async(project_id).await?;
-        let spec = self.load_spec(project_id, &task.spec_id).await?;
+        let setup = prepare_agentic_task(
+            self, project_id, task, session, agent, work_log, workspace_cache,
+        ).await?;
 
-        let exploration_allowance = compute_exploration_allowance(
-            &task.title, &task.description, workspace_cache.member_count,
-        );
-        let workspace_map = &workspace_cache.workspace_map_text;
-        let workspace_info = if workspace_map.is_empty() { None } else { Some(workspace_map.as_str()) };
-        let system_prompt = agentic_execution_system_prompt(&project, agent, workspace_info, exploration_allowance);
-
-        let ctx = fetch_codebase_context(&project, task, &spec, workspace_cache, workspace_map).await;
-        let completed_deps = resolve_completed_deps(&self.task_service, project_id, task).await;
-
-        let complexity = classify_task_complexity(&task.title, &task.description);
-        if complexity == TaskComplexity::Simple {
-            if let Some(skip_reason) = check_already_completed(&project, task, &completed_deps).await {
+        if setup.complexity == TaskComplexity::Simple {
+            if let Some(skip_reason) = check_already_completed(&setup.project, task, &setup.completed_deps).await {
                 tracing::info!(task_id = %task.task_id, reason = %skip_reason, "Skipping redundant simple task");
                 return Ok(TaskExecution {
                     notes: format!("Task skipped as redundant: {}", skip_reason),
-                    file_ops: Vec::new(),
-                    follow_up_tasks: Vec::new(),
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    parse_retries: 0,
+                    file_ops: Vec::new(), follow_up_tasks: Vec::new(),
+                    input_tokens: 0, output_tokens: 0, parse_retries: 0,
                     files_already_applied: true,
                 });
             }
         }
 
-        let work_log_summary = build_work_log_summary(work_log);
-        let base_context = build_agentic_task_context(
-            &project, &spec, task, session, &completed_deps, &work_log_summary, exploration_allowance,
-        );
-        let task_context = build_full_task_context(
-            base_context, workspace_map, &ctx.type_defs_context, &ctx.codebase_snapshot, &ctx.dep_api_context,
-        );
-
-        let tools = engine_tool_definitions();
-        let api_messages: Vec<RichMessage> = vec![RichMessage::user(&task_context)];
-
-        let pid = *project_id;
-        let aiid = session.agent_instance_id;
-        let task_id = task.task_id;
-
         let tracked_file_ops: Arc<Mutex<Vec<FileOp>>> = Arc::new(Mutex::new(Vec::new()));
         let notes: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
         let follow_ups: Arc<Mutex<Vec<FollowUpSuggestion>>> = Arc::new(Mutex::new(Vec::new()));
 
-        let executor = EngineToolLoopExecutor {
-            inner: ChatToolExecutor::new(
-                self.store.clone(), self.storage_client.clone(),
-                self.project_service.clone(), self.task_service.clone(),
-            ),
-            project_id: pid,
-            project: project.clone(),
-            spec: spec.clone(),
-            task: task.clone(),
-            session: session.clone(),
-            engine_event_tx: self.event_tx.clone(),
-            agent_instance_id: aiid,
-            task_id,
-            tracked_file_ops: tracked_file_ops.clone(),
-            notes: notes.clone(),
-            follow_ups: follow_ups.clone(),
-            stub_fix_attempts: Arc::new(Mutex::new(0)),
-            completed_deps,
-            work_log_summary,
-            exploration_allowance,
-            task_phase: Arc::new(Mutex::new(
-                if complexity == TaskComplexity::Simple {
-                    TaskPhase::Implementing { plan: TaskPlan::empty() }
-                } else {
-                    TaskPhase::Exploring
-                }
-            )),
-            self_review_done: Arc::new(AtomicBool::new(false)),
-        };
-
-        let params = configure_llm_params(
-            complexity, &self.llm_config, &self.engine_config,
-            exploration_allowance, workspace_cache.member_count,
+        let executor = build_executor(
+            self, &setup, task, session,
+            tracked_file_ops.clone(), notes.clone(), follow_ups.clone(),
         );
-        let config = ToolLoopConfig {
-            max_iterations: params.max_iterations,
-            max_tokens: params.max_tokens,
-            thinking: params.thinking,
-            stream_timeout: params.stream_timeout,
-            billing_reason: "aura_task",
-            max_context_tokens: params.max_context_tokens,
-            credit_budget: params.credit_budget,
-            exploration_allowance: Some(params.exploration_allowance),
-            model_override: params.model_override,
-        };
+        let params = configure_llm_params(
+            setup.complexity, &self.llm_config, &self.engine_config,
+            setup.exploration_allowance, workspace_cache.member_count,
+        );
+        let config = build_tool_loop_config(params);
 
-        let (forwarder, loop_tx) = spawn_delta_forwarder(&self.event_tx, pid, aiid, task_id);
+        let pid = *project_id;
+        let aiid = session.agent_instance_id;
+        let (forwarder, loop_tx) = spawn_delta_forwarder(&self.event_tx, pid, aiid, task.task_id);
 
         let result = run_tool_loop(
-            self.llm.clone(), api_key, &system_prompt, api_messages,
-            tools, &config, &executor, &loop_tx,
+            self.llm.clone(), api_key, &setup.system_prompt,
+            vec![RichMessage::user(&setup.task_context)],
+            engine_tool_definitions(), &config, &executor, &loop_tx,
         ).await;
         drop(loop_tx);
         let _ = forwarder.await;
