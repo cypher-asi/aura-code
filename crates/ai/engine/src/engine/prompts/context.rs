@@ -47,7 +47,8 @@ pub(crate) fn build_agentic_task_context(
         "Briefly explore the codebase to confirm the current state (hard limit: ~{} exploration calls \
          before reads are blocked), then form a plan and begin implementing. NEVER read the same file \
          twice. Do not exhaustively read every file -- focus on files you need to modify. Prefer \
-         targeted reads (with start_line/end_line) over full-file reads when you only need a specific section.\n",
+         targeted reads (with start_line/end_line) over full-file reads when you only need a specific section.\n\n\
+         Context budget: ~200K tokens available for this session. Budget your exploration accordingly.\n",
         exploration_allowance
     ));
 

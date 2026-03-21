@@ -85,6 +85,44 @@ async fn resolve_completed_deps(
         .collect()
 }
 
+fn extract_codebase_conventions(codebase_snapshot: &str) -> String {
+    let mut conventions = Vec::new();
+
+    if codebase_snapshot.contains("thiserror") {
+        conventions.push("Error types: uses thiserror derive macros");
+    }
+    if codebase_snapshot.contains("#[tokio::test]") {
+        conventions.push("Tests: async tests with #[tokio::test]");
+    }
+    if codebase_snapshot.contains("Arc<") && codebase_snapshot.contains("impl") {
+        conventions.push("Services: wrapped in Arc for shared ownership");
+    }
+    if codebase_snapshot.contains("tracing::") || codebase_snapshot.contains("use tracing") {
+        conventions.push("Logging: uses tracing crate");
+    }
+    if codebase_snapshot.contains("serde::") || codebase_snapshot.contains("#[derive(Serialize") {
+        conventions.push("Serialization: uses serde with derive macros");
+    }
+    if codebase_snapshot.contains("async fn") && codebase_snapshot.contains("await") {
+        conventions.push("Async: uses async/await patterns");
+    }
+    if codebase_snapshot.contains("#[cfg(test)]") {
+        conventions.push("Tests: inline #[cfg(test)] modules");
+    }
+
+    if conventions.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n# Codebase Conventions (follow these patterns)\n{}\n",
+        conventions
+            .iter()
+            .map(|c| format!("- {c}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    )
+}
+
 fn build_full_task_context(
     mut task_context: String,
     workspace_map: &str,
@@ -92,6 +130,10 @@ fn build_full_task_context(
     codebase_snapshot: &str,
     dep_api: &str,
 ) -> String {
+    let conventions = extract_codebase_conventions(codebase_snapshot);
+    if !conventions.is_empty() {
+        task_context.push_str(&conventions);
+    }
     if !workspace_map.is_empty() {
         task_context.push_str(&format!("\n# Workspace Structure\n{}\n", workspace_map));
     }

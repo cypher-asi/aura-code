@@ -186,7 +186,7 @@ fn engine_tool_definitions_inner() -> Vec<ToolDefinition> {
     tools.extend(vec![
         tool(
             "task_done",
-            "Signal that the current task is complete. Call this when you have finished all changes and verified they compile. Provide notes summarizing what you did and optionally follow-up task suggestions.",
+            "Signal that the current task is complete. Call this when you have finished all changes and verified they compile. Provide notes summarizing what you did, optionally follow-up task suggestions, and a reasoning array with key decisions.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -202,6 +202,11 @@ fn engine_tool_definitions_inner() -> Vec<ToolDefinition> {
                             },
                             "required": ["title", "description"]
                         }
+                    },
+                    "reasoning": {
+                        "type": "array",
+                        "description": "Key decisions and their rationale (optional but encouraged)",
+                        "items": { "type": "string" }
                     }
                 },
                 "required": ["notes"]

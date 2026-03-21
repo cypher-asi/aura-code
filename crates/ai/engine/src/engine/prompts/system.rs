@@ -113,6 +113,10 @@ Rules:
 - If a build or test compilation fails, read the errors carefully and fix them before calling task_done
 - Do NOT call task_done until the build passes
 - Do NOT use emojis in notes or any text output
+- When calling task_done, include a "reasoning" array with 2-4 key decisions
+  you made and why. Example: ["Used search_replace over modify because only
+  2 lines changed", "Added From impl instead of manual conversion to follow
+  existing patterns"]
 
 TOOL USAGE:
 - Do NOT use run_command for searching code, reading files, or finding files. Always use the dedicated tools: search_code, read_file, find_files, list_files. Reserve run_command for build, test, git, and package manager commands only.

@@ -278,6 +278,19 @@ impl EngineToolLoopExecutor {
                 fu_lock.push(FollowUpSuggestion { title, description: desc });
             }
         }
+        if let Some(reasoning) = tc.input.get("reasoning").and_then(|v| v.as_array()) {
+            let reasoning_text: Vec<String> = reasoning
+                .iter()
+                .filter_map(|r| r.as_str().map(String::from))
+                .collect();
+            if !reasoning_text.is_empty() {
+                let mut n = self.notes.lock().await;
+                n.push_str("\n\nReasoning:\n");
+                for r in &reasoning_text {
+                    n.push_str(&format!("- {r}\n"));
+                }
+            }
+        }
     }
 
     async fn check_self_review(&self) -> Option<String> {
