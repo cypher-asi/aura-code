@@ -1,12 +1,6 @@
-export type TimePeriod = "all" | "month" | "week";
+export type TimePeriod = "all" | "month" | "week" | "day";
 
 export type LeaderboardFilter = "my-agents" | "organization" | "following" | "everything";
-
-export interface AgentContribution {
-  agent: string;
-  tokens: number;
-  commits: number;
-}
 
 export interface LeaderboardUser {
   id: string;
@@ -15,7 +9,6 @@ export interface LeaderboardUser {
   profileId?: string;
   type: "user" | "agent";
   tokens: number;
-  commits: number;
-  agents: number;
-  breakdown: AgentContribution[];
+  estimatedCostUsd: number;
+  eventCount: number;
 }

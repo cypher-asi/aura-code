@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useCallback, useMemo, useEffect } 
 import type { ReactNode } from "react";
 import type { TimePeriod, LeaderboardFilter, LeaderboardUser } from "./mockData";
 import { api } from "../../api/client";
+import { useOrg } from "../../context/OrgContext";
 
 interface LeaderboardContextValue {
   period: TimePeriod;
@@ -23,6 +24,7 @@ export function LeaderboardProvider({ children }: { children: ReactNode }) {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [entries, setEntries] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const { activeOrg } = useOrg();
 
   const selectUser = useCallback((id: string | null) => setSelectedUserId(id), []);
 
@@ -30,24 +32,21 @@ export function LeaderboardProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     const frame = window.requestAnimationFrame(() => setLoading(true));
     api.leaderboard
-      .get(period)
+      .get(period, activeOrg?.org_id)
       .then((data) => {
         if (cancelled) return;
-        if (!cancelled) {
-          setEntries(
-            data.map((e) => ({
-              id: e.profile_id,
-              name: e.display_name ?? "Unknown",
-              avatarUrl: e.avatar_url ?? undefined,
-              profileId: e.profile_id,
-              type: (e.profile_type === "agent" ? "agent" : "user") as "user" | "agent",
-              tokens: e.tokens_used,
-              commits: 0,
-              agents: 0,
-              breakdown: [],
-            })),
-          );
-        }
+        setEntries(
+          data.map((e) => ({
+            id: e.profile_id,
+            name: e.display_name ?? "Unknown",
+            avatarUrl: e.avatar_url ?? undefined,
+            profileId: e.profile_id,
+            type: (e.profile_type === "agent" ? "agent" : "user") as "user" | "agent",
+            tokens: e.tokens_used,
+            estimatedCostUsd: e.estimated_cost_usd,
+            eventCount: e.event_count,
+          })),
+        );
       })
       .catch(() => {
         if (!cancelled) setEntries([]);
@@ -59,7 +58,7 @@ export function LeaderboardProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       window.cancelAnimationFrame(frame);
     };
-  }, [period]);
+  }, [period, activeOrg?.org_id]);
 
   const value = useMemo(
     () => ({ period, setPeriod, filter, setFilter, selectedUserId, selectUser, entries, loading }),

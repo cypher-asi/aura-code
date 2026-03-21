@@ -29,7 +29,7 @@ import { agentTemplatesApi, agentInstancesApi, sessionsApi } from "./agents";
 import { orgsApi } from "./orgs";
 import { desktopApi } from "./desktop";
 import { loopApi } from "./loop";
-import { followsApi, usersApi, profilesApi, feedApi, leaderboardApi, usageApi, activityApi } from "./social";
+import { followsApi, usersApi, profilesApi, feedApi, leaderboardApi, platformStatsApi, usageApi, activityApi } from "./social";
 
 export const api = {
   auth: authApi,
@@ -47,6 +47,7 @@ export const api = {
   profiles: profilesApi,
   feed: feedApi,
   leaderboard: leaderboardApi,
+  platformStats: platformStatsApi,
   usage: usageApi,
   activity: activityApi,
 };

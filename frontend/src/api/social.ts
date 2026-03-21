@@ -135,10 +135,27 @@ export const leaderboardApi = {
       display_name: string | null;
       avatar_url: string | null;
       tokens_used: number;
-      rank: number;
+      estimated_cost_usd: number;
+      event_count: number;
       profile_type: string | null;
     }[]>(`/api/leaderboard?${params}`);
   },
+};
+
+export const platformStatsApi = {
+  get: () =>
+    apiFetch<{
+      id: string;
+      date: string;
+      daily_active_users: number;
+      total_users: number;
+      new_signups: number;
+      projects_created: number;
+      total_input_tokens: number;
+      total_output_tokens: number;
+      total_revenue_usd: number;
+      created_at: string;
+    } | null>("/api/stats"),
 };
 
 export const usageApi = {

@@ -1,4 +1,4 @@
-import type { ProjectId, SpecId, TaskId, TaskStatus, Task, ProjectProgress, BuildStepRecord, TestStepRecord } from "../types";
+import type { ProjectId, SpecId, TaskId, TaskStatus, Task, BuildStepRecord, TestStepRecord } from "../types";
 import { apiFetch } from "./core";
 
 export const tasksApi = {
@@ -28,8 +28,6 @@ export const tasksApi = {
       method: "POST",
     });
   },
-  getProgress: (projectId: ProjectId) =>
-    apiFetch<ProjectProgress>(`/api/projects/${projectId}/progress`),
   getTaskOutput: (projectId: ProjectId, taskId: TaskId) =>
     apiFetch<{ output: string; build_steps?: BuildStepRecord[]; test_steps?: TestStepRecord[] }>(`/api/projects/${projectId}/tasks/${taskId}/output`),
 };
