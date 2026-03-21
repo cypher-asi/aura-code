@@ -1,9 +1,7 @@
 import { useState } from "react";
 import type { ProjectId } from "../types";
-import { useLiveProgress } from "../hooks/use-live-progress";
 import { Button, ModalConfirm } from "@cypher-asi/zui";
 import { Play, Pause, Square } from "lucide-react";
-import styles from "./aura.module.css";
 
 interface LoopControlsProps {
   projectId: ProjectId;
@@ -15,17 +13,13 @@ interface LoopControlsProps {
 }
 
 export function LoopControls({
-  projectId,
+  projectId: _projectId,
   running,
   paused,
   onStart,
   onPause,
   onStop,
 }: LoopControlsProps) {
-  const progress = useLiveProgress(projectId);
-  const pct = progress
-    ? Math.round(progress.completion_percentage * 100) / 100
-    : 0;
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const handleStopConfirm = () => {
@@ -56,13 +50,6 @@ export function LoopControls({
             Stop
           </Button>
         )}
-
-        <div className={styles.progressSection}>
-          <div className={styles.progressBarSmall}>
-            <div className={styles.progressBarSmallFill} style={{ width: `${pct}%` }} />
-          </div>
-          <span className={styles.progressPct}>{pct}%</span>
-        </div>
       </div>
 
       <ModalConfirm

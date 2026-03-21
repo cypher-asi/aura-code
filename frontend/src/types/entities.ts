@@ -145,29 +145,6 @@ export interface ApiKeyInfo {
   configured: boolean;
 }
 
-export interface ProjectProgress {
-  project_id: ProjectId;
-  total_tasks: number;
-  pending_tasks: number;
-  ready_tasks: number;
-  in_progress_tasks: number;
-  blocked_tasks: number;
-  done_tasks: number;
-  failed_tasks: number;
-  completion_percentage: number;
-  total_tokens: number;
-  total_cost: number;
-  lines_changed: number;
-  lines_of_code: number;
-  total_commits: number;
-  total_pull_requests: number;
-  total_messages: number;
-  total_agents: number;
-  total_sessions: number;
-  total_time_seconds: number;
-  total_tests: number;
-}
-
 export interface ChatContentBlock {
   type: "text" | "tool_use" | "tool_result" | "image" | "task_ref" | "spec_ref";
   text?: string;

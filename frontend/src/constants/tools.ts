@@ -19,7 +19,6 @@ export const TOOL_LABELS: Record<string, string> = {
   write_file: "Write file",
   delete_file: "Delete file",
   list_files: "List files",
-  get_progress: "Get stats",
 };
 
 export const TOOL_PHASE_LABELS: Record<string, string> = {
@@ -43,7 +42,6 @@ export const TOOL_PHASE_LABELS: Record<string, string> = {
   stop_dev_loop: "Managing the dev loop...",
   get_project: "Checking the project...",
   update_project: "Checking the project...",
-  get_progress: "Crunching numbers...",
 };
 
 export const FILE_OPS = new Set(["write_file", "edit_file", "read_file"]);
