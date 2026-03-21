@@ -23,7 +23,7 @@ export function useCreditBalance(): CreditBalanceResult {
     if (!orgId) { setCredits(null); return; }
     api.orgs
       .getCreditBalance(orgId)
-      .then((b) => setCredits(b.total_credits))
+      .then((b) => setCredits(b.balance_cents))
       .catch((err) => console.warn("Failed to fetch credit balance:", err));
   }, [orgId]);
 

@@ -77,7 +77,7 @@ export function useBuyCreditsData(isOpen: boolean): BuyCreditsData {
     if (!orgId) return;
     setCheckoutError(null);
     try {
-      const prevBalance = balance?.total_credits ?? 0;
+      const prevBalance = balance?.balance_cents ?? 0;
       const { checkout_url } = await api.orgs.createCreditCheckout(orgId, tierId);
       window.open(checkout_url, "_blank");
       startPolling(prevBalance);
@@ -89,7 +89,7 @@ export function useBuyCreditsData(isOpen: boolean): BuyCreditsData {
   const balanceDisplay = balanceLoading && balance === null
     ? "..."
     : balanceError && balance === null ? "---"
-    : balance !== null ? formatCredits(balance.total_credits)
+    : balance !== null ? formatCredits(balance.balance_cents)
     : "---";
 
   return {

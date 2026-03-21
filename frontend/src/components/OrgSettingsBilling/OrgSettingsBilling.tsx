@@ -144,7 +144,7 @@ export function OrgSettingsBilling({
                       <button className={billingStyles.retryLink} onClick={onRetryBalance}>Retry</button>
                     </span>
                   : balance !== null
-                    ? formatCreditsLong(balance.total_credits)
+                    ? formatCreditsLong(balance.balance_cents)
                     : "---"}
             </span>
           </div>
@@ -251,34 +251,6 @@ export function OrgSettingsBilling({
         </div>
       )}
 
-      {/* Purchase History */}
-      {balance && balance.purchases.length > 0 && (
-        <>
-          <div className={styles.settingsGroupLabel}>Purchase History</div>
-          <div className={styles.settingsGroup}>
-            {[...balance.purchases].sort((a, b) =>
-              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            ).map((p) => (
-              <div key={p.id} className={styles.settingsRow}>
-                <div className={styles.rowInfo}>
-                  <span className={styles.rowLabel}>
-                    {formatCreditsLong(p.credits)} credits
-                  </span>
-                  <span className={styles.rowDescription}>
-                    {new Date(p.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}{" "}
-                    {new Date(p.created_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })} &middot; {formatUsd(p.amount_cents)}
-                  </span>
-                </div>
-                <div className={styles.rowControl}>
-                  <span className={billingStyles.statusBadge} data-status={p.status}>
-                    {p.status}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
     </>
   );
 }

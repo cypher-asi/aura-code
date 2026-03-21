@@ -100,14 +100,14 @@ export function useOrgSettingsData(isOpen: boolean, initialSection?: Section) {
   const handleBuyTier = async (tierId: string) => {
     if (!orgId) return;
     setCheckoutError(null);
-    try { const prev = creditBalance?.total_credits ?? 0; const { checkout_url } = await api.orgs.createCreditCheckout(orgId, tierId); window.open(checkout_url, "_blank"); startPolling(prev); }
+    try { const prev = creditBalance?.balance_cents ?? 0; const { checkout_url } = await api.orgs.createCreditCheckout(orgId, tierId); window.open(checkout_url, "_blank"); startPolling(prev); }
     catch (err) { setCheckoutError(err instanceof ApiClientError ? `Checkout failed (${err.status})` : "Unable to start checkout"); console.error("Failed to create checkout session", err); }
   };
 
   const handleBuyCustom = async (credits: number) => {
     if (!orgId) return;
     setCheckoutError(null);
-    try { const prev = creditBalance?.total_credits ?? 0; const { checkout_url } = await api.orgs.createCreditCheckout(orgId, undefined, credits); window.open(checkout_url, "_blank"); startPolling(prev); }
+    try { const prev = creditBalance?.balance_cents ?? 0; const { checkout_url } = await api.orgs.createCreditCheckout(orgId, undefined, credits); window.open(checkout_url, "_blank"); startPolling(prev); }
     catch (err) { setCheckoutError(err instanceof ApiClientError ? `Checkout failed (${err.status})` : "Unable to start checkout"); console.error("Failed to create checkout session", err); }
   };
 

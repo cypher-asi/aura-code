@@ -257,8 +257,9 @@ export interface CreditPurchase {
 }
 
 export interface CreditBalance {
-  total_credits: number;
-  purchases: CreditPurchase[];
+  balance_cents: number;
+  plan: string;
+  balance_formatted: string;
 }
 
 export interface CheckoutSessionResponse {

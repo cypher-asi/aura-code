@@ -13,6 +13,12 @@ import { api } from "../api/client";
 
 const mockGetBalance = vi.mocked(api.orgs.getCreditBalance);
 
+const balanceResponse = (cents: number) => ({
+  balance_cents: cents,
+  plan: "free",
+  balance_formatted: `$${(cents / 100).toFixed(2)}`,
+});
+
 describe("useCheckoutPolling", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -31,10 +37,7 @@ describe("useCheckoutPolling", () => {
   });
 
   it("transitions to polling on startPolling", () => {
-    mockGetBalance.mockResolvedValue({
-      total_credits: 100,
-      purchases: [],
-    });
+    mockGetBalance.mockResolvedValue(balanceResponse(100));
 
     const { result } = renderHook(() => useCheckoutPolling("org-1"));
 
@@ -45,11 +48,8 @@ describe("useCheckoutPolling", () => {
     expect(result.current.status).toBe("polling");
   });
 
-  it("transitions to success when balance increases with no pending", async () => {
-    mockGetBalance.mockResolvedValue({
-      total_credits: 200,
-      purchases: [{ id: "p1", tier_id: null, credits: 100, amount_cents: 1000, status: "completed", created_at: "" }],
-    });
+  it("transitions to success when balance increases after settle timeout", async () => {
+    mockGetBalance.mockResolvedValue(balanceResponse(200));
 
     const { result } = renderHook(() => useCheckoutPolling("org-1"));
 
@@ -58,16 +58,17 @@ describe("useCheckoutPolling", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+
     expect(result.current.status).toBe("success");
     expect(result.current.settledBalance).toBeTruthy();
-    expect(result.current.settledBalance!.total_credits).toBe(200);
+    expect(result.current.settledBalance!.balance_cents).toBe(200);
   });
 
   it("times out after POLL_TIMEOUT_MS", async () => {
-    mockGetBalance.mockResolvedValue({
-      total_credits: 100,
-      purchases: [],
-    });
+    mockGetBalance.mockResolvedValue(balanceResponse(100));
 
     const { result } = renderHook(() => useCheckoutPolling("org-1"));
 
@@ -83,16 +84,17 @@ describe("useCheckoutPolling", () => {
   });
 
   it("resets to idle", async () => {
-    mockGetBalance.mockResolvedValue({
-      total_credits: 200,
-      purchases: [],
-    });
+    mockGetBalance.mockResolvedValue(balanceResponse(200));
 
     const { result } = renderHook(() => useCheckoutPolling("org-1"));
 
     await act(async () => {
       result.current.startPolling(100);
       await vi.advanceTimersByTimeAsync(0);
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
     });
 
     act(() => {

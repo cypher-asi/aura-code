@@ -46,7 +46,7 @@ const { mockOrgStore, mockApis } = vi.hoisted(() => {
         getBilling: vi.fn().mockResolvedValue(null),
         setBilling: vi.fn().mockResolvedValue(undefined),
         getCreditTiers: vi.fn().mockResolvedValue([]),
-        getCreditBalance: vi.fn().mockResolvedValue({ total_credits: 1000 }),
+        getCreditBalance: vi.fn().mockResolvedValue({ balance_cents: 1000, plan: "free", balance_formatted: "$10.00" }),
         createCreditCheckout: vi.fn().mockResolvedValue({ checkout_url: "https://checkout" }),
       },
     },
@@ -123,7 +123,7 @@ beforeEach(() => {
   mockApis.orgs.listInvites.mockResolvedValue([]);
   mockApis.orgs.getBilling.mockResolvedValue(null);
   mockApis.orgs.getCreditTiers.mockResolvedValue([]);
-  mockApis.orgs.getCreditBalance.mockResolvedValue({ total_credits: 1000 });
+  mockApis.orgs.getCreditBalance.mockResolvedValue({ balance_cents: 1000, plan: "free", balance_formatted: "$10.00" });
 });
 
 describe("OrgSettingsPanel", () => {

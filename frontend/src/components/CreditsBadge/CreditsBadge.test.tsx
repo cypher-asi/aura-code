@@ -60,7 +60,7 @@ describe("CreditsBadge", () => {
   });
 
   it("shows formatted credit balance after fetch resolves", async () => {
-    mockGetCreditBalance.mockResolvedValue({ total_credits: 5000 });
+    mockGetCreditBalance.mockResolvedValue({ balance_cents: 5000, plan: "free", balance_formatted: "$50.00" });
     render(<CreditsBadge />);
 
     await act(async () => {
@@ -74,7 +74,7 @@ describe("CreditsBadge", () => {
 
   it("calls onClick when clicked", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    mockGetCreditBalance.mockResolvedValue({ total_credits: 100 });
+    mockGetCreditBalance.mockResolvedValue({ balance_cents: 100, plan: "free", balance_formatted: "$1.00" });
     const handleClick = vi.fn();
     render(<CreditsBadge onClick={handleClick} />);
 
@@ -87,13 +87,13 @@ describe("CreditsBadge", () => {
   });
 
   it("re-fetches when credits-updated event fires", async () => {
-    mockGetCreditBalance.mockResolvedValue({ total_credits: 100 });
+    mockGetCreditBalance.mockResolvedValue({ balance_cents: 100, plan: "free", balance_formatted: "$1.00" });
     render(<CreditsBadge />);
     await act(async () => {
       vi.advanceTimersByTime(100);
     });
 
-    mockGetCreditBalance.mockResolvedValue({ total_credits: 200 });
+    mockGetCreditBalance.mockResolvedValue({ balance_cents: 200, plan: "free", balance_formatted: "$2.00" });
     act(() => {
       window.dispatchEvent(new Event(CREDITS_UPDATED_EVENT));
     });
@@ -108,7 +108,7 @@ describe("CreditsBadge", () => {
   });
 
   it("subscribes to task_completed and loop_finished events", () => {
-    mockGetCreditBalance.mockResolvedValue({ total_credits: 0 });
+    mockGetCreditBalance.mockResolvedValue({ balance_cents: 0, plan: "free", balance_formatted: "$0.00" });
     render(<CreditsBadge />);
 
     const subscribedEvents = fakeSubscribe.mock.calls.map(

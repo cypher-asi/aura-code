@@ -48,15 +48,13 @@ export function useCheckoutPolling(orgId: string | undefined): UseCheckoutPollin
       const poll = async () => {
         try {
           const b = await api.orgs.getCreditBalance(orgId);
-          if (b.total_credits > previousBalance) {
-            const hasPending = b.purchases.some((p) => p.status === "pending");
-            if (!hasPending) {
-              finish(b);
-              return;
-            }
+          if (b.balance_cents > previousBalance) {
             if (!balanceIncreased) {
               balanceIncreased = true;
               settleRef.current = setTimeout(() => finish(b), STATUS_SETTLE_TIMEOUT_MS);
+            } else {
+              finish(b);
+              return;
             }
           }
         } catch {
