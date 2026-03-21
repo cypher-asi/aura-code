@@ -45,6 +45,8 @@ export function AppNavRail({ layout = "rail" }: AppNavRailProps) {
             aria-label={app.label}
             className={isBar ? styles.barButton : styles.btn}
             onClick={() => handleAppClick(app)}
+            onMouseEnter={app.onPrefetch}
+            onFocus={app.onPrefetch}
           >
             {isBar ? app.label : undefined}
           </Button>

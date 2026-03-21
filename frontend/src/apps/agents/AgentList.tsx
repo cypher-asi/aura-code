@@ -46,6 +46,14 @@ export function AgentList() {
     return () => setAction("agents", null);
   }, [setAction]);
 
+  useEffect(() => {
+    if (status !== "ready") return;
+    const lastId = localStorage.getItem("aura:lastAgentId");
+    if (lastId && !agentId) {
+      useAgentStore.getState().prefetchHistory(lastId);
+    }
+  }, [status, agentId]);
+
   const agentMap = useMemo(
     () => new Map(agents.map((a) => [a.agent_id, a])),
     [agents],
