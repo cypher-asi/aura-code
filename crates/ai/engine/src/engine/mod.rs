@@ -6,6 +6,7 @@ mod executor_agentic;
 mod executor_shell;
 mod loop_context;
 mod loop_control;
+pub mod loop_handle;
 pub(crate) mod orchestrator;
 pub mod parser;
 pub(crate) mod prompts;
@@ -16,7 +17,8 @@ mod verify_fix_common;
 pub mod types;
 pub mod write_coordinator;
 
-pub use orchestrator::{DevLoopEngine, LoopHandle};
+pub use loop_handle::LoopHandle;
+pub use orchestrator::DevLoopEngine;
 pub use parser::parse_execution_response;
 pub use types::{FollowUpSuggestion, LoopCommand, LoopOutcome, TaskExecution};
 pub use write_coordinator::ProjectWriteCoordinator;

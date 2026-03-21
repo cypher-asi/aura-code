@@ -17,6 +17,7 @@ use aura_settings::SettingsService;
 use aura_store::RocksStore;
 
 use super::loop_context::LoopRunContext;
+use super::loop_handle::LoopHandle;
 use super::shell;
 use super::types::*;
 use super::write_coordinator::ProjectWriteCoordinator;
@@ -24,33 +25,6 @@ use crate::channel_ext::send_or_log;
 use crate::error::EngineError;
 use crate::events::EngineEvent;
 use crate::file_ops::FileOp;
-
-pub struct LoopHandle {
-    pub project_id: ProjectId,
-    pub agent_instance_id: AgentInstanceId,
-    stop_tx: watch::Sender<LoopCommand>,
-    join_handle: tokio::task::JoinHandle<Result<LoopOutcome, EngineError>>,
-}
-
-impl LoopHandle {
-    pub fn pause(&self) {
-        let _ = self.stop_tx.send(LoopCommand::Pause);
-    }
-
-    pub fn stop(&self) {
-        let _ = self.stop_tx.send(LoopCommand::Stop);
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.join_handle.is_finished()
-    }
-
-    pub async fn wait(self) -> Result<LoopOutcome, EngineError> {
-        self.join_handle
-            .await
-            .map_err(|e| EngineError::Join(e.to_string()))?
-    }
-}
 
 pub struct DevLoopEngine {
     pub(crate) store: Arc<RocksStore>,
@@ -144,18 +118,16 @@ impl DevLoopEngine {
         self
     }
 
-    pub async fn start(
-        self: Arc<Self>,
-        project_id: ProjectId,
+    async fn resolve_or_create_agent(
+        &self,
+        project_id: &ProjectId,
         agent_instance_id: Option<AgentInstanceId>,
-    ) -> Result<LoopHandle, EngineError> {
-        let _project = self.project_service.get_project_async(&project_id).await?;
-
-        let agent = if let Some(aiid) = agent_instance_id {
+    ) -> Result<AgentInstance, EngineError> {
+        if let Some(aiid) = agent_instance_id {
             self.agent_instance_service
-                .get_instance(&project_id, &aiid)
+                .get_instance(project_id, &aiid)
                 .await
-                .map_err(|_| EngineError::Parse(format!("agent instance {aiid} not found")))?
+                .map_err(|_| EngineError::Parse(format!("agent instance {aiid} not found")))
         } else {
             let now = Utc::now();
             let default_agent = Agent {
@@ -172,35 +144,92 @@ impl DevLoopEngine {
                 created_at: now,
                 updated_at: now,
             };
-            self.agent_instance_service
-                .create_instance_from_agent(&project_id, &default_agent)
-                .await?
-        };
+            Ok(self.agent_instance_service
+                .create_instance_from_agent(project_id, &default_agent)
+                .await?)
+        }
+    }
 
+    async fn reset_stale_agent(
+        &self,
+        project_id: &ProjectId,
+        agent: AgentInstance,
+    ) -> Result<AgentInstance, EngineError> {
         let stale = self.session_service.close_stale_sessions(
-            &project_id,
+            project_id,
             Some(&agent.agent_instance_id),
         ).await?;
         if !stale.is_empty() {
             info!("closed {} stale active session(s) for agent {}", stale.len(), agent.agent_instance_id);
         }
 
-        let agent = if agent.status == AgentStatus::Working {
+        if agent.status == AgentStatus::Working {
             info!(
                 agent_instance_id = %agent.agent_instance_id,
                 "resetting stale Working agent to Idle before starting loop"
             );
             self.agent_instance_service
-                .finish_working(&project_id, &agent.agent_instance_id)
+                .finish_working(project_id, &agent.agent_instance_id)
                 .await
                 .ok();
             self.agent_instance_service
-                .get_instance(&project_id, &agent.agent_instance_id)
+                .get_instance(project_id, &agent.agent_instance_id)
                 .await
-                .map_err(|_| EngineError::Parse(format!("agent instance {} not found", agent.agent_instance_id)))?
+                .map_err(|_| EngineError::Parse(format!("agent instance {} not found", agent.agent_instance_id)))
         } else {
-            agent
-        };
+            Ok(agent)
+        }
+    }
+
+    async fn handle_loop_error(
+        &self,
+        project_id: ProjectId,
+        aiid: AgentInstanceId,
+        e: &EngineError,
+    ) {
+        error!(error = %e, "run_loop exited with error, emitting LoopFinished");
+        if let Ok(orphaned) = self.task_service.reset_in_progress_tasks(&project_id).await {
+            for t in &orphaned {
+                self.emit(EngineEvent::TaskBecameReady {
+                    project_id,
+                    agent_instance_id: aiid,
+                    task_id: t.task_id,
+                });
+            }
+        }
+        self.emit(EngineEvent::LoopFinished {
+            project_id,
+            agent_instance_id: aiid,
+            outcome: format!("error: {e}"),
+            total_duration_ms: None,
+            tasks_completed: None,
+            tasks_failed: None,
+            tasks_retried: None,
+            total_input_tokens: None,
+            total_output_tokens: None,
+            total_cost_usd: None,
+            sessions_used: None,
+            total_parse_retries: None,
+            total_build_fix_attempts: None,
+            duplicate_error_bailouts: None,
+        });
+        if let Err(e) = self.agent_instance_service.finish_working(&project_id, &aiid).await {
+            tracing::warn!(
+                %project_id, agent_instance_id = %aiid, error = %e,
+                "failed to mark agent instance as finished"
+            );
+        }
+    }
+
+    pub async fn start(
+        self: Arc<Self>,
+        project_id: ProjectId,
+        agent_instance_id: Option<AgentInstanceId>,
+    ) -> Result<LoopHandle, EngineError> {
+        let _project = self.project_service.get_project_async(&project_id).await?;
+
+        let agent = self.resolve_or_create_agent(&project_id, agent_instance_id).await?;
+        let agent = self.reset_stale_agent(&project_id, agent).await?;
 
         let session = self.session_service.create_session(
             &agent.agent_instance_id,
@@ -230,41 +259,7 @@ impl DevLoopEngine {
                 .run_loop(project_id, aiid, session, stop_rx)
                 .await;
             if let Err(ref e) = result {
-                error!(error = %e, "run_loop exited with error, emitting LoopFinished");
-
-                // Reset any tasks stuck in InProgress so the UI doesn't show stale spinners
-                if let Ok(orphaned) = engine.task_service.reset_in_progress_tasks(&project_id).await {
-                    for t in &orphaned {
-                        engine.emit(EngineEvent::TaskBecameReady {
-                            project_id,
-                            agent_instance_id: aiid,
-                            task_id: t.task_id,
-                        });
-                    }
-                }
-
-                engine.emit(EngineEvent::LoopFinished {
-                    project_id,
-                    agent_instance_id: aiid,
-                    outcome: format!("error: {e}"),
-                    total_duration_ms: None,
-                    tasks_completed: None,
-                    tasks_failed: None,
-                    tasks_retried: None,
-                    total_input_tokens: None,
-                    total_output_tokens: None,
-                    total_cost_usd: None,
-                    sessions_used: None,
-                    total_parse_retries: None,
-                    total_build_fix_attempts: None,
-                    duplicate_error_bailouts: None,
-                });
-                if let Err(e) = engine.agent_instance_service.finish_working(&project_id, &aiid).await {
-                    tracing::warn!(
-                        %project_id, agent_instance_id = %aiid, error = %e,
-                        "failed to mark agent instance as finished"
-                    );
-                }
+                engine.handle_loop_error(project_id, aiid, e).await;
             }
             result
         }.instrument(loop_span));
