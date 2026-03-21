@@ -6,9 +6,10 @@ use tracing::{info, warn};
 use aura_claude::{ContentBlock, RichMessage, ToolCall};
 use crate::compaction;
 use crate::channel_ext::send_or_log;
-use crate::constants::{MAX_WRITE_FAILURES_PER_FILE, MAX_READS_PER_FILE, MAX_CONSECUTIVE_CMD_FAILURES, CMD_FAILURE_WARNING_THRESHOLD};
+use crate::constants::{MAX_WRITE_FAILURES_PER_FILE, MAX_CONSECUTIVE_CMD_FAILURES, CMD_FAILURE_WARNING_THRESHOLD};
 use crate::tool_loop_types::{ToolCallResult, ToolExecutor, ToolLoopEvent};
 use crate::tool_loop_budget::ExplorationState;
+use crate::tool_loop_read_guard::{self as read_guard, ReadGuardState};
 
 // ---------------------------------------------------------------------------
 // Write-tracking state
@@ -77,35 +78,6 @@ pub(crate) fn detect_blocked_write_failures(
             if matches!(tc.name.as_str(), "write_file" | "edit_file") {
                 let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("");
                 if file_write_failures.get(path).copied().unwrap_or(0) >= MAX_WRITE_FAILURES_PER_FILE {
-                    return Some(i);
-                }
-            }
-            None
-        })
-        .collect()
-}
-
-/// Block `read_file` calls when the same file has been read 3+ times total
-/// (any combination of full/partial reads).
-pub(crate) fn detect_blocked_reads(
-    tool_calls: &[ToolCall],
-    file_read_counts: &mut HashMap<String, usize>,
-) -> Vec<usize> {
-    for tc in tool_calls {
-        if tc.name == "read_file" {
-            if let Some(path) = tc.input.get("path").and_then(|v| v.as_str()) {
-                *file_read_counts.entry(path.to_string()).or_insert(0) += 1;
-            }
-        }
-    }
-
-    tool_calls
-        .iter()
-        .enumerate()
-        .filter_map(|(i, tc)| {
-            if tc.name == "read_file" {
-                let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                if file_read_counts.get(path).copied().unwrap_or(0) >= MAX_READS_PER_FILE {
                     return Some(i);
                 }
             }
@@ -214,6 +186,7 @@ pub(crate) struct BlockedSets {
     pub(crate) cooldown: Vec<usize>,
     pub(crate) cmd: Vec<usize>,
     pub(crate) read: Vec<usize>,
+    pub(crate) shell_read: Vec<usize>,
     pub(crate) exploration: Vec<usize>,
 }
 
@@ -223,7 +196,7 @@ pub(crate) struct BlockingContext<'a> {
     pub(crate) cooldowns: &'a mut HashMap<String, usize>,
     pub(crate) file_write_failures: &'a HashMap<String, usize>,
     pub(crate) consecutive_cmd_failures: usize,
-    pub(crate) file_read_counts: &'a mut HashMap<String, usize>,
+    pub(crate) read_guard: &'a mut ReadGuardState,
     pub(crate) exploration: &'a ExplorationState,
 }
 
@@ -237,7 +210,8 @@ pub(crate) fn detect_all_blocked(
     let cooldown = detect_write_file_cooldowns(tool_calls, ctx.cooldowns);
     let write_fail = detect_blocked_write_failures(tool_calls, ctx.file_write_failures);
     let cmd = detect_blocked_commands(tool_calls, ctx.consecutive_cmd_failures);
-    let read = detect_blocked_reads(tool_calls, ctx.file_read_counts);
+    let read = read_guard::detect_blocked_reads(tool_calls, ctx.read_guard);
+    let shell_read = read_guard::detect_shell_read_workaround(tool_calls);
     let exploration_is_blocked = ctx.exploration.total_calls >= ctx.exploration.allowance;
     let exploration = detect_blocked_exploration(tool_calls, exploration_is_blocked);
 
@@ -247,6 +221,7 @@ pub(crate) fn detect_all_blocked(
             .chain(cooldown.iter())
             .chain(cmd.iter())
             .chain(read.iter())
+            .chain(shell_read.iter())
             .chain(exploration.iter())
         {
             if !v.contains(i) {
@@ -270,7 +245,7 @@ pub(crate) fn detect_all_blocked(
         deferred_recovery_msgs.push(recovery);
     }
 
-    let sets = BlockedSets { duplicate_write, write_fail, cooldown, cmd, read, exploration };
+    let sets = BlockedSets { duplicate_write, write_fail, cooldown, cmd, read, shell_read, exploration };
     (all_blocked, sets, deferred_recovery_msgs)
 }
 
@@ -284,6 +259,7 @@ enum BlockReason<'a> {
     Cooldown { path: &'a str, remaining: usize },
     CommandBlocked { consecutive_failures: usize },
     ReadBlocked { path: &'a str, count: usize },
+    ShellReadBlocked,
     ExplorationBlocked { total_calls: usize },
 }
 
@@ -314,6 +290,8 @@ fn classify_block<'a>(
         Some(BlockReason::CommandBlocked { consecutive_failures: ctx.consecutive_cmd_failures })
     } else if sets.read.contains(&index) {
         Some(BlockReason::ReadBlocked { path: path(), count: ctx.file_read_counts.get(path()).copied().unwrap_or(0) })
+    } else if sets.shell_read.contains(&index) {
+        Some(BlockReason::ShellReadBlocked)
     } else if sets.exploration.contains(&index) {
         Some(BlockReason::ExplorationBlocked { total_calls: ctx.exploration_total_calls })
     } else {
@@ -374,6 +352,10 @@ pub(crate) fn build_blocked_result(
                  If you need a specific section, use search_code to find the exact lines.",
                 path, count
             )
+        }
+        BlockReason::ShellReadBlocked => {
+            warn!(tool = %tc.name, "Blocked shell-based file read workaround");
+            read_guard::build_shell_read_blocked_msg()
         }
         BlockReason::ExplorationBlocked { total_calls } => {
             warn!(tool = %tc.name, total_calls, "Blocked exploration call (hard limit reached)");

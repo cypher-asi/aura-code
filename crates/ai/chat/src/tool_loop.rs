@@ -18,6 +18,7 @@ use crate::tool_loop_blocking::{
     detect_all_blocked, detect_stall_fail_fast, execute_with_blocked,
     summarize_write_file_input, track_write_failures,
 };
+use crate::tool_loop_read_guard::{self as read_guard, ReadGuardState};
 use crate::tool_loop_budget::{
     BudgetState, ExplorationState,
     check_budget_warnings, inject_exploration_warnings, update_exploration_counts,
@@ -48,7 +49,7 @@ pub(crate) struct LoopState {
     pub(crate) total_output_tokens: u64,
     pub(crate) file_read_cache: HashMap<String, u64>,
     pub(crate) consecutive_cmd_failures: usize,
-    pub(crate) file_read_counts: HashMap<String, usize>,
+    pub(crate) read_guard: ReadGuardState,
     pub(crate) exploration: ExplorationState,
     pub(crate) budget: BudgetState,
     pub(crate) writes: WriteTrackingState,
@@ -144,7 +145,7 @@ pub async fn run_tool_loop(
         total_output_tokens: 0,
         file_read_cache: HashMap::new(),
         consecutive_cmd_failures: 0,
-        file_read_counts: HashMap::new(),
+        read_guard: ReadGuardState::new(),
         exploration: ExplorationState {
             total_calls: 0,
             allowance: config.exploration_allowance.unwrap_or(DEFAULT_EXPLORATION_ALLOWANCE),
@@ -271,17 +272,18 @@ async fn process_tool_calls(
             cooldowns: &mut state.writes.cooldowns,
             file_write_failures: &state.writes.file_write_failures,
             consecutive_cmd_failures: state.consecutive_cmd_failures,
-            file_read_counts: &mut state.file_read_counts,
+            read_guard: &mut state.read_guard,
             exploration: &state.exploration,
         };
         detect_all_blocked(&iter.iter_tool_calls, &mut ctx)
     };
 
+    let combined_reads = read_guard::combined_read_counts(&state.read_guard);
     let blocked_ctx = BlockedResultContext {
         file_write_failures: &state.writes.file_write_failures,
         cooldowns: &state.writes.cooldowns,
         consecutive_cmd_failures: state.consecutive_cmd_failures,
-        file_read_counts: &state.file_read_counts,
+        file_read_counts: &combined_reads,
         exploration_total_calls: state.exploration.total_calls,
     };
     let results = execute_with_blocked(
