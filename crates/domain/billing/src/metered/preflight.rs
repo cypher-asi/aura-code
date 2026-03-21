@@ -40,7 +40,7 @@ impl MeteredLlm {
                 }
                 Err(_) => return Err(MeteredLlmError::InsufficientCredits),
             }
-        } else if let Err(_) = self.billing.ensure_has_credits_for(&token, required).await {
+        } else if self.billing.ensure_has_credits_for(&token, required).await.is_err() {
             self.credits_exhausted.store(true, Ordering::SeqCst);
             return Err(MeteredLlmError::InsufficientCredits);
         }

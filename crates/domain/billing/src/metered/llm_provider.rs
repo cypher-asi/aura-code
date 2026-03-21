@@ -7,6 +7,7 @@ use aura_claude::{
 };
 
 use super::{MeteredLlm, MeteredLlmError};
+use super::debit::DebitParams;
 
 const TRAIT_BILLING_REASON: &str = "llm_provider";
 
@@ -33,8 +34,11 @@ impl LlmProvider for MeteredLlm {
     ) -> Result<LlmResponse, ClaudeClientError> {
         self.pre_flight_check().await.map_err(Self::map_billing_err)?;
         let resp = self.provider.complete(api_key, system_prompt, user_message, max_tokens).await?;
-        self.debit(aura_claude::DEFAULT_MODEL, resp.input_tokens, resp.output_tokens, 0, 0, TRAIT_BILLING_REASON, None)
-            .await.map_err(Self::map_billing_err)?;
+        self.debit(DebitParams {
+            model: aura_claude::DEFAULT_MODEL, input_tokens: resp.input_tokens,
+            output_tokens: resp.output_tokens, cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0, reason: TRAIT_BILLING_REASON, metadata: None,
+        }).await.map_err(Self::map_billing_err)?;
         Ok(resp)
     }
 
@@ -50,8 +54,11 @@ impl LlmProvider for MeteredLlm {
         let (tx, handle) = StreamTokenCapture::forwarding(event_tx);
         let result = self.provider.complete_stream(api_key, system_prompt, user_message, max_tokens, tx).await?;
         let (inp, out, cache_create, cache_read) = handle.finalize().await;
-        self.debit(aura_claude::DEFAULT_MODEL, inp, out, cache_create, cache_read, TRAIT_BILLING_REASON, None)
-            .await.map_err(Self::map_billing_err)?;
+        self.debit(DebitParams {
+            model: aura_claude::DEFAULT_MODEL, input_tokens: inp,
+            output_tokens: out, cache_creation_input_tokens: cache_create,
+            cache_read_input_tokens: cache_read, reason: TRAIT_BILLING_REASON, metadata: None,
+        }).await.map_err(Self::map_billing_err)?;
         Ok(result)
     }
 
@@ -67,8 +74,11 @@ impl LlmProvider for MeteredLlm {
         let (tx, handle) = StreamTokenCapture::forwarding(event_tx);
         let result = self.provider.complete_stream_multi(api_key, system_prompt, messages, max_tokens, tx).await?;
         let (inp, out, cache_create, cache_read) = handle.finalize().await;
-        self.debit(aura_claude::DEFAULT_MODEL, inp, out, cache_create, cache_read, TRAIT_BILLING_REASON, None)
-            .await.map_err(Self::map_billing_err)?;
+        self.debit(DebitParams {
+            model: aura_claude::DEFAULT_MODEL, input_tokens: inp,
+            output_tokens: out, cache_creation_input_tokens: cache_create,
+            cache_read_input_tokens: cache_read, reason: TRAIT_BILLING_REASON, metadata: None,
+        }).await.map_err(Self::map_billing_err)?;
         Ok(result)
     }
 
@@ -82,8 +92,13 @@ impl LlmProvider for MeteredLlm {
         self.pre_flight_check_for(estimated_credits).await.map_err(Self::map_billing_err)?;
         let resp = self.provider.complete_stream_with_tools(req).await?;
         let billing_model = if resp.model_used.is_empty() { aura_claude::DEFAULT_MODEL } else { &resp.model_used };
-        self.debit(billing_model, resp.input_tokens, resp.output_tokens, resp.cache_creation_input_tokens, resp.cache_read_input_tokens, TRAIT_BILLING_REASON, None)
-            .await.map_err(Self::map_billing_err)?;
+        self.debit(DebitParams {
+            model: billing_model, input_tokens: resp.input_tokens,
+            output_tokens: resp.output_tokens,
+            cache_creation_input_tokens: resp.cache_creation_input_tokens,
+            cache_read_input_tokens: resp.cache_read_input_tokens,
+            reason: TRAIT_BILLING_REASON, metadata: None,
+        }).await.map_err(Self::map_billing_err)?;
         Ok(resp)
     }
 
@@ -97,8 +112,11 @@ impl LlmProvider for MeteredLlm {
     ) -> Result<LlmResponse, ClaudeClientError> {
         self.pre_flight_check().await.map_err(Self::map_billing_err)?;
         let resp = self.provider.complete_with_model(model, api_key, system_prompt, user_message, max_tokens).await?;
-        self.debit(model, resp.input_tokens, resp.output_tokens, 0, 0, TRAIT_BILLING_REASON, None)
-            .await.map_err(Self::map_billing_err)?;
+        self.debit(DebitParams {
+            model, input_tokens: resp.input_tokens,
+            output_tokens: resp.output_tokens, cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0, reason: TRAIT_BILLING_REASON, metadata: None,
+        }).await.map_err(Self::map_billing_err)?;
         Ok(resp)
     }
 }

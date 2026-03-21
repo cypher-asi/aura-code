@@ -85,7 +85,7 @@ fn cycle_detection_catches_circular_deps() {
         make(id_b, vec![id_a]),
         make(id_c, vec![id_b]),
     ];
-    let err = TaskService::detect_cycles(&tasks).unwrap_err();
+    let err = TaskService::detect_cycles(&tasks).expect_err("cyclic deps should produce an error");
     let msg = format!("{err}");
     assert!(msg.contains("cycle"), "got: {msg}");
 
@@ -95,7 +95,7 @@ fn cycle_detection_catches_circular_deps() {
         make(id_b, vec![id_a]),
         make(id_c, vec![id_b]),
     ];
-    TaskService::detect_cycles(&tasks).unwrap();
+    TaskService::detect_cycles(&tasks).expect("acyclic tasks should pass cycle detection");
 }
 
 // ---------------------------------------------------------------------------
@@ -120,8 +120,8 @@ mod integration {
     }
 
     async fn setup() -> TestCtx {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let store = Arc::new(RocksStore::open(tmp.path()).unwrap());
+        let tmp = tempfile::TempDir::new().expect("temp dir creation should succeed");
+        let store = Arc::new(RocksStore::open(tmp.path()).expect("RocksStore should open"));
         aura_billing::testutil::store_zero_auth_session(&store);
 
         let (storage_url, _db) = aura_storage::testutil::start_mock_storage().await;
@@ -131,7 +131,7 @@ mod integration {
             Some(storage_client.clone()),
         ));
 
-        let jwt = store.get_jwt().unwrap();
+        let jwt = store.get_jwt().expect("JWT should exist after session setup");
         let pid = ProjectId::new().to_string();
         let spec = storage_client
             .create_spec(
@@ -144,7 +144,7 @@ mod integration {
                 },
             )
             .await
-            .unwrap();
+            .expect("spec creation should succeed");
 
         TestCtx {
             task_service,
@@ -156,32 +156,34 @@ mod integration {
         }
     }
 
-    async fn create_task(
-        sc: &StorageClient,
-        store: &RocksStore,
-        pid: &str,
-        spec_id: &str,
-        title: &str,
-        status: &str,
+    struct CreateTestTask<'a> {
+        sc: &'a StorageClient,
+        store: &'a RocksStore,
+        pid: &'a str,
+        spec_id: &'a str,
+        title: &'a str,
+        status: &'a str,
         order_index: i32,
         dependency_ids: Option<Vec<String>>,
-    ) -> String {
-        let jwt = store.get_jwt().unwrap();
-        let t = sc
+    }
+
+    async fn create_task(params: CreateTestTask<'_>) -> String {
+        let jwt = params.store.get_jwt().expect("store should have a JWT");
+        let t = params.sc
             .create_task(
-                pid,
+                params.pid,
                 &jwt,
                 &aura_storage::CreateTaskRequest {
-                    spec_id: spec_id.into(),
-                    title: title.into(),
-                    description: Some(format!("Desc for {title}")),
-                    status: Some(status.into()),
-                    order_index: Some(order_index),
-                    dependency_ids,
+                    spec_id: params.spec_id.into(),
+                    title: params.title.into(),
+                    description: Some(format!("Desc for {}", params.title)),
+                    status: Some(params.status.into()),
+                    order_index: Some(params.order_index),
+                    dependency_ids: params.dependency_ids,
                 },
             )
             .await
-            .unwrap();
+            .expect("create_task storage call should succeed");
         t.id
     }
 
@@ -192,23 +194,42 @@ mod integration {
     #[tokio::test]
     async fn claim_ordering_respects_order_index() {
         let ctx = setup().await;
-        let pid: ProjectId = ctx.project_id.parse().unwrap();
+        let pid: ProjectId = ctx.project_id.parse().expect("project_id should parse");
         let aid = AgentInstanceId::new();
 
-        create_task(&ctx.storage_client, &ctx.store, &ctx.project_id, &ctx.spec_id, "Third", "ready", 2, None).await;
-        create_task(&ctx.storage_client, &ctx.store, &ctx.project_id, &ctx.spec_id, "First", "ready", 0, None).await;
-        create_task(&ctx.storage_client, &ctx.store, &ctx.project_id, &ctx.spec_id, "Second", "ready", 1, None).await;
+        create_task(CreateTestTask { sc: &ctx.storage_client, store: &ctx.store, pid: &ctx.project_id, spec_id: &ctx.spec_id, title: "Third", status: "ready", order_index: 2, dependency_ids: None }).await;
+        create_task(CreateTestTask { sc: &ctx.storage_client, store: &ctx.store, pid: &ctx.project_id, spec_id: &ctx.spec_id, title: "First", status: "ready", order_index: 0, dependency_ids: None }).await;
+        create_task(CreateTestTask { sc: &ctx.storage_client, store: &ctx.store, pid: &ctx.project_id, spec_id: &ctx.spec_id, title: "Second", status: "ready", order_index: 1, dependency_ids: None }).await;
 
-        let t1 = ctx.task_service.claim_next_task(&pid, &aid, None).await.unwrap().unwrap();
+        let t1 = ctx
+            .task_service
+            .claim_next_task(&pid, &aid, None)
+            .await
+            .expect("claim should not error")
+            .expect("a ready task should exist");
         assert_eq!(t1.title, "First", "should claim lowest order_index first");
 
-        let t2 = ctx.task_service.claim_next_task(&pid, &aid, None).await.unwrap().unwrap();
+        let t2 = ctx
+            .task_service
+            .claim_next_task(&pid, &aid, None)
+            .await
+            .expect("claim should not error")
+            .expect("a ready task should exist");
         assert_eq!(t2.title, "Second");
 
-        let t3 = ctx.task_service.claim_next_task(&pid, &aid, None).await.unwrap().unwrap();
+        let t3 = ctx
+            .task_service
+            .claim_next_task(&pid, &aid, None)
+            .await
+            .expect("claim should not error")
+            .expect("a ready task should exist");
         assert_eq!(t3.title, "Third");
 
-        let none = ctx.task_service.claim_next_task(&pid, &aid, None).await.unwrap();
+        let none = ctx
+            .task_service
+            .claim_next_task(&pid, &aid, None)
+            .await
+            .expect("claim should not error");
         assert!(none.is_none(), "no more ready tasks");
     }
 
@@ -218,8 +239,8 @@ mod integration {
 
     #[tokio::test]
     async fn claim_ordering_multi_spec() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let store = Arc::new(RocksStore::open(tmp.path()).unwrap());
+        let tmp = tempfile::TempDir::new().expect("temp dir should be created");
+        let store = Arc::new(RocksStore::open(tmp.path()).expect("RocksStore should open"));
         aura_billing::testutil::store_zero_auth_session(&store);
 
         let (storage_url, _db) = aura_storage::testutil::start_mock_storage().await;
@@ -229,7 +250,7 @@ mod integration {
             Some(sc.clone()),
         ));
 
-        let jwt = store.get_jwt().unwrap();
+        let jwt = store.get_jwt().expect("JWT should be available");
         let pid = ProjectId::new();
         let pid_str = pid.to_string();
 
@@ -240,7 +261,7 @@ mod integration {
                 markdown_contents: None,
             })
             .await
-            .unwrap();
+            .expect("spec creation should succeed");
         let spec_a = sc
             .create_spec(&pid_str, &jwt, &aura_storage::CreateSpecRequest {
                 title: "Spec A".into(),
@@ -248,16 +269,24 @@ mod integration {
                 markdown_contents: None,
             })
             .await
-            .unwrap();
+            .expect("spec creation should succeed");
 
-        create_task(&sc, &store, &pid_str, &spec_b.id, "B-task", "ready", 0, None).await;
-        create_task(&sc, &store, &pid_str, &spec_a.id, "A-task", "ready", 0, None).await;
+        create_task(CreateTestTask { sc: &sc, store: &store, pid: &pid_str, spec_id: &spec_b.id, title: "B-task", status: "ready", order_index: 0, dependency_ids: None }).await;
+        create_task(CreateTestTask { sc: &sc, store: &store, pid: &pid_str, spec_id: &spec_a.id, title: "A-task", status: "ready", order_index: 0, dependency_ids: None }).await;
 
         let aid = AgentInstanceId::new();
-        let t1 = svc.claim_next_task(&pid, &aid, None).await.unwrap().unwrap();
+        let t1 = svc
+            .claim_next_task(&pid, &aid, None)
+            .await
+            .expect("claim should not error")
+            .expect("a ready task should exist");
         assert_eq!(t1.title, "A-task", "spec_a (order 0) should be claimed before spec_b (order 1)");
 
-        let t2 = svc.claim_next_task(&pid, &aid, None).await.unwrap().unwrap();
+        let t2 = svc
+            .claim_next_task(&pid, &aid, None)
+            .await
+            .expect("claim should not error")
+            .expect("a ready task should exist");
         assert_eq!(t2.title, "B-task");
     }
 
@@ -267,8 +296,8 @@ mod integration {
 
     #[tokio::test]
     async fn dependency_promotion_on_completion() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let store = Arc::new(RocksStore::open(tmp.path()).unwrap());
+        let tmp = tempfile::TempDir::new().expect("temp dir should be created");
+        let store = Arc::new(RocksStore::open(tmp.path()).expect("RocksStore should open"));
         aura_billing::testutil::store_zero_auth_session(&store);
 
         let (storage_url, _db) = aura_storage::testutil::start_mock_storage().await;
@@ -278,7 +307,7 @@ mod integration {
             Some(sc.clone()),
         ));
 
-        let jwt = store.get_jwt().unwrap();
+        let jwt = store.get_jwt().expect("JWT should be available");
         let pid = ProjectId::new();
         let pid_str = pid.to_string();
 
@@ -289,47 +318,64 @@ mod integration {
                 markdown_contents: None,
             })
             .await
-            .unwrap();
+            .expect("spec creation should succeed");
 
-        let task_a_id = create_task(&sc, &store, &pid_str, &spec.id, "Task A", "ready", 0, None).await;
-        let task_b_id = create_task(
-            &sc, &store, &pid_str, &spec.id, "Task B", "pending", 1,
-            Some(vec![task_a_id.clone()]),
-        ).await;
-        let _task_c_id = create_task(
-            &sc, &store, &pid_str, &spec.id, "Task C", "pending", 2,
-            Some(vec![task_a_id.clone(), task_b_id.clone()]),
-        ).await;
+        let task_a_id = create_task(CreateTestTask { sc: &sc, store: &store, pid: &pid_str, spec_id: &spec.id, title: "Task A", status: "ready", order_index: 0, dependency_ids: None }).await;
+        let task_b_id = create_task(CreateTestTask { sc: &sc, store: &store, pid: &pid_str, spec_id: &spec.id, title: "Task B", status: "pending", order_index: 1, dependency_ids: Some(vec![task_a_id.clone()]) }).await;
+        let _task_c_id = create_task(CreateTestTask { sc: &sc, store: &store, pid: &pid_str, spec_id: &spec.id, title: "Task C", status: "pending", order_index: 2, dependency_ids: Some(vec![task_a_id.clone(), task_b_id.clone()]) }).await;
 
         let aid = AgentInstanceId::new();
-        let claimed_a = svc.claim_next_task(&pid, &aid, None).await.unwrap().unwrap();
+        let claimed_a = svc
+            .claim_next_task(&pid, &aid, None)
+            .await
+            .expect("claim should not error")
+            .expect("a ready task should exist");
         assert_eq!(claimed_a.title, "Task A");
 
-        let no_ready = svc.claim_next_task(&pid, &aid, None).await.unwrap();
+        let no_ready = svc
+            .claim_next_task(&pid, &aid, None)
+            .await
+            .expect("claim should not error");
         assert!(no_ready.is_none(), "B and C should still be pending");
 
-        svc.complete_task(&pid, &spec.id.parse().unwrap(), &claimed_a.task_id, "done", vec![])
-            .await
-            .unwrap();
+        svc.complete_task(
+            &pid,
+            &spec.id.parse().expect("spec id should parse"),
+            &claimed_a.task_id,
+            "done",
+            vec![],
+        )
+        .await
+        .expect("task completion should succeed");
 
         let promoted = svc
             .resolve_dependencies_after_completion(&pid, &claimed_a.task_id)
             .await
-            .unwrap();
+            .expect("dependency resolution should succeed");
         assert_eq!(promoted.len(), 1, "only Task B should become ready (C still waiting on B)");
         assert_eq!(promoted[0].title, "Task B");
 
-        let claimed_b = svc.claim_next_task(&pid, &aid, None).await.unwrap().unwrap();
+        let claimed_b = svc
+            .claim_next_task(&pid, &aid, None)
+            .await
+            .expect("claim should not error")
+            .expect("a ready task should exist");
         assert_eq!(claimed_b.title, "Task B");
 
-        svc.complete_task(&pid, &spec.id.parse().unwrap(), &claimed_b.task_id, "done", vec![])
-            .await
-            .unwrap();
+        svc.complete_task(
+            &pid,
+            &spec.id.parse().expect("spec id should parse"),
+            &claimed_b.task_id,
+            "done",
+            vec![],
+        )
+        .await
+        .expect("task completion should succeed");
 
         let promoted2 = svc
             .resolve_dependencies_after_completion(&pid, &claimed_b.task_id)
             .await
-            .unwrap();
+            .expect("dependency resolution should succeed");
         assert_eq!(promoted2.len(), 1, "Task C should now become ready");
         assert_eq!(promoted2[0].title, "Task C");
     }
@@ -340,8 +386,8 @@ mod integration {
 
     #[tokio::test]
     async fn initial_readiness_promotes_all_satisfiable() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let store = Arc::new(RocksStore::open(tmp.path()).unwrap());
+        let tmp = tempfile::TempDir::new().expect("temp dir should be created");
+        let store = Arc::new(RocksStore::open(tmp.path()).expect("RocksStore should open"));
         aura_billing::testutil::store_zero_auth_session(&store);
 
         let (storage_url, _db) = aura_storage::testutil::start_mock_storage().await;
@@ -351,7 +397,7 @@ mod integration {
             Some(sc.clone()),
         ));
 
-        let jwt = store.get_jwt().unwrap();
+        let jwt = store.get_jwt().expect("JWT should be available");
         let pid = ProjectId::new();
         let pid_str = pid.to_string();
 
@@ -362,19 +408,17 @@ mod integration {
                 markdown_contents: None,
             })
             .await
-            .unwrap();
+            .expect("spec creation should succeed");
 
-        create_task(&sc, &store, &pid_str, &spec.id, "No deps A", "pending", 0, None).await;
-        create_task(&sc, &store, &pid_str, &spec.id, "No deps B", "pending", 1, None).await;
-        let blocker_id = create_task(
-            &sc, &store, &pid_str, &spec.id, "Blocker", "pending", 2, None,
-        ).await;
-        create_task(
-            &sc, &store, &pid_str, &spec.id, "Blocked", "pending", 3,
-            Some(vec![blocker_id]),
-        ).await;
+        create_task(CreateTestTask { sc: &sc, store: &store, pid: &pid_str, spec_id: &spec.id, title: "No deps A", status: "pending", order_index: 0, dependency_ids: None }).await;
+        create_task(CreateTestTask { sc: &sc, store: &store, pid: &pid_str, spec_id: &spec.id, title: "No deps B", status: "pending", order_index: 1, dependency_ids: None }).await;
+        let blocker_id = create_task(CreateTestTask { sc: &sc, store: &store, pid: &pid_str, spec_id: &spec.id, title: "Blocker", status: "pending", order_index: 2, dependency_ids: None }).await;
+        create_task(CreateTestTask { sc: &sc, store: &store, pid: &pid_str, spec_id: &spec.id, title: "Blocked", status: "pending", order_index: 3, dependency_ids: Some(vec![blocker_id]) }).await;
 
-        let promoted = svc.resolve_initial_readiness(&pid).await.unwrap();
+        let promoted = svc
+            .resolve_initial_readiness(&pid)
+            .await
+            .expect("initial readiness resolution should succeed");
 
         let promoted_titles: Vec<&str> = promoted.iter().map(|t| t.title.as_str()).collect();
         assert!(promoted_titles.contains(&"No deps A"));
@@ -393,8 +437,8 @@ mod integration {
 
     #[tokio::test]
     async fn concurrent_claims_produce_different_tasks() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let store = Arc::new(RocksStore::open(tmp.path()).unwrap());
+        let tmp = tempfile::TempDir::new().expect("temp dir should be created");
+        let store = Arc::new(RocksStore::open(tmp.path()).expect("RocksStore should open"));
         aura_billing::testutil::store_zero_auth_session(&store);
 
         let (storage_url, _db) = aura_storage::testutil::start_mock_storage().await;
@@ -404,7 +448,7 @@ mod integration {
             Some(sc.clone()),
         ));
 
-        let jwt = store.get_jwt().unwrap();
+        let jwt = store.get_jwt().expect("JWT should be available");
         let pid = ProjectId::new();
         let pid_str = pid.to_string();
 
@@ -415,10 +459,10 @@ mod integration {
                 markdown_contents: None,
             })
             .await
-            .unwrap();
+            .expect("spec creation should succeed");
 
         for i in 0..4 {
-            create_task(&sc, &store, &pid_str, &spec.id, &format!("Task {i}"), "ready", i, None).await;
+            create_task(CreateTestTask { sc: &sc, store: &store, pid: &pid_str, spec_id: &spec.id, title: &format!("Task {i}"), status: "ready", order_index: i, dependency_ids: None }).await;
         }
 
         let svc1 = svc.clone();
@@ -431,8 +475,8 @@ mod integration {
             svc2.claim_next_task(&pid, &aid2, None),
         );
 
-        let t1 = r1.unwrap().expect("first claim should succeed");
-        let t2 = r2.unwrap().expect("second claim should succeed");
+        let t1 = r1.expect("first claim should not error").expect("first claim should succeed");
+        let t2 = r2.expect("second claim should not error").expect("second claim should succeed");
         assert_ne!(
             t1.task_id, t2.task_id,
             "concurrent claims must return different tasks"

@@ -157,7 +157,11 @@ async fn test_cache_aware_debit_math() {
     ]));
     let metered = MeteredLlm::new(mock, billing, store);
 
-    metered.debit("claude-opus-4-6", 1000, 500, 200, 300, "test", None).await.unwrap();
+    metered.debit(super::debit::DebitParams {
+        model: "claude-opus-4-6", input_tokens: 1000, output_tokens: 500,
+        cache_creation_input_tokens: 200, cache_read_input_tokens: 300,
+        reason: "test", metadata: None,
+    }).await.expect("debit should succeed");
 
     let guard = state.lock().await;
     assert_eq!(guard.debits.len(), 1);
@@ -181,7 +185,11 @@ async fn test_zero_amount_debit_skipped() {
     let mock = Arc::new(MockLlmProvider::with_responses(vec![]));
     let metered = MeteredLlm::new(mock, billing, store);
 
-    metered.debit(aura_claude::FAST_MODEL, 1, 0, 0, 0, "test", None).await.unwrap();
+    metered.debit(super::debit::DebitParams {
+        model: aura_claude::FAST_MODEL, input_tokens: 1, output_tokens: 0,
+        cache_creation_input_tokens: 0, cache_read_input_tokens: 0,
+        reason: "test", metadata: None,
+    }).await.expect("debit should succeed");
     let guard = state.lock().await;
     assert_eq!(guard.debits.len(), 0, "zero-amount debit should be skipped");
 }
@@ -201,7 +209,11 @@ async fn test_debit_forwards_metadata() {
     let metered = MeteredLlm::new(mock, billing, store);
 
     let meta = serde_json::json!({"task_id": "t-123"});
-    metered.debit("claude-opus-4-6", 100_000, 50_000, 0, 0, "reason", Some(meta.clone())).await.unwrap();
+    metered.debit(super::debit::DebitParams {
+        model: "claude-opus-4-6", input_tokens: 100_000, output_tokens: 50_000,
+        cache_creation_input_tokens: 0, cache_read_input_tokens: 0,
+        reason: "reason", metadata: Some(meta.clone()),
+    }).await.unwrap();
 
     let guard = state.lock().await;
     assert_eq!(guard.debits.len(), 1);

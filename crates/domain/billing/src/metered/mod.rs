@@ -1,4 +1,4 @@
-mod debit;
+pub(crate) mod debit;
 mod llm_provider;
 mod preflight;
 
@@ -162,7 +162,11 @@ impl MeteredLlm {
                 (aura_claude::DEFAULT_MODEL, r)
             }
         };
-        self.debit(model, resp.input_tokens, resp.output_tokens, 0, 0, req.billing_reason, req.metadata).await?;
+        self.debit(debit::DebitParams {
+            model, input_tokens: resp.input_tokens, output_tokens: resp.output_tokens,
+            cache_creation_input_tokens: 0, cache_read_input_tokens: 0,
+            reason: req.billing_reason, metadata: req.metadata,
+        }).await?;
         Ok(resp)
     }
 
@@ -177,7 +181,11 @@ impl MeteredLlm {
             req.api_key, req.system_prompt, req.user_message, req.max_tokens, tx,
         ).await?;
         let (inp, out, cache_create, cache_read) = handle.finalize().await;
-        self.debit(aura_claude::DEFAULT_MODEL, inp, out, cache_create, cache_read, req.billing_reason, req.metadata).await?;
+        self.debit(debit::DebitParams {
+            model: aura_claude::DEFAULT_MODEL, input_tokens: inp, output_tokens: out,
+            cache_creation_input_tokens: cache_create, cache_read_input_tokens: cache_read,
+            reason: req.billing_reason, metadata: req.metadata,
+        }).await?;
         Ok(result)
     }
 
@@ -198,7 +206,11 @@ impl MeteredLlm {
             api_key, system_prompt, messages, max_tokens, tx,
         ).await?;
         let (inp, out, cache_create, cache_read) = handle.finalize().await;
-        self.debit(aura_claude::DEFAULT_MODEL, inp, out, cache_create, cache_read, reason, metadata).await?;
+        self.debit(debit::DebitParams {
+            model: aura_claude::DEFAULT_MODEL, input_tokens: inp, output_tokens: out,
+            cache_creation_input_tokens: cache_create, cache_read_input_tokens: cache_read,
+            reason, metadata,
+        }).await?;
         Ok(result)
     }
 
@@ -222,7 +234,13 @@ impl MeteredLlm {
         }).await?;
 
         let billing_model = if resp.model_used.is_empty() { aura_claude::DEFAULT_MODEL } else { &resp.model_used };
-        self.debit(billing_model, resp.input_tokens, resp.output_tokens, resp.cache_creation_input_tokens, resp.cache_read_input_tokens, billing_reason, metadata).await?;
+        self.debit(debit::DebitParams {
+            model: billing_model, input_tokens: resp.input_tokens,
+            output_tokens: resp.output_tokens,
+            cache_creation_input_tokens: resp.cache_creation_input_tokens,
+            cache_read_input_tokens: resp.cache_read_input_tokens,
+            reason: billing_reason, metadata,
+        }).await?;
         Ok(resp)
     }
 }

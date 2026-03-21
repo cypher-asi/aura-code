@@ -262,7 +262,7 @@ mod tests {
             {"title": "Setup DB", "description": "Create tables", "depends_on": []},
             {"title": "Add API", "description": "REST endpoints", "depends_on": ["Setup DB"]}
         ]"#;
-        let tasks = TaskExtractionService::parse_extraction_response(input).unwrap();
+        let tasks = TaskExtractionService::parse_extraction_response(input).expect("valid JSON should parse");
         assert_eq!(tasks.len(), 2);
         assert_eq!(tasks[0].title, "Setup DB");
         assert!(tasks[0].depends_on.is_empty());
@@ -279,7 +279,7 @@ Here are the extracted tasks:
 [{"title": "Init project", "description": "Scaffold", "depends_on": []}]
 ```
 "#;
-        let tasks = TaskExtractionService::parse_extraction_response(input).unwrap();
+        let tasks = TaskExtractionService::parse_extraction_response(input).expect("fenced JSON should parse");
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].title, "Init project");
     }
@@ -287,7 +287,7 @@ Here are the extracted tasks:
     #[test]
     fn parse_empty_task_array_errors() {
         let input = "[]";
-        let err = TaskExtractionService::parse_extraction_response(input).unwrap_err();
+        let err = TaskExtractionService::parse_extraction_response(input).expect_err("empty array should produce an error");
         let msg = format!("{err}");
         assert!(msg.contains("empty"), "expected empty error, got: {msg}");
     }
@@ -301,7 +301,7 @@ Here are the extracted tasks:
     #[test]
     fn parse_fenced_without_lang_tag() {
         let input = "```\n[{\"title\":\"T\",\"description\":\"D\",\"depends_on\":[]}]\n```";
-        let tasks = TaskExtractionService::parse_extraction_response(input).unwrap();
+        let tasks = TaskExtractionService::parse_extraction_response(input).expect("bare fenced JSON should parse");
         assert_eq!(tasks.len(), 1);
     }
 
@@ -312,14 +312,14 @@ Here are the extracted tasks:
     #[test]
     fn extract_fenced_json_with_lang() {
         let input = "text\n```json\n{\"key\":\"val\"}\n```\nmore";
-        let result = extract_fenced_json(input).unwrap();
+        let result = extract_fenced_json(input).expect("fenced json with lang tag should extract");
         assert_eq!(result, "{\"key\":\"val\"}");
     }
 
     #[test]
     fn extract_fenced_json_without_lang() {
         let input = "```\n[1,2,3]\n```";
-        let result = extract_fenced_json(input).unwrap();
+        let result = extract_fenced_json(input).expect("fenced json without lang tag should extract");
         assert_eq!(result, "[1,2,3]");
     }
 

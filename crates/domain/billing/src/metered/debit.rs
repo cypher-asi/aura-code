@@ -5,17 +5,26 @@ use tracing::{info, warn};
 use crate::error::BillingError;
 use super::{MeteredLlm, MeteredLlmError};
 
+pub(crate) struct DebitParams<'a> {
+    pub model: &'a str,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_creation_input_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub reason: &'a str,
+    pub metadata: Option<serde_json::Value>,
+}
+
 impl MeteredLlm {
     pub(crate) async fn debit(
         &self,
-        model: &str,
-        input_tokens: u64,
-        output_tokens: u64,
-        cache_creation_input_tokens: u64,
-        cache_read_input_tokens: u64,
-        reason: &str,
-        metadata: Option<serde_json::Value>,
+        params: DebitParams<'_>,
     ) -> Result<(), MeteredLlmError> {
+        let DebitParams {
+            model, input_tokens, output_tokens,
+            cache_creation_input_tokens, cache_read_input_tokens,
+            reason, metadata,
+        } = params;
         let (inp_rate, out_rate) = self.pricing.lookup_rate(model);
         let non_cached = input_tokens.saturating_sub(cache_creation_input_tokens + cache_read_input_tokens);
         let usd_cost = (
