@@ -1,144 +1,12 @@
-use std::sync::Arc;
+mod common;
 
-use axum::{
-    extract::{Path, State},
-    routing::{get, post},
-    Json, Router,
-};
-use chrono::Utc;
-use tokio::net::TcpListener;
-use tokio::sync::Mutex;
+use std::sync::Arc;
 
 use aura_claude::mock::{MockLlmProvider, MockResponse};
 use aura_core::*;
 use aura_sessions::SessionService;
-use aura_storage::{
-    CreateSessionRequest, StorageClient, StorageSession, UpdateSessionRequest,
-};
 
-// ---------------------------------------------------------------------------
-// Mock aura-storage HTTP server
-// ---------------------------------------------------------------------------
-
-type SessionDb = Arc<Mutex<Vec<StorageSession>>>;
-
-async fn create_session_handler(
-    Path(project_agent_id): Path<String>,
-    State(db): State<SessionDb>,
-    Json(req): Json<CreateSessionRequest>,
-) -> Json<StorageSession> {
-    let session = StorageSession {
-        id: SessionId::new().to_string(),
-        project_agent_id: Some(project_agent_id),
-        project_id: Some(req.project_id),
-        status: req.status.or(Some("active".to_string())),
-        context_usage_estimate: req.context_usage_estimate,
-        summary_of_previous_context: req.summary_of_previous_context,
-        tasks_worked_count: Some(0),
-        ended_at: None,
-        created_at: Some(Utc::now().to_rfc3339()),
-        updated_at: Some(Utc::now().to_rfc3339()),
-    };
-    let mut db = db.lock().await;
-    db.push(session.clone());
-    Json(session)
-}
-
-async fn get_session_handler(
-    Path(session_id): Path<String>,
-    State(db): State<SessionDb>,
-) -> Result<Json<StorageSession>, axum::http::StatusCode> {
-    let db = db.lock().await;
-    db.iter()
-        .find(|s| s.id == session_id)
-        .cloned()
-        .map(Json)
-        .ok_or(axum::http::StatusCode::NOT_FOUND)
-}
-
-async fn update_session_handler(
-    Path(session_id): Path<String>,
-    State(db): State<SessionDb>,
-    Json(req): Json<UpdateSessionRequest>,
-) -> axum::http::StatusCode {
-    let mut db = db.lock().await;
-    if let Some(session) = db.iter_mut().find(|s| s.id == session_id) {
-        if let Some(status) = req.status {
-            session.status = Some(status);
-        }
-        if let Some(usage) = req.context_usage_estimate {
-            session.context_usage_estimate = Some(usage);
-        }
-        if let Some(count) = req.tasks_worked_count {
-            session.tasks_worked_count = Some(count);
-        }
-        if let Some(ended) = req.ended_at {
-            session.ended_at = Some(ended);
-        }
-        session.updated_at = Some(Utc::now().to_rfc3339());
-        axum::http::StatusCode::OK
-    } else {
-        axum::http::StatusCode::NOT_FOUND
-    }
-}
-
-async fn list_sessions_handler(
-    Path(_project_agent_id): Path<String>,
-    State(db): State<SessionDb>,
-) -> Json<Vec<StorageSession>> {
-    let db = db.lock().await;
-    Json(db.clone())
-}
-
-/// Spin up a mock aura-storage and return (base_url, session_db).
-async fn start_mock_storage() -> (String, SessionDb) {
-    let db: SessionDb = Arc::new(Mutex::new(Vec::new()));
-
-    let app = Router::new()
-        .route(
-            "/api/project-agents/:project_agent_id/sessions",
-            post(create_session_handler).get(list_sessions_handler),
-        )
-        .route(
-            "/api/sessions/:session_id",
-            get(get_session_handler).put(update_session_handler),
-        )
-        .with_state(db.clone());
-
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, app).await.ok() });
-    (url, db)
-}
-
-/// Create a SessionService wired to the mock storage and a fresh RocksDB.
-fn make_session_service(
-    store: &Arc<aura_store::RocksStore>,
-    storage_url: &str,
-    rollover_threshold: f64,
-) -> SessionService {
-    let storage = Arc::new(StorageClient::with_base_url(storage_url));
-    SessionService::new(store.clone(), rollover_threshold, 200_000)
-        .with_storage_client(Some(storage))
-}
-
-fn store_test_jwt(store: &aura_store::RocksStore) {
-    let session = serde_json::to_vec(&ZeroAuthSession {
-        user_id: "u1".into(),
-        network_user_id: None,
-        profile_id: None,
-        display_name: "Test".into(),
-        profile_image: String::new(),
-        primary_zid: "zid-1".into(),
-        zero_wallet: "w1".into(),
-        wallets: vec![],
-        access_token: "test-jwt".into(),
-        created_at: Utc::now(),
-        validated_at: Utc::now(),
-    })
-    .unwrap();
-    store.put_setting("zero_auth_session", &session).unwrap();
-}
+use common::*;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -317,7 +185,7 @@ async fn update_context_usage_accumulates() {
         updated.context_usage_estimate
     );
 
-    // Another 80k tokens → total 120k/200k = 0.6
+    // Another 80k tokens -> total 120k/200k = 0.6
     let updated2 = svc
         .update_context_usage(&pid, &aid, &session.session_id, 40_000, 40_000)
         .await
@@ -348,7 +216,7 @@ async fn context_usage_caps_at_one() {
         .await
         .unwrap();
 
-    // 500k tokens on a 200k window → usage would be 2.5, should cap at 1.0
+    // 500k tokens on a 200k window -> usage would be 2.5, should cap at 1.0
     let updated = svc
         .update_context_usage(&pid, &aid, &session.session_id, 250_000, 250_000)
         .await
@@ -378,7 +246,7 @@ async fn end_to_end_usage_triggers_rollover() {
         .await
         .unwrap();
 
-    // Push usage to 0.3 → below threshold
+    // Push usage to 0.3 -> below threshold
     svc.update_context_usage(&pid, &aid, &session.session_id, 30_000, 30_000)
         .await
         .unwrap();
@@ -389,7 +257,7 @@ async fn end_to_end_usage_triggers_rollover() {
         "0.3 usage should not trigger rollover at 0.5 threshold"
     );
 
-    // Push usage to 0.6 → above threshold
+    // Push usage to 0.6 -> above threshold
     svc.update_context_usage(&pid, &aid, &session.session_id, 30_000, 30_000)
         .await
         .unwrap();
