@@ -5,15 +5,15 @@ import { Building2, ChevronDown, Plus } from "lucide-react";
 import { Button, Input, Modal } from "@cypher-asi/zui";
 import { useClickOutside } from "../hooks/use-click-outside";
 import { useModalInitialFocus } from "../hooks/use-modal-initial-focus";
+import { useUIModalStore } from "../stores/ui-modal-store";
 import styles from "./OrgSelector.module.css";
 
 export function OrgSelector({
-  onOpenSettings,
   variant = "default",
 }: {
-  onOpenSettings: () => void;
   variant?: "default" | "drawer";
-}) {
+} = {}) {
+  const openOrgSettings = useUIModalStore((s) => s.openOrgSettings);
   const { orgs, activeOrg, switchOrg, createOrg } = useOrgStore(
     useShallow((s) => ({ orgs: s.orgs, activeOrg: s.activeOrg, switchOrg: s.switchOrg, createOrg: s.createOrg })),
   );
@@ -89,7 +89,7 @@ export function OrgSelector({
             className={styles.item}
             onClick={() => {
               setDropdownOpen(false);
-              onOpenSettings();
+              openOrgSettings();
             }}
           >
             <span>Team Settings</span>

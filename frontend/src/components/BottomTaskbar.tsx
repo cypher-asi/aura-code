@@ -1,21 +1,19 @@
 import { OrgSelector } from "./OrgSelector";
 import { CreditsBadge } from "./CreditsBadge";
+import { useUIModalStore } from "../stores/ui-modal-store";
 import styles from "./BottomTaskbar.module.css";
 
-interface Props {
-  onOpenOrgSettings: () => void;
-  onBuyCredits?: () => void;
-}
+export function BottomTaskbar() {
+  const openOrgBilling = useUIModalStore((s) => s.openOrgBilling);
 
-export function BottomTaskbar({ onOpenOrgSettings, onBuyCredits }: Props) {
   return (
     <div className={styles.bar}>
       <div className={styles.orgWrap}>
-        <OrgSelector onOpenSettings={onOpenOrgSettings} />
+        <OrgSelector />
       </div>
       <div className={styles.divider} />
       <div className={styles.creditsWrap}>
-        <CreditsBadge onClick={onBuyCredits} />
+        <CreditsBadge onClick={openOrgBilling} />
       </div>
     </div>
   );
