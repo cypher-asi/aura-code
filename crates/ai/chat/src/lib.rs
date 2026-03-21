@@ -10,6 +10,7 @@ mod chat_sanitize;
 mod chat_event_forwarding;
 mod chat_spec_handler;
 mod chat_streaming;
+mod chat_streaming_helpers;
 mod chat_tool_executor;
 mod chat_tool_handlers;
 mod chat_tool_loop_executor;

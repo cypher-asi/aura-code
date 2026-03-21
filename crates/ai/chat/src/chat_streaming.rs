@@ -1,14 +1,13 @@
 use std::sync::{Arc, Mutex};
 use chrono::Utc;
 use tokio::sync::mpsc;
-use tracing::{error, info};
+use tracing::info;
 use aura_core::*;
 use aura_claude::ThinkingConfig;
-use aura_billing::MeteredCompletionRequest;
 use aura_tools::agent_tool_definitions;
 use crate::channel_ext::send_or_log;
 use crate::chat::{ChatAttachment, ChatService, ChatStreamEvent};
-use crate::chat_event_forwarding::{ContentBlockAccumulator, forward_tool_loop_event, extract_user_text};
+use crate::chat_event_forwarding::{ContentBlockAccumulator, forward_tool_loop_event};
 use crate::chat_message_conversion::build_attachment_blocks;
 use crate::constants::DEFAULT_STREAM_TIMEOUT;
 use crate::chat_context::build_chat_system_prompt;
@@ -16,14 +15,14 @@ use crate::chat_tool_executor::ChatToolExecutor;
 use crate::chat_tool_loop_executor::{ForwardingToolExecutor, SingleProjectResolver};
 use crate::tool_loop::{run_tool_loop, ToolLoopConfig, ToolLoopEvent, ToolLoopInput, ToolLoopResult};
 
-struct ChatLoopContext<'a> {
-    project_id: &'a ProjectId,
-    agent_instance_id: &'a AgentInstanceId,
-    agent_instance: &'a AgentInstance,
-    api_key: &'a str,
-    stored_messages: &'a [Message],
-    tx: &'a mpsc::UnboundedSender<ChatStreamEvent>,
-    active_session_id: Option<&'a str>,
+pub(crate) struct ChatLoopContext<'a> {
+    pub(crate) project_id: &'a ProjectId,
+    pub(crate) agent_instance_id: &'a AgentInstanceId,
+    pub(crate) agent_instance: &'a AgentInstance,
+    pub(crate) api_key: &'a str,
+    pub(crate) stored_messages: &'a [Message],
+    pub(crate) tx: &'a mpsc::UnboundedSender<ChatStreamEvent>,
+    pub(crate) active_session_id: Option<&'a str>,
 }
 
 pub struct ChatMessageParams<'a> {
@@ -214,51 +213,6 @@ impl ChatService {
         Some((api_key, system, api_messages, stored_messages))
     }
 
-    async fn maybe_generate_attachment_overview(
-        &self,
-        stored_messages: &[Message],
-        project_id: &ProjectId,
-        tx: &mpsc::UnboundedSender<ChatStreamEvent>,
-    ) {
-        let has_text_attachments = stored_messages.iter().any(|m| {
-            m.role == ChatRole::User
-                && m.content_blocks
-                    .as_ref()
-                    .map(|blocks| {
-                        blocks.iter().any(|b| {
-                            matches!(b, ChatContentBlock::Text { text } if text.contains("[File:"))
-                        })
-                    })
-                    .unwrap_or(false)
-        });
-
-        if !has_text_attachments {
-            return;
-        }
-
-        send_or_log(tx, ChatStreamEvent::Progress("Analyzing attachments...".to_string()));
-
-        let requirements_content = extract_user_text(stored_messages);
-        if requirements_content.is_empty() {
-            return;
-        }
-
-        info!(%project_id, len = requirements_content.len(), "Generating project overview from attachments");
-        match self.spec_gen.generate_project_overview(project_id, &requirements_content).await {
-            Ok((title, summary)) => {
-                info!(%project_id, %title, "Project overview generated");
-                send_or_log(tx, ChatStreamEvent::SpecsTitle(title));
-                send_or_log(tx, ChatStreamEvent::SpecsSummary(summary));
-            }
-            Err(e) => {
-                error!(%project_id, error = %e, "Failed to generate project overview");
-                send_or_log(tx, ChatStreamEvent::Error(
-                    format!("Failed to generate project overview: {e}"),
-                ));
-            }
-        }
-    }
-
     pub(crate) fn update_instance_token_usage(
         &self,
         _project_id: &ProjectId,
@@ -340,53 +294,6 @@ impl ChatService {
 
             if !assistant_reply.is_empty() {
                 self.maybe_generate_title(ctx, &assistant_reply).await;
-            }
-        }
-    }
-
-    async fn maybe_generate_title(
-        &self,
-        ctx: &ChatLoopContext<'_>,
-        assistant_reply: &str,
-    ) {
-        if ctx.agent_instance.name != "New Chat" {
-            return;
-        }
-
-        let first_user_msg = ctx.stored_messages
-            .iter()
-            .find(|m| m.role == ChatRole::User)
-            .map(|m| m.content.as_str())
-            .unwrap_or("");
-        let reply_preview: String = assistant_reply.chars().take(300).collect();
-
-        let title_prompt = format!(
-            "User: {first_user_msg}\n\nAssistant: {reply_preview}\n\n\
-             Generate a concise 3-6 word title for this conversation. \
-             Return ONLY the title text, no quotes or punctuation at the end."
-        );
-
-        match self
-            .llm
-            .complete(MeteredCompletionRequest {
-                model: Some(aura_claude::FAST_MODEL), api_key: ctx.api_key,
-                system_prompt: TITLE_GEN_SYSTEM_PROMPT,
-                user_message: &title_prompt, max_tokens: 30,
-                billing_reason: "aura_title_gen", metadata: None,
-            })
-            .await
-        {
-            Ok(resp) => {
-                let title = resp.text;
-                let title = title.trim().trim_matches('"').to_string();
-                let mut instance = ctx.agent_instance.clone();
-                instance.name = title;
-                instance.updated_at = Utc::now();
-                send_or_log(ctx.tx, ChatStreamEvent::AgentInstanceUpdated(instance));
-            }
-            Err(e) => {
-                let project_id = ctx.project_id;
-                error!(%project_id, error = %e, "Failed to generate title");
             }
         }
     }
