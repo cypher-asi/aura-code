@@ -92,14 +92,7 @@ struct UpdateManifest {
     _format: Option<String>,
 }
 
-/// Check for updates and download if available. Returns the new version string
-/// on success, or `None` if already up-to-date.
-async fn check_and_download(
-    channel: UpdateChannel,
-    status: Arc<RwLock<UpdateStatus>>,
-) -> Result<Option<String>, String> {
-    *status.write().await = UpdateStatus::Checking;
-
+async fn fetch_manifest(channel: UpdateChannel) -> Result<Option<UpdateManifest>, String> {
     let current_version = env!("CARGO_PKG_VERSION");
     let target = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
@@ -132,15 +125,17 @@ async fn check_and_download(
 
     if manifest.version == current_version {
         info!("already up-to-date at v{current_version}");
-        *status.write().await = UpdateStatus::UpToDate;
         return Ok(None);
     }
 
-    info!(
-        new_version = %manifest.version,
-        "update available, downloading"
-    );
-    *status.write().await = UpdateStatus::Downloading;
+    Ok(Some(manifest))
+}
+
+async fn download_and_verify(manifest: &UpdateManifest) -> Result<std::path::PathBuf, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("http client error: {e}"))?;
 
     let bytes = client
         .get(&manifest.url)
@@ -170,12 +165,35 @@ async fn check_and_download(
     std::fs::write(&sig_path, &manifest.signature)
         .map_err(|e| format!("failed to write signature: {e}"))?;
 
-    // Verify signature using cargo-packager-updater's verification
     if let Err(e) = verify_signature(&pkg_path, &manifest.signature) {
         std::fs::remove_file(&pkg_path).ok();
         std::fs::remove_file(&sig_path).ok();
         return Err(format!("signature verification failed: {e}"));
     }
+
+    Ok(pkg_path)
+}
+
+/// Check for updates and download if available. Returns the new version string
+/// on success, or `None` if already up-to-date.
+async fn check_and_download(
+    channel: UpdateChannel,
+    status: Arc<RwLock<UpdateStatus>>,
+) -> Result<Option<String>, String> {
+    *status.write().await = UpdateStatus::Checking;
+
+    let manifest = match fetch_manifest(channel).await? {
+        Some(m) => m,
+        None => {
+            *status.write().await = UpdateStatus::UpToDate;
+            return Ok(None);
+        }
+    };
+
+    info!(new_version = %manifest.version, "update available, downloading");
+    *status.write().await = UpdateStatus::Downloading;
+
+    let pkg_path = download_and_verify(&manifest).await?;
 
     info!(
         version = %manifest.version,
