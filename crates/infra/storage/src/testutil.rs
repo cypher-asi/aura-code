@@ -456,8 +456,10 @@ pub async fn start_mock_storage() -> (String, SharedDb) {
     let db: SharedDb = Arc::new(Mutex::new(MockStorageDb::default()));
     let app = mock_storage_router(db.clone());
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind mock storage listener");
+    let url = format!("http://{}", listener.local_addr().expect("get local addr"));
     tokio::spawn(async move { axum::serve(listener, app).await.ok() });
     (url, db)
 }

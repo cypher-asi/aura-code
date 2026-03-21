@@ -29,11 +29,11 @@ impl StorageClient {
         validate_url_id(session_id, "session_id")?;
         let mut url = format!("{}/api/sessions/{}/messages", self.base_url, session_id);
         let mut params = Vec::new();
-        if let Some(l) = limit {
-            params.push(format!("limit={}", l));
+        if let Some(limit_val) = limit {
+            params.push(format!("limit={limit_val}"));
         }
-        if let Some(o) = offset {
-            params.push(format!("offset={}", o));
+        if let Some(offset_val) = offset {
+            params.push(format!("offset={offset_val}"));
         }
         if !params.is_empty() {
             url.push('?');

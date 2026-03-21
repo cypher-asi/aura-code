@@ -41,14 +41,14 @@ impl StorageClient {
         validate_url_id(project_id, "project_id")?;
         let mut url = format!("{}/api/projects/{}/logs", self.base_url, project_id);
         let mut params = Vec::new();
-        if let Some(l) = level {
-            params.push(format!("level={}", l));
+        if let Some(level_val) = level {
+            params.push(format!("level={level_val}"));
         }
-        if let Some(l) = limit {
-            params.push(format!("limit={}", l));
+        if let Some(limit_val) = limit {
+            params.push(format!("limit={limit_val}"));
         }
-        if let Some(o) = offset {
-            params.push(format!("offset={}", o));
+        if let Some(offset_val) = offset {
+            params.push(format!("offset={offset_val}"));
         }
         if !params.is_empty() {
             url.push('?');

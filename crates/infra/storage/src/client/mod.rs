@@ -176,7 +176,8 @@ impl StorageClient {
             .await
             .map_err(|e| StorageError::Deserialize(e.to_string()))?;
         serde_json::from_str::<T>(&body).map_err(|e| {
-            tracing::warn!(%url, error = %e, body_preview = &body[..body.len().min(500)], "Deserialization failed");
+            let preview: String = body.chars().take(200).collect();
+            tracing::warn!(%url, error = %e, body_preview = %preview, "Deserialization failed");
             StorageError::Deserialize(e.to_string())
         })
     }
