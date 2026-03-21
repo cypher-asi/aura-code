@@ -247,31 +247,7 @@ interface Props {
   message: DisplayMessage;
 }
 
-const TOOL_LABELS: Record<string, string> = {
-  list_specs: "List specs",
-  get_spec: "Get spec",
-  create_spec: "Create spec",
-  update_spec: "Update spec",
-  delete_spec: "Delete spec",
-  list_tasks: "List tasks",
-  create_task: "Create task",
-  update_task: "Update task",
-  delete_task: "Delete task",
-  transition_task: "Transition task",
-  run_task: "Run task",
-  get_project: "Get project",
-  update_project: "Update project",
-  start_dev_loop: "Start dev loop",
-  pause_dev_loop: "Pause dev loop",
-  stop_dev_loop: "Stop dev loop",
-  read_file: "Read file",
-  write_file: "Write file",
-  delete_file: "Delete file",
-  list_files: "List files",
-  get_progress: "Get stats",
-};
-
-const FILE_OPS = new Set(["write_file", "edit_file", "read_file"]);
+import { TOOL_LABELS, FILE_OPS } from "../constants/tools";
 
 const COLLAPSED_SPEC_LINES = 20;
 
