@@ -23,6 +23,7 @@ export function AgentChatView() {
     thinkingText,
     thinkingDurationMs,
     activeToolCalls,
+    timeline,
     progressText,
     sendMessage,
     stopStreaming,
@@ -115,6 +116,7 @@ export function AgentChatView() {
               thinkingText={thinkingText}
               thinkingDurationMs={thinkingDurationMs}
               activeToolCalls={activeToolCalls}
+              timeline={timeline}
               progressText={progressText}
               emptyState={
                 <div className={styles.emptyState}>

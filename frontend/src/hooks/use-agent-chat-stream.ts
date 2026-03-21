@@ -99,6 +99,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
     thinkingText: core.thinkingText,
     thinkingDurationMs: core.thinkingDurationMs,
     activeToolCalls: core.activeToolCalls,
+    timeline: core.timeline,
     progressText: core.progressText,
     sendMessage,
     stopStreaming: core.baseStopStreaming,

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { DisplayMessage, ToolCallEntry } from "../../types/stream";
+import type { DisplayMessage, ToolCallEntry, TimelineItem } from "../../types/stream";
 import { MessageBubble, StreamingBubble } from "../MessageBubble";
 import { CookingIndicator } from "../CookingIndicator";
 
@@ -10,6 +10,7 @@ interface ChatMessageListProps {
   thinkingText: string;
   thinkingDurationMs: number | null;
   activeToolCalls: ToolCallEntry[];
+  timeline: TimelineItem[];
   progressText: string;
   emptyState?: ReactNode;
 }
@@ -21,6 +22,7 @@ export function ChatMessageList({
   thinkingText,
   thinkingDurationMs,
   activeToolCalls,
+  timeline,
   progressText,
   emptyState,
 }: ChatMessageListProps) {
@@ -44,6 +46,7 @@ export function ChatMessageList({
           toolCalls={activeToolCalls}
           thinkingText={thinkingText}
           thinkingDurationMs={thinkingDurationMs}
+          timeline={timeline}
           progressText={progressText}
         />
       )}

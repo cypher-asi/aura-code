@@ -3,7 +3,7 @@ import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import { FileText } from "lucide-react";
-import type { ArtifactRef, DisplayMessage, ToolCallEntry } from "../types/stream";
+import type { ArtifactRef, DisplayMessage, ToolCallEntry, TimelineItem } from "../types/stream";
 import { stripEmojis, normalizeMidSentenceBreaks } from "../utils/text-normalize";
 import styles from "./MessageBubble.module.css";
 import toolStyles from "./ToolCallBlock.module.css";
@@ -12,6 +12,7 @@ import { CookingIndicator, getStreamingPhaseLabel } from "./CookingIndicator";
 import { SegmentedContent } from "./SegmentedContent";
 import { ThinkingRow } from "./ThinkingRow";
 import { ToolCallsList } from "./ToolRow";
+import { ActivityTimeline } from "./ActivityTimeline";
 
 interface Props {
   message: DisplayMessage;
@@ -114,25 +115,37 @@ export const MessageBubble = memo(function MessageBubble({ message }: Props) {
           renderUserContent()
         ) : (
           <div className={styles.markdown}>
-            {hasThinking && (
-              <ThinkingRow
-                text={message.thinkingText!}
+            {message.timeline && message.timeline.length > 0 ? (
+              <ActivityTimeline
+                timeline={message.timeline}
+                thinkingText={message.thinkingText}
+                thinkingDurationMs={message.thinkingDurationMs}
+                toolCalls={message.toolCalls}
                 isStreaming={false}
-                durationMs={message.thinkingDurationMs}
               />
-            )}
-            {hasToolCalls && (
-              <ToolCallsList entries={message.toolCalls!} />
+            ) : (
+              <>
+                {hasThinking && (
+                  <ThinkingRow
+                    text={message.thinkingText!}
+                    isStreaming={false}
+                    durationMs={message.thinkingDurationMs}
+                  />
+                )}
+                {hasToolCalls && (
+                  <ToolCallsList entries={message.toolCalls!} />
+                )}
+                {hasContent && (
+                  <SegmentedContent
+                    content={normalizedContent}
+                    remarkPlugins={[remarkGfm, remarkBreaks]}
+                    rehypePlugins={[rehypeHighlight]}
+                  />
+                )}
+              </>
             )}
             {hasArtifactRefs && (
               <ArtifactRefsList refs={message.artifactRefs!} />
-            )}
-            {hasContent && (
-              <SegmentedContent
-                content={normalizedContent}
-                remarkPlugins={[remarkGfm, remarkBreaks]}
-                rehypePlugins={[rehypeHighlight]}
-              />
             )}
           </div>
         )}
@@ -146,6 +159,7 @@ interface StreamingBubbleProps {
   toolCalls?: ToolCallEntry[];
   thinkingText?: string;
   thinkingDurationMs?: number | null;
+  timeline?: TimelineItem[];
   progressText?: string;
 }
 
@@ -170,28 +184,41 @@ function StreamingIndicator({
   return <CookingIndicator label={label ?? "Cooking..."} />;
 }
 
-export function StreamingBubble({ text, toolCalls, thinkingText, thinkingDurationMs, progressText }: StreamingBubbleProps) {
+export function StreamingBubble({ text, toolCalls, thinkingText, thinkingDurationMs, timeline, progressText }: StreamingBubbleProps) {
+  const hasTimeline = timeline && timeline.length > 0;
   const isThinking = Boolean(thinkingText) && !text;
   return (
     <div className={`${styles.message} ${styles.messageAssistant}`}>
       <div className={`${styles.bubble} ${styles.bubbleAssistant}`}>
         <div className={styles.markdown}>
-          {thinkingText && (
-            <ThinkingRow
-              text={thinkingText}
-              isStreaming={isThinking}
-              durationMs={thinkingDurationMs}
+          {hasTimeline ? (
+            <ActivityTimeline
+              timeline={timeline}
+              thinkingText={thinkingText}
+              thinkingDurationMs={thinkingDurationMs}
+              toolCalls={toolCalls}
+              isStreaming
             />
-          )}
-          {toolCalls && toolCalls.length > 0 && (
-            <ToolCallsList entries={toolCalls} />
-          )}
-          {text && (
-            <SegmentedContent
-              content={normalizeMidSentenceBreaks(stripEmojis(text))}
-              remarkPlugins={[remarkGfm, remarkBreaks]}
-              rehypePlugins={[rehypeHighlight]}
-            />
+          ) : (
+            <>
+              {thinkingText && (
+                <ThinkingRow
+                  text={thinkingText}
+                  isStreaming={isThinking}
+                  durationMs={thinkingDurationMs}
+                />
+              )}
+              {toolCalls && toolCalls.length > 0 && (
+                <ToolCallsList entries={toolCalls} />
+              )}
+              {text && (
+                <SegmentedContent
+                  content={normalizeMidSentenceBreaks(stripEmojis(text))}
+                  remarkPlugins={[remarkGfm, remarkBreaks]}
+                  rehypePlugins={[rehypeHighlight]}
+                />
+              )}
+            </>
           )}
           <StreamingIndicator text={text} thinkingText={thinkingText} toolCalls={toolCalls} progressText={progressText} />
         </div>

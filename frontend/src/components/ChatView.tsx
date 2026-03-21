@@ -25,6 +25,7 @@ export function ChatView() {
     thinkingText,
     thinkingDurationMs,
     activeToolCalls,
+    timeline,
     progressText,
     sendMessage,
     stopStreaming,
@@ -178,6 +179,7 @@ export function ChatView() {
               thinkingText={thinkingText}
               thinkingDurationMs={thinkingDurationMs}
               activeToolCalls={activeToolCalls}
+              timeline={timeline}
               progressText={progressText}
               emptyState={
                 <EmptyState icon={<MessageSquare size={40} />}>

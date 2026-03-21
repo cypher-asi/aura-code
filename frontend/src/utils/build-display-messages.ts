@@ -1,6 +1,7 @@
 import type { Message } from "../types";
 import type { DisplayMessage } from "../types/stream";
 import { extractToolCalls, extractArtifactRefs } from "./chat-history";
+import { buildTimelineFromBlocks } from "./build-timeline";
 
 export function buildDisplayMessages(msgs: Message[]): DisplayMessage[] {
   return msgs
@@ -19,6 +20,7 @@ export function buildDisplayMessages(msgs: Message[]): DisplayMessage[] {
             ? { type: "text" as const, text: b.text ?? "" }
             : { type: "image" as const, media_type: b.media_type ?? "image/png", data: b.data ?? "" },
         );
+      const thinking = m.thinking || undefined;
       return {
         id: m.message_id,
         role: m.role,
@@ -26,8 +28,12 @@ export function buildDisplayMessages(msgs: Message[]): DisplayMessage[] {
         contentBlocks: displayBlocks.length > 0 ? displayBlocks : undefined,
         toolCalls: extractToolCalls(allBlocks),
         artifactRefs: extractArtifactRefs(allBlocks),
-        thinkingText: m.thinking || undefined,
+        thinkingText: thinking,
         thinkingDurationMs: m.thinking_duration_ms ?? null,
+        timeline:
+          m.role === "assistant"
+            ? buildTimelineFromBlocks(allBlocks, thinking, m.content)
+            : undefined,
       };
     });
 }

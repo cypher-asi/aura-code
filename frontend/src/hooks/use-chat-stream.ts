@@ -298,6 +298,7 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
     thinkingText: core.thinkingText,
     thinkingDurationMs: core.thinkingDurationMs,
     activeToolCalls: core.activeToolCalls,
+    timeline: core.timeline,
     progressText: core.progressText,
     sendMessage,
     stopStreaming,
