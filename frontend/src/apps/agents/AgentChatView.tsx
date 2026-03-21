@@ -77,10 +77,22 @@ export function AgentChatView() {
       };
     }
 
+    const reveal = () => {
+      requestAnimationFrame(() => {
+        const el = messageAreaRef.current;
+        if (el) {
+          el.scrollTop = el.scrollHeight;
+          el.style.visibility = "";
+        }
+      });
+    };
+
     const cached = historyCache.get(agentId);
     if (cached) {
+      if (messageAreaRef.current) messageAreaRef.current.style.visibility = "hidden";
       resetMessages(cached, { allowWhileStreaming: true });
       setIsHistoryLoading(false);
+      reveal();
     } else {
       setIsHistoryLoading(true);
     }
@@ -94,13 +106,16 @@ export function AgentChatView() {
         }
         const display = buildDisplayMessages(msgs);
         historyCache.set(agentId, display);
+        if (messageAreaRef.current) messageAreaRef.current.style.visibility = "hidden";
         resetMessages(display, { allowWhileStreaming: true });
         setIsHistoryLoading(false);
+        reveal();
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         if (loadId === historyLoadIdRef.current) {
           setIsHistoryLoading(false);
+          if (messageAreaRef.current) messageAreaRef.current.style.visibility = "";
         }
         console.error(error);
       });

@@ -42,7 +42,9 @@ export function ChatView() {
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [agentName, setAgentName] = useState<string | undefined>();
   const [contextUsagePercent, setContextUsagePercent] = useState<number | null>(null);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(
+    () => Boolean(projectId && agentInstanceId),
+  );
 
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const prevIsStreamingRef = useRef(false);
@@ -150,6 +152,16 @@ export function ChatView() {
       };
     }
 
+    const reveal = () => {
+      requestAnimationFrame(() => {
+        const el = messageAreaRef.current;
+        if (el) {
+          el.scrollTop = el.scrollHeight;
+          el.style.visibility = "";
+        }
+      });
+    };
+
     setIsHistoryLoading(true);
     api
       .getMessages(projectId, agentInstanceId, { signal: controller.signal })
@@ -158,13 +170,16 @@ export function ChatView() {
           debugSwitchLog("discarded stale history response", { loadId, projectId, agentInstanceId });
           return;
         }
+        if (messageAreaRef.current) messageAreaRef.current.style.visibility = "hidden";
         resetMessages(buildDisplayMessages(msgs), { allowWhileStreaming: true });
         setIsHistoryLoading(false);
+        reveal();
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
         if (loadId === historyLoadIdRef.current) {
           setIsHistoryLoading(false);
+          if (messageAreaRef.current) messageAreaRef.current.style.visibility = "";
         }
         console.error(error);
       });
