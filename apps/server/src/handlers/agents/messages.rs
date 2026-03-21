@@ -21,69 +21,39 @@ use crate::state::AppState;
 
 use super::conversions::{get_user_id, storage_message_to_message};
 
-/// Aggregate agent-level messages from aura-storage only (all project-agents for this agent_id -> sessions -> messages).
-pub async fn aggregate_agent_messages_from_storage(
+async fn find_matching_project_agents(
     state: &AppState,
-    agent_id: &AgentId,
+    storage: &aura_storage::StorageClient,
+    jwt: &str,
+    agent_id_str: &str,
+) -> Vec<aura_storage::StorageProjectAgent> {
+    let all_projects = projects::list_all_projects_from_network(state).await.unwrap_or_default();
+    let pids: Vec<String> = all_projects.iter().map(|p| p.project_id.to_string()).collect();
+    let futs: Vec<_> = pids.iter().map(|pid| storage.list_project_agents(pid, jwt)).collect();
+    let results = join_all(futs).await;
+
+    results.into_iter().enumerate().flat_map(|(i, result)| match result {
+        Ok(agents) => agents.into_iter()
+            .filter(|a| a.agent_id.as_deref() == Some(agent_id_str))
+            .collect::<Vec<_>>(),
+        Err(e) => {
+            warn!(project_id = %pids[i], error = %e, "Failed to list project agents");
+            Vec::new()
+        }
+    }).collect()
+}
+
+async fn collect_session_messages(
+    storage: &aura_storage::StorageClient,
+    jwt: &str,
+    agents: &[aura_storage::StorageProjectAgent],
 ) -> Vec<Message> {
+    let all_sessions = fetch_all_sessions(storage, jwt, agents).await;
+    let msg_futs: Vec<_> = all_sessions.iter()
+        .map(|s| storage.list_messages(&s.id, jwt, None, None))
+        .collect();
+    let msg_results: Vec<Result<Vec<aura_storage::StorageMessage>, _>> = join_all(msg_futs).await;
     let mut messages = Vec::new();
-    let (Some(ref storage), Ok(jwt)) = (&state.storage_client, state.get_jwt()) else {
-        return messages;
-    };
-    let all_projects = projects::list_all_projects_from_network(state)
-        .await
-        .unwrap_or_default();
-    let agent_id_str = agent_id.to_string();
-
-    let pids: Vec<String> = all_projects
-        .iter()
-        .map(|p| p.project_id.to_string())
-        .collect();
-    let agent_futs: Vec<_> = pids
-        .iter()
-        .map(|pid| storage.list_project_agents(pid, &jwt))
-        .collect();
-    let agent_results = join_all(agent_futs).await;
-
-    let matching_agents: Vec<_> = agent_results
-        .into_iter()
-        .enumerate()
-        .flat_map(|(i, result)| match result {
-            Ok(agents) => agents
-                .into_iter()
-                .filter(|a| a.agent_id.as_deref() == Some(agent_id_str.as_str()))
-                .collect::<Vec<_>>(),
-            Err(e) => {
-                warn!(project_id = %pids[i], error = %e, "Failed to list project agents");
-                Vec::new()
-            }
-        })
-        .collect();
-
-    let session_futs: Vec<_> = matching_agents
-        .iter()
-        .map(|pa| storage.list_sessions(&pa.id, &jwt))
-        .collect();
-    let session_results = join_all(session_futs).await;
-
-    let all_sessions: Vec<_> = session_results
-        .into_iter()
-        .enumerate()
-        .flat_map(|(i, result)| match result {
-            Ok(sessions) => sessions,
-            Err(e) => {
-                warn!(project_agent_id = %matching_agents[i].id, error = %e, "Failed to list sessions");
-                Vec::new()
-            }
-        })
-        .collect();
-
-    let msg_futs: Vec<_> = all_sessions
-        .iter()
-        .map(|s| storage.list_messages(&s.id, &jwt, None, None))
-        .collect();
-    let msg_results = join_all(msg_futs).await;
-
     for (i, result) in msg_results.into_iter().enumerate() {
         match result {
             Ok(session_msgs) => {
@@ -91,11 +61,39 @@ pub async fn aggregate_agent_messages_from_storage(
                     messages.push(storage_message_to_message(sm));
                 }
             }
-            Err(e) => {
-                warn!(session_id = %all_sessions[i].id, error = %e, "Failed to list messages");
-            }
+            Err(e) => { warn!(session_id = %all_sessions[i].id, error = %e, "Failed to list messages"); }
         }
     }
+    messages
+}
+
+async fn fetch_all_sessions(
+    storage: &aura_storage::StorageClient,
+    jwt: &str,
+    agents: &[aura_storage::StorageProjectAgent],
+) -> Vec<aura_storage::StorageSession> {
+    let futs: Vec<_> = agents.iter().map(|pa| storage.list_sessions(&pa.id, jwt)).collect();
+    let results: Vec<Result<Vec<aura_storage::StorageSession>, _>> = join_all(futs).await;
+    results.into_iter().enumerate().flat_map(|(i, result)| match result {
+        Ok(sessions) => sessions,
+        Err(e) => {
+            warn!(project_agent_id = %agents[i].id, error = %e, "Failed to list sessions");
+            Vec::new()
+        }
+    }).collect()
+}
+
+/// Aggregate agent-level messages from aura-storage only (all project-agents for this agent_id -> sessions -> messages).
+pub async fn aggregate_agent_messages_from_storage(
+    state: &AppState,
+    agent_id: &AgentId,
+) -> Vec<Message> {
+    let (Some(ref storage), Ok(jwt)) = (&state.storage_client, state.get_jwt()) else {
+        return Vec::new();
+    };
+    let agent_id_str = agent_id.to_string();
+    let matching = find_matching_project_agents(state, storage, &jwt, &agent_id_str).await;
+    let mut messages = collect_session_messages(storage, &jwt, &matching).await;
     messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
     messages
 }
@@ -237,26 +235,21 @@ pub async fn send_message_stream(
         .ok();
 
     let (tx, rx) = mpsc::unbounded_channel::<ChatStreamEvent>();
-
-    let chat_service = state.chat_service.clone();
-    let pid = project_id;
-    let aiid = agent_instance_id;
     let content = body.content;
     let action = body.action.clone();
     let attachments = body.attachments.unwrap_or_default();
-
     let is_generate_specs = body.action.as_deref() == Some("generate_specs");
     if is_generate_specs {
         send_or_log(&state.event_tx, EngineEvent::SpecGenStarted { project_id });
     }
 
+    let chat_service = state.chat_service.clone();
+    let pid = project_id;
+    let aiid = agent_instance_id;
     tokio::spawn(async move {
         if let Some(ref instance) = agent_instance {
             chat_service
-                .send_message_streaming(
-                    &pid, &aiid, instance, &content,
-                    action.as_deref(), &attachments, tx,
-                )
+                .send_message_streaming(&pid, &aiid, instance, &content, action.as_deref(), &attachments, tx)
                 .await;
         } else {
             send_or_log(&tx, ChatStreamEvent::Error("agent instance not found".to_string()));
@@ -264,30 +257,28 @@ pub async fn send_message_stream(
         }
     });
 
-    let event_tx = state.event_tx.clone();
-    let mut spec_count: usize = 0;
+    let stream = map_chat_stream_with_spec_events(rx, state.event_tx.clone(), project_id, is_generate_specs);
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+}
 
-    let stream = UnboundedReceiverStream::new(rx).map(move |evt| {
+fn map_chat_stream_with_spec_events(
+    rx: mpsc::UnboundedReceiver<ChatStreamEvent>,
+    event_tx: mpsc::UnboundedSender<EngineEvent>,
+    project_id: ProjectId,
+    is_generate_specs: bool,
+) -> impl futures_core::Stream<Item = Result<Event, Infallible>> {
+    let mut spec_count: usize = 0;
+    UnboundedReceiverStream::new(rx).map(move |evt| {
         match &evt {
             ChatStreamEvent::SpecSaved(spec) => {
                 spec_count += 1;
-                send_or_log(&event_tx, EngineEvent::SpecSaved {
-                    project_id,
-                    spec: spec.clone(),
-                });
+                send_or_log(&event_tx, EngineEvent::SpecSaved { project_id, spec: spec.clone() });
             }
-            ChatStreamEvent::Done => {
-                if is_generate_specs {
-                    send_or_log(&event_tx, EngineEvent::SpecGenCompleted {
-                        project_id,
-                        spec_count,
-                    });
-                }
+            ChatStreamEvent::Done if is_generate_specs => {
+                send_or_log(&event_tx, EngineEvent::SpecGenCompleted { project_id, spec_count });
             }
             _ => {}
         }
         Ok(super::super::sse::chat_stream_event_to_sse(&evt))
-    });
-
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    })
 }
