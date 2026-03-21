@@ -96,7 +96,7 @@ function commitActivityFromEvents(events: FeedEvent[]): Record<string, number> {
   return activity;
 }
 
-function networkEventToFeedEvent(net: FeedEventDto): FeedEvent {
+export function networkEventToFeedEvent(net: FeedEventDto): FeedEvent {
   const meta = net.metadata ?? {};
   const postType = (net.post_type ?? "push") as PostType;
   const title = net.title ?? (meta.summary as string) ?? "";
@@ -140,7 +140,7 @@ interface NetworkComment {
   created_at: string | null;
 }
 
-function networkCommentToFeedComment(net: NetworkComment): FeedComment {
+export function networkCommentToFeedComment(net: NetworkComment): FeedComment {
   return {
     id: net.id,
     eventId: net.activity_event_id,

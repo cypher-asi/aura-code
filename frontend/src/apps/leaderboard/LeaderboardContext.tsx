@@ -2,7 +2,6 @@
 import { createContext, useContext, useState, useCallback, useMemo, useEffect } from "react";
 import type { ReactNode } from "react";
 import type { TimePeriod, LeaderboardFilter, LeaderboardUser } from "./mockData";
-import { getLeaderboard as getMockLeaderboard } from "./mockData";
 import { api } from "../../api/client";
 
 interface LeaderboardContextValue {
@@ -34,7 +33,7 @@ export function LeaderboardProvider({ children }: { children: ReactNode }) {
       .get(period)
       .then((data) => {
         if (cancelled) return;
-        if (data.length > 0) {
+        if (!cancelled) {
           setEntries(
             data.map((e) => ({
               id: e.profile_id,
@@ -48,12 +47,10 @@ export function LeaderboardProvider({ children }: { children: ReactNode }) {
               breakdown: [],
             })),
           );
-        } else {
-          setEntries(getMockLeaderboard(period));
         }
       })
       .catch(() => {
-        if (!cancelled) setEntries(getMockLeaderboard(period));
+        if (!cancelled) setEntries([]);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

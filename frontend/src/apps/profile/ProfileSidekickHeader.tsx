@@ -12,13 +12,15 @@ export function ProfileSidekickHeader() {
     return <div className={styles.header} />;
   }
 
-  const repoShort = event.repo.split("/").pop();
+  const detail = event.postType === "push" && event.repo
+    ? `${event.repo.split("/").pop()}/${event.branch}`
+    : event.title || event.postType;
 
   return (
     <div className={styles.header}>
       <span className={styles.meta}>{event.author.name}</span>
       <span className={styles.separator}>&middot;</span>
-      <span className={styles.meta}>{repoShort}/{event.branch}</span>
+      <span className={styles.meta}>{detail}</span>
       <span className={styles.spacer} />
       <Button
         variant="ghost"

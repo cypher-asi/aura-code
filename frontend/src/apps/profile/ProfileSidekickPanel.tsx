@@ -32,7 +32,9 @@ function ProfileCard() {
     user.display_name === profile.name ||
     profile.handle === `@${user.primary_zid}`
   );
-  const totalCommits = events.reduce((sum, e) => sum + e.commits.length, 0);
+  const totalCommits = events
+    .filter((e) => e.postType === "push")
+    .reduce((sum, e) => sum + e.commits.length, 0);
 
   return (
     <div className={styles.profileCardWrapper}>
