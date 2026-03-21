@@ -3,9 +3,9 @@ import { useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { Topbar, Drawer, Button, ButtonPlus } from "@cypher-asi/zui";
 import { ErrorBoundary } from "./ErrorBoundary";
 import {
-  ArrowLeft, Brain, Building2, CheckSquare,
+  ArrowLeft, Brain, CheckSquare,
   ChevronDown, CircleUserRound, FolderOpen,
-  GitCommitVertical, Settings, Trophy,
+  GitCommitVertical, Settings, Trophy, Building2,
 } from "lucide-react";
 import { PanelSearch } from "./PanelSearch";
 import { ProjectList } from "./ProjectList";
@@ -13,7 +13,9 @@ import { UpdateBanner } from "./UpdateBanner";
 import { useAppStore } from "../stores/app-store";
 import { useSidebarSearch } from "../context/SidebarSearchContext";
 import { useAuraCapabilities } from "../hooks/use-aura-capabilities";
-import { useMobileDrawers } from "../hooks/use-mobile-drawers";
+import { useMobileDrawerEffects } from "../hooks/use-mobile-drawers";
+import { useMobileDrawerStore, selectDrawerOpen, selectOverlayDrawerOpen } from "../stores/mobile-drawer-store";
+import { useUIModalStore } from "../stores/ui-modal-store";
 import { useProjectContext } from "../stores/project-action-store";
 import { useProjectsList } from "../apps/projects/useProjectsList";
 import { getLastAgent } from "../utils/storage";
@@ -66,17 +68,11 @@ function ProjectNavigationDrawerContent() {
   );
 }
 
-function AccountSheetContent({
-  onOpenProfile,
-  onOpenLeaderboard,
-  onOpenOrgSettings,
-  onOpenSettings,
-}: {
-  onOpenProfile: () => void;
-  onOpenLeaderboard: () => void;
-  onOpenOrgSettings: () => void;
-  onOpenSettings: () => void;
-}) {
+function AccountSheetContent() {
+  const navigate = useNavigate();
+  const { openAfterDrawerClose } = useMobileDrawerStore();
+  const { openOrgSettings, openSettings } = useUIModalStore();
+
   return (
     <div className={styles.mobileDrawerContent}>
       <div className={styles.mobileDrawerBody}>
@@ -86,7 +82,7 @@ function AccountSheetContent({
             size="sm"
             icon={<CircleUserRound size={16} />}
             className={styles.mobileDrawerAction}
-            onClick={onOpenProfile}
+            onClick={() => openAfterDrawerClose(() => navigate("/profile"))}
           >
             Profile
           </Button>
@@ -95,7 +91,7 @@ function AccountSheetContent({
             size="sm"
             icon={<Trophy size={16} />}
             className={styles.mobileDrawerAction}
-            onClick={onOpenLeaderboard}
+            onClick={() => openAfterDrawerClose(() => navigate("/leaderboard"))}
           >
             Leaderboard
           </Button>
@@ -104,7 +100,7 @@ function AccountSheetContent({
             size="sm"
             icon={<Building2 size={16} />}
             className={styles.mobileDrawerAction}
-            onClick={onOpenOrgSettings}
+            onClick={() => openAfterDrawerClose(openOrgSettings)}
           >
             Team settings
           </Button>
@@ -113,7 +109,7 @@ function AccountSheetContent({
             size="sm"
             icon={<Settings size={16} />}
             className={styles.mobileDrawerAction}
-            onClick={onOpenSettings}
+            onClick={() => openAfterDrawerClose(openSettings)}
           >
             App settings
           </Button>
@@ -169,13 +165,7 @@ function PreviewSheetContent() {
   );
 }
 
-export function MobileShell({
-  onOpenOrgSettings,
-  onOpenSettings,
-}: {
-  onOpenOrgSettings: () => void;
-  onOpenSettings: () => void;
-}) {
+export function MobileShell() {
   const activeApp = useAppStore((s) => s.activeApp);
   const { isPhoneLayout } = useAuraCapabilities();
   const projectContext = useProjectContext();
@@ -188,13 +178,18 @@ export function MobileShell({
     ResponsiveControls,
     PreviewPanel,
   } = activeApp;
-  const {
-    navOpen, setNavOpen,
-    previewOpen, setPreviewOpen,
-    accountOpen, setAccountOpen,
-    drawerOpen, overlayDrawerOpen,
-    closeDrawers, openAfterDrawerClose,
-  } = useMobileDrawers(Boolean(PreviewPanel));
+
+  const navOpen = useMobileDrawerStore((s) => s.navOpen);
+  const setNavOpen = useMobileDrawerStore((s) => s.setNavOpen);
+  const previewOpen = useMobileDrawerStore((s) => s.previewOpen);
+  const setPreviewOpen = useMobileDrawerStore((s) => s.setPreviewOpen);
+  const accountOpen = useMobileDrawerStore((s) => s.accountOpen);
+  const setAccountOpen = useMobileDrawerStore((s) => s.setAccountOpen);
+  const closeDrawers = useMobileDrawerStore((s) => s.closeDrawers);
+  const drawerOpen = useMobileDrawerStore(selectDrawerOpen);
+  const overlayDrawerOpen = useMobileDrawerStore(selectOverlayDrawerOpen);
+
+  useMobileDrawerEffects(Boolean(PreviewPanel));
 
   const currentProjectId = getProjectIdFromPathname(location.pathname);
   const currentProject = projectContext?.project
@@ -395,12 +390,7 @@ export function MobileShell({
         defaultSize={isPhoneLayout ? 320 : 360}
         maxSize={isPhoneLayout ? 420 : 440}
       >
-        <AccountSheetContent
-          onOpenProfile={() => openAfterDrawerClose(() => navigate("/profile"))}
-          onOpenLeaderboard={() => openAfterDrawerClose(() => navigate("/leaderboard"))}
-          onOpenOrgSettings={() => openAfterDrawerClose(onOpenOrgSettings)}
-          onOpenSettings={() => openAfterDrawerClose(onOpenSettings)}
-        />
+        <AccountSheetContent />
       </Drawer>
     </>
   );
