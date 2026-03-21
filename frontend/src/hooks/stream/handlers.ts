@@ -1,0 +1,242 @@
+import type { MutableRefObject } from "react";
+import { isInsufficientCreditsError, dispatchInsufficientCredits } from "../../api/client";
+import type { ToolCallStartedInfo, ToolCallInfo, ToolResultInfo } from "../../api/streams";
+import type { Message } from "../../types";
+import { extractToolCalls, extractArtifactRefs } from "../../utils/chat-history";
+import type {
+  DisplayContentBlockUnion,
+  ToolCallEntry,
+  StreamRefs,
+  StreamSetters,
+} from "../../types/stream";
+
+/* ------------------------------------------------------------------ */
+/*  Pure helpers                                                       */
+/* ------------------------------------------------------------------ */
+
+export function snapshotThinking(refs: StreamRefs) {
+  return {
+    savedThinking: refs.thinkingBuffer.current || undefined,
+    savedThinkingDuration: refs.thinkingStart.current != null
+      ? Date.now() - refs.thinkingStart.current
+      : null,
+  };
+}
+
+export function snapshotToolCalls(refs: StreamRefs): ToolCallEntry[] | undefined {
+  return refs.toolCalls.current.length > 0
+    ? [...refs.toolCalls.current]
+    : undefined;
+}
+
+export function resetStreamBuffers(refs: StreamRefs, setters: StreamSetters): void {
+  setters.setStreamingText("");
+  refs.streamBuffer.current = "";
+  setters.setThinkingText("");
+  refs.thinkingBuffer.current = "";
+  refs.thinkingStart.current = null;
+  setters.setThinkingDurationMs(null);
+  refs.toolCalls.current = [];
+  setters.setActiveToolCalls([]);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Stream event handlers                                              */
+/* ------------------------------------------------------------------ */
+
+export function handleThinkingDelta(
+  refs: StreamRefs,
+  setters: StreamSetters,
+  text: string,
+): void {
+  setters.setProgressText("");
+  if (refs.thinkingStart.current === null) {
+    refs.thinkingStart.current = Date.now();
+  }
+  refs.thinkingBuffer.current += text;
+  if (refs.thinkingRaf.current === null) {
+    refs.thinkingRaf.current = requestAnimationFrame(() => {
+      refs.thinkingRaf.current = null;
+      setters.setThinkingText(refs.thinkingBuffer.current);
+    });
+  }
+}
+
+export function handleTextDelta(
+  refs: StreamRefs,
+  setters: StreamSetters,
+  closureThinkingDurationMs: number | null,
+  text: string,
+): void {
+  setters.setProgressText("");
+  if (refs.thinkingStart.current !== null && closureThinkingDurationMs === null) {
+    setters.setThinkingDurationMs(Date.now() - refs.thinkingStart.current);
+  }
+  if (refs.needsSeparator.current && refs.streamBuffer.current.length > 0) {
+    refs.streamBuffer.current += "\n\n";
+    refs.needsSeparator.current = false;
+  }
+  refs.streamBuffer.current += text;
+  if (refs.raf.current === null) {
+    refs.raf.current = requestAnimationFrame(() => {
+      refs.raf.current = null;
+      setters.setStreamingText(refs.streamBuffer.current);
+    });
+  }
+}
+
+export function handleToolCallStarted(
+  refs: StreamRefs,
+  setters: StreamSetters,
+  info: ToolCallStartedInfo,
+): void {
+  setters.setProgressText("");
+  const entry: ToolCallEntry = {
+    id: info.id,
+    name: info.name,
+    input: {},
+    pending: true,
+    started: true,
+  };
+  refs.toolCalls.current = [...refs.toolCalls.current, entry];
+  setters.setActiveToolCalls([...refs.toolCalls.current]);
+}
+
+export function handleToolCall(
+  refs: StreamRefs,
+  setters: StreamSetters,
+  info: ToolCallInfo,
+): void {
+  setters.setProgressText("");
+  const existingIdx = refs.toolCalls.current.findIndex(
+    (tc) => tc.id === info.id && tc.started,
+  );
+  if (existingIdx !== -1) {
+    refs.toolCalls.current = refs.toolCalls.current.map((tc) =>
+      tc.id === info.id && tc.started
+        ? { ...tc, input: info.input, started: false }
+        : tc,
+    );
+  } else {
+    const entry: ToolCallEntry = {
+      id: info.id,
+      name: info.name,
+      input: info.input,
+      pending: true,
+    };
+    refs.toolCalls.current = [...refs.toolCalls.current, entry];
+  }
+  setters.setActiveToolCalls([...refs.toolCalls.current]);
+}
+
+export function handleToolResult(
+  refs: StreamRefs,
+  setters: StreamSetters,
+  info: ToolResultInfo,
+): void {
+  refs.toolCalls.current = refs.toolCalls.current.map((tc) =>
+    tc.id === info.id
+      ? { ...tc, result: info.result, isError: info.is_error, pending: false }
+      : tc,
+  );
+  setters.setActiveToolCalls([...refs.toolCalls.current]);
+  refs.needsSeparator.current = true;
+}
+
+export function handleMessageSaved(
+  refs: StreamRefs,
+  setters: StreamSetters,
+  msg: Message,
+): void {
+  const allBlocks = msg.content_blocks ?? [];
+  const displayBlocks: DisplayContentBlockUnion[] = allBlocks
+    .filter((b) => b.type === "text" || b.type === "image")
+    .map((b) =>
+      b.type === "text"
+        ? { type: "text" as const, text: b.text ?? "" }
+        : { type: "image" as const, media_type: b.media_type ?? "image/png", data: b.data ?? "" },
+    );
+
+  const msgToolCalls = extractToolCalls(allBlocks);
+  const finalToolCalls =
+    msgToolCalls && msgToolCalls.length > 0
+      ? msgToolCalls
+      : snapshotToolCalls(refs);
+
+  const savedThinking = msg.thinking || refs.thinkingBuffer.current || undefined;
+  const savedThinkingDuration = msg.thinking_duration_ms
+    ?? (refs.thinkingStart.current != null ? Date.now() - refs.thinkingStart.current : null);
+  setters.setMessages((prev) => [
+    ...prev,
+    {
+      id: msg.message_id,
+      role: "assistant",
+      content: msg.content,
+      contentBlocks: displayBlocks.length > 0 ? displayBlocks : undefined,
+      toolCalls: finalToolCalls,
+      artifactRefs: extractArtifactRefs(allBlocks),
+      thinkingText: savedThinking,
+      thinkingDurationMs: savedThinkingDuration,
+    },
+  ]);
+  resetStreamBuffers(refs, setters);
+}
+
+export function handleStreamError(
+  refs: StreamRefs,
+  setters: StreamSetters,
+  message: string,
+): void {
+  console.error("Chat stream error:", message);
+  if (isInsufficientCreditsError(message)) {
+    dispatchInsufficientCredits();
+  }
+  const { savedThinking, savedThinkingDuration } = snapshotThinking(refs);
+  const prefix = refs.streamBuffer.current
+    ? refs.streamBuffer.current + "\n\n"
+    : "";
+  setters.setMessages((prev) => [
+    ...prev,
+    {
+      id: `error-${Date.now()}`,
+      role: "assistant",
+      content: prefix + `*Error: ${message}*`,
+      toolCalls: snapshotToolCalls(refs),
+      thinkingText: savedThinking,
+      thinkingDurationMs: savedThinkingDuration,
+    },
+  ]);
+  resetStreamBuffers(refs, setters);
+}
+
+export function finalizeStream(
+  refs: StreamRefs,
+  setters: StreamSetters,
+  abortRef: MutableRefObject<AbortController | null>,
+  closureIsStreaming: boolean,
+): void {
+  if (refs.streamBuffer.current && !closureIsStreaming) {
+    const { savedThinking, savedThinkingDuration } = snapshotThinking(refs);
+    setters.setMessages((prev) => [
+      ...prev,
+      {
+        id: `stream-${Date.now()}`,
+        role: "assistant",
+        content: refs.streamBuffer.current,
+        toolCalls: snapshotToolCalls(refs),
+        thinkingText: savedThinking,
+        thinkingDurationMs: savedThinkingDuration,
+      },
+    ]);
+    setters.setStreamingText("");
+    refs.streamBuffer.current = "";
+    refs.toolCalls.current = [];
+    setters.setActiveToolCalls([]);
+  }
+  setters.setThinkingText("");
+  refs.thinkingBuffer.current = "";
+  refs.thinkingStart.current = null;
+  setters.setThinkingDurationMs(null);
+  setters.setIsStreaming(false);
+  abortRef.current = null;
+}
