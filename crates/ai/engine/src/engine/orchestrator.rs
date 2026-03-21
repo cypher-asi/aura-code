@@ -480,82 +480,10 @@ impl DevLoopEngine {
                     commits: commits.clone(),
                     summary: summary.clone(),
                 });
-
-                self.post_feed_event(
-                    agent_instance_id,
-                    task.project_id,
-                    &repo_label,
-                    branch,
-                    &commits,
-                    &summary,
-                )
-                .await;
             }
             Err(e) => {
                 warn!(error = %e, "git push after spec completion failed (non-fatal)");
             }
-        }
-    }
-
-    /// Post a feed event to aura-network's internal activity API.
-    async fn post_feed_event(
-        &self,
-        agent_instance_id: AgentInstanceId,
-        project_id: ProjectId,
-        repo: &str,
-        branch: &str,
-        commits: &[crate::git_ops::CommitInfo],
-        summary: &str,
-    ) {
-        let network = match self.network_client.as_ref() {
-            Some(n) => n,
-            None => return,
-        };
-        let token = match self.internal_service_token.as_deref() {
-            Some(t) if !t.is_empty() => t,
-            _ => return,
-        };
-
-        let instance = self
-            .agent_instance_service
-            .get_instance(&project_id, &agent_instance_id)
-            .await
-            .ok();
-
-        let jwt = self.get_jwt_for_storage().ok();
-        let net_agent = match (instance.as_ref(), jwt.as_deref()) {
-            (Some(inst), Some(jwt)) => {
-                network.get_agent(&inst.agent_id.to_string(), jwt).await.ok()
-            }
-            _ => None,
-        };
-
-        let profile_id = net_agent
-            .as_ref()
-            .and_then(|a| a.profile_id.as_deref())
-            .unwrap_or("");
-        if profile_id.is_empty() {
-            info!("agent has no profile_id, skipping feed event post");
-            return;
-        }
-
-        let metadata = serde_json::json!({
-            "author_name": net_agent.as_ref().map(|a| a.name.as_str()).unwrap_or("Agent"),
-            "author_type": "agent",
-            "author_avatar": net_agent.as_ref().and_then(|a| a.icon.as_deref()).unwrap_or(""),
-            "repo": repo,
-            "branch": branch,
-            "commits": commits,
-            "summary": summary,
-        });
-
-        if let Err(e) = network
-            .post_internal_activity(token, profile_id, "push", metadata)
-            .await
-        {
-            warn!(error = %e, "failed to post feed event to aura-network (non-fatal)");
-        } else {
-            info!("posted push feed event to aura-network");
         }
     }
 
