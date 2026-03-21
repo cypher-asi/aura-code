@@ -241,6 +241,82 @@ fn flush_buffered_events(
     }
 }
 
+struct RebroadcastState {
+    delta_count: u64,
+    delta_broadcast_buf: DeltaBroadcastBuf,
+    ready_broadcast_buf: ReadyBroadcastBuf,
+    task_output_for_log: Option<(aura_core::TaskId, String)>,
+    task_session_map: HashMap<aura_core::TaskId, TaskSessionEntry>,
+}
+
+impl RebroadcastState {
+    fn new() -> Self {
+        Self {
+            delta_count: 0,
+            delta_broadcast_buf: HashMap::new(),
+            ready_broadcast_buf: Vec::new(),
+            task_output_for_log: None,
+            task_session_map: HashMap::new(),
+        }
+    }
+}
+
+async fn dispatch_engine_event(
+    event: &EngineEvent,
+    rbs: &mut RebroadcastState,
+    task_output_buffers: &TaskOutputBuffers,
+    task_step_buffers: &TaskStepBuffers,
+    storage_client: &Option<Arc<StorageClient>>,
+    store: &Arc<RocksStore>,
+) {
+    match event {
+        EngineEvent::TaskOutputDelta { project_id, agent_instance_id, task_id, delta } => {
+            handle_task_output_delta(
+                *task_id, *project_id, *agent_instance_id, delta,
+                task_output_buffers, &mut rbs.delta_broadcast_buf,
+                &mut rbs.delta_count, store,
+            );
+        }
+        EngineEvent::TaskBecameReady { project_id, agent_instance_id, task_id } => {
+            rbs.ready_broadcast_buf.push((*project_id, *agent_instance_id, *task_id));
+        }
+        EngineEvent::TaskStarted { project_id, agent_instance_id, task_id, session_id, .. } => {
+            rbs.task_session_map.insert(*task_id, TaskSessionEntry {
+                project_id: *project_id,
+                agent_instance_id: *agent_instance_id,
+                session_id: *session_id,
+            });
+            if let Ok(mut steps) = task_step_buffers.lock() { steps.remove(task_id); }
+        }
+        EngineEvent::BuildVerificationSkipped { task_id, .. }
+        | EngineEvent::BuildVerificationStarted { task_id, .. }
+        | EngineEvent::BuildVerificationPassed { task_id, .. }
+        | EngineEvent::BuildVerificationFailed { task_id, .. }
+        | EngineEvent::BuildFixAttempt { task_id, .. } => {
+            handle_verification_event(event, task_id, true, task_step_buffers);
+        }
+        EngineEvent::TestVerificationStarted { task_id, .. }
+        | EngineEvent::TestVerificationPassed { task_id, .. }
+        | EngineEvent::TestVerificationFailed { task_id, .. }
+        | EngineEvent::TestFixAttempt { task_id, .. } => {
+            handle_verification_event(event, task_id, false, task_step_buffers);
+        }
+        EngineEvent::TaskCompleted { task_id, .. }
+        | EngineEvent::TaskFailed { task_id, .. } => {
+            rbs.task_output_for_log = handle_task_end(
+                event, task_id, task_output_buffers, task_step_buffers,
+                &mut rbs.task_session_map, storage_client, store,
+            ).await;
+        }
+        EngineEvent::LoopStopped { .. } | EngineEvent::LoopFinished { .. } => {
+            rbs.task_session_map.clear();
+            finalize_all_live_output(store, task_output_buffers);
+            if let Ok(mut steps) = task_step_buffers.lock() { steps.clear(); }
+        }
+        _ => {}
+    }
+}
+
 fn spawn_event_rebroadcast(
     mut rx: mpsc::UnboundedReceiver<EngineEvent>,
     broadcast_tx: broadcast::Sender<EngineEvent>,
@@ -251,86 +327,31 @@ fn spawn_event_rebroadcast(
     loop_log: Arc<LoopLogWriter>,
 ) {
     tokio::spawn(async move {
-        let mut delta_count: u64 = 0;
-        let mut delta_broadcast_buf: DeltaBroadcastBuf = HashMap::new();
-        let mut ready_broadcast_buf: ReadyBroadcastBuf = Vec::new();
+        let mut rbs = RebroadcastState::new();
         let mut flush_interval = interval(Duration::from_millis(DELTA_BROADCAST_INTERVAL_MS));
         flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut task_output_for_log: Option<(aura_core::TaskId, String)> = None;
-        let mut task_session_map: HashMap<aura_core::TaskId, TaskSessionEntry> = HashMap::new();
 
         loop {
             tokio::select! {
                 maybe_event = rx.recv() => {
                     let Some(event) = maybe_event else { break };
-
-                    match &event {
-                        EngineEvent::TaskOutputDelta { project_id, agent_instance_id, task_id, delta } => {
-                            handle_task_output_delta(
-                                *task_id, *project_id, *agent_instance_id, delta,
-                                &task_output_buffers, &mut delta_broadcast_buf,
-                                &mut delta_count, &store,
-                            );
-                        }
-                        EngineEvent::TaskBecameReady { project_id, agent_instance_id, task_id } => {
-                            ready_broadcast_buf.push((*project_id, *agent_instance_id, *task_id));
-                        }
-                        EngineEvent::TaskStarted { project_id, agent_instance_id, task_id, session_id, .. } => {
-                            task_session_map.insert(*task_id, TaskSessionEntry {
-                                project_id: *project_id,
-                                agent_instance_id: *agent_instance_id,
-                                session_id: *session_id,
-                            });
-                            if let Ok(mut steps) = task_step_buffers.lock() {
-                                steps.remove(task_id);
-                            }
-                        }
-                        EngineEvent::BuildVerificationSkipped { task_id, .. }
-                        | EngineEvent::BuildVerificationStarted { task_id, .. }
-                        | EngineEvent::BuildVerificationPassed { task_id, .. }
-                        | EngineEvent::BuildVerificationFailed { task_id, .. }
-                        | EngineEvent::BuildFixAttempt { task_id, .. } => {
-                            handle_verification_event(&event, task_id, true, &task_step_buffers);
-                        }
-                        EngineEvent::TestVerificationStarted { task_id, .. }
-                        | EngineEvent::TestVerificationPassed { task_id, .. }
-                        | EngineEvent::TestVerificationFailed { task_id, .. }
-                        | EngineEvent::TestFixAttempt { task_id, .. } => {
-                            handle_verification_event(&event, task_id, false, &task_step_buffers);
-                        }
-                        EngineEvent::TaskCompleted { task_id, .. }
-                        | EngineEvent::TaskFailed { task_id, .. } => {
-                            task_output_for_log = handle_task_end(
-                                &event, task_id,
-                                &task_output_buffers, &task_step_buffers,
-                                &mut task_session_map, &storage_client, &store,
-                            ).await;
-                        }
-                        EngineEvent::LoopStopped { .. } | EngineEvent::LoopFinished { .. } => {
-                            task_session_map.clear();
-                            finalize_all_live_output(&store, &task_output_buffers);
-                            if let Ok(mut steps) = task_step_buffers.lock() {
-                                steps.clear();
-                            }
-                        }
-                        _ => {}
-                    }
-
+                    dispatch_engine_event(
+                        &event, &mut rbs, &task_output_buffers,
+                        &task_step_buffers, &storage_client, &store,
+                    ).await;
                     if matches!(event, EngineEvent::TaskOutputDelta { .. } | EngineEvent::TaskBecameReady { .. }) {
                         continue;
                     }
-
-                    write_loop_log_lifecycle(&loop_log, &event, &mut task_output_for_log).await;
+                    write_loop_log_lifecycle(&loop_log, &event, &mut rbs.task_output_for_log).await;
                     write_storage_log_entry(&storage_client, &store, &event).await;
-                    flush_buffered_events(&broadcast_tx, &mut delta_broadcast_buf, &mut ready_broadcast_buf);
-
+                    flush_buffered_events(&broadcast_tx, &mut rbs.delta_broadcast_buf, &mut rbs.ready_broadcast_buf);
                     debug!(?event, "Broadcasting engine event");
                     if broadcast_tx.send(event).is_err() {
                         warn!("No WebSocket subscribers for engine event");
                     }
                 }
                 _ = flush_interval.tick() => {
-                    flush_buffered_events(&broadcast_tx, &mut delta_broadcast_buf, &mut ready_broadcast_buf);
+                    flush_buffered_events(&broadcast_tx, &mut rbs.delta_broadcast_buf, &mut rbs.ready_broadcast_buf);
                 }
             }
         }

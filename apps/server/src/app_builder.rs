@@ -155,25 +155,22 @@ fn spawn_health_checks(
     }
 }
 
-pub fn build_app_state(db_path: &Path) -> AppState {
-    let data_dir = db_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| Path::new(".").to_path_buf());
-    let store = Arc::new(RocksStore::open(db_path).expect("failed to open RocksDB"));
+struct EventInfrastructure {
+    event_tx: mpsc::UnboundedSender<EngineEvent>,
+    event_broadcast: broadcast::Sender<EngineEvent>,
+    task_output_buffers: TaskOutputBuffers,
+    task_step_buffers: TaskStepBuffers,
+}
 
-    let network_client = NetworkClient::from_env().map(Arc::new);
-    let storage_client = StorageClient::from_env().map(Arc::new);
-
-    let core = init_core_services(&store);
-    let domain = init_domain_services(&store, &network_client, &storage_client, &core);
-
+fn init_event_infrastructure(
+    data_dir: &Path,
+    store: &Arc<RocksStore>,
+    storage_client: &Option<Arc<StorageClient>>,
+) -> EventInfrastructure {
     let (event_tx, event_rx) = mpsc::unbounded_channel::<EngineEvent>();
     let (event_broadcast, _) = broadcast::channel::<EngineEvent>(4096);
-    let task_output_buffers: TaskOutputBuffers =
-        Arc::new(std::sync::Mutex::new(HashMap::new()));
-    let task_step_buffers: TaskStepBuffers =
-        Arc::new(std::sync::Mutex::new(HashMap::new()));
+    let task_output_buffers: TaskOutputBuffers = Arc::new(std::sync::Mutex::new(HashMap::new()));
+    let task_step_buffers: TaskStepBuffers = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
     let loop_log_dir = std::env::var("AURA_LOOP_LOG_DIR")
         .ok()
@@ -183,63 +180,51 @@ pub fn build_app_state(db_path: &Path) -> AppState {
     let loop_log = Arc::new(LoopLogWriter::new(loop_log_dir));
 
     super::spawn_event_rebroadcast(
-        event_rx,
-        event_broadcast.clone(),
-        store.clone(),
-        storage_client.clone(),
-        task_output_buffers.clone(),
-        task_step_buffers.clone(),
-        loop_log,
+        event_rx, event_broadcast.clone(), store.clone(),
+        storage_client.clone(), task_output_buffers.clone(),
+        task_step_buffers.clone(), loop_log,
     );
+    EventInfrastructure { event_tx, event_broadcast, task_output_buffers, task_step_buffers }
+}
 
-    let orbit_client = Arc::new(OrbitClient::new());
-    let orbit_base_url = std::env::var("ORBIT_BASE_URL")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| s.trim_end_matches('/').to_string());
-    let internal_service_token = std::env::var("INTERNAL_SERVICE_TOKEN")
-        .ok()
-        .filter(|s| !s.trim().is_empty());
+fn env_opt(key: &str) -> Option<String> {
+    std::env::var(key).ok().filter(|s| !s.trim().is_empty())
+}
+
+pub fn build_app_state(db_path: &Path) -> AppState {
+    let data_dir = db_path.parent().map(Path::to_path_buf).unwrap_or_else(|| Path::new(".").to_path_buf());
+    let store = Arc::new(RocksStore::open(db_path).expect("failed to open RocksDB"));
+    let network_client = NetworkClient::from_env().map(Arc::new);
+    let storage_client = StorageClient::from_env().map(Arc::new);
+
+    let core = init_core_services(&store);
+    let domain = init_domain_services(&store, &network_client, &storage_client, &core);
+    let infra = init_event_infrastructure(&data_dir, &store, &storage_client);
 
     spawn_health_checks(&storage_client, &network_client);
-
     if let Some(ref client) = network_client {
-        super::network_bridge::spawn_network_ws_bridge(
-            client.clone(),
-            store.clone(),
-            event_broadcast.clone(),
-        );
+        super::network_bridge::spawn_network_ws_bridge(client.clone(), store.clone(), infra.event_broadcast.clone());
     }
 
     AppState {
-        data_dir: data_dir.to_path_buf(),
-        store,
-        org_service: core.org_service,
-        auth_service: core.auth_service,
-        settings_service: core.settings_service,
-        pricing_service: core.pricing_service,
+        data_dir, store,
+        org_service: core.org_service, auth_service: core.auth_service,
+        settings_service: core.settings_service, pricing_service: core.pricing_service,
         billing_client: core.billing_client,
-        project_service: domain.project_service,
-        spec_gen_service: domain.spec_gen_service,
-        task_extraction_service: domain.task_extraction_service,
-        task_service: domain.task_service,
-        agent_service: domain.agent_service,
-        agent_instance_service: domain.agent_instance_service,
-        session_service: domain.session_service,
-        chat_service: domain.chat_service,
+        project_service: domain.project_service, spec_gen_service: domain.spec_gen_service,
+        task_extraction_service: domain.task_extraction_service, task_service: domain.task_service,
+        agent_service: domain.agent_service, agent_instance_service: domain.agent_instance_service,
+        session_service: domain.session_service, chat_service: domain.chat_service,
         llm: core.llm,
-        event_tx,
-        event_broadcast,
+        event_tx: infra.event_tx, event_broadcast: infra.event_broadcast,
         loop_registry: Arc::new(Mutex::new(HashMap::new())),
         write_coordinator: aura_engine::ProjectWriteCoordinator::new(),
-        task_output_buffers,
-        task_step_buffers,
+        task_output_buffers: infra.task_output_buffers, task_step_buffers: infra.task_step_buffers,
         terminal_manager: Arc::new(TerminalManager::new()),
-        network_client,
-        storage_client,
-        orbit_client,
-        orbit_base_url,
-        internal_service_token,
+        network_client, storage_client,
+        orbit_client: Arc::new(OrbitClient::new()),
+        orbit_base_url: env_opt("ORBIT_BASE_URL").map(|s| s.trim_end_matches('/').to_string()),
+        internal_service_token: env_opt("INTERNAL_SERVICE_TOKEN"),
         runtime_agent_state: domain.runtime_agent_state,
     }
 }
