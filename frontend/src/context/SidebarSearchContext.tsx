@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { useAppUIStore } from "../stores/app-ui-store";
 import { useSidebarAction } from "./SidebarActionContext";
@@ -14,13 +14,17 @@ type SidebarSearchValue = {
 
 export function useSidebarSearch(): SidebarSearchValue {
   const { activeApp } = useAppContext();
-  const query = useAppUIStore((s) => s.sidebarQuery);
+  const storeQuery = useAppUIStore((s) => s.sidebarQuery);
   const setSidebarQuery = useAppUIStore((s) => s.setSidebarQuery);
   const { action, setAction } = useSidebarAction();
 
+  const prevAppRef = useRef(activeApp.id);
+  const appJustSwitched = prevAppRef.current !== activeApp.id;
+
   useEffect(() => {
+    prevAppRef.current = activeApp.id;
     setSidebarQuery("");
   }, [activeApp.id, setSidebarQuery]);
 
-  return { query, setQuery: setSidebarQuery, action, setAction };
+  return { query: appJustSwitched ? "" : storeQuery, setQuery: setSidebarQuery, action, setAction };
 }
