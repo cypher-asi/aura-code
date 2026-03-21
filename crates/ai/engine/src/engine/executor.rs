@@ -192,8 +192,7 @@ impl DevLoopEngine {
         if !execution.files_already_applied {
             if let Err(e) = file_ops::apply_file_ops(base_path, &execution.file_ops).await {
                 return Ok(self.handle_file_ops_failure(
-                    fp.project_id, fp.agent_instance_id, fp.task, fp.session, fp.model,
-                    fp.task_start, llm_duration_ms, &execution, e,
+                    &fp, llm_duration_ms, &execution, e,
                 ).await);
             }
         }
@@ -211,9 +210,6 @@ impl DevLoopEngine {
             }).await?;
         let build_verify_duration_ms = build_start.elapsed().as_millis() as u64;
         let task_duration_ms = fp.task_start.elapsed().as_millis() as u64;
-
-        let total_input = execution.input_tokens + fix_inp;
-        let total_output = execution.output_tokens + fix_out;
 
         let timings = TaskTimings {
             input_tokens: execution.input_tokens,
@@ -233,17 +229,11 @@ impl DevLoopEngine {
 
         if !build_passed {
             return Ok(self.handle_build_failure(
-                fp.project_id, fp.agent_instance_id, fp.task, fp.session, fp.model,
-                &execution, total_input, total_output, timings,
-                &last_build_stderr,
+                &fp, &execution, timings, &last_build_stderr,
             ).await);
         }
 
-        self.emit_completion(
-            fp.project_id, fp.agent_instance_id, fp.task, fp.session, fp.model,
-            &execution, &file_changes, total_input, total_output,
-            task_duration_ms, llm_duration_ms, build_verify_duration_ms, build_attempts,
-        ).await;
+        self.emit_completion(&fp, &execution, &file_changes, &timings).await;
 
         Ok(TaskOutcome::Completed {
             notes: execution.notes,
@@ -283,29 +273,25 @@ impl DevLoopEngine {
 
     async fn handle_file_ops_failure(
         &self,
-        project_id: ProjectId,
-        agent_instance_id: AgentInstanceId,
-        task: &Task,
-        session: &Session,
-        model: &Option<String>,
-        task_start: Instant,
+        fp: &TaskFinalizationParams<'_>,
         llm_duration_ms: u64,
         execution: &TaskExecution,
         e: EngineError,
     ) -> TaskOutcome {
         let reason = format!("file operation failed: {e}");
-        let task_dur = task_start.elapsed().as_millis() as u64;
-        if let Err(e2) = self.task_service.fail_task(&project_id, &task.spec_id, &task.task_id, &reason).await {
-            warn!(task_id = %task.task_id, error = %e2, "failed to mark task as failed");
+        let task_dur = fp.task_start.elapsed().as_millis() as u64;
+        if let Err(e2) = self.task_service.fail_task(&fp.project_id, &fp.task.spec_id, &fp.task.task_id, &reason).await {
+            warn!(task_id = %fp.task.task_id, error = %e2, "failed to mark task as failed");
         }
         self.emit(EngineEvent::TaskFailed {
-            project_id, agent_instance_id, task_id: task.task_id,
+            project_id: fp.project_id, agent_instance_id: fp.agent_instance_id,
+            task_id: fp.task.task_id,
             reason: e.to_string(), duration_ms: Some(task_dur),
             phase: Some("file_ops".into()), parse_retries: Some(execution.parse_retries),
-            build_fix_attempts: None, model: model.clone(),
+            build_fix_attempts: None, model: fp.model.clone(),
         });
         if let Err(e2) = self.session_service.update_context_usage(
-            &project_id, &agent_instance_id, &session.session_id,
+            &fp.project_id, &fp.agent_instance_id, &fp.session.session_id,
             execution.input_tokens, execution.output_tokens,
         ).await { warn!(error = %e2, "failed to update context usage"); }
         TaskOutcome::Failed {
@@ -351,19 +337,13 @@ impl DevLoopEngine {
 
     async fn handle_build_failure(
         &self,
-        project_id: ProjectId,
-        agent_instance_id: AgentInstanceId,
-        task: &Task,
-        session: &Session,
-        model: &Option<String>,
+        fp: &TaskFinalizationParams<'_>,
         execution: &TaskExecution,
-        total_input: u64,
-        total_output: u64,
         timings: TaskTimings,
         last_build_stderr: &str,
     ) -> TaskOutcome {
-        // Store the actual build errors in execution_notes so they're visible
-        // when the task is retried via "Notes from Prior Attempts".
+        let total_input = timings.input_tokens + timings.fix_input_tokens;
+        let total_output = timings.output_tokens + timings.fix_output_tokens;
         let reason = if last_build_stderr.is_empty() {
             "build verification failed after all fix attempts".to_string()
         } else {
@@ -382,18 +362,19 @@ impl DevLoopEngine {
                 truncated
             )
         };
-        if let Err(e) = self.task_service.fail_task(&project_id, &task.spec_id, &task.task_id, &reason).await {
-            warn!(task_id = %task.task_id, error = %e, "failed to mark task as failed");
+        if let Err(e) = self.task_service.fail_task(&fp.project_id, &fp.task.spec_id, &fp.task.task_id, &reason).await {
+            warn!(task_id = %fp.task.task_id, error = %e, "failed to mark task as failed");
         }
         self.emit(EngineEvent::TaskFailed {
-            project_id, agent_instance_id, task_id: task.task_id,
+            project_id: fp.project_id, agent_instance_id: fp.agent_instance_id,
+            task_id: fp.task.task_id,
             reason: reason.clone(), duration_ms: Some(timings.task_duration_ms),
             phase: Some("build_verify".into()),
             parse_retries: Some(execution.parse_retries),
-            build_fix_attempts: Some(timings.build_fix_attempts), model: model.clone(),
+            build_fix_attempts: Some(timings.build_fix_attempts), model: fp.model.clone(),
         });
         if let Err(e) = self.session_service.update_context_usage(
-            &project_id, &agent_instance_id, &session.session_id,
+            &fp.project_id, &fp.agent_instance_id, &fp.session.session_id,
             total_input, total_output,
         ).await { warn!(error = %e, "failed to update context usage"); }
         TaskOutcome::Failed {
@@ -403,56 +384,51 @@ impl DevLoopEngine {
 
     async fn emit_completion(
         &self,
-        project_id: ProjectId,
-        agent_instance_id: AgentInstanceId,
-        task: &Task,
-        session: &Session,
-        model: &Option<String>,
+        fp: &TaskFinalizationParams<'_>,
         execution: &TaskExecution,
         file_changes: &[FileChangeSummary],
-        total_input: u64,
-        total_output: u64,
-        task_duration_ms: u64,
-        llm_duration_ms: u64,
-        build_verify_duration_ms: u64,
-        build_attempts: u32,
+        timings: &TaskTimings,
     ) {
+        let total_input = timings.input_tokens + timings.fix_input_tokens;
+        let total_output = timings.output_tokens + timings.fix_output_tokens;
         if let Err(e) = self.task_service.complete_task(
-            &project_id, &task.spec_id, &task.task_id,
+            &fp.project_id, &fp.task.spec_id, &fp.task.task_id,
             &execution.notes, file_changes.to_vec(),
-        ).await { warn!(task_id = %task.task_id, error = %e, "failed to mark task as completed"); }
+        ).await { warn!(task_id = %fp.task.task_id, error = %e, "failed to mark task as completed"); }
 
         let cost_usd = {
             Some(self.pricing_service.compute_cost(
-                model.as_deref().unwrap_or(aura_claude::DEFAULT_MODEL),
+                fp.model.as_deref().unwrap_or(aura_claude::DEFAULT_MODEL),
                 total_input, total_output,
             ))
         };
         self.emit(EngineEvent::TaskCompleted {
-            project_id, agent_instance_id, task_id: task.task_id,
+            project_id: fp.project_id, agent_instance_id: fp.agent_instance_id,
+            task_id: fp.task.task_id,
             execution_notes: execution.notes.clone(),
             file_changes: file_changes.to_vec(),
-            duration_ms: Some(task_duration_ms),
+            duration_ms: Some(timings.task_duration_ms),
             input_tokens: Some(total_input), output_tokens: Some(total_output),
-            cost_usd, llm_duration_ms: Some(llm_duration_ms),
-            build_verify_duration_ms: Some(build_verify_duration_ms),
+            cost_usd, llm_duration_ms: Some(timings.llm_duration_ms),
+            build_verify_duration_ms: Some(timings.build_verify_duration_ms),
             files_changed_count: Some(execution.file_ops.len() as u32),
             parse_retries: Some(execution.parse_retries),
-            build_fix_attempts: Some(build_attempts), model: model.clone(),
+            build_fix_attempts: Some(timings.build_fix_attempts), model: fp.model.clone(),
         });
 
         let newly_ready = self.task_service
-            .resolve_dependencies_after_completion(&project_id, &task.task_id)
+            .resolve_dependencies_after_completion(&fp.project_id, &fp.task.task_id)
             .await
             .unwrap_or_default();
         for t in &newly_ready {
             self.emit(EngineEvent::TaskBecameReady {
-                project_id, agent_instance_id, task_id: t.task_id,
+                project_id: fp.project_id, agent_instance_id: fp.agent_instance_id,
+                task_id: t.task_id,
             });
         }
 
         if let Err(e) = self.session_service.update_context_usage(
-            &project_id, &agent_instance_id, &session.session_id,
+            &fp.project_id, &fp.agent_instance_id, &fp.session.session_id,
             total_input, total_output,
         ).await { warn!(error = %e, "failed to update context usage"); }
     }

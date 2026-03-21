@@ -21,7 +21,7 @@ pub(crate) struct BuildFixPromptParams<'a> {
     pub prior_attempts: &'a [BuildFixAttemptRecord],
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_arguments)] // Convenience wrapper kept for API symmetry
 pub(crate) fn build_fix_prompt(
     project: &Project,
     spec: &Spec,

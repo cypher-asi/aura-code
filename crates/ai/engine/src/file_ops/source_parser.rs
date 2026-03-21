@@ -131,15 +131,15 @@ pub(crate) fn extract_definition_block(content: &str, type_name: &str) -> Option
 fn extract_braced_block(lines: &[&str], start_idx: usize) -> String {
     let mut result = String::new();
     let mut depth: i32 = 0;
-    for j in start_idx..lines.len() {
-        for ch in lines[j].chars() {
+    for line in &lines[start_idx..] {
+        for ch in line.chars() {
             match ch {
                 '{' => depth += 1,
                 '}' => depth -= 1,
                 _ => {}
             }
         }
-        result.push_str(lines[j].trim());
+        result.push_str(line.trim());
         result.push('\n');
         if depth <= 0 {
             break;

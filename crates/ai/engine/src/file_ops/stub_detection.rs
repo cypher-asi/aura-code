@@ -214,8 +214,8 @@ fn extract_fn_body(lines: &[&str], fn_line_idx: usize) -> (String, usize) {
     let mut started = false;
     let mut body = String::new();
 
-    for j in fn_line_idx..lines.len() {
-        for ch in lines[j].chars() {
+    for (j, line) in lines.iter().enumerate().skip(fn_line_idx) {
+        for ch in line.chars() {
             match ch {
                 '{' => {
                     depth += 1;
@@ -225,7 +225,7 @@ fn extract_fn_body(lines: &[&str], fn_line_idx: usize) -> (String, usize) {
                 _ => {}
             }
         }
-        body.push_str(lines[j].trim());
+        body.push_str(line.trim());
         body.push('\n');
         if started && depth <= 0 {
             return (body, j);

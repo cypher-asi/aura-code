@@ -1,7 +1,9 @@
 pub(crate) mod build_fix;
 mod build_fix_types;
+mod build_fix_utils;
 mod error_signatures;
 mod executor;
+mod agentic_context;
 mod executor_agentic;
 mod executor_shell;
 mod loop_context;
@@ -16,6 +18,7 @@ pub(crate) mod prompts;
 pub(crate) mod shell;
 mod test_fix;
 pub(crate) mod tool_executor;
+mod tool_executor_helpers;
 mod verify_fix_common;
 pub mod types;
 pub mod write_coordinator;
