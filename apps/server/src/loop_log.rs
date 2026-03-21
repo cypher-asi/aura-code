@@ -90,7 +90,7 @@ impl LoopLogWriter {
             }
         };
 
-        if let Some((project_id, agent_instance_id)) = event_run_scope(event) {
+        if let Some((project_id, agent_instance_id)) = event.run_scope() {
             let state = self.run_state.lock().await;
             if let Some(run) = state.get(&(project_id, agent_instance_id)) {
                 let path = run.run_dir.join("events.jsonl");
@@ -102,7 +102,7 @@ impl LoopLogWriter {
             }
         }
 
-        if let Some(project_id) = event_project_id(event) {
+        if let Some(project_id) = event.project_id() {
             let project_dir = self.base_dir.join(project_id.to_string());
             let path = project_dir.join("project_events.jsonl");
             if let Err(e) = create_dir_and_append(&project_dir, &path, &line).await {
@@ -166,166 +166,4 @@ async fn create_dir_and_append(
 ) -> std::io::Result<()> {
     fs::create_dir_all(dir).await?;
     append_line(path, line).await
-}
-
-fn event_project_id(event: &EngineEvent) -> Option<ProjectId> {
-    match event {
-        EngineEvent::LoopStarted { project_id, .. }
-        | EngineEvent::TaskStarted { project_id, .. }
-        | EngineEvent::TaskCompleted { project_id, .. }
-        | EngineEvent::TaskFailed { project_id, .. }
-        | EngineEvent::TaskRetrying { project_id, .. }
-        | EngineEvent::TaskBecameReady { project_id, .. }
-        | EngineEvent::TasksBecameReady { project_id, .. }
-        | EngineEvent::FollowUpTaskCreated { project_id, .. }
-        | EngineEvent::SessionRolledOver { project_id, .. }
-        | EngineEvent::LoopPaused { project_id, .. }
-        | EngineEvent::LoopStopped { project_id, .. }
-        | EngineEvent::LoopFinished { project_id, .. }
-        | EngineEvent::LoopIterationSummary { project_id, .. }
-        | EngineEvent::TaskOutputDelta { project_id, .. }
-        | EngineEvent::FileOpsApplied { project_id, .. }
-        | EngineEvent::SpecGenStarted { project_id, .. }
-        | EngineEvent::SpecGenProgress { project_id, .. }
-        | EngineEvent::SpecGenCompleted { project_id, .. }
-        | EngineEvent::SpecGenFailed { project_id, .. }
-        | EngineEvent::SpecSaved { project_id, .. }
-        | EngineEvent::BuildVerificationSkipped { project_id, .. }
-        | EngineEvent::BuildVerificationStarted { project_id, .. }
-        | EngineEvent::BuildVerificationPassed { project_id, .. }
-        | EngineEvent::BuildVerificationFailed { project_id, .. }
-        | EngineEvent::BuildFixAttempt { project_id, .. }
-        | EngineEvent::TestVerificationStarted { project_id, .. }
-        | EngineEvent::TestVerificationPassed { project_id, .. }
-        | EngineEvent::TestVerificationFailed { project_id, .. }
-        | EngineEvent::TestFixAttempt { project_id, .. }
-        | EngineEvent::GitCommitted { project_id, .. }
-        | EngineEvent::GitPushed { project_id, .. } => Some(*project_id),
-        EngineEvent::LogLine { .. } | EngineEvent::NetworkEvent { .. } => None,
-    }
-}
-
-fn event_run_scope(event: &EngineEvent) -> Option<(ProjectId, AgentInstanceId)> {
-    match event {
-        EngineEvent::LoopStarted {
-            project_id,
-            agent_instance_id,
-        }
-        | EngineEvent::TaskStarted {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::TaskCompleted {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::TaskFailed {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::TaskRetrying {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::TaskBecameReady {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::TasksBecameReady {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::FollowUpTaskCreated {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::SessionRolledOver {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::LoopPaused {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::LoopStopped {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::LoopFinished {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::LoopIterationSummary {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::TaskOutputDelta {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::FileOpsApplied {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::BuildVerificationSkipped {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::BuildVerificationStarted {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::BuildVerificationPassed {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::BuildVerificationFailed {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::BuildFixAttempt {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::TestVerificationStarted {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::TestVerificationPassed {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::TestVerificationFailed {
-            project_id,
-            agent_instance_id,
-            ..
-        }
-        | EngineEvent::TestFixAttempt {
-            project_id,
-            agent_instance_id,
-            ..
-        } => Some((*project_id, *agent_instance_id)),
-        _ => None,
-    }
 }

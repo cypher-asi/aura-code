@@ -32,45 +32,6 @@ use aura_store::RocksStore;
 const LIVE_OUTPUT_FLUSH_INTERVAL: u64 = 50;
 const DELTA_BROADCAST_INTERVAL_MS: u64 = 100;
 
-/// Extract project_id from an EngineEvent (if available).
-fn event_project_id(event: &EngineEvent) -> Option<aura_core::ProjectId> {
-    match event {
-        EngineEvent::LoopStarted { project_id, .. }
-        | EngineEvent::TaskStarted { project_id, .. }
-        | EngineEvent::TaskCompleted { project_id, .. }
-        | EngineEvent::TaskFailed { project_id, .. }
-        | EngineEvent::TaskRetrying { project_id, .. }
-        | EngineEvent::TaskBecameReady { project_id, .. }
-        | EngineEvent::TasksBecameReady { project_id, .. }
-        | EngineEvent::FollowUpTaskCreated { project_id, .. }
-        | EngineEvent::SessionRolledOver { project_id, .. }
-        | EngineEvent::LoopPaused { project_id, .. }
-        | EngineEvent::LoopStopped { project_id, .. }
-        | EngineEvent::LoopFinished { project_id, .. }
-        | EngineEvent::LoopIterationSummary { project_id, .. }
-        | EngineEvent::FileOpsApplied { project_id, .. }
-        | EngineEvent::SpecGenStarted { project_id, .. }
-        | EngineEvent::SpecGenProgress { project_id, .. }
-        | EngineEvent::SpecGenCompleted { project_id, .. }
-        | EngineEvent::SpecGenFailed { project_id, .. }
-        | EngineEvent::SpecSaved { project_id, .. }
-        | EngineEvent::BuildVerificationSkipped { project_id, .. }
-        | EngineEvent::BuildVerificationStarted { project_id, .. }
-        | EngineEvent::BuildVerificationPassed { project_id, .. }
-        | EngineEvent::BuildVerificationFailed { project_id, .. }
-        | EngineEvent::BuildFixAttempt { project_id, .. }
-        | EngineEvent::TestVerificationStarted { project_id, .. }
-        | EngineEvent::TestVerificationPassed { project_id, .. }
-        | EngineEvent::TestVerificationFailed { project_id, .. }
-        | EngineEvent::TestFixAttempt { project_id, .. }
-        | EngineEvent::GitCommitted { project_id, .. }
-        | EngineEvent::GitPushed { project_id, .. }
-        | EngineEvent::PlanSubmitted { project_id, .. } => Some(*project_id),
-        EngineEvent::TaskOutputDelta { project_id, .. } => Some(*project_id),
-        EngineEvent::LogLine { .. } | EngineEvent::NetworkEvent { .. } => None,
-    }
-}
-
 /// Map an EngineEvent type to a log level string for aura-storage.
 fn event_log_level(event: &EngineEvent) -> &'static str {
     match event {
@@ -240,7 +201,7 @@ async fn write_storage_log_entry(
     event: &EngineEvent,
 ) {
     if let Some(ref sc) = storage_client {
-        if let Some(pid) = event_project_id(event) {
+        if let Some(pid) = event.project_id() {
             if let Some(jwt) = store.get_jwt() {
                 let metadata = serde_json::to_value(event).ok();
                 let req = aura_storage::CreateLogEntryRequest {

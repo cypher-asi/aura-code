@@ -305,3 +305,78 @@ pub enum EngineEvent {
         payload: Option<serde_json::Value>,
     },
 }
+
+impl EngineEvent {
+    /// Extract the project_id from any variant that carries one.
+    pub fn project_id(&self) -> Option<ProjectId> {
+        match self {
+            Self::LoopStarted { project_id, .. }
+            | Self::TaskStarted { project_id, .. }
+            | Self::TaskCompleted { project_id, .. }
+            | Self::TaskFailed { project_id, .. }
+            | Self::TaskRetrying { project_id, .. }
+            | Self::TaskBecameReady { project_id, .. }
+            | Self::TasksBecameReady { project_id, .. }
+            | Self::FollowUpTaskCreated { project_id, .. }
+            | Self::SessionRolledOver { project_id, .. }
+            | Self::LoopPaused { project_id, .. }
+            | Self::LoopStopped { project_id, .. }
+            | Self::LoopFinished { project_id, .. }
+            | Self::LoopIterationSummary { project_id, .. }
+            | Self::TaskOutputDelta { project_id, .. }
+            | Self::FileOpsApplied { project_id, .. }
+            | Self::SpecGenStarted { project_id, .. }
+            | Self::SpecGenProgress { project_id, .. }
+            | Self::SpecGenCompleted { project_id, .. }
+            | Self::SpecGenFailed { project_id, .. }
+            | Self::SpecSaved { project_id, .. }
+            | Self::PlanSubmitted { project_id, .. }
+            | Self::BuildVerificationSkipped { project_id, .. }
+            | Self::BuildVerificationStarted { project_id, .. }
+            | Self::BuildVerificationPassed { project_id, .. }
+            | Self::BuildVerificationFailed { project_id, .. }
+            | Self::BuildFixAttempt { project_id, .. }
+            | Self::TestVerificationStarted { project_id, .. }
+            | Self::TestVerificationPassed { project_id, .. }
+            | Self::TestVerificationFailed { project_id, .. }
+            | Self::TestFixAttempt { project_id, .. }
+            | Self::GitCommitted { project_id, .. }
+            | Self::GitPushed { project_id, .. } => Some(*project_id),
+            Self::LogLine { .. } | Self::NetworkEvent { .. } => None,
+        }
+    }
+
+    /// Extract the (project_id, agent_instance_id) scope for run-level log routing.
+    pub fn run_scope(&self) -> Option<(ProjectId, AgentInstanceId)> {
+        match self {
+            Self::LoopStarted { project_id, agent_instance_id }
+            | Self::TaskStarted { project_id, agent_instance_id, .. }
+            | Self::TaskCompleted { project_id, agent_instance_id, .. }
+            | Self::TaskFailed { project_id, agent_instance_id, .. }
+            | Self::TaskRetrying { project_id, agent_instance_id, .. }
+            | Self::TaskBecameReady { project_id, agent_instance_id, .. }
+            | Self::TasksBecameReady { project_id, agent_instance_id, .. }
+            | Self::FollowUpTaskCreated { project_id, agent_instance_id, .. }
+            | Self::SessionRolledOver { project_id, agent_instance_id, .. }
+            | Self::LoopPaused { project_id, agent_instance_id, .. }
+            | Self::LoopStopped { project_id, agent_instance_id, .. }
+            | Self::LoopFinished { project_id, agent_instance_id, .. }
+            | Self::LoopIterationSummary { project_id, agent_instance_id, .. }
+            | Self::TaskOutputDelta { project_id, agent_instance_id, .. }
+            | Self::FileOpsApplied { project_id, agent_instance_id, .. }
+            | Self::PlanSubmitted { project_id, agent_instance_id, .. }
+            | Self::BuildVerificationSkipped { project_id, agent_instance_id, .. }
+            | Self::BuildVerificationStarted { project_id, agent_instance_id, .. }
+            | Self::BuildVerificationPassed { project_id, agent_instance_id, .. }
+            | Self::BuildVerificationFailed { project_id, agent_instance_id, .. }
+            | Self::BuildFixAttempt { project_id, agent_instance_id, .. }
+            | Self::TestVerificationStarted { project_id, agent_instance_id, .. }
+            | Self::TestVerificationPassed { project_id, agent_instance_id, .. }
+            | Self::TestVerificationFailed { project_id, agent_instance_id, .. }
+            | Self::TestFixAttempt { project_id, agent_instance_id, .. } => {
+                Some((*project_id, *agent_instance_id))
+            }
+            _ => None,
+        }
+    }
+}
