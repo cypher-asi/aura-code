@@ -2,8 +2,6 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::time::Instant;
 
-use tracing::warn;
-
 use aura_core::*;
 use aura_claude::StreamTokenCapture;
 
@@ -18,6 +16,28 @@ use crate::error::EngineError;
 use crate::events::EngineEvent;
 use crate::file_ops::{self, FileOp, WorkspaceCache};
 
+fn check_repeated_error(
+    prior: &[BuildFixAttemptRecord],
+    current_sig: &str,
+    task_id: &TaskId,
+    attempt: u32,
+    command: &str,
+) -> Option<EngineError> {
+    let consecutive_dupes = prior.iter().rev().take_while(|a| a.error_signature == current_sig).count();
+    if consecutive_dupes >= 2 {
+        tracing::info!(
+            task_id = %task_id, attempt,
+            "same shell error pattern repeated {} times, aborting fix loop",
+            consecutive_dupes + 1,
+        );
+        return Some(EngineError::Build(format!(
+            "command `{command}` keeps failing with the same error after {} attempts",
+            consecutive_dupes + 1,
+        )));
+    }
+    None
+}
+
 impl DevLoopEngine {
     pub(crate) async fn execute_shell_task(
         &self,
@@ -26,17 +46,11 @@ impl DevLoopEngine {
         command: &str,
         agent_instance_id: AgentInstanceId,
     ) -> Result<TaskExecution, EngineError> {
-        let command = if let Some(corrected) = auto_correct_build_command(command) {
-            warn!(old = %command, new = %corrected, "eagerly rewriting server-starting shell command");
-            corrected
-        } else {
-            command.to_string()
-        };
+        let command = auto_correct_build_command(command).unwrap_or_else(|| command.to_string());
         let command = command.as_str();
-
         let base_path = Path::new(&project.linked_folder_path);
-        let max_attempts: u32 = self.engine_config.max_shell_task_retries;
-        let mut prior_attempts_shell: Vec<BuildFixAttemptRecord> = Vec::new();
+        let max_attempts = self.engine_config.max_shell_task_retries;
+        let mut prior: Vec<BuildFixAttemptRecord> = Vec::new();
 
         for attempt in 1..=max_attempts {
             let result = self.run_shell_attempt(
@@ -45,8 +59,7 @@ impl DevLoopEngine {
 
             if result.success {
                 if let Some(early) = self.handle_shell_success(
-                    project, task, command, agent_instance_id, attempt, max_attempts,
-                    base_path, &result,
+                    project, task, command, agent_instance_id, attempt, max_attempts, base_path, &result,
                 ).await? {
                     return Ok(early);
                 }
@@ -55,43 +68,22 @@ impl DevLoopEngine {
 
             let detail = if !result.stderr.is_empty() { &result.stderr } else { &result.stdout };
             self.emit_shell_failure(project, task, command, agent_instance_id, attempt, &result);
-
-            let current_sig = normalize_error_signature(detail);
-            let consecutive_dupes = prior_attempts_shell
-                .iter()
-                .rev()
-                .take_while(|a| a.error_signature == current_sig)
-                .count();
-            if consecutive_dupes >= 2 {
-                tracing::info!(
-                    task_id = %task.task_id, attempt,
-                    "same shell error pattern repeated {} times, aborting fix loop",
-                    consecutive_dupes + 1,
-                );
-                return Err(EngineError::Build(format!(
-                    "command `{command}` keeps failing with the same error after {} attempts",
-                    consecutive_dupes + 1,
-                )));
+            if let Some(e) = check_repeated_error(&prior, &normalize_error_signature(detail), &task.task_id, attempt, command) {
+                return Err(e);
             }
 
             if attempt < max_attempts {
-                let attempt_files = self
-                    .attempt_shell_fix(
-                        project, task, command, agent_instance_id, attempt,
-                        base_path, &result.stderr, &result.stdout, &prior_attempts_shell,
-                    ).await?;
-                prior_attempts_shell.push(BuildFixAttemptRecord {
-                    stderr: detail.to_string(),
-                    error_signature: normalize_error_signature(detail),
-                    files_changed: attempt_files,
-                    changes_summary: String::new(),
+                let files = self.attempt_shell_fix(
+                    project, task, command, agent_instance_id, attempt,
+                    base_path, &result.stderr, &result.stdout, &prior,
+                ).await?;
+                prior.push(BuildFixAttemptRecord {
+                    stderr: detail.to_string(), error_signature: normalize_error_signature(detail),
+                    files_changed: files, changes_summary: String::new(),
                 });
             }
         }
-
-        Err(EngineError::Build(format!(
-            "command `{command}` failed after {max_attempts} attempts"
-        )))
+        Err(EngineError::Build(format!("command `{command}` failed after {max_attempts} attempts")))
     }
 
     async fn run_shell_attempt(

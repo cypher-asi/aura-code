@@ -417,6 +417,16 @@ impl DevLoopEngine {
             .map(|s| s.user_id)
     }
 
+    async fn all_spec_tasks_done(&self, task: &Task) -> Option<usize> {
+        let all_tasks = self.task_service.list_tasks(&task.project_id).await.ok()?;
+        let spec_tasks: Vec<&Task> = all_tasks.iter().filter(|t| t.spec_id == task.spec_id).collect();
+        if spec_tasks.iter().all(|t| t.status == TaskStatus::Done) {
+            Some(spec_tasks.len())
+        } else {
+            None
+        }
+    }
+
     /// After a task completes, check if all tasks for its spec are done; if so, push to orbit.
     async fn try_push_after_spec(
         &self,
@@ -429,56 +439,22 @@ impl DevLoopEngine {
             _ => return,
         };
         let branch = project.git_branch.as_deref().unwrap_or("main");
-        let project_root = &project.linked_folder_path;
-        if !crate::git_ops::is_git_repo(project_root) {
-            return;
-        }
-
-        let all_tasks = match self.task_service.list_tasks(&task.project_id).await {
-            Ok(t) => t,
-            Err(_) => return,
-        };
-        let spec_tasks: Vec<&Task> = all_tasks
-            .iter()
-            .filter(|t| t.spec_id == task.spec_id)
-            .collect();
-        let all_done = spec_tasks
-            .iter()
-            .all(|t| t.status == TaskStatus::Done);
-        if !all_done {
-            return;
-        }
-
-        let jwt = match self.get_jwt_for_storage() {
-            Ok(jwt) => jwt,
-            Err(_) => return,
-        };
+        if !crate::git_ops::is_git_repo(&project.linked_folder_path) { return; }
+        let task_count = match self.all_spec_tasks_done(task).await { Some(c) => c, None => return };
+        let jwt = match self.get_jwt_for_storage() { Ok(j) => j, Err(_) => return };
 
         let repo_label = format!(
-            "{}/{}",
-            project.orbit_owner.as_deref().unwrap_or(""),
-            project.orbit_repo.as_deref().unwrap_or("")
+            "{}/{}", project.orbit_owner.as_deref().unwrap_or(""), project.orbit_repo.as_deref().unwrap_or("")
         );
-
-        match crate::git_ops::git_push(project_root, git_repo_url, branch, &jwt).await {
+        match crate::git_ops::git_push(&project.linked_folder_path, git_repo_url, branch, &jwt).await {
             Ok(commits) => {
-                let summary = format!(
-                    "Spec complete -- {} task(s) pushed",
-                    spec_tasks.len()
-                );
                 self.emit(EngineEvent::GitPushed {
-                    project_id: task.project_id,
-                    agent_instance_id,
-                    spec_id: task.spec_id,
-                    repo: repo_label.clone(),
-                    branch: branch.to_string(),
-                    commits: commits.clone(),
-                    summary: summary.clone(),
+                    project_id: task.project_id, agent_instance_id, spec_id: task.spec_id,
+                    repo: repo_label, branch: branch.to_string(), commits,
+                    summary: format!("Spec complete -- {task_count} task(s) pushed"),
                 });
             }
-            Err(e) => {
-                warn!(error = %e, "git push after spec completion failed (non-fatal)");
-            }
+            Err(e) => { warn!(error = %e, "git push after spec completion failed (non-fatal)"); }
         }
     }
 
