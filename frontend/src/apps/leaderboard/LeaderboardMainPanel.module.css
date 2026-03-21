@@ -5,29 +5,6 @@
   overflow: hidden;
 }
 
-.legend {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-3);
-  padding: var(--space-3) 0;
-}
-
-.legendItem {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-}
-
-.legendDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-
 .chartWrap {
   flex: 1;
   overflow-y: auto;
@@ -38,9 +15,9 @@
 .chartInner {
   display: flex;
   flex-direction: column;
-  max-width: 480px;
+  max-width: 560px;
   width: 100%;
-  margin-left: max(0px, calc(50vw - 240px - var(--left-panel-width, 248px) - 1px - var(--space-5)));
+  margin-left: max(0px, calc(50vw - 280px - var(--left-panel-width, 248px) - 1px - var(--space-5)));
   margin-right: auto;
 }
 
@@ -82,6 +59,21 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.typeBadge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(74, 234, 168, 0.12);
+  color: #4aeaa8;
+  flex-shrink: 0;
 }
 
 .barsCell {
@@ -89,24 +81,31 @@
   min-width: 0;
 }
 
-.chunksRow {
-  display: flex;
-  gap: 2px;
+.bar {
   height: 10px;
-  min-width: 0;
+  min-width: 3px;
+  background: linear-gradient(90deg, #0d4a3a, #2db87a);
   transition: width 300ms ease;
 }
 
-.chunk {
-  height: 100%;
-  border-radius: 0;
-  min-width: 3px;
-  cursor: default;
-  transition: opacity 150ms ease;
+.metaCell {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  min-width: 180px;
+  justify-content: flex-end;
 }
 
-.chunk:hover {
-  opacity: 0.8;
+.metaValue {
+  white-space: nowrap;
+}
+
+.metaSep {
+  opacity: 0.35;
 }
 
 @media (max-width: 900px) {
@@ -128,18 +127,16 @@
     padding-bottom: calc(20px + env(safe-area-inset-bottom));
   }
 
-  .legend {
-    gap: var(--space-2);
-    padding: 12px 0 4px;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-  }
-
   .row {
     padding: 6px 4px;
   }
 
   .nameCell {
     width: 108px;
+  }
+
+  .metaCell {
+    min-width: 140px;
+    font-size: 10px;
   }
 }

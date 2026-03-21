@@ -1,20 +1,32 @@
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { Text } from "@cypher-asi/zui";
-import { User, Bot, MessageSquare } from "lucide-react";
+import { User, Bot, BarChart3 } from "lucide-react";
 import { EmptyState } from "../../components/EmptyState";
 import { EntityCard } from "../../components/EntityCard";
 import { FollowEditButton } from "../../components/FollowEditButton";
 import { useLeaderboard } from "./LeaderboardContext";
 import { useAuth } from "../../context/AuthContext";
 import { formatTokens } from "../../utils/format";
+import { api } from "../../api/client";
 import styles from "./LeaderboardSidekickPanel.module.css";
 
-const AGENT_COLORS: Record<string, string> = {
-  Atlas:  "#4aeaa8",
-  Cipher: "#2db87a",
-  Nova:   "#1a7a5a",
-  Bolt:   "#0d4a3a",
-};
+function formatCost(n: number): string {
+  if (n >= 1_000_000) return "$" + (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1_000) return "$" + (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  if (n >= 1) return "$" + n.toFixed(2);
+  if (n > 0) return "$" + n.toFixed(2);
+  return "$0.00";
+}
+
+interface PlatformStats {
+  daily_active_users: number;
+  total_users: number;
+  new_signups: number;
+  projects_created: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_revenue_usd: number;
+}
 
 export function LeaderboardSidekickPanel() {
   const { selectedUserId, entries } = useLeaderboard();
@@ -24,9 +36,34 @@ export function LeaderboardSidekickPanel() {
     [entries, selectedUserId],
   );
 
+  const [platformStats, setPlatformStats] = useState<PlatformStats | null>(null);
+
+  useEffect(() => {
+    if (user) return;
+    api.platformStats.get().then((s) => setPlatformStats(s ?? null)).catch(() => setPlatformStats(null));
+  }, [user]);
+
   if (!user) {
+    if (!platformStats) {
+      return (
+        <EmptyState icon={<BarChart3 size={32} />}>Select a user to view profile</EmptyState>
+      );
+    }
+
     return (
-      <EmptyState icon={<MessageSquare size={32} />}>Select a user to view profile</EmptyState>
+      <div className={styles.platformSection}>
+        <Text size="xs" variant="muted" style={{ textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 500 }}>
+          Platform Stats
+        </Text>
+        <div className={styles.statsGrid}>
+          <StatTile value={platformStats.total_users.toLocaleString()} label="Total Users" />
+          <StatTile value={platformStats.daily_active_users.toLocaleString()} label="DAU" />
+          <StatTile value={platformStats.new_signups.toLocaleString()} label="New Signups" />
+          <StatTile value={platformStats.projects_created.toLocaleString()} label="Projects" />
+          <StatTile value={formatTokens(platformStats.total_input_tokens + platformStats.total_output_tokens)} label="Total Tokens" />
+          <StatTile value={formatCost(platformStats.total_revenue_usd)} label="Revenue" />
+        </div>
+      </div>
     );
   }
 
@@ -49,31 +86,19 @@ export function LeaderboardSidekickPanel() {
       }
       stats={[
         { value: formatTokens(user.tokens), label: "Tokens" },
-        { value: user.commits, label: "Commits" },
-        { value: user.breakdown.length || user.agents, label: "Agents" },
+        { value: formatCost(user.estimatedCostUsd), label: "Cost" },
+        { value: user.eventCount.toLocaleString(), label: "Events" },
       ]}
       footer="CYPHER-ASI // AURA"
-    >
-      {user.breakdown.length > 0 && (
-        <div className={styles.breakdownSection}>
-          <Text size="xs" variant="muted" style={{ textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 500 }}>
-            Agent Breakdown
-          </Text>
-          <div className={styles.breakdownList}>
-            {user.breakdown.map((b) => (
-              <div key={b.agent} className={styles.breakdownRow}>
-                <span
-                  className={styles.breakdownDot}
-                  style={{ background: AGENT_COLORS[b.agent] ?? "#145a48" }}
-                />
-                <span className={styles.breakdownName}>{b.agent}</span>
-                <span className={styles.breakdownValue}>{formatTokens(b.tokens)}</span>
-                <span className={styles.breakdownCommits}>{b.commits} commits</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </EntityCard>
+    />
+  );
+}
+
+function StatTile({ value, label }: { value: string; label: string }) {
+  return (
+    <div className={styles.statTile}>
+      <div className={styles.statTileValue}>{value}</div>
+      <Text size="xs" style={{ color: "var(--color-text-muted)", fontSize: 10 }}>{label}</Text>
+    </div>
   );
 }

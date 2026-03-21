@@ -6,17 +6,11 @@ import { useFollow } from "../../context/FollowContext";
 import { formatTokens } from "../../utils/format";
 import styles from "./LeaderboardMainPanel.module.css";
 
-const AGENT_COLORS: Record<string, string> = {
-  Atlas:  "#4aeaa8",
-  Cipher: "#2db87a",
-  Nova:   "#1a7a5a",
-  Bolt:   "#0d4a3a",
-};
-
-const DEFAULT_COLOR = "#145a48";
-
-function agentColor(name: string): string {
-  return AGENT_COLORS[name] ?? DEFAULT_COLOR;
+function formatCost(n: number): string {
+  if (n >= 1_000) return "$" + (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
+  if (n >= 1) return "$" + n.toFixed(2);
+  if (n > 0) return "$" + n.toFixed(2);
+  return "$0.00";
 }
 
 export function LeaderboardMainPanel() {
@@ -50,7 +44,7 @@ export function LeaderboardMainPanel() {
         <div className={styles.chartWrap}>
           <div className={styles.chartInner}>
             {users.map((user, i) => {
-              const totalPct = (user.tokens / maxTokens) * 100;
+              const barPct = (user.tokens / maxTokens) * 100;
               return (
                 <div
                   key={user.id}
@@ -62,45 +56,29 @@ export function LeaderboardMainPanel() {
                   </div>
                   <div className={styles.nameCell}>
                     <Text size="sm" style={{ fontWeight: 500 }}>{user.name}</Text>
+                    {user.type === "agent" && (
+                      <span className={styles.typeBadge}>agent</span>
+                    )}
                   </div>
                   <div className={styles.barsCell}>
-                    <div className={styles.chunksRow} style={{ width: `${totalPct}%` }}>
-                      {user.breakdown.length > 0 ? (
-                        user.breakdown.map((b) => {
-                          const share = user.tokens > 0 ? (b.tokens / user.tokens) * 100 : 0;
-                          return (
-                            <div
-                              key={b.agent}
-                              className={styles.chunk}
-                              style={{
-                                width: `${share}%`,
-                                background: agentColor(b.agent),
-                              }}
-                              title={`${b.agent}: ${formatTokens(b.tokens)} tokens, ${b.commits} commits`}
-                            />
-                          );
-                        })
-                      ) : (
-                        <div
-                          className={styles.chunk}
-                          style={{ width: "100%", background: DEFAULT_COLOR }}
-                          title={`${formatTokens(user.tokens)} tokens`}
-                        />
-                      )}
-                    </div>
+                    <div className={styles.bar} style={{ width: `${barPct}%` }} />
+                  </div>
+                  <div className={styles.metaCell}>
+                    <span className={styles.metaValue} title={user.tokens.toLocaleString() + " tokens"}>
+                      {formatTokens(user.tokens)}
+                    </span>
+                    <span className={styles.metaSep}>·</span>
+                    <span className={styles.metaValue} title={`$${user.estimatedCostUsd.toFixed(4)}`}>
+                      {formatCost(user.estimatedCostUsd)}
+                    </span>
+                    <span className={styles.metaSep}>·</span>
+                    <span className={styles.metaValue}>
+                      {user.eventCount.toLocaleString()} events
+                    </span>
                   </div>
                 </div>
               );
             })}
-          </div>
-
-          <div className={styles.legend}>
-            {Object.entries(AGENT_COLORS).map(([name, color]) => (
-              <span key={name} className={styles.legendItem}>
-                <span className={styles.legendDot} style={{ background: color }} />
-                {name}
-              </span>
-            ))}
           </div>
         </div>
       </div>

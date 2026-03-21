@@ -1,87 +1,112 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { api } from "../api/client";
-import type { ProjectProgress } from "../types";
-import { useProjectContext } from "../context/ProjectContext";
+import { useOrg } from "../context/OrgContext";
 import { useDelayedEmpty } from "../hooks/use-delayed-empty";
 import { Text } from "@cypher-asi/zui";
 import { EmptyState } from "../components/EmptyState";
 import styles from "./aura.module.css";
 
+type Period = "day" | "week" | "month" | "all";
+const PERIODS: { value: Period; label: string }[] = [
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+  { value: "all", label: "All" },
+];
+
+interface UsageData {
+  total_tokens: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: number;
+}
+
 export function StatsDashboard() {
-  const ctx = useProjectContext();
-  const projectId = ctx?.project.project_id;
-  const [progress, setProgress] = useState<ProjectProgress | null>(null);
+  const { activeOrg } = useOrg();
+  const [period, setPeriod] = useState<Period>("month");
+  const [personal, setPersonal] = useState<UsageData | null>(null);
+  const [org, setOrg] = useState<UsageData | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchUsage = useCallback(() => {
+    setLoading(true);
+    const promises: Promise<void>[] = [
+      api.usage.personal(period).then(setPersonal).catch(() => setPersonal(null)),
+    ];
+    if (activeOrg) {
+      promises.push(
+        api.usage.org(activeOrg.org_id, period).then(setOrg).catch(() => setOrg(null)),
+      );
+    }
+    Promise.allSettled(promises).finally(() => setLoading(false));
+  }, [period, activeOrg]);
+
   useEffect(() => {
-    if (!projectId) return;
-    const load = () => {
-      api
-        .getProgress(projectId)
-        .then(setProgress)
-        .catch(console.error)
-        .finally(() => setLoading(false));
-    };
-    load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
-  }, [projectId]);
+    fetchUsage();
+  }, [fetchUsage]);
 
-  const showEmpty = useDelayedEmpty(!progress, loading, 0);
+  const showEmpty = useDelayedEmpty(!personal && !org, loading, 0);
+  const noData = !personal && !org;
 
-  if (!progress) {
+  if (noData) {
     if (!showEmpty) return null;
-    return <EmptyState>No stats data</EmptyState>;
+    return <EmptyState>No usage data</EmptyState>;
   }
-
-  const pct = Math.round(progress.completion_percentage * 100) / 100;
 
   return (
     <div style={{ padding: "var(--space-3) var(--space-3)" }}>
-      <div style={{ textAlign: "center", marginBottom: "var(--space-3)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md, 6px)", padding: "var(--space-3)" }}>
-        <div style={{ fontSize: 28, fontWeight: 700, color: "var(--color-text-secondary)", paddingTop: "var(--space-2)", paddingBottom: "var(--space-2)" }}>
-          {pct}%
-        </div>
-        <div className={styles.progressBarContainer}>
-          <div className={styles.progressBarFill} style={{ width: `${pct}%` }} />
-        </div>
+      <div style={{ display: "flex", gap: "var(--space-1)", marginBottom: "var(--space-3)" }}>
+        {PERIODS.map((p) => (
+          <button
+            key={p.value}
+            onClick={() => setPeriod(p.value)}
+            style={{
+              padding: "2px 10px",
+              fontSize: 11,
+              fontWeight: period === p.value ? 600 : 400,
+              background: period === p.value ? "var(--color-bg-hover)" : "transparent",
+              border: "1px solid var(--color-border)",
+              borderRadius: 4,
+              color: period === p.value ? "var(--color-text)" : "var(--color-text-muted)",
+              cursor: "pointer",
+            }}
+          >
+            {p.label}
+          </button>
+        ))}
       </div>
 
-      <div style={{ margin: "0 0 var(--space-1)" }}>
-        <Text variant="muted" size="xs" style={{ textTransform: "uppercase", letterSpacing: "0.05em" }}>
-          Tasks
-        </Text>
-      </div>
+      {personal && (
+        <>
+          <div style={{ margin: "0 0 var(--space-1)" }}>
+            <Text variant="muted" size="xs" style={{ textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Personal Usage
+            </Text>
+          </div>
+          <div className={styles.statsGrid}>
+            <StatCard value={personal.total_tokens} label="Total Tokens" fmt />
+            <StatCard value={personal.total_input_tokens} label="Input" fmt />
+            <StatCard value={personal.total_output_tokens} label="Output" fmt />
+            <StatCard value={personal.total_cost_usd} label="Cost" fmtFn={formatCurrency} />
+          </div>
+        </>
+      )}
 
-      <div className={styles.statsGrid}>
-        <StatCard value={progress.total_tasks} label="Total" />
-        <StatCard value={progress.done_tasks} label="Complete" />
-        <StatCard value={progress.in_progress_tasks} label="Active" />
-        <StatCard value={progress.ready_tasks} label="Ready" />
-        <StatCard value={progress.pending_tasks} label="Pending" />
-        <StatCard value={progress.blocked_tasks} label="Blocked" />
-        <StatCard value={progress.failed_tasks} label="Failed" />
-      </div>
-
-      <div style={{ margin: "var(--space-2) 0 var(--space-1)" }}>
-        <Text variant="muted" size="xs" style={{ textTransform: "uppercase", letterSpacing: "0.05em" }}>
-          Activity
-        </Text>
-      </div>
-
-      <div className={styles.statsGrid}>
-        <StatCard value={progress.total_cost} label="Cost" fmtFn={formatCurrency} />
-        <StatCard value={progress.total_time_seconds} label="Time" fmtFn={formatDuration} />
-        <StatCard value={progress.total_tokens} label="Tokens" fmt />
-        <StatCard value={progress.lines_changed} label="Changed" fmt />
-        <StatCard value={progress.lines_of_code} label="LoC" fmt />
-        <StatCard value={progress.total_commits} label="Commits" fmt />
-        <StatCard value={progress.total_pull_requests} label="PRs" fmt />
-        <StatCard value={progress.total_messages} label="Messages" fmt />
-        <StatCard value={progress.total_agents} label="Agents" fmt />
-        <StatCard value={progress.total_sessions} label="Sessions" fmt />
-        <StatCard value={progress.total_tests} label="Tests" fmt />
-      </div>
+      {org && (
+        <>
+          <div style={{ margin: "var(--space-2) 0 var(--space-1)" }}>
+            <Text variant="muted" size="xs" style={{ textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Organization Usage
+            </Text>
+          </div>
+          <div className={styles.statsGrid}>
+            <StatCard value={org.total_tokens} label="Total Tokens" fmt />
+            <StatCard value={org.total_input_tokens} label="Input" fmt />
+            <StatCard value={org.total_output_tokens} label="Output" fmt />
+            <StatCard value={org.total_cost_usd} label="Cost" fmtFn={formatCurrency} />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -91,16 +116,6 @@ function formatCompact(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1).replace(/\.0$/, "") + "M";
   if (n >= 10_000) return (n / 1_000).toFixed(n >= 100_000 ? 0 : 1).replace(/\.0$/, "") + "K";
   return n.toLocaleString();
-}
-
-function formatDuration(totalSec: number): string {
-  if (totalSec < 60) return `${totalSec}s`;
-  const m = Math.floor(totalSec / 60) % 60;
-  const h = Math.floor(totalSec / 3600) % 24;
-  const d = Math.floor(totalSec / 86400);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
 }
 
 function formatCurrency(n: number): string {
