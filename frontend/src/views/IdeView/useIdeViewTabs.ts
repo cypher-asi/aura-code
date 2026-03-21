@@ -61,7 +61,7 @@ export function useIdeViewTabs(initialFile: string) {
 
   const activeTab = tabs.find((t) => t.path === activeTabPath) ?? null;
   const dirty = activeTab != null && activeTab.content !== null && activeTab.savedContent !== null && activeTab.content !== activeTab.savedContent;
-  const language = useMemo(() => (activeTab ? langFromPath(activeTab.path) : null), [activeTab?.path]);
+  const language = useMemo(() => (activeTab ? langFromPath(activeTab.path) ?? null : null), [activeTab?.path]);
 
   const handleContentChange = useCallback((newContent: string) => {
     setTabs((prev) => prev.map((t) => t.path !== activeTabPath ? t : { ...t, content: newContent }));

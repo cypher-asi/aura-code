@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { useSidekick } from "../../stores/sidekick-store";
 import type { AgentInstance } from "../../types";

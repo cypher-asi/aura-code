@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { PageEmptyState, Topbar, Text } from "@cypher-asi/zui";
+import { PageEmptyState, Topbar } from "@cypher-asi/zui";
 import { FileExplorer } from "../../components/FileExplorer";
 import { Lane } from "../../components/Lane";
 import { WindowControls } from "../../components/WindowControls";

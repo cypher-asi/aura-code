@@ -19,7 +19,7 @@ interface AgentEditorFormResult {
   nameError: string;
   setNameError: (v: string) => void;
   nameRef: React.RefObject<HTMLInputElement | null>;
-  initialFocusRef: React.RefObject<HTMLElement | null>;
+  initialFocusRef: React.RefObject<HTMLElement> | undefined;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   handleSave: () => Promise<void>;
   handleClose: () => void;

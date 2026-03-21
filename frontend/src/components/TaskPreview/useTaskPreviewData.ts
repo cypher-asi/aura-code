@@ -71,7 +71,7 @@ function buildActivityItems(
   return items;
 }
 
-export function useTaskPreviewData(task: import("../types").Task) {
+export function useTaskPreviewData(task: import("../../types").Task) {
   const seedTaskOutput = useEventStore((s) => s.seedTaskOutput);
   const taskOutput = useTaskOutput(task.task_id);
   const ctx = useProjectContext();
@@ -150,7 +150,7 @@ export function useTaskPreviewData(task: import("../types").Task) {
   };
 }
 
-export function useRunTaskData(task: import("../types").Task) {
+export function useRunTaskData(task: import("../../types").Task) {
   const ctx = useProjectContext();
   const { agentInstanceId } = useParams<{ agentInstanceId: string }>();
   const projectId = ctx?.project.project_id;

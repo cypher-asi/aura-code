@@ -12,7 +12,7 @@ import { useAgents, useSelectedAgent, useAgentStore, useSortedAgents, LAST_AGENT
 import { useChatHistoryStore, agentHistoryKey } from "../../../stores/chat-history-store";
 import { useSidebarSearch } from "../../../context/SidebarSearchContext";
 
-import type { Agent } from "../../types";
+import type { Agent } from "../../../types";
 import styles from "./AgentList.module.css";
 
 const agentMenuItems: MenuItem[] = [

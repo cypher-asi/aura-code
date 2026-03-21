@@ -13,10 +13,10 @@ import { SessionList } from "../../views/SessionList";
 import { SidekickLog } from "../../views/SidekickLog";
 import { FileExplorer } from "../FileExplorer";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
-import { hasLinkedWorkspace, getLinkedWorkspaceRoot } from "../../utils/projectWorkspace";
+import { getLinkedWorkspaceRoot } from "../../utils/projectWorkspace";
 import styles from "../Sidekick/Sidekick.module.css";
 
-function InfoPanel({ project, onClose }: { project: import("../types").Project; onClose: () => void }) {
+function InfoPanel({ project, onClose }: { project: import("../../types").Project; onClose: () => void }) {
   const workspaceLabel = project.workspace_source === "imported"
     ? project.workspace_display_path ?? "Imported workspace snapshot"
     : project.linked_folder_path || "—";

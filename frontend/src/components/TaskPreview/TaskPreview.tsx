@@ -11,7 +11,7 @@ import { toBullets } from "../../utils/format";
 import { useTaskPreviewData, useRunTaskData } from "./useTaskPreviewData";
 import styles from "../Preview/Preview.module.css";
 
-export function RunTaskButton({ task }: { task: import("../types").Task }) {
+export function RunTaskButton({ task }: { task: import("../../types").Task }) {
   const { running, handleRun, visible } = useRunTaskData(task);
 
   return (
@@ -28,9 +28,9 @@ export function RunTaskButton({ task }: { task: import("../types").Task }) {
   );
 }
 
-export function TaskPreview({ task }: { task: import("../types").Task }) {
+export function TaskPreview({ task }: { task: import("../../types").Task }) {
   const {
-    taskOutput, effectiveStatus, effectiveSessionId, isActive, isTerminal,
+    taskOutput, effectiveStatus, effectiveSessionId, isActive,
     elapsed, failReason, agentInstance, completedByAgent,
     retrying, handleRetry, handleViewSession,
     fileOps, notes, showNotes, activity, iterStats, streamBuf,
