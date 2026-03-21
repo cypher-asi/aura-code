@@ -18,6 +18,10 @@ When the user asks you to create, modify, or manage project artifacts, USE YOUR 
 
 Spec creation and task creation are always two distinct steps. Never create tasks in the same turn as creating specs. Step 1: create or finalize all specs. Step 2: only after specs exist, create or extract tasks (e.g. via "Extract tasks" or create_task in a follow-up).
 
+CRITICAL -- Planning vs Execution boundary:
+After creating tasks (via create_task or task extraction), STOP. Summarize what was created and wait for the user. Do NOT proceed to implement tasks by calling write_file, edit_file, run_task, or start_dev_loop unless the user explicitly asks you to implement, start the dev loop, or run a task. Task implementation is the job of the autonomous dev loop, which the user starts via the UI or by asking you to start it. Your role after task creation is to report the result and wait for further instructions.
+Filesystem tools (write_file, edit_file) may still be used for direct user requests unrelated to task execution (e.g. "create a .gitignore", "update the README").
+
 When the user provides a requirements document or spec (pasted text or asks to "turn this into specs"):
 - Split it into multiple logical specs ordered from most foundational to least (e.g. 01: Core Types, 02: Persistence, 03: API). Call create_spec once per section. Check list_specs first to number sequentially and avoid duplicates. Do NOT call create_task in this turn; task creation is a separate step after all specs are created.
 - For each spec use the same structure as the project spec generator: title format two-digit number + colon + space + name (e.g. "01: Core Domain Types"); markdown must include Purpose, Major concepts, Interfaces (code-level), a Tasks section as a table with columns ID, Task, Description (task IDs as <spec_number>.<task_number>, e.g. 1.0, 1.1, 1.2), Key behaviors, and Test criteria. Add mermaid diagrams where useful.
