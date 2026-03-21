@@ -5,7 +5,10 @@ import { useAuth } from "../../context/AuthContext";
 import { useEventContext } from "../../context/EventContext";
 import { useFollow } from "../../context/FollowContext";
 import { api } from "../../api/client";
+import type { FeedEventDto } from "../../api/social";
 import type { EngineEvent } from "../../types/events";
+
+export type PostType = "post" | "push" | "event";
 
 export interface FeedCommit {
   sha: string;
@@ -14,12 +17,17 @@ export interface FeedCommit {
 
 export interface FeedEvent {
   id: string;
+  postType: PostType;
+  title: string;
   author: { name: string; avatarUrl?: string; type: "user" | "agent" };
   repo: string;
   branch: string;
   commits: FeedCommit[];
+  commitIds: string[];
+  pushId?: string;
   timestamp: string;
   summary?: string;
+  eventType: string;
 }
 
 export interface FeedComment {
@@ -51,6 +59,7 @@ interface FeedContextValue {
   selectProfile: (profile: FeedSelectedProfile | null) => void;
   getCommentsForEvent: (eventId: string) => FeedComment[];
   addComment: (eventId: string, text: string) => void;
+  createPost: (title: string, summary?: string) => Promise<void>;
 }
 
 const FeedCtx = createContext<FeedContextValue | null>(null);
@@ -78,6 +87,7 @@ function applyFilter(
 function commitActivityFromEvents(events: FeedEvent[]): Record<string, number> {
   const activity: Record<string, number> = {};
   for (const evt of events) {
+    if (evt.postType !== "push") continue;
     const ts = new Date(evt.timestamp);
     const dateKey = evt.timestamp.slice(0, 10);
     const hourKey = `${dateKey}:${String(ts.getHours()).padStart(2, "0")}`;
@@ -86,19 +96,16 @@ function commitActivityFromEvents(events: FeedEvent[]): Record<string, number> {
   return activity;
 }
 
-interface NetworkFeedEvent {
-  id: string;
-  profile_id: string;
-  event_type: string;
-  metadata: Record<string, unknown> | null;
-  created_at: string | null;
-}
-
-function networkEventToFeedEvent(net: NetworkFeedEvent): FeedEvent {
+function networkEventToFeedEvent(net: FeedEventDto): FeedEvent {
   const meta = net.metadata ?? {};
+  const postType = (net.post_type ?? "push") as PostType;
+  const title = net.title ?? (meta.summary as string) ?? "";
+  const summary = net.summary ?? (meta.summary as string) ?? undefined;
+
   const authorName = (meta.author_name as string) || (meta.profileName as string) || "Unknown";
   const authorAvatar = (meta.author_avatar as string) || (meta.avatarUrl as string) || undefined;
   const authorType = ((meta.author_type as string) || (meta.profileType as string) || "user") as "user" | "agent";
+
   const repo = (meta.repo as string) || (meta.repository as string) || "";
   const branch = (meta.branch as string) || "main";
   const rawCommits = (meta.commits as Array<{ sha?: string; message?: string }>) || [];
@@ -106,16 +113,22 @@ function networkEventToFeedEvent(net: NetworkFeedEvent): FeedEvent {
     sha: c.sha || "",
     message: c.message || "",
   }));
-  const summary = (meta.summary as string) || undefined;
+  const commitIds = net.commit_ids ?? [];
+  const pushId = net.push_id ?? undefined;
 
   return {
     id: net.id,
+    postType,
+    title,
     author: { name: authorName, avatarUrl: authorAvatar, type: authorType },
     repo,
     branch,
     commits,
+    commitIds,
+    pushId,
     timestamp: net.created_at || new Date().toISOString(),
     summary,
+    eventType: net.event_type,
   };
 }
 
@@ -150,6 +163,7 @@ export function FeedProvider({ children }: { children: ReactNode }) {
   const [userAvatarUrl, setUserAvatarUrl] = useState<string | undefined>(undefined);
   const { follows } = useFollow();
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const loadedCommentIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -173,16 +187,37 @@ export function FeedProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!selectedEventId) return;
+    if (loadedCommentIdsRef.current.has(selectedEventId)) return;
+    loadedCommentIdsRef.current.add(selectedEventId);
+
+    api.feed.getComments(selectedEventId).then((netComments) => {
+      const mapped = netComments.map(networkCommentToFeedComment);
+      if (mapped.length > 0) {
+        setComments((prev) => {
+          const existingIds = new Set(prev.map((c) => c.id));
+          const fresh = mapped.filter((c) => !existingIds.has(c.id));
+          return fresh.length > 0 ? [...prev, ...fresh] : prev;
+        });
+      }
+    }).catch(() => {});
+  }, [selectedEventId]);
+
+  useEffect(() => {
     const handleGitPushed = (event: EngineEvent) => {
       if (event.type !== "git_pushed") return;
       const feedEvent: FeedEvent = {
         id: `git-push-${event.spec_id ?? Date.now()}`,
+        postType: "push",
+        title: event.summary ?? "Code pushed",
         author: { name: "Agent", type: "agent" },
         repo: event.repo ?? "",
         branch: event.branch ?? "main",
         commits: (event.commits ?? []).map((c) => ({ sha: c.sha, message: c.message })),
+        commitIds: (event.commits ?? []).map((c) => c.sha),
         timestamp: new Date().toISOString(),
         summary: event.summary,
+        eventType: "push",
       };
       if (seenIdsRef.current.has(feedEvent.id)) return;
       seenIdsRef.current.add(feedEvent.id);
@@ -195,7 +230,7 @@ export function FeedProvider({ children }: { children: ReactNode }) {
       if (!payload) return;
       const wsType = (payload.type as string) ?? "";
       if (wsType !== "activity.new") return;
-      const data = payload.data as NetworkFeedEvent | undefined;
+      const data = payload.data as FeedEventDto | undefined;
       if (!data || !data.id) return;
       if (seenIdsRef.current.has(data.id)) return;
       seenIdsRef.current.add(data.id);
@@ -279,9 +314,16 @@ export function FeedProvider({ children }: { children: ReactNode }) {
       });
   }, [currentUserName, currentUserAvatar]);
 
+  const createPost = useCallback(async (title: string, summary?: string) => {
+    const post = await api.feed.createPost({ title, summary, post_type: "post" });
+    const feedEvent = networkEventToFeedEvent(post);
+    seenIdsRef.current.add(feedEvent.id);
+    setLiveEvents((prev) => [feedEvent, ...(prev ?? [])]);
+  }, []);
+
   const value = useMemo(
-    () => ({ events, filteredEvents, commitActivity, filter, setFilter, selectedEventId, selectEvent, selectedProfile, selectProfile, getCommentsForEvent, addComment }),
-    [events, filteredEvents, commitActivity, filter, setFilter, selectedEventId, selectEvent, selectedProfile, selectProfile, getCommentsForEvent, addComment],
+    () => ({ events, filteredEvents, commitActivity, filter, setFilter, selectedEventId, selectEvent, selectedProfile, selectProfile, getCommentsForEvent, addComment, createPost }),
+    [events, filteredEvents, commitActivity, filter, setFilter, selectedEventId, selectEvent, selectedProfile, selectProfile, getCommentsForEvent, addComment, createPost],
   );
 
   return <FeedCtx.Provider value={value}>{children}</FeedCtx.Provider>;
