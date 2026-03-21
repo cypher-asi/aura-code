@@ -5,6 +5,7 @@ mod executor;
 mod executor_agentic;
 mod executor_shell;
 mod loop_context;
+mod loop_control;
 pub(crate) mod orchestrator;
 pub mod parser;
 pub(crate) mod prompts;

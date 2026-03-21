@@ -22,7 +22,7 @@ pub(crate) struct LoopRunContext {
     pub work_log: Vec<String>,
     pub completed_count: usize,
     default_model: String,
-    project_root: String,
+    pub(crate) project_root: String,
     loop_start: Instant,
     failed_count: usize,
     follow_up_count: usize,
@@ -110,10 +110,6 @@ impl LoopRunContext {
         baseline
     }
 
-    // ------------------------------------------------------------------
-    // Build baseline caching
-    // ------------------------------------------------------------------
-
     pub async fn get_or_capture_build_baseline(
         &mut self,
         engine: &DevLoopEngine,
@@ -152,111 +148,10 @@ impl LoopRunContext {
     }
 
     // ------------------------------------------------------------------
-    // Stop / pause plumbing
-    // ------------------------------------------------------------------
-
-    async fn end_session(&self, engine: &DevLoopEngine) {
-        if let Err(e) = engine.session_service.end_session(
-            &self.project_id,
-            &self.agent_instance_id,
-            &self.session.session_id,
-            SessionStatus::Completed,
-        ).await {
-            warn!(error = %e, "failed to end session");
-        }
-    }
-
-    async fn finish_working(&self, engine: &DevLoopEngine) {
-        if let Err(e) = engine
-            .agent_instance_service
-            .finish_working(&self.project_id, &self.agent_instance_id)
-            .await
-        {
-            warn!(error = %e, "failed to finish_working");
-        }
-    }
-
-    async fn handle_pause(&mut self, engine: &DevLoopEngine) -> LoopOutcome {
-        self.end_session(engine).await;
-        engine.emit(EngineEvent::LoopPaused {
-            project_id: self.project_id,
-            agent_instance_id: self.agent_instance_id,
-            completed_count: self.completed_count,
-        });
-        self.flush_metrics("paused");
-        LoopOutcome::Paused { completed_count: self.completed_count }
-    }
-
-    async fn handle_stop(&mut self, engine: &DevLoopEngine) -> LoopOutcome {
-        self.end_session(engine).await;
-        engine.emit(EngineEvent::LoopStopped {
-            project_id: self.project_id,
-            agent_instance_id: self.agent_instance_id,
-            completed_count: self.completed_count,
-        });
-        self.flush_metrics("stopped");
-        LoopOutcome::Stopped { completed_count: self.completed_count }
-    }
-
-    async fn stop_or_pause(
-        &mut self,
-        engine: &DevLoopEngine,
-        stop_rx: &watch::Receiver<LoopCommand>,
-    ) -> LoopOutcome {
-        let cmd = *stop_rx.borrow();
-        match cmd {
-            LoopCommand::Stop => self.handle_stop(engine).await,
-            _ => self.handle_pause(engine).await,
-        }
-    }
-
-    pub async fn check_command(
-        &mut self,
-        engine: &DevLoopEngine,
-        stop_rx: &watch::Receiver<LoopCommand>,
-    ) -> Option<LoopOutcome> {
-        let cmd = *stop_rx.borrow();
-        match cmd {
-            LoopCommand::Pause => {
-                self.finish_working(engine).await;
-                Some(self.handle_pause(engine).await)
-            }
-            LoopCommand::Stop => {
-                self.finish_working(engine).await;
-                Some(self.handle_stop(engine).await)
-            }
-            LoopCommand::Continue => None,
-        }
-    }
-
-    pub async fn handle_interruption(
-        &mut self,
-        engine: &DevLoopEngine,
-        task: &Task,
-        stop_rx: &watch::Receiver<LoopCommand>,
-    ) -> LoopOutcome {
-        if let Err(e) =
-            engine
-                .task_service
-                .reset_task_to_ready(&self.project_id, &task.spec_id, &task.task_id)
-                .await
-        {
-            warn!(error = %e, "failed to reset task to ready after interruption");
-        }
-        engine.emit(EngineEvent::TaskBecameReady {
-            project_id: self.project_id,
-            agent_instance_id: self.agent_instance_id,
-            task_id: task.task_id,
-        });
-        self.finish_working(engine).await;
-        self.stop_or_pause(engine, stop_rx).await
-    }
-
-    // ------------------------------------------------------------------
     // Metrics helpers
     // ------------------------------------------------------------------
 
-    fn flush_metrics(&mut self, outcome: &str) {
+    pub(crate) fn flush_metrics(&mut self, outcome: &str) {
         self.run_metrics.finalize(
             outcome,
             self.loop_start.elapsed().as_millis() as u64,
@@ -374,24 +269,13 @@ impl LoopRunContext {
         }
     }
 
-    async fn process_completed(
+    async fn create_follow_up_tasks(
         &mut self,
         engine: &DevLoopEngine,
         task: &Task,
-        notes: &str,
-        follow_up_tasks: &[FollowUpSuggestion],
-        file_ops: &[FileOp],
-        task_metrics: TaskMetrics,
+        follow_ups: &[FollowUpSuggestion],
     ) -> Result<(), EngineError> {
-        self.completed_count += 1;
-        engine.emit(EngineEvent::LoopIterationSummary {
-            project_id: self.project_id,
-            agent_instance_id: self.agent_instance_id,
-            task_id: task.task_id,
-            phase_timings: task_metrics.phase_timings.clone(),
-        });
-        self.record_task(task_metrics);
-        for follow_up in follow_up_tasks {
+        for follow_up in follow_ups {
             if self.follow_up_count >= engine.engine_config.max_follow_ups_per_loop {
                 warn!(
                     cap = engine.engine_config.max_follow_ups_per_loop,
@@ -423,6 +307,70 @@ impl LoopRunContext {
                 }
             }
         }
+        Ok(())
+    }
+
+    async fn auto_commit_if_git(
+        &self,
+        engine: &DevLoopEngine,
+        task: &Task,
+        notes: &str,
+    ) {
+        let project = match engine.project_service.get_project_async(&self.project_id).await {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        if project.git_repo_url.is_none() || !crate::git_ops::is_git_repo(&self.project_root) {
+            return;
+        }
+        let commit_msg = format!("Task: {}\n\n{}", task.title, notes);
+        match crate::git_ops::git_commit(&self.project_root, &commit_msg).await {
+            Ok(Some(sha)) => {
+                engine.emit(EngineEvent::GitCommitted {
+                    project_id: self.project_id,
+                    agent_instance_id: self.agent_instance_id,
+                    task_id: task.task_id,
+                    commit_sha: sha,
+                    message: commit_msg,
+                });
+            }
+            Ok(None) => {
+                info!("no changes to commit after task completion");
+            }
+            Err(e) => {
+                warn!(error = %e, "git commit after task completion failed");
+            }
+        }
+    }
+
+    async fn process_completed(
+        &mut self,
+        engine: &DevLoopEngine,
+        task: &Task,
+        notes: &str,
+        follow_up_tasks: &[FollowUpSuggestion],
+        file_ops: &[FileOp],
+        task_metrics: TaskMetrics,
+    ) -> Result<(), EngineError> {
+        self.completed_count += 1;
+        engine.emit(EngineEvent::LoopIterationSummary {
+            project_id: self.project_id,
+            agent_instance_id: self.agent_instance_id,
+            task_id: task.task_id,
+            phase_timings: task_metrics.phase_timings.clone(),
+        });
+        self.record_task(task_metrics);
+
+        self.create_follow_up_tasks(engine, task, follow_up_tasks).await?;
+
+        let (touches_tests, touches_build_manifest) = check_baseline_invalidation(file_ops);
+        if touches_tests {
+            self.baseline_invalidated = true;
+        }
+        if touches_build_manifest {
+            self.cached_build_baseline = None;
+        }
+
         let changed_files: Vec<&str> = file_ops
             .iter()
             .map(|op| match op {
@@ -432,24 +380,6 @@ impl LoopRunContext {
                 | FileOp::SearchReplace { path, .. } => path.as_str(),
             })
             .collect();
-        let touches_tests = changed_files.iter().any(|f| {
-            f.contains("_test.rs")
-                || f.contains("_spec.ts")
-                || f.contains("test_")
-                || f.contains("tests/")
-                || f.contains("tests\\")
-        });
-        if touches_tests {
-            self.baseline_invalidated = true;
-        }
-        let touches_build_manifest = changed_files.iter().any(|f| {
-            f.ends_with("Cargo.toml")
-                || f.ends_with("package.json")
-                || f.ends_with("pyproject.toml")
-        });
-        if touches_build_manifest {
-            self.cached_build_baseline = None;
-        }
         self.work_log.push(format!(
             "Task (completed): {}\nNotes: {}\nFiles changed: {}",
             task.title,
@@ -457,29 +387,7 @@ impl LoopRunContext {
             changed_files.join(", "),
         ));
 
-        if let Ok(project) = engine.project_service.get_project_async(&self.project_id).await {
-            if project.git_repo_url.is_some() && crate::git_ops::is_git_repo(&self.project_root) {
-                let commit_msg = format!("Task: {}\n\n{}", task.title, notes);
-                match crate::git_ops::git_commit(&self.project_root, &commit_msg).await {
-                    Ok(Some(sha)) => {
-                        engine.emit(EngineEvent::GitCommitted {
-                            project_id: self.project_id,
-                            agent_instance_id: self.agent_instance_id,
-                            task_id: task.task_id,
-                            commit_sha: sha,
-                            message: commit_msg,
-                        });
-                    }
-                    Ok(None) => {
-                        info!("no changes to commit after task completion");
-                    }
-                    Err(e) => {
-                        warn!(error = %e, "git commit after task completion failed");
-                    }
-                }
-            }
-        }
-
+        self.auto_commit_if_git(engine, task, notes).await;
         Ok(())
     }
 
@@ -549,7 +457,7 @@ impl LoopRunContext {
         } else {
             "all_tasks_complete"
         };
-        self.end_session(engine).await;
+        self.end_session_quietly(engine).await;
         engine.emit(self.build_finished_event(engine, outcome_str));
         self.flush_metrics(outcome_str);
         if outcome_str == "all_tasks_blocked" {
@@ -561,62 +469,28 @@ impl LoopRunContext {
 
     pub async fn handle_credits_exhausted(&mut self, engine: &DevLoopEngine) -> LoopOutcome {
         warn!("Credits exhausted, stopping engine loop");
-        self.end_session(engine).await;
+        self.end_session_quietly(engine).await;
         engine.emit(self.build_finished_event(engine, "insufficient_credits"));
         self.flush_metrics("insufficient_credits");
         LoopOutcome::AllTasksBlocked
+    }
+
+    /// End session without emitting stop/pause events (used by terminal outcomes).
+    async fn end_session_quietly(&self, engine: &DevLoopEngine) {
+        if let Err(e) = engine.session_service.end_session(
+            &self.project_id,
+            &self.agent_instance_id,
+            &self.session.session_id,
+            SessionStatus::Completed,
+        ).await {
+            warn!(error = %e, "failed to end session");
+        }
     }
 
     // ------------------------------------------------------------------
     // Session rollover
     // ------------------------------------------------------------------
 
-    /// Check if the current session needs to be rolled over and perform
-    /// the rollover if so.
-    ///
-    /// ## State machine
-    ///
-    /// ```text
-    ///  ┌────────────────────────────────────────────────┐
-    ///  │            try_session_rollover                │
-    ///  │                                                │
-    ///  │   ┌─────────────┐                             │
-    ///  │   │ fetch       │                             │
-    ///  │   │ session     │                             │
-    ///  │   └──────┬──────┘                             │
-    ///  │          │                                     │
-    ///  │          ▼                                     │
-    ///  │   ┌─────────────┐  no   ┌─────────┐          │
-    ///  │   │ should_     │─────▶│ Ok(None) │          │
-    ///  │   │ rollover?   │      └─────────┘          │
-    ///  │   └──────┬──────┘                            │
-    ///  │          │ yes                                │
-    ///  │          ▼                                    │
-    ///  │   ┌─────────────┐  stop   ┌──────────┐      │
-    ///  │   │ generate    │───────▶│ Ok(Some) │      │
-    ///  │   │ summary     │        │ (paused/ │      │
-    ///  │   │ (LLM call)  │        │  stopped)│      │
-    ///  │   └──────┬──────┘        └──────────┘      │
-    ///  │          │ ok                               │
-    ///  │          ▼                                  │
-    ///  │   ┌─────────────┐                          │
-    ///  │   │ rollover    │ old session → rolled_over│
-    ///  │   │ session     │ new session → active     │
-    ///  │   └──────┬──────┘                          │
-    ///  │          │                                  │
-    ///  │          ▼                                  │
-    ///  │   emit SessionRolledOver                   │
-    ///  │   update ctx.session                       │
-    ///  │   clear work_log                           │
-    ///  │   Ok(None) → loop continues                │
-    ///  └────────────────────────────────────────────┘
-    ///
-    /// Invariants:
-    ///   - Old session is always marked rolled_over before new one is created
-    ///   - work_log is cleared after rollover so new session starts fresh
-    ///   - sessions_used counter is monotonically incremented
-    ///   - Stop/Pause commands can interrupt the summary generation
-    /// ```
     pub async fn try_session_rollover(
         &mut self,
         engine: &DevLoopEngine,
@@ -638,16 +512,8 @@ impl LoopRunContext {
             return Ok(None);
         }
         let project = engine.project_service.get_project_async(&self.project_id).await?;
-        let mut raw_log = self.work_log.join("\n\n---\n\n");
-        const MAX_WORK_LOG_CHARS: usize = 20_000;
-        if raw_log.len() > MAX_WORK_LOG_CHARS {
-            raw_log.truncate(MAX_WORK_LOG_CHARS);
-            raw_log.push_str("\n\n... (work log truncated) ...");
-        }
-        let history = format!(
-            "Project: {}\nDescription: {}\n\nSession work log ({} tasks completed):\n\n{}",
-            project.name, project.description, self.completed_count, raw_log,
-        );
+        let history = build_rollover_history(&project, &self.work_log, self.completed_count);
+
         let summary_start = Instant::now();
         let summary = tokio::select! {
             res = engine.session_service.generate_rollover_summary(
@@ -688,4 +554,42 @@ impl LoopRunContext {
         self.work_log.clear();
         Ok(None)
     }
+}
+
+fn check_baseline_invalidation(file_ops: &[FileOp]) -> (bool, bool) {
+    let changed_files: Vec<&str> = file_ops
+        .iter()
+        .map(|op| match op {
+            FileOp::Create { path, .. }
+            | FileOp::Modify { path, .. }
+            | FileOp::Delete { path }
+            | FileOp::SearchReplace { path, .. } => path.as_str(),
+        })
+        .collect();
+    let touches_tests = changed_files.iter().any(|f| {
+        f.contains("_test.rs")
+            || f.contains("_spec.ts")
+            || f.contains("test_")
+            || f.contains("tests/")
+            || f.contains("tests\\")
+    });
+    let touches_build_manifest = changed_files.iter().any(|f| {
+        f.ends_with("Cargo.toml")
+            || f.ends_with("package.json")
+            || f.ends_with("pyproject.toml")
+    });
+    (touches_tests, touches_build_manifest)
+}
+
+fn build_rollover_history(project: &Project, work_log: &[String], completed_count: usize) -> String {
+    let mut raw_log = work_log.join("\n\n---\n\n");
+    const MAX_WORK_LOG_CHARS: usize = 20_000;
+    if raw_log.len() > MAX_WORK_LOG_CHARS {
+        raw_log.truncate(MAX_WORK_LOG_CHARS);
+        raw_log.push_str("\n\n... (work log truncated) ...");
+    }
+    format!(
+        "Project: {}\nDescription: {}\n\nSession work log ({} tasks completed):\n\n{}",
+        project.name, project.description, completed_count, raw_log,
+    )
 }
