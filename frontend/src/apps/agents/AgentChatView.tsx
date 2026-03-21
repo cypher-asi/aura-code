@@ -50,14 +50,7 @@ export function AgentChatView() {
   } = useAgentHistory(agentId);
 
   const {
-    messages,
-    isStreaming,
-    streamingText,
-    thinkingText,
-    thinkingDurationMs,
-    activeToolCalls,
-    timeline,
-    progressText,
+    streamKey,
     sendMessage,
     stopStreaming,
     resetMessages,
@@ -132,14 +125,7 @@ export function AgentChatView() {
         >
           <div className={styles.messageContent}>
             <ChatMessageList
-              messages={messages}
-              isStreaming={isStreaming}
-              streamingText={streamingText}
-              thinkingText={thinkingText}
-              thinkingDurationMs={thinkingDurationMs}
-              activeToolCalls={activeToolCalls}
-              timeline={timeline}
-              progressText={progressText}
+              streamKey={streamKey}
               emptyState={
                 <HistoryEmptyState
                   status={historyStatus}
@@ -157,7 +143,7 @@ export function AgentChatView() {
           onInputChange={setInput}
           onSend={handleSend}
           onStop={stopStreaming}
-          isStreaming={isStreaming}
+          streamKey={streamKey}
           agentName={selectedAgent?.name}
           attachments={attachments}
           onAttachmentsChange={setAttachments}

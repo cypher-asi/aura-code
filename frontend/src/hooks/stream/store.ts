@@ -1,3 +1,4 @@
+import { create } from "zustand";
 import type { SetStateAction } from "react";
 import type {
   DisplayMessage,
@@ -8,17 +9,14 @@ import type {
 } from "../../types/stream";
 
 /* ------------------------------------------------------------------ */
-/*  Module-level stream store                                          */
+/*  Zustand stream store                                               */
 /*                                                                     */
-/*  Keeps stream state alive across React mount/unmount cycles so      */
-/*  navigating away from a chat and returning restores the live        */
-/*  stream instead of aborting it.                                     */
+/*  Keeps reactive stream state in a Zustand store so components can   */
+/*  subscribe to individual slices. Non-reactive metadata (refs,       */
+/*  abort controllers) live in a module-level Map.                     */
 /* ------------------------------------------------------------------ */
 
-export interface StreamEntry {
-  key: string;
-  refs: StreamRefs;
-  abort: AbortController | null;
+export interface StreamEntryState {
   isStreaming: boolean;
   messages: DisplayMessage[];
   streamingText: string;
@@ -27,12 +25,35 @@ export interface StreamEntry {
   activeToolCalls: ToolCallEntry[];
   timeline: TimelineItem[];
   progressText: string;
-  lastAccessedAt: number;
-  /** Current React setters – null when the component is unmounted. */
-  reactSetters: StreamSetters | null;
 }
 
-export const streamStore = new Map<string, StreamEntry>();
+export interface StreamMeta {
+  key: string;
+  refs: StreamRefs;
+  abort: AbortController | null;
+  lastAccessedAt: number;
+}
+
+interface StreamStore {
+  entries: Record<string, StreamEntryState>;
+}
+
+const INITIAL_ENTRY: StreamEntryState = {
+  isStreaming: false,
+  messages: [],
+  streamingText: "",
+  thinkingText: "",
+  thinkingDurationMs: null,
+  activeToolCalls: [],
+  timeline: [],
+  progressText: "",
+};
+
+export const useStreamStore = create<StreamStore>()(() => ({
+  entries: {},
+}));
+
+export const streamMetaMap = new Map<string, StreamMeta>();
 const STREAM_STORE_MAX_ENTRIES = 40;
 const STREAM_STORE_IDLE_TTL_MS = 5 * 60 * 1000;
 
@@ -40,59 +61,68 @@ export function storeKey(deps: unknown[]): string {
   return deps.filter(Boolean).join(":");
 }
 
-export function makeEntry(key: string): StreamEntry {
+function makeRefs(): StreamRefs {
   return {
-    key,
-    refs: {
-      streamBuffer: { current: "" },
-      thinkingBuffer: { current: "" },
-      thinkingStart: { current: null },
-      toolCalls: { current: [] },
-      needsSeparator: { current: false },
-      raf: { current: null },
-      thinkingRaf: { current: null },
-      timeline: { current: [] },
-    },
-    abort: null,
-    isStreaming: false,
-    messages: [],
-    streamingText: "",
-    thinkingText: "",
-    thinkingDurationMs: null,
-    activeToolCalls: [],
-    timeline: [],
-    progressText: "",
-    lastAccessedAt: Date.now(),
-    reactSetters: null,
+    streamBuffer: { current: "" },
+    thinkingBuffer: { current: "" },
+    thinkingStart: { current: null },
+    toolCalls: { current: [] },
+    needsSeparator: { current: false },
+    raf: { current: null },
+    thinkingRaf: { current: null },
+    timeline: { current: [] },
   };
 }
 
-export function touchEntry(entry: StreamEntry): void {
-  entry.lastAccessedAt = Date.now();
+export function ensureEntry(key: string): StreamMeta {
+  let meta = streamMetaMap.get(key);
+  if (!meta) {
+    meta = { key, refs: makeRefs(), abort: null, lastAccessedAt: Date.now() };
+    streamMetaMap.set(key, meta);
+    useStreamStore.setState((s) => ({
+      entries: { ...s.entries, [key]: { ...INITIAL_ENTRY } },
+    }));
+  }
+  meta.lastAccessedAt = Date.now();
+  return meta;
+}
+
+function touchEntry(key: string): void {
+  const meta = streamMetaMap.get(key);
+  if (meta) meta.lastAccessedAt = Date.now();
 }
 
 export function pruneStreamStore(preserveKey?: string): void {
   const now = Date.now();
+  const entries = useStreamStore.getState().entries;
+  const toDelete: string[] = [];
 
-  for (const [key, entry] of streamStore) {
+  for (const [key, meta] of streamMetaMap) {
     if (key === preserveKey) continue;
-    if (entry.isStreaming) continue;
-    if (entry.reactSetters !== null) continue;
-    if (now - entry.lastAccessedAt > STREAM_STORE_IDLE_TTL_MS) {
-      streamStore.delete(key);
+    if (entries[key]?.isStreaming) continue;
+    if (now - meta.lastAccessedAt > STREAM_STORE_IDLE_TTL_MS) {
+      toDelete.push(key);
     }
   }
 
-  if (streamStore.size <= STREAM_STORE_MAX_ENTRIES) return;
-
-  const removable = [...streamStore.entries()]
-    .filter(([key, entry]) => key !== preserveKey && !entry.isStreaming && entry.reactSetters === null)
-    .sort((a, b) => a[1].lastAccessedAt - b[1].lastAccessedAt);
-
-  for (const [key] of removable) {
-    if (streamStore.size <= STREAM_STORE_MAX_ENTRIES) break;
-    streamStore.delete(key);
+  if (streamMetaMap.size - toDelete.length > STREAM_STORE_MAX_ENTRIES) {
+    const removable = [...streamMetaMap.entries()]
+      .filter(([key]) => key !== preserveKey && !entries[key]?.isStreaming && !toDelete.includes(key))
+      .sort((a, b) => a[1].lastAccessedAt - b[1].lastAccessedAt);
+    for (const [key] of removable) {
+      if (streamMetaMap.size - toDelete.length <= STREAM_STORE_MAX_ENTRIES) break;
+      toDelete.push(key);
+    }
   }
+
+  if (toDelete.length === 0) return;
+
+  for (const key of toDelete) streamMetaMap.delete(key);
+  useStreamStore.setState((s) => {
+    const next = { ...s.entries };
+    for (const key of toDelete) delete next[key];
+    return { entries: next };
+  });
 }
 
 export function resolve<T>(action: SetStateAction<T>, prev: T): T {
@@ -101,51 +131,71 @@ export function resolve<T>(action: SetStateAction<T>, prev: T): T {
     : action;
 }
 
+function updateStreamEntry(key: string, patch: Partial<StreamEntryState>): void {
+  useStreamStore.setState((s) => {
+    const existing = s.entries[key];
+    if (!existing) return s;
+    return { entries: { ...s.entries, [key]: { ...existing, ...patch } } };
+  });
+}
+
+export function getStreamEntry(key: string): StreamEntryState | undefined {
+  return useStreamStore.getState().entries[key];
+}
+
+export function getIsStreaming(key: string): boolean {
+  return useStreamStore.getState().entries[key]?.isStreaming ?? false;
+}
+
+export function getThinkingDurationMs(key: string): number | null {
+  return useStreamStore.getState().entries[key]?.thinkingDurationMs ?? null;
+}
+
 /**
- * Create proxy setters that always update the persistent entry snapshot
- * and forward to React when the component is mounted.
+ * Create setters that update the Zustand store.
+ * Same StreamSetters interface so handlers work unchanged.
  */
-export function createProxySetters(entry: StreamEntry): StreamSetters {
+export function createSetters(key: string): StreamSetters {
   return {
     setStreamingText(v) {
-      touchEntry(entry);
-      entry.streamingText = resolve(v, entry.streamingText);
-      entry.reactSetters?.setStreamingText(entry.streamingText);
+      touchEntry(key);
+      const cur = getStreamEntry(key);
+      updateStreamEntry(key, { streamingText: resolve(v, cur?.streamingText ?? "") });
     },
     setThinkingText(v) {
-      touchEntry(entry);
-      entry.thinkingText = resolve(v, entry.thinkingText);
-      entry.reactSetters?.setThinkingText(entry.thinkingText);
+      touchEntry(key);
+      const cur = getStreamEntry(key);
+      updateStreamEntry(key, { thinkingText: resolve(v, cur?.thinkingText ?? "") });
     },
     setThinkingDurationMs(v) {
-      touchEntry(entry);
-      entry.thinkingDurationMs = resolve(v, entry.thinkingDurationMs);
-      entry.reactSetters?.setThinkingDurationMs(entry.thinkingDurationMs);
+      touchEntry(key);
+      const cur = getStreamEntry(key);
+      updateStreamEntry(key, { thinkingDurationMs: resolve(v, cur?.thinkingDurationMs ?? null) });
     },
     setActiveToolCalls(v) {
-      touchEntry(entry);
-      entry.activeToolCalls = resolve(v, entry.activeToolCalls);
-      entry.reactSetters?.setActiveToolCalls(entry.activeToolCalls);
+      touchEntry(key);
+      const cur = getStreamEntry(key);
+      updateStreamEntry(key, { activeToolCalls: resolve(v, cur?.activeToolCalls ?? []) });
     },
     setMessages(v) {
-      touchEntry(entry);
-      entry.messages = resolve(v, entry.messages);
-      entry.reactSetters?.setMessages(entry.messages);
+      touchEntry(key);
+      const cur = getStreamEntry(key);
+      updateStreamEntry(key, { messages: resolve(v, cur?.messages ?? []) });
     },
     setIsStreaming(v) {
-      touchEntry(entry);
-      entry.isStreaming = resolve(v, entry.isStreaming);
-      entry.reactSetters?.setIsStreaming(entry.isStreaming);
+      touchEntry(key);
+      const cur = getStreamEntry(key);
+      updateStreamEntry(key, { isStreaming: resolve(v, cur?.isStreaming ?? false) });
     },
     setProgressText(v) {
-      touchEntry(entry);
-      entry.progressText = resolve(v, entry.progressText);
-      entry.reactSetters?.setProgressText(entry.progressText);
+      touchEntry(key);
+      const cur = getStreamEntry(key);
+      updateStreamEntry(key, { progressText: resolve(v, cur?.progressText ?? "") });
     },
     setTimeline(v) {
-      touchEntry(entry);
-      entry.timeline = resolve(v, entry.timeline);
-      entry.reactSetters?.setTimeline(entry.timeline);
+      touchEntry(key);
+      const cur = getStreamEntry(key);
+      updateStreamEntry(key, { timeline: resolve(v, cur?.timeline ?? []) });
     },
   };
 }

@@ -1,31 +1,32 @@
 import type { ReactNode } from "react";
-import type { DisplayMessage, ToolCallEntry, TimelineItem } from "../../types/stream";
 import { MessageBubble, StreamingBubble } from "../MessageBubble";
 import { CookingIndicator } from "../CookingIndicator";
+import {
+  useStreamMessages,
+  useIsStreaming,
+  useStreamingText,
+  useThinkingText,
+  useThinkingDurationMs,
+  useActiveToolCalls,
+  useTimeline,
+  useProgressText,
+} from "../../hooks/stream/hooks";
 
 interface ChatMessageListProps {
-  messages: DisplayMessage[];
-  isStreaming: boolean;
-  streamingText: string;
-  thinkingText: string;
-  thinkingDurationMs: number | null;
-  activeToolCalls: ToolCallEntry[];
-  timeline: TimelineItem[];
-  progressText: string;
+  streamKey: string;
   emptyState?: ReactNode;
 }
 
-export function ChatMessageList({
-  messages,
-  isStreaming,
-  streamingText,
-  thinkingText,
-  thinkingDurationMs,
-  activeToolCalls,
-  timeline,
-  progressText,
-  emptyState,
-}: ChatMessageListProps) {
+export function ChatMessageList({ streamKey, emptyState }: ChatMessageListProps) {
+  const messages = useStreamMessages(streamKey);
+  const isStreaming = useIsStreaming(streamKey);
+  const streamingText = useStreamingText(streamKey);
+  const thinkingText = useThinkingText(streamKey);
+  const thinkingDurationMs = useThinkingDurationMs(streamKey);
+  const activeToolCalls = useActiveToolCalls(streamKey);
+  const timeline = useTimeline(streamKey);
+  const progressText = useProgressText(streamKey);
+
   const hasMessages = messages.length > 0 || isStreaming || streamingText || thinkingText;
 
   if (!hasMessages) {

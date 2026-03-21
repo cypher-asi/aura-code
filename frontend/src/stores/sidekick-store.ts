@@ -107,8 +107,9 @@ export const useSidekickStore = create<SidekickState>()((set, get) => ({
     const history = [...previewHistory];
     let previousItem = history.pop()!;
     if (previousItem.kind === "task") {
-      const fresh = tasks.find((t) => t.task_id === previousItem.task.task_id);
-      if (fresh) previousItem = { kind: "task", task: { ...previousItem.task, ...fresh } };
+      const prevTask = previousItem.task;
+      const fresh = tasks.find((t) => t.task_id === prevTask.task_id);
+      if (fresh) previousItem = { kind: "task", task: { ...prevTask, ...fresh } };
     }
     set({ previewItem: previousItem, previewHistory: history, canGoBack: history.length > 0 });
   },

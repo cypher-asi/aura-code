@@ -14,6 +14,8 @@ import {
   handleMessageSaved,
   handleStreamError,
   finalizeStream,
+  getIsStreaming,
+  getThinkingDurationMs,
 } from "./use-stream-core";
 
 export type {
@@ -155,18 +157,18 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
   useEffect(() => { projectCtxRef.current = projectCtx; }, [projectCtx]);
 
   const core = useStreamCore([projectId, agentInstanceId]);
-  const { refs, setters, abortRef, isStreamingRef, thinkingDurationMsRef } = core;
+  const { refs, setters, abortRef } = core;
 
   const pendingSpecIdsRef = useRef<string[]>([]);
   const pendingTaskIdsRef = useRef<string[]>([]);
 
   useEffect(() => {
     return () => {
-      if (!core.isStreamingRef.current) {
+      if (!getIsStreaming(core.key)) {
         sidekickRef.current.setStreamingAgentInstanceId(null);
       }
     };
-  }, [projectId, agentInstanceId, core.isStreamingRef]);
+  }, [projectId, agentInstanceId, core.key]);
 
   const sendMessage = useCallback(
     async (
@@ -175,7 +177,7 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
       _selectedModel?: string | null,
       attachments?: ChatAttachment[],
     ) => {
-      if (!projectId || !agentInstanceId || isStreamingRef.current) return;
+      if (!projectId || !agentInstanceId || getIsStreaming(core.key)) return;
       const trimmed = content.trim();
       if (!trimmed && !action && !(attachments && attachments.length > 0)) return;
 
@@ -205,7 +207,7 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
       const callbacks: ChatStreamCallbacks = {
         onProgress: (stage) => core.setProgressText(stage),
         onThinkingDelta: (text) => handleThinkingDelta(refs, setters, text),
-        onDelta: (text) => handleTextDelta(refs, setters, thinkingDurationMsRef.current, text),
+        onDelta: (text) => handleTextDelta(refs, setters, getThinkingDurationMs(core.key), text),
         onToolCallStarted: (info) => handleToolCallStarted(refs, setters, info),
         onToolCall: (info) => {
           coreHandleToolCall(refs, setters, info);
@@ -254,7 +256,7 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
         onTokenUsage() {},
         onError: (message) => handleStreamError(refs, setters, message),
         onDone: () => {
-          finalizeStream(refs, setters, abortRef, isStreamingRef.current);
+          finalizeStream(refs, setters, abortRef, getIsStreaming(core.key));
           sidekickRef.current.setStreamingAgentInstanceId(null);
         },
       };
@@ -273,7 +275,7 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
         abortRef.current = null;
       }
     },
-    [projectId, agentInstanceId],
+    [projectId, agentInstanceId, core.key, refs, setters, abortRef, core.setMessages, core.setIsStreaming, core.setProgressText],
   );
 
   const stopStreaming = useCallback(() => {
@@ -292,17 +294,9 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
   }, [projectId, agentInstanceId, core.baseStopStreaming]);
 
   return {
-    messages: core.messages,
-    isStreaming: core.isStreaming,
-    streamingText: core.streamingText,
-    thinkingText: core.thinkingText,
-    thinkingDurationMs: core.thinkingDurationMs,
-    activeToolCalls: core.activeToolCalls,
-    timeline: core.timeline,
-    progressText: core.progressText,
+    streamKey: core.key,
     sendMessage,
     stopStreaming,
     resetMessages: core.resetMessages,
-    rafRef: core.rafRef,
   };
 }

@@ -13,6 +13,8 @@ import {
   handleMessageSaved,
   handleStreamError,
   finalizeStream,
+  getIsStreaming,
+  getThinkingDurationMs,
 } from "./use-stream-core";
 import type { DisplayMessage } from "../types/stream";
 
@@ -24,7 +26,7 @@ interface UseAgentChatStreamOptions {
 
 export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAgentChatStreamOptions) {
   const core = useStreamCore([agentId]);
-  const { refs, setters, abortRef, isStreamingRef, thinkingDurationMsRef } = core;
+  const { refs, setters, abortRef } = core;
 
   const onSpecSavedRef = useRef(onSpecSaved);
   useEffect(() => { onSpecSavedRef.current = onSpecSaved; }, [onSpecSaved]);
@@ -39,7 +41,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
       _selectedModel?: string | null,
       attachments?: ChatAttachment[],
     ) => {
-      if (!agentId || isStreamingRef.current) return;
+      if (!agentId || getIsStreaming(core.key)) return;
       const trimmed = content.trim();
       const hasAttachments = attachments && attachments.length > 0;
       if (!trimmed && !action && !hasAttachments) return;
@@ -68,7 +70,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
           {
             onProgress: (stage) => core.setProgressText(stage),
             onThinkingDelta: (text) => handleThinkingDelta(refs, setters, text),
-            onDelta: (text) => handleTextDelta(refs, setters, thinkingDurationMsRef.current, text),
+            onDelta: (text) => handleTextDelta(refs, setters, getThinkingDurationMs(core.key), text),
             onToolCallStarted: (info) => handleToolCallStarted(refs, setters, info),
             onToolCall: (info) => handleToolCall(refs, setters, info),
             onToolResult: (info) => handleToolResult(refs, setters, info),
@@ -77,7 +79,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
             onMessageSaved: (msg) => handleMessageSaved(refs, setters, msg),
             onTokenUsage() {},
             onError: (message) => handleStreamError(refs, setters, message),
-            onDone: () => finalizeStream(refs, setters, abortRef, isStreamingRef.current),
+            onDone: () => finalizeStream(refs, setters, abortRef, getIsStreaming(core.key)),
           },
           controller.signal,
         );
@@ -89,21 +91,13 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
         abortRef.current = null;
       }
     },
-    [agentId],
+    [agentId, core.key, refs, setters, abortRef, core.setMessages, core.setIsStreaming, core.setProgressText],
   );
 
   return {
-    messages: core.messages,
-    isStreaming: core.isStreaming,
-    streamingText: core.streamingText,
-    thinkingText: core.thinkingText,
-    thinkingDurationMs: core.thinkingDurationMs,
-    activeToolCalls: core.activeToolCalls,
-    timeline: core.timeline,
-    progressText: core.progressText,
+    streamKey: core.key,
     sendMessage,
     stopStreaming: core.baseStopStreaming,
     resetMessages: core.resetMessages,
-    rafRef: core.rafRef,
   };
 }

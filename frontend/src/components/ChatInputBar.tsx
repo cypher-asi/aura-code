@@ -1,5 +1,6 @@
 import { useRef, useState, useImperativeHandle, forwardRef, memo, useCallback, useEffect } from "react";
 import { ArrowUp, Plus, X, FileText } from "lucide-react";
+import { useIsStreaming } from "../hooks/stream/hooks";
 import styles from "./ChatView.module.css";
 
 const MAX_ATTACHMENTS = 5;
@@ -30,7 +31,7 @@ interface Props {
   onInputChange: (value: string) => void;
   onSend: (content: string, action?: string, attachments?: AttachmentItem[]) => void;
   onStop: () => void;
-  isStreaming: boolean;
+  streamKey: string;
   selectedModel?: string;
   onModelChange?: (model: string) => void;
   agentName?: string;
@@ -46,12 +47,13 @@ export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function 
   onInputChange,
   onSend,
   onStop,
-  isStreaming,
+  streamKey,
   attachments = [],
   onAttachmentsChange,
   onRemoveAttachment,
   contextUsagePercent,
 }, ref) {
+  const isStreaming = useIsStreaming(streamKey);
   const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);

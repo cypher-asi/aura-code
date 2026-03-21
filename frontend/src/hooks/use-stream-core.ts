@@ -1,20 +1,19 @@
-import { useRef, useState, useCallback, useLayoutEffect, useEffect, useMemo } from "react";
+import { useRef, useCallback, useLayoutEffect, useMemo } from "react";
 import type { MutableRefObject } from "react";
 import type {
   DisplayMessage,
-  ToolCallEntry,
-  TimelineItem,
   StreamSetters,
 } from "../types/stream";
 import {
-  streamStore,
   storeKey,
-  makeEntry,
-  createProxySetters,
-  touchEntry,
+  ensureEntry,
+  createSetters,
   pruneStreamStore,
+  getStreamEntry,
+  getIsStreaming,
+  streamMetaMap,
 } from "./stream/store";
-import type { StreamEntry } from "./stream/store";
+import type { StreamMeta } from "./stream/store";
 import {
   snapshotThinking,
   snapshotToolCalls,
@@ -49,132 +48,94 @@ export {
   finalizeStream,
 } from "./stream/handlers";
 
+export { getIsStreaming, getThinkingDurationMs } from "./stream/store";
+
 /* ------------------------------------------------------------------ */
-/*  Core hook                                                          */
+/*  Core hook — lifecycle only, no React state                         */
 /* ------------------------------------------------------------------ */
 
 export function useStreamCore(resetDeps: unknown[]) {
   const key = storeKey(resetDeps);
 
-  const entryRef = useRef<{ key: string; entry: StreamEntry } | null>(null);
-  if (!entryRef.current || entryRef.current.key !== key) {
-    let entry = streamStore.get(key);
-    if (!entry) {
-      entry = makeEntry(key);
-      streamStore.set(key, entry);
-      pruneStreamStore(key);
-    }
-    touchEntry(entry);
-    entryRef.current = { key, entry };
+  const metaRef = useRef<{ key: string; meta: StreamMeta } | null>(null);
+  if (!metaRef.current || metaRef.current.key !== key) {
+    const meta = ensureEntry(key);
+    pruneStreamStore(key);
+    metaRef.current = { key, meta };
   }
-  const entry = entryRef.current.entry;
+  const meta = metaRef.current.meta;
 
   const settersRef = useRef<StreamSetters>(null!);
-  if (!settersRef.current || entryRef.current.key !== key) {
-    settersRef.current = createProxySetters(entry);
+  if (!settersRef.current || metaRef.current.key !== key) {
+    settersRef.current = createSetters(key);
   }
   const setters = settersRef.current;
 
-  const [messages, setMessages] = useState<DisplayMessage[]>(() => entry.messages);
-  const [isStreaming, setIsStreaming] = useState(() => entry.isStreaming);
-  const [streamingText, setStreamingText] = useState(() => entry.streamingText);
-  const [thinkingText, setThinkingText] = useState(() => entry.thinkingText);
-  const [thinkingDurationMs, setThinkingDurationMs] = useState<number | null>(() => entry.thinkingDurationMs);
-  const [activeToolCalls, setActiveToolCalls] = useState<ToolCallEntry[]>(() => entry.activeToolCalls);
-  const [timeline, setTimeline] = useState<TimelineItem[]>(() => entry.timeline);
-  const [progressText, setProgressText] = useState(() => entry.progressText);
-
-  const isStreamingRef = useRef(entry.isStreaming);
-  useEffect(() => { isStreamingRef.current = isStreaming; }, [isStreaming]);
-
-  const thinkingDurationMsRef = useRef<number | null>(entry.thinkingDurationMs);
-  useEffect(() => { thinkingDurationMsRef.current = thinkingDurationMs; }, [thinkingDurationMs]);
-
-  const abortRef = useMemo<MutableRefObject<AbortController | null>>(() => {
-    const holder: { current: AbortController | null } = { current: null };
-    Object.defineProperty(holder, "current", {
-      get() { return entryRef.current!.entry.abort; },
-      set(v: AbortController | null) { entryRef.current!.entry.abort = v; },
-      enumerable: true,
-      configurable: true,
-    });
-    return holder;
+  const abortRef = useMemo<MutableRefObject<AbortController | null>>(() => ({
+    get current() { return streamMetaMap.get(key)?.abort ?? null; },
+    set current(v: AbortController | null) {
+      const m = streamMetaMap.get(key);
+      if (m) m.abort = v;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  entry.reactSetters = {
-    setStreamingText, setThinkingText, setThinkingDurationMs,
-    setActiveToolCalls, setMessages, setIsStreaming, setProgressText, setTimeline,
-  };
-  touchEntry(entry);
+  }), [key]);
 
   useLayoutEffect(() => {
-    const e = entryRef.current!.entry;
-    setMessages(e.messages);
-    setIsStreaming(e.isStreaming);
-    setStreamingText(e.streamingText);
-    setThinkingText(e.thinkingText);
-    setThinkingDurationMs(e.thinkingDurationMs);
-    setActiveToolCalls(e.activeToolCalls);
-    setTimeline(e.timeline);
-    setProgressText(e.progressText);
-    isStreamingRef.current = e.isStreaming;
-    thinkingDurationMsRef.current = e.thinkingDurationMs;
-
     return () => {
-      e.reactSetters = null;
-      if (e.refs.raf.current !== null) {
-        cancelAnimationFrame(e.refs.raf.current);
-        e.refs.raf.current = null;
+      if (meta.refs.raf.current !== null) {
+        cancelAnimationFrame(meta.refs.raf.current);
+        meta.refs.raf.current = null;
       }
-      if (e.refs.thinkingRaf.current !== null) {
-        cancelAnimationFrame(e.refs.thinkingRaf.current);
-        e.refs.thinkingRaf.current = null;
+      if (meta.refs.thinkingRaf.current !== null) {
+        cancelAnimationFrame(meta.refs.thinkingRaf.current);
+        meta.refs.thinkingRaf.current = null;
       }
-      touchEntry(e);
-      pruneStreamStore(e.key);
+      meta.lastAccessedAt = Date.now();
+      pruneStreamStore(key);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, resetDeps);
 
   const resetMessages = useCallback((msgs: DisplayMessage[], options?: { allowWhileStreaming?: boolean }) => {
-    const e = entryRef.current!.entry;
-    if (e.isStreaming && !options?.allowWhileStreaming) return;
-    touchEntry(e);
-    e.messages = msgs;
-    setMessages(msgs);
-  }, []);
+    if (getIsStreaming(key) && !options?.allowWhileStreaming) return;
+    const m = streamMetaMap.get(key);
+    if (m) m.lastAccessedAt = Date.now();
+    setters.setMessages(msgs);
+  }, [key, setters]);
 
   const baseStopStreaming = useCallback(() => {
-    const e = entryRef.current!.entry;
-    const s = settersRef.current;
-    e.abort?.abort();
-    if (e.refs.streamBuffer.current) {
-      const snap = snapshotThinking(e.refs);
-      s.setMessages((prev) => [
+    const m = streamMetaMap.get(key);
+    if (!m) return;
+    m.abort?.abort();
+    if (m.refs.streamBuffer.current) {
+      const snap = snapshotThinking(m.refs);
+      setters.setMessages((prev) => [
         ...prev,
         {
           id: `stopped-${Date.now()}`,
           role: "assistant" as const,
-          content: e.refs.streamBuffer.current,
-          toolCalls: snapshotToolCalls(e.refs),
+          content: m.refs.streamBuffer.current,
+          toolCalls: snapshotToolCalls(m.refs),
           thinkingText: snap.savedThinking,
           thinkingDurationMs: snap.savedThinkingDuration,
-          timeline: snapshotTimeline(e.refs),
+          timeline: snapshotTimeline(m.refs),
         },
       ]);
     }
-    resetStreamBuffers(e.refs, s);
-    s.setIsStreaming(false);
-    e.abort = null;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    resetStreamBuffers(m.refs, setters);
+    setters.setIsStreaming(false);
+    m.abort = null;
+  }, [key, setters]);
 
   return {
-    messages, isStreaming, streamingText, thinkingText, thinkingDurationMs,
-    activeToolCalls, timeline, progressText,
-    refs: entry.refs, setters, abortRef, isStreamingRef, thinkingDurationMsRef, rafRef: entry.refs.raf,
-    setMessages: setters.setMessages, setIsStreaming: setters.setIsStreaming, setProgressText: setters.setProgressText,
-    resetMessages, baseStopStreaming,
+    key,
+    refs: meta.refs,
+    setters,
+    abortRef,
+    setMessages: setters.setMessages,
+    setIsStreaming: setters.setIsStreaming,
+    setProgressText: setters.setProgressText,
+    resetMessages,
+    baseStopStreaming,
   };
 }

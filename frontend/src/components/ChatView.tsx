@@ -4,6 +4,7 @@ import { MessageSquare } from "lucide-react";
 import { EmptyState } from "./EmptyState";
 import { api } from "../api/client";
 import { useChatStream } from "../hooks/use-chat-stream";
+import { useIsStreaming } from "../hooks/stream/hooks";
 import { useAutoScroll } from "../hooks/use-auto-scroll";
 import { setLastAgent } from "../utils/storage";
 import { buildDisplayMessages } from "../utils/build-display-messages";
@@ -34,18 +35,12 @@ export function ChatView() {
   }>();
 
   const {
-    messages,
-    isStreaming,
-    streamingText,
-    thinkingText,
-    thinkingDurationMs,
-    activeToolCalls,
-    timeline,
-    progressText,
+    streamKey,
     sendMessage,
     stopStreaming,
     resetMessages,
   } = useChatStream({ projectId, agentInstanceId });
+  const isStreaming = useIsStreaming(streamKey);
 
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
@@ -256,14 +251,7 @@ export function ChatView() {
         >
           <div className={styles.messageContent}>
             <ChatMessageList
-              messages={messages}
-              isStreaming={isStreaming}
-              streamingText={streamingText}
-              thinkingText={thinkingText}
-              thinkingDurationMs={thinkingDurationMs}
-              activeToolCalls={activeToolCalls}
-              timeline={timeline}
-              progressText={progressText}
+              streamKey={streamKey}
               emptyState={
                 isHistoryLoading ? (
                   <EmptyState icon={<MessageSquare size={40} />}>
@@ -285,7 +273,7 @@ export function ChatView() {
           onInputChange={setInput}
           onSend={handleSend}
           onStop={stopStreaming}
-          isStreaming={isStreaming}
+          streamKey={streamKey}
           agentName={agentName}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
