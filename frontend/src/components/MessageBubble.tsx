@@ -1,12 +1,11 @@
-import { useState, useRef, useEffect, memo, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
+import { useState, memo, useMemo } from "react";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import { FileText, Plus } from "lucide-react";
 import type { ToolCallEntry, ArtifactRef, DisplayContentBlockUnion, DisplayMessage } from "../types/stream";
 import { stripEmojis, normalizeMidSentenceBreaks } from "../utils/text-normalize";
-import { summarizeInput, formatResult, formatDuration } from "../utils/format";
+import { summarizeInput, formatResult } from "../utils/format";
 import styles from "./ChatView.module.css";
 import toolStyles from "./ToolCallBlock.module.css";
 import fileStyles from "./FilePreviewCard.module.css";
@@ -14,6 +13,7 @@ import { ResponseBlock } from "./ResponseBlock";
 import { CookingIndicator, getStreamingPhaseLabel } from "./CookingIndicator";
 import { FilePreviewCard } from "./FilePreviewCard";
 import { SegmentedContent } from "./SegmentedContent";
+import { ThinkingRow } from "./ThinkingRow";
 
 interface Props {
   message: DisplayMessage;
@@ -289,57 +289,6 @@ function FileAttachmentBlock({ text }: { text: string }) {
   );
 }
 
-interface ThinkingBlockProps {
-  text: string;
-  isStreaming: boolean;
-  durationMs?: number | null;
-}
-
-function ThinkingBlock({ text, isStreaming, durationMs }: ThinkingBlockProps) {
-  const [expanded, setExpanded] = useState(isStreaming);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const prevStreamingRef = useRef(isStreaming);
-
-  useEffect(() => {
-    if (prevStreamingRef.current && !isStreaming) {
-      const frame = window.requestAnimationFrame(() => setExpanded(false));
-      prevStreamingRef.current = isStreaming;
-      return () => window.cancelAnimationFrame(frame);
-    }
-    prevStreamingRef.current = isStreaming;
-  }, [isStreaming]);
-
-  useEffect(() => {
-    if (expanded && isStreaming && contentRef.current) {
-      contentRef.current.scrollTop = contentRef.current.scrollHeight;
-    }
-  }, [text, expanded, isStreaming]);
-
-  const durationLabel = isStreaming
-    ? "Thinking..."
-    : durationMs != null
-      ? `Thought for ${formatDuration(durationMs)}`
-      : "Thought";
-
-  return (
-    <ResponseBlock
-      expanded={expanded}
-      onExpandedChange={setExpanded}
-      maxExpandedHeight={300}
-      className={styles.thinkingBlock}
-      header={
-        <span className={`${styles.thinkingLabel} ${isStreaming ? styles.thinkingLabelShimmer : ""}`}>
-          {durationLabel}
-        </span>
-      }
-    >
-      <div ref={contentRef} className={styles.thinkingContent}>
-        {stripEmojis(text)}
-      </div>
-    </ResponseBlock>
-  );
-}
-
 export const MessageBubble = memo(function MessageBubble({ message }: Props) {
   const hasContent = message.content && message.content.trim().length > 0;
   const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
@@ -396,7 +345,7 @@ export const MessageBubble = memo(function MessageBubble({ message }: Props) {
         ) : (
           <div className={styles.markdown}>
             {hasThinking && (
-              <ThinkingBlock
+              <ThinkingRow
                 text={message.thinkingText!}
                 isStreaming={false}
                 durationMs={message.thinkingDurationMs}
@@ -458,7 +407,7 @@ export function StreamingBubble({ text, toolCalls, thinkingText, thinkingDuratio
       <div className={`${styles.bubble} ${styles.bubbleAssistant}`}>
         <div className={styles.markdown}>
           {thinkingText && (
-            <ThinkingBlock
+            <ThinkingRow
               text={thinkingText}
               isStreaming={isThinking}
               durationMs={thinkingDurationMs}

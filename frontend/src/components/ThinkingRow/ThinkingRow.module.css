@@ -1,0 +1,38 @@
+/* Thinking block — content-specific styles (structure in ResponseBlock) */
+.thinkingBlock {
+  margin-bottom: 10px;
+}
+
+.thinkingLabel {
+  font-weight: 500;
+  color: var(--color-text-muted, #aaa);
+}
+
+.thinkingLabelShimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-text-muted, #aaa) 0%,
+    var(--color-text, #fff) 40%,
+    var(--color-text-muted, #aaa) 80%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.thinkingContent {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+}
