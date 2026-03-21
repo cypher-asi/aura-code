@@ -124,6 +124,30 @@
   white-space: nowrap;
 }
 
+/* ── Post title (text posts / events) ── */
+
+.postTitle {
+  font-size: var(--font-size-sm, 13px);
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.4;
+  margin: var(--space-1) 0 0;
+}
+
+/* ── Event badge ── */
+
+.eventBadge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--color-text-secondary) 15%, transparent);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+}
+
 /* ── Summary ── */
 
 .summary {

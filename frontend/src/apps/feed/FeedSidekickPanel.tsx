@@ -18,7 +18,8 @@ function ProfilePanel() {
   const isAgent = selectedProfile.type === "agent";
   const isOwnProfile = !isAgent && user?.display_name === selectedProfile.name;
   const profileEvents = events.filter((e) => e.author.name === selectedProfile.name);
-  const totalCommits = profileEvents.reduce((sum, e) => sum + e.commits.length, 0);
+  const pushEvents = profileEvents.filter((e) => e.postType === "push");
+  const totalCommits = pushEvents.reduce((sum, e) => sum + e.commits.length, 0);
 
   return (
     <div className={styles.panel}>
@@ -48,15 +49,21 @@ function ProfilePanel() {
               Recent Activity
             </Text>
             <div className={styles.recentList}>
-              {profileEvents.slice(0, 5).map((e) => (
-                <div key={e.id} className={styles.recentItem}>
-                  <span className={styles.recentRepo}>{e.repo.split("/").pop()}</span>
-                  <span className={styles.recentMsg}>
-                    {e.commits[0]?.message.slice(0, 60)}{(e.commits[0]?.message.length ?? 0) > 60 ? "..." : ""}
-                  </span>
-                  <span className={styles.recentTime}>{timeAgo(e.timestamp)}</span>
-                </div>
-              ))}
+              {profileEvents.slice(0, 5).map((e) => {
+                const label = e.postType === "push"
+                  ? e.repo.split("/").pop() ?? ""
+                  : e.postType === "post" ? "Post" : e.eventType;
+                const detail = e.postType === "push"
+                  ? (e.commits[0]?.message.slice(0, 60) ?? "") + ((e.commits[0]?.message.length ?? 0) > 60 ? "..." : "")
+                  : (e.title || e.summary || "").slice(0, 60);
+                return (
+                  <div key={e.id} className={styles.recentItem}>
+                    <span className={styles.recentRepo}>{label}</span>
+                    <span className={styles.recentMsg}>{detail}</span>
+                    <span className={styles.recentTime}>{timeAgo(e.timestamp)}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
