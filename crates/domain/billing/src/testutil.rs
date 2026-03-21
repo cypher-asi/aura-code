@@ -13,23 +13,42 @@ use crate::metered::MeteredLlm;
 pub static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub async fn start_mock_billing_server() -> String {
-    use axum::{routing::{get, post}, Json, Router};
+    use axum::{routing::get, Json, Router};
     use tokio::net::TcpListener;
 
     let app = Router::new()
         .route(
-            "/api/credits/balance",
+            "/v1/credits/balance",
             get(|| async {
-                Json(serde_json::json!({"balance": 999999, "purchases": []}))
+                Json(serde_json::json!({
+                    "balance_cents": 999999,
+                    "plan": "free",
+                    "balance_formatted": "$9,999.99"
+                }))
             }),
         )
         .route(
-            "/api/credits/debit",
-            post(|| async {
+            "/v1/credits/transactions",
+            get(|| async {
                 Json(serde_json::json!({
-                    "success": true,
-                    "balance": 999998,
-                    "transactionId": "tx-1"
+                    "transactions": [],
+                    "has_more": false
+                }))
+            }),
+        )
+        .route(
+            "/v1/accounts/me",
+            get(|| async {
+                Json(serde_json::json!({
+                    "user_id": "u1",
+                    "balance_cents": 999999,
+                    "balance_formatted": "$9,999.99",
+                    "lifetime_purchased_cents": 1000000,
+                    "lifetime_granted_cents": 0,
+                    "lifetime_used_cents": 1,
+                    "plan": "free",
+                    "auto_refill_enabled": false,
+                    "created_at": "2026-01-01T00:00:00Z"
                 }))
             }),
         );
@@ -44,73 +63,37 @@ pub async fn start_mock_billing_server() -> String {
 // Stateful mock billing server
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
-pub struct DebitRecord {
-    pub amount: u64,
-    pub reason: String,
-    pub metadata: Option<serde_json::Value>,
-}
-
 pub struct MockBillingState {
-    pub balance: u64,
-    pub debits: Vec<DebitRecord>,
+    pub balance_cents: i64,
 }
 
 impl MockBillingState {
-    pub fn new(initial_balance: u64) -> Self {
-        Self { balance: initial_balance, debits: Vec::new() }
+    pub fn new(initial_balance_cents: i64) -> Self {
+        Self { balance_cents: initial_balance_cents }
     }
 }
 
-/// Start a mock billing server with mutable state: balance tracking,
-/// debit recording, and `INSUFFICIENT_CREDITS` on overdraft.
+/// Start a mock billing server with mutable state for balance tracking.
 pub async fn start_stateful_mock_billing_server(
     state: Arc<tokio::sync::Mutex<MockBillingState>>,
 ) -> String {
-    use axum::{extract::State, routing::{get, post}, Json, Router};
+    use axum::{extract::State, routing::get, Json, Router};
     use tokio::net::TcpListener;
 
     type SharedState = Arc<tokio::sync::Mutex<MockBillingState>>;
 
     async fn balance_handler(State(st): State<SharedState>) -> axum::response::Response {
         let guard = st.lock().await;
-        let body = serde_json::json!({"balance": guard.balance, "purchases": []});
-        axum::response::IntoResponse::into_response(Json(body))
-    }
-
-    async fn debit_handler(
-        State(st): State<SharedState>,
-        Json(req): Json<serde_json::Value>,
-    ) -> axum::response::Response {
-        use axum::http::StatusCode;
-        use axum::response::IntoResponse;
-        let amount = req.get("amount").and_then(|v| v.as_u64()).unwrap_or(0);
-        let reason = req.get("reason").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let metadata = req.get("metadata").cloned();
-
-        let mut guard = st.lock().await;
-        guard.debits.push(DebitRecord { amount, reason, metadata });
-
-        if amount > guard.balance {
-            let body = serde_json::json!({
-                "error": "INSUFFICIENT_CREDITS",
-                "available": guard.balance,
-                "required": amount,
-            });
-            return (StatusCode::BAD_REQUEST, Json(body)).into_response();
-        }
-        guard.balance -= amount;
         let body = serde_json::json!({
-            "success": true,
-            "balance": guard.balance,
-            "transactionId": format!("tx-{}", guard.debits.len()),
+            "balance_cents": guard.balance_cents,
+            "plan": "free",
+            "balance_formatted": format!("${:.2}", guard.balance_cents as f64 / 100.0)
         });
         axum::response::IntoResponse::into_response(Json(body))
     }
 
     let app = Router::new()
-        .route("/api/credits/balance", get(balance_handler))
-        .route("/api/credits/debit", post(debit_handler))
+        .route("/v1/credits/balance", get(balance_handler))
         .with_state(state);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -121,7 +104,7 @@ pub async fn start_stateful_mock_billing_server(
 
 pub fn billing_client_for_url(url: &str) -> BillingClient {
     let _guard = ENV_LOCK.lock().unwrap();
-    std::env::set_var("BILLING_SERVER_URL", url);
+    std::env::set_var("Z_BILLING_URL", url);
     BillingClient::new()
 }
 
@@ -159,7 +142,7 @@ pub async fn make_test_llm(
 }
 
 /// Like `make_test_llm`, but backed by a stateful mock server so tests can
-/// inspect debit history and configure low balances.
+/// configure low balances.
 pub async fn make_test_llm_stateful(
     provider: Arc<dyn aura_claude::LlmProvider>,
     state: Arc<tokio::sync::Mutex<MockBillingState>>,

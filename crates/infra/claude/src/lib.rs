@@ -13,6 +13,12 @@ pub use error::ClaudeClientError;
 pub use token_capture::{StreamTokenCapture, TokenCaptureHandle};
 pub use types::*;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum AuthMode {
+    ApiKey,
+    Bearer,
+}
+
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tracing::{error, info};
@@ -47,6 +53,7 @@ pub struct ClaudeClient {
     pub(crate) http: reqwest::Client,
     pub(crate) base_url: String,
     pub(crate) model: String,
+    pub(crate) auth_mode: AuthMode,
 }
 
 const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -63,19 +70,32 @@ fn build_http_client() -> reqwest::Client {
 impl ClaudeClient {
     pub fn new() -> Self {
         let model = resolve_model();
-        info!(model = %model, "ClaudeClient initialized");
+        let (base_url, auth_mode) = match std::env::var("AURA_ROUTER_URL").ok().filter(|s| !s.is_empty()) {
+            Some(url) => {
+                info!(router_url = %url, "Router mode enabled");
+                (url, AuthMode::Bearer)
+            }
+            None => ("https://api.anthropic.com".to_string(), AuthMode::ApiKey),
+        };
+        info!(model = %model, auth_mode = ?auth_mode, "ClaudeClient initialized");
         Self {
             http: build_http_client(),
-            base_url: "https://api.anthropic.com".to_string(),
+            base_url,
             model,
+            auth_mode,
         }
     }
 
     pub fn with_model(model: &str) -> Self {
+        let (base_url, auth_mode) = match std::env::var("AURA_ROUTER_URL").ok().filter(|s| !s.is_empty()) {
+            Some(url) => (url, AuthMode::Bearer),
+            None => ("https://api.anthropic.com".to_string(), AuthMode::ApiKey),
+        };
         Self {
             http: build_http_client(),
-            base_url: "https://api.anthropic.com".to_string(),
+            base_url,
             model: model.to_string(),
+            auth_mode,
         }
     }
 
@@ -85,7 +105,12 @@ impl ClaudeClient {
             http: build_http_client(),
             base_url: base_url.to_string(),
             model: DEFAULT_MODEL.to_string(),
+            auth_mode: AuthMode::ApiKey,
         }
+    }
+
+    pub fn is_router_mode(&self) -> bool {
+        self.auth_mode == AuthMode::Bearer
     }
 
     pub fn model(&self) -> &str {

@@ -8,12 +8,9 @@ pub enum BillingError {
     #[error("Billing server returned {status}: {body}")]
     ServerError { status: u16, body: String },
 
-    #[error("Invalid internal token")]
-    InvalidToken,
-
     #[error("Deserialization error: {0}")]
     Deserialize(String),
 
-    #[error("Insufficient credits: have {available}, need {required}")]
-    InsufficientCredits { available: u64, required: u64 },
+    #[error("Insufficient credits: balance_cents={balance_cents}")]
+    InsufficientCredits { balance_cents: i64 },
 }

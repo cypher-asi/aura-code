@@ -3,6 +3,8 @@
 //! Wraps the underlying `LlmProvider` with billing pre-flight checks and
 //! post-call credit debits, exposing the provider-agnostic interface.
 
+use std::sync::atomic::Ordering;
+
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
@@ -24,6 +26,17 @@ impl MeteredLlm {
             },
         }
     }
+
+    fn handle_provider_result<T>(&self, result: Result<T, aura_claude::ClaudeClientError>) -> Result<T, ProviderError> {
+        match result {
+            Ok(v) => Ok(v),
+            Err(aura_claude::ClaudeClientError::InsufficientCredits) => {
+                self.credits_exhausted.store(true, Ordering::SeqCst);
+                Err(ProviderError::InsufficientCredits)
+            }
+            Err(e) => Err(Self::map_metered_err(MeteredLlmError::Llm(e))),
+        }
+    }
 }
 
 #[async_trait]
@@ -33,16 +46,15 @@ impl ModelProvider for MeteredLlm {
     }
 
     async fn complete(&self, request: ModelRequest) -> Result<ModelResponse, ProviderError> {
+        let credential = self.resolve_credential(&request.api_key).map_err(Self::map_metered_err)?;
+        let model_str = request.model.clone();
+
         let estimated_input = aura_provider::estimate_tokens(&request.system_prompt)
             + request
                 .messages
                 .iter()
                 .map(aura_provider::estimate_message_tokens)
                 .sum::<u64>();
-        let estimated_credits = self.estimate_credits(&request.model, estimated_input, 0);
-        self.pre_flight_check_for(estimated_credits)
-            .await
-            .map_err(Self::map_metered_err)?;
 
         let (event_tx, _rx) = mpsc::unbounded_channel();
         let messages: Vec<aura_claude::RichMessage> = request
@@ -55,7 +67,32 @@ impl ModelProvider for MeteredLlm {
             .into_iter()
             .map(provider_tool_to_claude)
             .collect();
-        let model_str = request.model.clone();
+
+        if self.router_mode {
+            let result = self
+                .provider
+                .complete_stream_with_tools(aura_claude::ToolStreamRequest {
+                    api_key: &credential,
+                    system_prompt: &request.system_prompt,
+                    messages,
+                    tools,
+                    max_tokens: request.max_tokens,
+                    thinking: request.thinking.map(|tc| aura_claude::ThinkingConfig {
+                        thinking_type: tc.thinking_type,
+                        budget_tokens: tc.budget_tokens,
+                    }),
+                    event_tx,
+                    model_override: Some(&model_str),
+                })
+                .await;
+            let resp = self.handle_provider_result(result)?;
+            return Ok(claude_resp_to_model(resp));
+        }
+
+        let estimated_credits = self.estimate_credits(&model_str, estimated_input, 0);
+        self.pre_flight_check_for(estimated_credits)
+            .await
+            .map_err(Self::map_metered_err)?;
 
         let resp = self
             .provider
@@ -92,27 +129,7 @@ impl ModelProvider for MeteredLlm {
         .await
         .map_err(Self::map_metered_err)?;
 
-        Ok(ModelResponse {
-            text: resp.text,
-            thinking: String::new(),
-            tool_calls: resp
-                .tool_calls
-                .into_iter()
-                .map(|tc| aura_provider::ToolCall {
-                    id: tc.id,
-                    name: tc.name,
-                    input: tc.input,
-                })
-                .collect(),
-            stop_reason: aura_provider::StopReason::from_str(&resp.stop_reason),
-            usage: aura_provider::Usage {
-                input_tokens: resp.input_tokens,
-                output_tokens: resp.output_tokens,
-                cache_creation_tokens: resp.cache_creation_input_tokens,
-                cache_read_tokens: resp.cache_read_input_tokens,
-            },
-            model_used: resp.model_used,
-        })
+        Ok(claude_resp_to_model(resp))
     }
 
     async fn complete_streaming(
@@ -123,6 +140,30 @@ impl ModelProvider for MeteredLlm {
         let events = vec![StreamEvent::MessageStop];
         let stream = futures_util::stream::iter(events);
         Ok(Box::pin(stream))
+    }
+}
+
+fn claude_resp_to_model(resp: aura_claude::ToolStreamResponse) -> ModelResponse {
+    ModelResponse {
+        text: resp.text,
+        thinking: String::new(),
+        tool_calls: resp
+            .tool_calls
+            .into_iter()
+            .map(|tc| aura_provider::ToolCall {
+                id: tc.id,
+                name: tc.name,
+                input: tc.input,
+            })
+            .collect(),
+        stop_reason: aura_provider::StopReason::from_str(&resp.stop_reason),
+        usage: aura_provider::Usage {
+            input_tokens: resp.input_tokens,
+            output_tokens: resp.output_tokens,
+            cache_creation_tokens: resp.cache_creation_input_tokens,
+            cache_read_tokens: resp.cache_read_input_tokens,
+        },
+        model_used: resp.model_used,
     }
 }
 

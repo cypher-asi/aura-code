@@ -1,11 +1,10 @@
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::Json;
 
-use aura_core::{OrgId, ZeroAuthSession};
+use aura_core::{BillingAccount, OrgId, TransactionsResponse, ZeroAuthSession};
 
-use crate::channel_ext::broadcast_or_log;
-use crate::dto::{CreateCreditCheckoutRequest, FulfillmentWebhookRequest, FulfillmentWebhookResponse};
+use crate::dto::CreateCreditCheckoutRequest;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 
@@ -19,8 +18,10 @@ fn get_auth_session(state: &AppState) -> Result<ZeroAuthSession, (StatusCode, Js
 
 fn billing_err(e: aura_billing::BillingError) -> (StatusCode, Json<ApiError>) {
     match e {
-        aura_billing::BillingError::InsufficientCredits { .. } => {
-            ApiError::payment_required("Insufficient credits. Please purchase credits to continue.")
+        aura_billing::BillingError::InsufficientCredits { balance_cents } => {
+            ApiError::payment_required(format!(
+                "Insufficient credits (balance: {balance_cents} cents). Please purchase credits to continue."
+            ))
         }
         aura_billing::BillingError::ServerError { status, body } => {
             let (sc, code, msg) = match status {
@@ -42,7 +43,6 @@ fn billing_err(e: aura_billing::BillingError) -> (StatusCode, Json<ApiError>) {
 }
 
 /// Pre-flight check: ensures the authenticated user has a positive credit balance.
-/// Call this at the top of any handler that triggers LLM usage.
 pub async fn require_credits(state: &AppState) -> Result<(), (StatusCode, Json<ApiError>)> {
     let session = get_auth_session(state)?;
     state
@@ -53,29 +53,17 @@ pub async fn require_credits(state: &AppState) -> Result<(), (StatusCode, Json<A
     Ok(())
 }
 
-pub async fn get_credit_tiers(
-    State(state): State<AppState>,
-    Path(_org_id): Path<OrgId>,
-) -> ApiResult<Json<serde_json::Value>> {
-    match state.billing_client.get_tiers().await {
-        Ok(tiers) => Ok(Json(serde_json::to_value(tiers).unwrap_or_default())),
-        Err(e) => Err(billing_err(e)),
-    }
-}
-
 pub async fn get_credit_balance(
     State(state): State<AppState>,
     Path(_org_id): Path<OrgId>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let session = get_auth_session(&state)?;
-    match state
+    let balance = state
         .billing_client
         .get_balance(&session.access_token)
         .await
-    {
-        Ok(balance) => Ok(Json(serde_json::to_value(balance).unwrap_or_default())),
-        Err(e) => Err(billing_err(e)),
-    }
+        .map_err(billing_err)?;
+    Ok(Json(serde_json::to_value(balance).unwrap_or_default()))
 }
 
 pub async fn create_credit_checkout(
@@ -84,50 +72,36 @@ pub async fn create_credit_checkout(
     Json(body): Json<CreateCreditCheckoutRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let session = get_auth_session(&state)?;
-    match state
+    let resp = state
         .billing_client
-        .create_checkout_session(
-            &session.access_token,
-            body.tier_id,
-            body.credits,
-        )
+        .create_purchase(&session.access_token, body.amount_usd)
         .await
-    {
-        Ok(resp) => Ok(Json(serde_json::to_value(resp).unwrap_or_default())),
-        Err(e) => Err(billing_err(e)),
-    }
+        .map_err(billing_err)?;
+    Ok(Json(serde_json::to_value(resp).unwrap_or_default()))
 }
 
-pub async fn handle_fulfillment(
+pub async fn get_transactions(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(body): Json<FulfillmentWebhookRequest>,
-) -> ApiResult<Json<FulfillmentWebhookResponse>> {
-    let token = headers
-        .get("x-internal-token")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+    Path(_org_id): Path<OrgId>,
+) -> ApiResult<Json<TransactionsResponse>> {
+    let session = get_auth_session(&state)?;
+    let result = state
+        .billing_client
+        .get_transactions(&session.access_token)
+        .await
+        .map_err(billing_err)?;
+    Ok(Json(result))
+}
 
-    if !state.billing_client.verify_internal_token(token) {
-        return Err(ApiError::unauthorized("invalid internal token"));
-    }
-
-    tracing::info!(
-        entity_id = %body.entity_id,
-        credits = body.credits,
-        purchase_id = %body.purchase_id,
-        "Fulfillment webhook received"
-    );
-
-    broadcast_or_log(&state.event_broadcast, aura_engine::EngineEvent::LogLine {
-        message: format!(
-            "Credits fulfilled: {} credits for entity {}",
-            body.credits, body.entity_id
-        ),
-    });
-
-    Ok(Json(FulfillmentWebhookResponse {
-        ok: true,
-        error: None,
-    }))
+pub async fn get_account(
+    State(state): State<AppState>,
+    Path(_org_id): Path<OrgId>,
+) -> ApiResult<Json<BillingAccount>> {
+    let session = get_auth_session(&state)?;
+    let result = state
+        .billing_client
+        .get_account(&session.access_token)
+        .await
+        .map_err(billing_err)?;
+    Ok(Json(result))
 }

@@ -139,85 +139,30 @@ async fn test_estimate_credits_haiku_vs_opus() {
     );
 }
 
-// --- debit calculation (cache-aware) tests ---
+// --- debit stub tests (z-billing has no per-call debit endpoint) ---
 
 #[tokio::test]
-async fn test_cache_aware_debit_math() {
-    use crate::testutil::{MockBillingState, start_stateful_mock_billing_server, billing_client_for_url, store_zero_auth_session};
-
-    let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(10_000_000)));
-    let url = start_stateful_mock_billing_server(state.clone()).await;
-    let billing = Arc::new(billing_client_for_url(&url));
-    let tmp = tempfile::TempDir::new().unwrap();
-    let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
-    store_zero_auth_session(&store);
-
-    let mock = Arc::new(MockLlmProvider::with_responses(vec![
-        MockResponse::text("ok").with_tokens(1000, 500),
-    ]));
-    let metered = MeteredLlm::new(mock, billing, store);
+async fn test_debit_stub_succeeds() {
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![]));
+    let (metered, _tmp) = testutil::make_test_llm(mock).await;
 
     metered.debit(super::debit::DebitParams {
         model: "claude-opus-4-6", input_tokens: 1000, output_tokens: 500,
         cache_creation_input_tokens: 200, cache_read_input_tokens: 300,
         reason: "test", metadata: None,
-    }).await.expect("debit should succeed");
-
-    let guard = state.lock().await;
-    assert_eq!(guard.debits.len(), 1);
-    let debited = guard.debits[0].amount;
-    let expected_usd: f64 = (500.0 * 5.0 + 200.0 * 5.0 * 1.25 + 300.0 * 5.0 * 0.1 + 500.0 * 25.0) / 1_000_000.0;
-    let expected_credits = (expected_usd * 114_286.0).round() as u64;
-    assert_eq!(debited, expected_credits);
+    }).await.expect("debit stub should succeed");
 }
 
 #[tokio::test]
 async fn test_zero_amount_debit_skipped() {
-    use crate::testutil::{MockBillingState, start_stateful_mock_billing_server, billing_client_for_url, store_zero_auth_session};
-
-    let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(10_000_000)));
-    let url = start_stateful_mock_billing_server(state.clone()).await;
-    let billing = Arc::new(billing_client_for_url(&url));
-    let tmp = tempfile::TempDir::new().unwrap();
-    let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
-    store_zero_auth_session(&store);
-
     let mock = Arc::new(MockLlmProvider::with_responses(vec![]));
-    let metered = MeteredLlm::new(mock, billing, store);
+    let (metered, _tmp) = testutil::make_test_llm(mock).await;
 
     metered.debit(super::debit::DebitParams {
         model: aura_claude::FAST_MODEL, input_tokens: 1, output_tokens: 0,
         cache_creation_input_tokens: 0, cache_read_input_tokens: 0,
         reason: "test", metadata: None,
-    }).await.expect("debit should succeed");
-    let guard = state.lock().await;
-    assert_eq!(guard.debits.len(), 0, "zero-amount debit should be skipped");
-}
-
-#[tokio::test]
-async fn test_debit_forwards_metadata() {
-    use crate::testutil::{MockBillingState, start_stateful_mock_billing_server, billing_client_for_url, store_zero_auth_session};
-
-    let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(10_000_000)));
-    let url = start_stateful_mock_billing_server(state.clone()).await;
-    let billing = Arc::new(billing_client_for_url(&url));
-    let tmp = tempfile::TempDir::new().unwrap();
-    let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
-    store_zero_auth_session(&store);
-
-    let mock = Arc::new(MockLlmProvider::with_responses(vec![]));
-    let metered = MeteredLlm::new(mock, billing, store);
-
-    let meta = serde_json::json!({"task_id": "t-123"});
-    metered.debit(super::debit::DebitParams {
-        model: "claude-opus-4-6", input_tokens: 100_000, output_tokens: 50_000,
-        cache_creation_input_tokens: 0, cache_read_input_tokens: 0,
-        reason: "reason", metadata: Some(meta.clone()),
-    }).await.unwrap();
-
-    let guard = state.lock().await;
-    assert_eq!(guard.debits.len(), 1);
-    assert_eq!(guard.debits[0].metadata, Some(meta));
+    }).await.expect("zero-amount debit should succeed");
 }
 
 // --- pre-flight check tests ---
@@ -301,7 +246,7 @@ async fn test_credits_exhausted_then_topped_up() {
 
     {
         let mut guard = state.lock().await;
-        guard.balance = 999_999;
+        guard.balance_cents = 999_999;
     }
 
     let resp = metered.complete(MeteredCompletionRequest {
@@ -315,9 +260,9 @@ async fn test_credits_exhausted_then_topped_up() {
 // --- MeteredStreamRequest / complete_stream_with_tools tests ---
 
 #[tokio::test]
-async fn test_stream_with_tools_calls_provider_and_debits() {
+async fn test_stream_with_tools_calls_provider() {
     use crate::testutil::{MockBillingState, make_test_llm_stateful};
-    use aura_claude::{ToolCall, ToolStreamResponse};
+    use aura_claude::ToolCall;
 
     let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(10_000_000)));
     let tool_call = ToolCall {
@@ -350,9 +295,6 @@ async fn test_stream_with_tools_calls_provider_and_debits() {
     assert_eq!(resp.tool_calls.len(), 1);
     assert_eq!(resp.tool_calls[0].name, "read_file");
     assert_eq!(mock.call_count(), 1);
-
-    let guard = state.lock().await;
-    assert!(!guard.debits.is_empty(), "tokens should be debited");
 
     let mut events = vec![];
     while let Ok(evt) = event_rx.try_recv() { events.push(evt); }
@@ -447,39 +389,214 @@ async fn test_complete_with_model_uses_correct_rate() {
         .await
         .unwrap();
     assert_eq!(resp.text, "haiku response");
-
-    let guard = state.lock().await;
-    assert_eq!(guard.debits.len(), 1);
-    let expected_usd: f64 = (100_000.0 * 0.80 + 50_000.0 * 4.00) / 1_000_000.0;
-    let expected_credits = (expected_usd * 114_286.0).round() as u64;
-    assert_eq!(guard.debits[0].amount, expected_credits);
 }
 
-// --- debit error handling tests ---
+// --- Router mode tests ---
 
 #[tokio::test]
-async fn test_insufficient_credits_during_debit_drains_remaining() {
-    use crate::testutil::{MockBillingState, start_stateful_mock_billing_server, billing_client_for_url, store_zero_auth_session};
+async fn test_router_mode_detection() {
+    let _guard = crate::testutil::ENV_LOCK.lock().unwrap();
 
-    let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(50)));
-    let url = start_stateful_mock_billing_server(state.clone()).await;
-    let billing = Arc::new(billing_client_for_url(&url));
+    std::env::remove_var("AURA_ROUTER_URL");
+    let tmp1 = tempfile::TempDir::new().unwrap();
+    let store1 = Arc::new(aura_store::RocksStore::open(tmp1.path()).unwrap());
+    let billing1 = Arc::new(BillingClient::default());
+    let mock1 = Arc::new(MockLlmProvider::with_responses(vec![]));
+    let metered1 = MeteredLlm::new(mock1, billing1, store1);
+    assert!(!metered1.is_router_mode());
+
+    std::env::set_var("AURA_ROUTER_URL", "https://router.example.com");
+    let tmp2 = tempfile::TempDir::new().unwrap();
+    let store2 = Arc::new(aura_store::RocksStore::open(tmp2.path()).unwrap());
+    let billing2 = Arc::new(BillingClient::default());
+    let mock2 = Arc::new(MockLlmProvider::with_responses(vec![]));
+    let metered2 = MeteredLlm::new(mock2, billing2, store2);
+    assert!(metered2.is_router_mode());
+
+    std::env::set_var("AURA_ROUTER_URL", "");
+    let tmp3 = tempfile::TempDir::new().unwrap();
+    let store3 = Arc::new(aura_store::RocksStore::open(tmp3.path()).unwrap());
+    let billing3 = Arc::new(BillingClient::default());
+    let mock3 = Arc::new(MockLlmProvider::with_responses(vec![]));
+    let metered3 = MeteredLlm::new(mock3, billing3, store3);
+    assert!(!metered3.is_router_mode(), "empty AURA_ROUTER_URL should not enable router mode");
+
+    std::env::remove_var("AURA_ROUTER_URL");
+}
+
+/// In router mode with an access token, preflight and debit are skipped.
+/// The LLM provider is called directly and the call succeeds.
+#[tokio::test]
+async fn test_router_mode_skips_preflight_and_debit() {
+    let _guard = crate::testutil::ENV_LOCK.lock().unwrap();
+    std::env::set_var("AURA_ROUTER_URL", "https://router.example.com");
+
     let tmp = tempfile::TempDir::new().unwrap();
     let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
-    store_zero_auth_session(&store);
-
+    crate::testutil::store_zero_auth_session(&store);
+    // No billing server configured — if preflight were called, it would fail
+    let billing = Arc::new(BillingClient::default());
     let mock = Arc::new(MockLlmProvider::with_responses(vec![
-        MockResponse::text("expensive").with_tokens(1_000_000, 500_000),
+        MockResponse::text("router-response").with_tokens(50, 20),
     ]));
+    let metered = MeteredLlm::new(mock.clone(), billing, store);
+    assert!(metered.is_router_mode());
+
+    let resp = metered
+        .complete(MeteredCompletionRequest {
+            model: None, api_key: "ignored", system_prompt: "sys",
+            user_message: "msg", max_tokens: 100, billing_reason: "test", metadata: None,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(resp.text, "router-response");
+    assert_eq!(mock.call_count(), 1);
+    assert!(!metered.is_credits_exhausted());
+
+    std::env::remove_var("AURA_ROUTER_URL");
+}
+
+/// In router mode, the JWT (access_token from store) is used as the credential
+/// instead of the api_key argument. If no access_token exists, it fails with InsufficientCredits.
+#[tokio::test]
+async fn test_router_mode_injects_jwt() {
+    let _guard = crate::testutil::ENV_LOCK.lock().unwrap();
+    std::env::set_var("AURA_ROUTER_URL", "https://router.example.com");
+
+    // Case 1: No access_token → fails
+    let tmp1 = tempfile::TempDir::new().unwrap();
+    let store1 = Arc::new(aura_store::RocksStore::open(tmp1.path()).unwrap());
+    let billing1 = Arc::new(BillingClient::default());
+    let mock1 = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::text("unreachable"),
+    ]));
+    let metered1 = MeteredLlm::new(mock1.clone(), billing1, store1);
+
+    let err = metered1
+        .complete(MeteredCompletionRequest {
+            model: None, api_key: "my-api-key", system_prompt: "sys",
+            user_message: "msg", max_tokens: 100, billing_reason: "test", metadata: None,
+        })
+        .await
+        .unwrap_err();
+    assert!(err.is_insufficient_credits());
+    assert_eq!(mock1.call_count(), 0, "LLM should not be called without JWT");
+
+    // Case 2: With access_token → succeeds
+    let tmp2 = tempfile::TempDir::new().unwrap();
+    let store2 = Arc::new(aura_store::RocksStore::open(tmp2.path()).unwrap());
+    crate::testutil::store_zero_auth_session(&store2);
+    let billing2 = Arc::new(BillingClient::default());
+    let mock2 = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::text("ok").with_tokens(10, 5),
+    ]));
+    let metered2 = MeteredLlm::new(mock2.clone(), billing2, store2);
+
+    let resp = metered2
+        .complete(MeteredCompletionRequest {
+            model: None, api_key: "my-api-key", system_prompt: "sys",
+            user_message: "msg", max_tokens: 100, billing_reason: "test", metadata: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(resp.text, "ok");
+    assert_eq!(mock2.call_count(), 1, "LLM should be called with JWT credential");
+
+    std::env::remove_var("AURA_ROUTER_URL");
+}
+
+/// In router mode, when the provider returns InsufficientCredits (402),
+/// the credits_exhausted flag is set.
+#[tokio::test]
+async fn test_router_mode_catches_402() {
+    use std::sync::atomic::Ordering;
+
+    let _guard = crate::testutil::ENV_LOCK.lock().unwrap();
+    std::env::set_var("AURA_ROUTER_URL", "https://router.example.com");
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+    crate::testutil::store_zero_auth_session(&store);
+    let billing = Arc::new(BillingClient::default());
+
+    // Create a mock that returns InsufficientCredits
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![]));
     let metered = MeteredLlm::new(mock, billing, store);
 
-    let err = metered.complete(MeteredCompletionRequest {
-        model: None, api_key: "key", system_prompt: "sys",
-        user_message: "msg", max_tokens: 200, billing_reason: "test", metadata: None,
-    }).await.unwrap_err();
-    assert!(err.is_insufficient_credits());
-    assert!(metered.is_credits_exhausted());
+    // Manually push an error response by using an empty mock (will return Parse error)
+    // Instead, test via the LlmProvider trait by constructing a proper scenario.
+    // The mock returns Parse error when empty — we need a way to return InsufficientCredits.
+    // Since we can't easily inject errors into MockLlmProvider, test via handle_llm_result directly.
+    assert!(!metered.is_credits_exhausted());
+    let result: Result<String, _> = metered.handle_llm_result(
+        Err(aura_claude::ClaudeClientError::InsufficientCredits),
+    );
+    assert!(result.is_err());
+    assert!(metered.credits_exhausted.load(Ordering::SeqCst));
 
-    let guard = state.lock().await;
-    assert!(guard.debits.len() >= 2, "should attempt drain after insufficient");
+    std::env::remove_var("AURA_ROUTER_URL");
+}
+
+/// Without AURA_ROUTER_URL, the old direct-mode behavior is unchanged:
+/// preflight + debit are called, api_key is passed through.
+#[tokio::test]
+async fn test_direct_mode_still_works() {
+    let _guard = crate::testutil::ENV_LOCK.lock().unwrap();
+    std::env::remove_var("AURA_ROUTER_URL");
+
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::text("direct-response").with_tokens(100, 50),
+    ]));
+    let (metered, _tmp) = crate::testutil::make_test_llm(mock.clone()).await;
+    assert!(!metered.is_router_mode());
+
+    let resp = metered
+        .complete(MeteredCompletionRequest {
+            model: None, api_key: "key", system_prompt: "sys",
+            user_message: "msg", max_tokens: 200, billing_reason: "test", metadata: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(resp.text, "direct-response");
+    assert_eq!(mock.call_count(), 1);
+    assert!(!metered.is_credits_exhausted());
+}
+
+/// Router mode stream with tools skips preflight and debit.
+#[tokio::test]
+async fn test_router_mode_stream_with_tools() {
+    let _guard = crate::testutil::ENV_LOCK.lock().unwrap();
+    std::env::set_var("AURA_ROUTER_URL", "https://router.example.com");
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+    crate::testutil::store_zero_auth_session(&store);
+    let billing = Arc::new(BillingClient::default());
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::text("tool-response").with_tokens(200, 80),
+    ]));
+    let metered = MeteredLlm::new(mock.clone(), billing, store);
+
+    let (event_tx, _rx) = mpsc::unbounded_channel();
+    let resp = metered
+        .complete_stream_with_tools(super::MeteredStreamRequest {
+            api_key: "ignored",
+            system_prompt: "sys",
+            messages: vec![],
+            tools: vec![],
+            max_tokens: 1024,
+            thinking: None,
+            event_tx,
+            model_override: None,
+            billing_reason: "test",
+            metadata: None,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(resp.text, "tool-response");
+    assert_eq!(mock.call_count(), 1);
+
+    std::env::remove_var("AURA_ROUTER_URL");
 }

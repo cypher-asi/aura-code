@@ -1,8 +1,5 @@
-use std::sync::atomic::Ordering;
+use tracing::info;
 
-use tracing::{info, warn};
-
-use crate::error::BillingError;
 use super::{MeteredLlm, MeteredLlmError};
 
 pub(crate) struct DebitParams<'a> {
@@ -12,10 +9,13 @@ pub(crate) struct DebitParams<'a> {
     pub cache_creation_input_tokens: u64,
     pub cache_read_input_tokens: u64,
     pub reason: &'a str,
+    #[allow(dead_code)]
     pub metadata: Option<serde_json::Value>,
 }
 
 impl MeteredLlm {
+    /// Stub: z-billing does not expose a per-call debit endpoint.
+    /// Phase 3 will rework metered billing to use the new cost-tracking model.
     pub(crate) async fn debit(
         &self,
         params: DebitParams<'_>,
@@ -23,7 +23,7 @@ impl MeteredLlm {
         let DebitParams {
             model, input_tokens, output_tokens,
             cache_creation_input_tokens, cache_read_input_tokens,
-            reason, metadata,
+            reason, ..
         } = params;
         let (inp_rate, out_rate) = self.pricing.lookup_rate(model);
         let non_cached = input_tokens.saturating_sub(cache_creation_input_tokens + cache_read_input_tokens);
@@ -37,36 +37,7 @@ impl MeteredLlm {
         if amount == 0 {
             return Ok(());
         }
-        let Some(token) = self.access_token() else {
-            warn!("No access token available for credit debit");
-            self.credits_exhausted.store(true, Ordering::SeqCst);
-            return Err(MeteredLlmError::InsufficientCredits);
-        };
-        match self.billing.debit_credits(&token, amount, reason, None, metadata).await {
-            Ok(resp) => {
-                info!(amount, reason, balance = resp.balance, tx = %resp.transaction_id, "Credits debited");
-                Ok(())
-            }
-            Err(BillingError::InsufficientCredits { available, required }) => {
-                warn!(available, required, "Insufficient credits during debit, draining remaining");
-                if available > 0 {
-                    match self.billing.debit_credits(&token, available, reason, None, None).await {
-                        Ok(resp) => {
-                            info!(amount = available, balance = resp.balance, "Drained remaining credits");
-                        }
-                        Err(e) => {
-                            warn!(error = %e, "Failed to drain remaining credits");
-                        }
-                    }
-                }
-                self.credits_exhausted.store(true, Ordering::SeqCst);
-                Err(MeteredLlmError::InsufficientCredits)
-            }
-            Err(e) => {
-                warn!(error = %e, reason, "Failed to debit credits — flagging exhausted to stop loop");
-                self.credits_exhausted.store(true, Ordering::SeqCst);
-                Err(MeteredLlmError::Billing(e))
-            }
-        }
+        info!(amount, reason, model, "Debit recorded (z-billing: no per-call debit endpoint)");
+        Ok(())
     }
 }

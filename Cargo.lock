@@ -321,10 +321,12 @@ dependencies = [
  "async-trait",
  "aura-claude",
  "aura-core",
+ "aura-provider",
  "aura-settings",
  "aura-store",
  "axum",
  "chrono",
+ "futures-util",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
@@ -342,7 +344,9 @@ dependencies = [
  "aura-billing",
  "aura-claude",
  "aura-core",
+ "aura-harness",
  "aura-projects",
+ "aura-provider",
  "aura-settings",
  "aura-specs",
  "aura-storage",
@@ -368,8 +372,10 @@ name = "aura-claude"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aura-provider",
  "axum",
  "bytes",
+ "futures-util",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
@@ -424,8 +430,10 @@ dependencies = [
  "aura-chat",
  "aura-claude",
  "aura-core",
+ "aura-harness",
  "aura-network",
  "aura-projects",
+ "aura-provider",
  "aura-sessions",
  "aura-settings",
  "aura-storage",
@@ -442,6 +450,18 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "aura-harness"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "aura-provider",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -510,6 +530,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aura-provider"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "aura-server"
 version = "0.1.0"
 dependencies = [
@@ -520,10 +552,12 @@ dependencies = [
  "aura-claude",
  "aura-core",
  "aura-engine",
+ "aura-harness",
  "aura-network",
  "aura-orbit",
  "aura-orgs",
  "aura-projects",
+ "aura-provider",
  "aura-sessions",
  "aura-settings",
  "aura-specs",
@@ -673,7 +707,7 @@ dependencies = [
 name = "aura-tools"
 version = "0.1.0"
 dependencies = [
- "aura-claude",
+ "aura-provider",
  "serde_json",
 ]
 

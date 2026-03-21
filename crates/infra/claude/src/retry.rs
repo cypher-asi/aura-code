@@ -4,7 +4,7 @@ use tracing::{error, info, warn};
 
 use crate::error::ClaudeClientError;
 use crate::types::{ClaudeStreamEvent, SimpleMessagesRequest, ToolStreamResponse};
-use crate::{sse, ClaudeClient, ANTHROPIC_API_VERSION, ANTHROPIC_BETA, FALLBACK_MODELS};
+use crate::{sse, AuthMode, ClaudeClient, ANTHROPIC_API_VERSION, ANTHROPIC_BETA, FALLBACK_MODELS};
 
 impl ClaudeClient {
     const MAX_RETRIES: u32 = 2;
@@ -46,6 +46,7 @@ impl ClaudeClient {
                         }
                         return Ok(resp);
                     }
+                    Err(e) if matches!(e, ClaudeClientError::InsufficientCredits) => return Err(e),
                     Err(e) if e.is_overloaded() && attempt < Self::MAX_RETRIES => {
                         warn!(attempt, model = %model, "Claude API overloaded, will retry");
                         last_err = Some(e);
@@ -77,13 +78,23 @@ impl ClaudeClient {
             }
 
             let start = std::time::Instant::now();
-            let response = self
+            let mut req = self
                 .http
                 .post(url)
-                .header("x-api-key", api_key)
-                .header("anthropic-version", ANTHROPIC_API_VERSION)
-                .header("anthropic-beta", ANTHROPIC_BETA)
-                .header("content-type", "application/json")
+                .header("content-type", "application/json");
+
+            match self.auth_mode {
+                AuthMode::ApiKey => {
+                    req = req.header("x-api-key", api_key)
+                        .header("anthropic-version", ANTHROPIC_API_VERSION)
+                        .header("anthropic-beta", ANTHROPIC_BETA);
+                }
+                AuthMode::Bearer => {
+                    req = req.header("authorization", format!("Bearer {api_key}"));
+                }
+            }
+
+            let response = req
                 .json(request)
                 .send()
                 .await
@@ -104,6 +115,10 @@ impl ClaudeClient {
             let body_text = response.text().await.unwrap_or_default();
             let truncated_body: String = body_text.chars().take(500).collect();
             error!(status = status_code, body = %truncated_body, "Claude API error response");
+
+            if status_code == 402 {
+                return Err(ClaudeClientError::InsufficientCredits);
+            }
 
             if (status_code == 429 || status_code == 529) && attempt < Self::MAX_RETRIES {
                 last_err = Some(ClaudeClientError::Overloaded);
@@ -129,13 +144,23 @@ impl ClaudeClient {
     ) -> Result<reqwest::Response, ClaudeClientError> {
         let start = std::time::Instant::now();
 
-        let response = self
+        let mut req = self
             .http
             .post(url)
-            .header("x-api-key", api_key)
-            .header("anthropic-version", ANTHROPIC_API_VERSION)
-            .header("anthropic-beta", ANTHROPIC_BETA)
-            .header("content-type", "application/json")
+            .header("content-type", "application/json");
+
+        match self.auth_mode {
+            AuthMode::ApiKey => {
+                req = req.header("x-api-key", api_key)
+                    .header("anthropic-version", ANTHROPIC_API_VERSION)
+                    .header("anthropic-beta", ANTHROPIC_BETA);
+            }
+            AuthMode::Bearer => {
+                req = req.header("authorization", format!("Bearer {api_key}"));
+            }
+        }
+
+        let response = req
             .json(body)
             .send()
             .await
@@ -156,6 +181,9 @@ impl ClaudeClient {
             let body = response.text().await.unwrap_or_default();
             let truncated_body: String = body.chars().take(500).collect();
             error!(status = status_code, body = %truncated_body, "Claude API error response");
+            if status_code == 402 {
+                return Err(ClaudeClientError::InsufficientCredits);
+            }
             if status_code == 429 || status_code == 529 {
                 return Err(ClaudeClientError::Overloaded);
             }

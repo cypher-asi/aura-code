@@ -189,24 +189,7 @@ pub struct FollowCheckResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCreditCheckoutRequest {
-    pub tier_id: Option<String>,
-    pub credits: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct FulfillmentWebhookRequest {
-    #[serde(alias = "entityId")]
-    pub entity_id: String,
-    pub credits: u64,
-    #[serde(alias = "purchaseId")]
-    pub purchase_id: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct FulfillmentWebhookResponse {
-    pub ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
+    pub amount_usd: f64,
 }
 
 impl From<ZeroAuthSession> for AuthSessionResponse {

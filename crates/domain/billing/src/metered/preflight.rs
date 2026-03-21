@@ -30,17 +30,17 @@ impl MeteredLlm {
             drop(cache);
         }
 
-        let required = estimated_credits.max(1);
+        let _required = estimated_credits.max(1);
 
         if self.credits_exhausted.load(Ordering::SeqCst) {
-            match self.billing.ensure_has_credits_for(&token, required).await {
+            match self.billing.ensure_has_credits(&token).await {
                 Ok(_) => {
                     info!("Credits topped up, resetting exhausted flag");
                     self.credits_exhausted.store(false, Ordering::SeqCst);
                 }
                 Err(_) => return Err(MeteredLlmError::InsufficientCredits),
             }
-        } else if self.billing.ensure_has_credits_for(&token, required).await.is_err() {
+        } else if self.billing.ensure_has_credits(&token).await.is_err() {
             self.credits_exhausted.store(true, Ordering::SeqCst);
             return Err(MeteredLlmError::InsufficientCredits);
         }

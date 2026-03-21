@@ -145,68 +145,6 @@ impl BillingClient {
         }
     }
 
-    pub async fn get_tiers(&self) -> Result<serde_json::Value, BillingError> {
-        let url = format!("{}/v1/credits/tiers", self.base_url);
-        debug!(%url, "Fetching credit tiers");
-
-        let resp = self.http.get(&url).send().await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            warn!(status = status.as_u16(), %body, "z-billing error fetching tiers");
-            return Err(BillingError::ServerError {
-                status: status.as_u16(),
-                body,
-            });
-        }
-        resp.json()
-            .await
-            .map_err(|e| BillingError::Deserialize(e.to_string()))
-    }
-
-    pub async fn create_checkout_session(
-        &self,
-        access_token: &str,
-        tier_id: Option<String>,
-        credits: Option<u64>,
-    ) -> Result<CheckoutSessionResponse, BillingError> {
-        let url = format!("{}/v1/credits/checkout", self.base_url);
-        debug!(%url, "Creating checkout session");
-
-        let mut body = serde_json::Map::new();
-        if let Some(id) = tier_id {
-            body.insert("tier_id".into(), serde_json::Value::String(id));
-        }
-        if let Some(c) = credits {
-            body.insert("credits".into(), serde_json::Value::Number(c.into()));
-        }
-
-        let resp = self
-            .http
-            .post(&url)
-            .header("authorization", format!("Bearer {access_token}"))
-            .json(&body)
-            .send()
-            .await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            warn!(status = status.as_u16(), %body, "z-billing error creating checkout");
-            return Err(BillingError::ServerError {
-                status: status.as_u16(),
-                body,
-            });
-        }
-        resp.json()
-            .await
-            .map_err(|e| BillingError::Deserialize(e.to_string()))
-    }
-
-    pub fn verify_internal_token(&self, token: &str) -> bool {
-        let expected = std::env::var("AURA_NETWORK_INTERNAL_TOKEN")
-            .unwrap_or_default();
-        !expected.is_empty() && token == expected
-    }
 }
 
 impl Default for BillingClient {

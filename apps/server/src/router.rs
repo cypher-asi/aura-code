@@ -101,10 +101,6 @@ fn org_routes() -> Router<AppState> {
 fn billing_routes() -> Router<AppState> {
     Router::new()
         .route(
-            "/api/orgs/:org_id/credits/tiers",
-            get(billing::get_credit_tiers),
-        )
-        .route(
             "/api/orgs/:org_id/credits/balance",
             get(billing::get_credit_balance),
         )
@@ -113,8 +109,12 @@ fn billing_routes() -> Router<AppState> {
             post(billing::create_credit_checkout),
         )
         .route(
-            "/webhooks/billing/fulfill",
-            post(billing::handle_fulfillment),
+            "/api/orgs/:org_id/credits/transactions",
+            get(billing::get_transactions),
+        )
+        .route(
+            "/api/orgs/:org_id/account",
+            get(billing::get_account),
         )
         .route(
             "/api/settings/api-key",
