@@ -29,7 +29,7 @@ pub fn resolve_type_definitions_for_task(
             break;
         }
 
-        let sources = super::find_type_sources(base_path, type_name, &[]);
+        let sources = super::error_context::find_type_sources(base_path, type_name, &[]);
         if sources.is_empty() {
             continue;
         }
