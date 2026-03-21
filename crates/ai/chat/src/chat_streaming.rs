@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use chrono::Utc;
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{error, info};
 use aura_core::*;
 use aura_claude::ThinkingConfig;
 use aura_tools::agent_tool_definitions;
@@ -194,7 +194,10 @@ impl ChatService {
                 let cp = custom_prompt.clone();
                 tokio::task::spawn_blocking(move || build_chat_system_prompt(&p, &cp))
                     .await
-                    .unwrap_or_else(|_| CHAT_SYSTEM_PROMPT_BASE.to_string())
+                    .unwrap_or_else(|e| {
+                        error!(error = %e, "spawn_blocking panicked in build_chat_system_prompt");
+                        CHAT_SYSTEM_PROMPT_BASE.to_string()
+                    })
             }
             Err(_) => {
                 if custom_prompt.is_empty() {
@@ -377,6 +380,17 @@ impl ChatService {
         send(ChatStreamEvent::Done);
     }
 
+    #[cfg(test)]
+    pub(crate) fn build_assistant_message_test(
+        project_id: &ProjectId,
+        agent_instance_id: &AgentInstanceId,
+        result: &ToolLoopResult,
+        content_blocks: Option<&[ChatContentBlock]>,
+        thinking_start: std::time::Instant,
+    ) -> (Message, Option<String>, Option<u64>) {
+        Self::build_assistant_message(project_id, agent_instance_id, result, content_blocks, thinking_start)
+    }
+
     pub async fn send_agent_message_streaming(
         &self,
         params: AgentMessageParams<'_>,
@@ -438,3 +452,7 @@ impl ChatService {
         send(ChatStreamEvent::Done);
     }
 }
+
+#[cfg(test)]
+#[path = "chat_streaming_tests.rs"]
+mod streaming_tests;

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use serde_json::{json, Value};
-use tracing::info;
+use tracing::{info, warn};
 
 use aura_core::*;
 
@@ -98,7 +98,10 @@ impl ChatToolExecutor {
             (m, stats.files_scanned)
         })
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            warn!(error = %e, "spawn_blocking panicked in search_code");
+            Default::default()
+        });
 
         build_search_result(&pattern, &pattern_clone, &abs, matches, max_results, files_scanned)
     }
@@ -358,4 +361,210 @@ fn build_search_diagnostics(pattern: &str, search_path: &Path, files_scanned: us
         "files_scanned": files_scanned,
         "hints": hints,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn run_echo() -> std::process::Output {
+        #[cfg(windows)]
+        let output = std::process::Command::new("cmd")
+            .args(["/C", "echo hello world"])
+            .output()
+            .unwrap();
+        #[cfg(not(windows))]
+        let output = std::process::Command::new("sh")
+            .args(["-c", "echo hello world"])
+            .output()
+            .unwrap();
+        output
+    }
+
+    fn run_failing() -> std::process::Output {
+        #[cfg(windows)]
+        let output = std::process::Command::new("cmd")
+            .args(["/C", "exit 1"])
+            .output()
+            .unwrap();
+        #[cfg(not(windows))]
+        let output = std::process::Command::new("sh")
+            .args(["-c", "exit 1"])
+            .output()
+            .unwrap();
+        output
+    }
+
+    // ── format_command_result ──────────────────────────────────────
+
+    #[test]
+    fn format_command_result_success() {
+        let output = run_echo();
+        let result = format_command_result(&output, "echo hello");
+        assert!(!result.is_error);
+        let v: Value = serde_json::from_str(&result.content).unwrap();
+        assert_eq!(v["exit_code"], 0);
+        assert!(v["stdout"].as_str().unwrap().contains("hello"));
+    }
+
+    #[test]
+    fn format_command_result_failure() {
+        let output = run_failing();
+        let result = format_command_result(&output, "exit 1");
+        assert!(result.is_error);
+        let v: Value = serde_json::from_str(&result.content).unwrap();
+        assert_ne!(v["exit_code"], 0);
+    }
+
+    // ── truncate_output ───────────────────────────────────────────
+
+    #[test]
+    fn truncate_output_short_input() {
+        let input = "short text";
+        assert_eq!(truncate_output(input, 100), input);
+    }
+
+    #[test]
+    fn truncate_output_long_input() {
+        let input = "a".repeat(1000);
+        let result = truncate_output(&input, 100);
+        assert!(result.len() < input.len());
+        assert!(result.contains("truncated"));
+    }
+
+    #[test]
+    fn truncate_output_exact_limit() {
+        let input = "a".repeat(100);
+        assert_eq!(truncate_output(&input, 100), input);
+    }
+
+    // ── build_search_result ───────────────────────────────────────
+
+    #[test]
+    fn build_search_result_with_matches() {
+        let matches = vec![
+            json!({"file": "a.rs", "line": 1, "content": "fn main() {}"}),
+            json!({"file": "b.rs", "line": 5, "content": "fn test() {}"}),
+        ];
+        let abs = Path::new("/project");
+        let result = build_search_result("fn", "fn", abs, matches, 50, 10);
+        assert!(!result.is_error);
+        let v: Value = serde_json::from_str(&result.content).unwrap();
+        assert_eq!(v["match_count"], 2);
+        assert_eq!(v["truncated"], false);
+    }
+
+    #[test]
+    fn build_search_result_no_matches() {
+        let abs = Path::new("/project");
+        let result = build_search_result("missing", "missing", abs, vec![], 50, 10);
+        assert!(!result.is_error);
+        let v: Value = serde_json::from_str(&result.content).unwrap();
+        assert_eq!(v["match_count"], 0);
+        assert!(v["diagnostics"].is_object());
+    }
+
+    #[test]
+    fn build_search_result_truncated() {
+        let matches: Vec<Value> = (0..50)
+            .map(|i| json!({"file": format!("f{i}.rs"), "line": i, "content": "match"}))
+            .collect();
+        let abs = Path::new("/project");
+        let result = build_search_result("match", "match", abs, matches, 50, 100);
+        let v: Value = serde_json::from_str(&result.content).unwrap();
+        assert_eq!(v["truncated"], true);
+    }
+
+    // ── should_skip_path ──────────────────────────────────────────
+
+    #[test]
+    fn should_skip_path_skips_common_dirs() {
+        assert!(should_skip_path("src/node_modules/foo.js"));
+        assert!(should_skip_path("target/debug/build.rs"));
+        assert!(should_skip_path(".git/config"));
+    }
+
+    #[test]
+    fn should_skip_path_allows_normal_paths() {
+        assert!(!should_skip_path("src/main.rs"));
+        assert!(!should_skip_path("lib/utils.ts"));
+    }
+
+    // ── search_file ───────────────────────────────────────────────
+
+    #[test]
+    fn search_file_finds_matches() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("test.rs");
+        std::fs::write(&file, "fn main() {}\nfn test() {}\nfn other() {}").unwrap();
+
+        let regex = regex::Regex::new("fn test").unwrap();
+        let mut matches = Vec::new();
+        let mut stats = SearchStats::default();
+        search_file(&file, "test.rs", &regex, 0, 50, &mut matches, &mut stats);
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(stats.files_scanned, 1);
+        assert_eq!(matches[0]["line"], 2);
+    }
+
+    #[test]
+    fn search_file_with_context_lines() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("ctx.rs");
+        std::fs::write(&file, "line1\nline2\nMATCH\nline4\nline5").unwrap();
+
+        let regex = regex::Regex::new("MATCH").unwrap();
+        let mut matches = Vec::new();
+        let mut stats = SearchStats::default();
+        search_file(&file, "ctx.rs", &regex, 1, 50, &mut matches, &mut stats);
+
+        assert_eq!(matches.len(), 1);
+        let content = matches[0]["content"].as_str().unwrap();
+        assert!(content.contains("line2"));
+        assert!(content.contains("MATCH"));
+        assert!(content.contains("line4"));
+    }
+
+    #[test]
+    fn search_file_respects_max_results() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("many.rs");
+        let content: String = (0..100).map(|i| format!("fn f{i}() {{}}\n")).collect();
+        std::fs::write(&file, content).unwrap();
+
+        let regex = regex::Regex::new("fn f").unwrap();
+        let mut matches = Vec::new();
+        let mut stats = SearchStats::default();
+        search_file(&file, "many.rs", &regex, 0, 5, &mut matches, &mut stats);
+
+        assert_eq!(matches.len(), 5);
+    }
+
+    // ── build_search_diagnostics ──────────────────────────────────
+
+    #[test]
+    fn build_search_diagnostics_nonexistent_path() {
+        let diag = build_search_diagnostics("test", Path::new("/nonexistent/path"), 0);
+        assert_eq!(diag["path_exists"], false);
+        let hints = diag["hints"].as_array().unwrap();
+        assert!(hints.iter().any(|h| h.as_str().unwrap().contains("does not exist")));
+    }
+
+    #[test]
+    fn build_search_diagnostics_unescaped_brackets() {
+        let dir = TempDir::new().unwrap();
+        let diag = build_search_diagnostics("[test]", dir.path(), 5);
+        let hints = diag["hints"].as_array().unwrap();
+        assert!(hints.iter().any(|h| h.as_str().unwrap().contains("character class")));
+    }
+
+    #[test]
+    fn build_search_diagnostics_normal_no_matches() {
+        let dir = TempDir::new().unwrap();
+        let diag = build_search_diagnostics("test", dir.path(), 10);
+        let hints = diag["hints"].as_array().unwrap();
+        assert!(hints.iter().any(|h| h.as_str().unwrap().contains("No matches found")));
+    }
 }
