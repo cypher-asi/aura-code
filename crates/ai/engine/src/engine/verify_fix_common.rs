@@ -28,6 +28,34 @@ pub(crate) fn describe_file_ops(ops: &[FileOp]) -> Vec<String> {
         .collect()
 }
 
+fn truncate_str(s: &str, max: usize) -> &str {
+    if s.len() <= max { s } else { &s[..max] }
+}
+
+pub(crate) fn summarize_file_ops(ops: &[FileOp]) -> String {
+    ops.iter()
+        .map(|op| match op {
+            FileOp::SearchReplace { path, replacements, .. } => {
+                let changes: Vec<String> = replacements
+                    .iter()
+                    .map(|r| {
+                        format!(
+                            "  - replaced: {:?} -> {:?}",
+                            truncate_str(&r.search, 80),
+                            truncate_str(&r.replace, 80),
+                        )
+                    })
+                    .collect();
+                format!("{}:\n{}", path, changes.join("\n"))
+            }
+            FileOp::Modify { path, .. } => format!("{}: full rewrite", path),
+            FileOp::Create { path, .. } => format!("{}: created", path),
+            FileOp::Delete { path } => format!("{}: deleted", path),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Build a codebase snapshot for fix prompts using the workspace cache.
 /// Falls back to `read_relevant_files` if the cache lookup fails.
 pub(crate) async fn build_codebase_snapshot(
@@ -130,6 +158,7 @@ impl DevLoopEngine {
                         stderr: stderr.to_string(),
                         error_signature: sig,
                         files_changed: vec!["(fix did not apply)".into()],
+                        changes_summary: String::new(),
                     });
                     return Ok(false);
                 }
@@ -142,11 +171,13 @@ impl DevLoopEngine {
                     );
                 }
                 let files_changed = describe_file_ops(&fix_execution.file_ops);
+                let changes_summary = summarize_file_ops(&fix_execution.file_ops);
                 let sig = normalize_error_signature(stderr);
                 prior_attempts.push(BuildFixAttemptRecord {
                     stderr: stderr.to_string(),
                     error_signature: sig,
                     files_changed,
+                    changes_summary,
                 });
                 all_fix_ops.extend(fix_execution.file_ops);
                 Ok(true)

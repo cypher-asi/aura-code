@@ -25,6 +25,60 @@ use crate::file_ops::{self, FileOp, WorkspaceCache};
 
 pub(crate) const BUILD_FIX_SNAPSHOT_BUDGET: usize = 30_000;
 
+pub(crate) struct FileSnapshot {
+    pub path: String,
+    pub content: Option<String>,
+}
+
+pub(crate) fn snapshot_modified_files(
+    project_root: &Path,
+    file_ops: &[FileOp],
+) -> Vec<FileSnapshot> {
+    let mut seen = std::collections::HashSet::new();
+    let mut snapshots = Vec::new();
+    for op in file_ops {
+        let path = match op {
+            FileOp::Create { path, .. } => path,
+            FileOp::Modify { path, .. } => path,
+            FileOp::SearchReplace { path, .. } => path,
+            FileOp::Delete { path } => path,
+        };
+        if !seen.insert(path.clone()) {
+            continue;
+        }
+        let full_path = project_root.join(path);
+        let content = std::fs::read_to_string(&full_path).ok();
+        snapshots.push(FileSnapshot {
+            path: path.clone(),
+            content,
+        });
+    }
+    snapshots
+}
+
+pub(crate) async fn rollback_to_snapshot(
+    project_root: &Path,
+    snapshots: &[FileSnapshot],
+) {
+    for snap in snapshots {
+        let full_path = project_root.join(&snap.path);
+        match &snap.content {
+            Some(content) => {
+                if let Err(e) = tokio::fs::write(&full_path, content).await {
+                    warn!(path = %snap.path, error = %e, "failed to rollback file");
+                }
+            }
+            None => {
+                if let Err(e) = tokio::fs::remove_file(&full_path).await {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        warn!(path = %snap.path, error = %e, "failed to delete file during rollback");
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Rewrite known server-starting commands to their build/check equivalents.
 ///
 /// When a build command times out, it's usually because the command starts a
@@ -392,6 +446,7 @@ impl DevLoopEngine {
         let mut test_prior: Vec<BuildFixAttemptRecord> = Vec::new();
         let (mut dup_bail, mut inp_t, mut out_t) = (0u32, 0u64, 0u64);
         let mut last_stderr = String::new();
+        let pre_fix_snapshots = snapshot_modified_files(base_path, &initial_execution.file_ops);
 
         for attempt in 1..=self.engine_config.max_build_fix_retries {
             let (br, dur) = self.run_build_with_streaming(
@@ -427,6 +482,8 @@ impl DevLoopEngine {
             }
             if self.check_error_stagnation(task, &br.stderr, &prior, attempt) {
                 dup_bail += 1;
+                rollback_to_snapshot(base_path, &pre_fix_snapshots).await;
+                info!(task_id = %task.task_id, "rolled back files after stagnated fix loop");
                 return Ok((fix_ops, false, attempt, dup_bail, inp_t, out_t, last_stderr));
             }
             let (i, o) = self.attempt_build_fix(

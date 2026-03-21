@@ -84,6 +84,7 @@ impl DevLoopEngine {
                     stderr: detail.to_string(),
                     error_signature: normalize_error_signature(detail),
                     files_changed: attempt_files,
+                    changes_summary: String::new(),
                 });
             }
         }

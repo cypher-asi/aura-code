@@ -101,7 +101,9 @@ fn format_fix_header(
         header.push_str("# Previous Fix Attempts (all failed)\nThe following fixes were already attempted and did NOT solve the problem. You MUST try a fundamentally different approach.\n\n");
         for (i, attempt) in prior_attempts.iter().enumerate() {
             header.push_str(&format!("## Attempt {}\n", i + 1));
-            if !attempt.files_changed.is_empty() {
+            if !attempt.changes_summary.is_empty() {
+                header.push_str(&format!("Changes made:\n{}\n", attempt.changes_summary));
+            } else if !attempt.files_changed.is_empty() {
                 header.push_str("Files changed:\n");
                 for f in &attempt.files_changed {
                     header.push_str(&format!("- {f}\n"));

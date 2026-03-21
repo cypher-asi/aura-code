@@ -46,6 +46,7 @@ pub(crate) struct BuildFixAttemptRecord {
     pub stderr: String,
     pub error_signature: String,
     pub files_changed: Vec<String>,
+    pub changes_summary: String,
 }
 
 /// Classify build errors into categories so the fix prompt can include
