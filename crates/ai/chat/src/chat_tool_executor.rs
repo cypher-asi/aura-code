@@ -20,6 +20,7 @@ pub struct ChatToolExecutor {
 }
 
 /// Result of a tool execution: JSON payload + whether it is an error.
+#[derive(Debug)]
 pub struct ToolExecResult {
     pub content: String,
     pub is_error: bool,

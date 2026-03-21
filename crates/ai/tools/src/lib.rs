@@ -361,3 +361,96 @@ fn dev_loop_tool_definitions() -> Vec<ToolDefinition> {
         compact_tool("stop_dev_loop", "Stop the currently running dev loop.", serde_json::json!({"type":"object","properties":{},"required":[]})),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_agent_tool_definitions_nonempty() {
+        let tools = agent_tool_definitions();
+        assert!(!tools.is_empty(), "agent tools should not be empty");
+    }
+
+    #[test]
+    fn test_engine_tool_definitions_nonempty() {
+        let tools = engine_tool_definitions();
+        assert!(!tools.is_empty(), "engine tools should not be empty");
+    }
+
+    #[test]
+    fn test_engine_tool_definitions_contains_task_done() {
+        let tools = engine_tool_definitions();
+        assert!(tools.iter().any(|t| t.name == "task_done"), "engine tools must include task_done");
+    }
+
+    #[test]
+    fn test_engine_tool_definitions_contains_get_task_context() {
+        let tools = engine_tool_definitions();
+        assert!(tools.iter().any(|t| t.name == "get_task_context"), "engine tools must include get_task_context");
+    }
+
+    #[test]
+    fn test_multi_project_definitions_add_project_id() {
+        let tools = multi_project_tool_definitions();
+        for tool in tools.iter() {
+            let has_project_id = tool.input_schema
+                .get("properties")
+                .and_then(|p| p.get("project_id"))
+                .is_some();
+            assert!(has_project_id, "multi-project tool '{}' must have project_id param", tool.name);
+        }
+    }
+
+    #[test]
+    fn test_strip_property_descriptions_removes_descriptions() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string", "description": "The name" },
+                "age": { "type": "integer", "description": "The age" }
+            }
+        });
+        let stripped = strip_property_descriptions(schema);
+        let props = stripped.get("properties").unwrap();
+        assert!(props.get("name").unwrap().get("description").is_none(), "description should be removed");
+        assert!(props.get("age").unwrap().get("description").is_none(), "description should be removed");
+    }
+
+    #[test]
+    fn test_strip_property_descriptions_preserves_types() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "File path" },
+                "count": { "type": "integer", "description": "Count" }
+            }
+        });
+        let stripped = strip_property_descriptions(schema);
+        let props = stripped.get("properties").unwrap();
+        assert_eq!(props.get("path").unwrap().get("type").unwrap(), "string");
+        assert_eq!(props.get("count").unwrap().get("type").unwrap(), "integer");
+    }
+
+    #[test]
+    fn test_all_tools_have_input_schema() {
+        for tools_fn in [agent_tool_definitions, engine_tool_definitions, multi_project_tool_definitions] {
+            let tools = tools_fn();
+            for tool in tools.iter() {
+                assert!(!tool.input_schema.is_null(), "tool '{}' must have an input_schema", tool.name);
+            }
+        }
+    }
+
+    #[test]
+    fn test_no_duplicate_tool_names() {
+        for tools_fn in [agent_tool_definitions, engine_tool_definitions, multi_project_tool_definitions] {
+            let tools = tools_fn();
+            let mut seen = HashSet::new();
+            for tool in tools.iter() {
+                assert!(seen.insert(&tool.name), "duplicate tool name: {}", tool.name);
+            }
+        }
+    }
+}

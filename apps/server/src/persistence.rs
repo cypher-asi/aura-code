@@ -164,3 +164,143 @@ async fn persist_task_steps(
         info!(task_id = %task_id, session_id = %entry.session_id, "Persisted task build/test steps as session message");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use aura_core::*;
+    use aura_engine::EngineEvent;
+    use aura_storage::StorageClient;
+
+    async fn setup_mock() -> (Arc<StorageClient>, aura_storage::testutil::SharedDb) {
+        let (url, db) = aura_storage::testutil::start_mock_storage().await;
+        let client = Arc::new(StorageClient::with_base_url(&url));
+        let task_id = uuid::Uuid::new_v4().to_string();
+        {
+            let mut guard = db.lock().await;
+            guard.tasks.push(aura_storage::StorageTask {
+                id: task_id.clone(),
+                project_id: Some(uuid::Uuid::new_v4().to_string()),
+                spec_id: Some(uuid::Uuid::new_v4().to_string()),
+                title: Some("test".into()),
+                description: None,
+                status: Some("in_progress".into()),
+                order_index: Some(0),
+                dependency_ids: None,
+                execution_notes: None,
+                files_changed: None,
+                model: None,
+                total_input_tokens: None,
+                total_output_tokens: None,
+                assigned_project_agent_id: None,
+                session_id: None,
+                created_at: Some(chrono::Utc::now().to_rfc3339()),
+                updated_at: Some(chrono::Utc::now().to_rfc3339()),
+            });
+        }
+        (client, db)
+    }
+
+    #[tokio::test]
+    async fn test_persist_task_completed_event() {
+        let (client, db) = setup_mock().await;
+        let task_id: TaskId = {
+            let guard = db.lock().await;
+            guard.tasks[0].id.parse().unwrap()
+        };
+        let pid = ProjectId::new();
+        let aiid = AgentInstanceId::new();
+        let sid = SessionId::new();
+
+        let event = EngineEvent::TaskCompleted {
+            project_id: pid,
+            agent_instance_id: aiid,
+            task_id,
+            execution_notes: "All done".into(),
+            file_changes: vec![],
+            duration_ms: Some(100),
+            input_tokens: Some(500),
+            output_tokens: Some(200),
+            cost_usd: None,
+            llm_duration_ms: None,
+            build_verify_duration_ms: None,
+            files_changed_count: None,
+            parse_retries: None,
+            build_fix_attempts: None,
+            model: Some("claude-opus-4-6".into()),
+        };
+
+        let entry = crate::TaskSessionEntry { project_id: pid, agent_instance_id: aiid, session_id: sid };
+        persist_task_to_storage(&client, "jwt", &event, "live output here", Some(&entry), &[], &[]).await;
+
+        let guard = db.lock().await;
+        let task = &guard.tasks[0];
+        assert_eq!(task.execution_notes.as_deref(), Some("All done"));
+    }
+
+    #[tokio::test]
+    async fn test_persist_task_failed_event() {
+        let (client, db) = setup_mock().await;
+        let task_id: TaskId = {
+            let guard = db.lock().await;
+            guard.tasks[0].id.parse().unwrap()
+        };
+        let pid = ProjectId::new();
+        let aiid = AgentInstanceId::new();
+        let sid = SessionId::new();
+
+        let event = EngineEvent::TaskFailed {
+            project_id: pid,
+            agent_instance_id: aiid,
+            task_id,
+            reason: "Build failed".into(),
+            duration_ms: None,
+            phase: Some("build".into()),
+            parse_retries: None,
+            build_fix_attempts: None,
+            model: None,
+        };
+
+        let entry = crate::TaskSessionEntry { project_id: pid, agent_instance_id: aiid, session_id: sid };
+        persist_task_to_storage(&client, "jwt", &event, "", Some(&entry), &[], &[]).await;
+
+        let guard = db.lock().await;
+        let task = &guard.tasks[0];
+        assert_eq!(task.execution_notes.as_deref(), Some("Build failed"));
+    }
+
+    #[tokio::test]
+    async fn test_persist_skips_when_no_session() {
+        let (client, db) = setup_mock().await;
+        let task_id: TaskId = {
+            let guard = db.lock().await;
+            guard.tasks[0].id.parse().unwrap()
+        };
+
+        let event = EngineEvent::TaskCompleted {
+            project_id: ProjectId::new(),
+            agent_instance_id: AgentInstanceId::new(),
+            task_id,
+            execution_notes: "Should update task but not create messages".into(),
+            file_changes: vec![],
+            duration_ms: None,
+            input_tokens: None,
+            output_tokens: None,
+            cost_usd: None,
+            llm_duration_ms: None,
+            build_verify_duration_ms: None,
+            files_changed_count: None,
+            parse_retries: None,
+            build_fix_attempts: None,
+            model: None,
+        };
+
+        persist_task_to_storage(&client, "jwt", &event, "some output", None, &[], &[]).await;
+
+        let guard = db.lock().await;
+        let task = &guard.tasks[0];
+        assert_eq!(task.execution_notes.as_deref(), Some("Should update task but not create messages"));
+        assert!(guard.messages.is_empty(), "no messages should be persisted without session entry");
+    }
+}

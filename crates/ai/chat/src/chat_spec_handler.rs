@@ -89,7 +89,7 @@ impl ChatService {
     }
 }
 
-async fn drain_spec_events(
+pub(crate) async fn drain_spec_events(
     spec_rx: &mut mpsc::UnboundedReceiver<SpecStreamEvent>,
     tx: &mpsc::UnboundedSender<ChatStreamEvent>,
 ) -> (String, u64, u64) {
@@ -131,4 +131,209 @@ async fn drain_spec_events(
     }
 
     (accumulated, input_tokens, output_tokens)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn make_spec() -> Spec {
+        Spec {
+            spec_id: SpecId::new(),
+            project_id: ProjectId::new(),
+            title: "Test spec".into(),
+            order_index: 0,
+            markdown_contents: "Spec content".into(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    fn make_task() -> Task {
+        Task {
+            task_id: TaskId::new(),
+            project_id: ProjectId::new(),
+            spec_id: SpecId::new(),
+            title: "Test task".into(),
+            description: "Task desc".into(),
+            status: TaskStatus::Pending,
+            order_index: 0,
+            dependency_ids: vec![],
+            parent_task_id: None,
+            assigned_agent_instance_id: None,
+            completed_by_agent_instance_id: None,
+            session_id: None,
+            execution_notes: String::new(),
+            files_changed: vec![],
+            live_output: String::new(),
+            build_steps: vec![],
+            test_steps: vec![],
+            user_id: None,
+            model: None,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn drain_spec_events_accumulates_deltas() {
+        let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
+        let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
+
+        spec_tx.send(SpecStreamEvent::Delta("Hello ".into())).unwrap();
+        spec_tx.send(SpecStreamEvent::Delta("World".into())).unwrap();
+        drop(spec_tx);
+
+        let (accumulated, input_tokens, output_tokens) =
+            drain_spec_events(&mut spec_rx, &chat_tx).await;
+
+        assert_eq!(accumulated, "Hello World");
+        assert_eq!(input_tokens, 0);
+        assert_eq!(output_tokens, 0);
+
+        let mut delta_count = 0;
+        while let Ok(evt) = chat_rx.try_recv() {
+            if matches!(evt, ChatStreamEvent::Delta(_)) {
+                delta_count += 1;
+            }
+        }
+        assert_eq!(delta_count, 2);
+    }
+
+    #[tokio::test]
+    async fn drain_spec_events_tracks_token_usage() {
+        let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
+        let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
+
+        spec_tx.send(SpecStreamEvent::TokenUsage { input_tokens: 100, output_tokens: 50 }).unwrap();
+        spec_tx.send(SpecStreamEvent::TokenUsage { input_tokens: 200, output_tokens: 80 }).unwrap();
+        drop(spec_tx);
+
+        let (_, input_tokens, output_tokens) =
+            drain_spec_events(&mut spec_rx, &chat_tx).await;
+
+        assert_eq!(input_tokens, 300);
+        assert_eq!(output_tokens, 130);
+
+        let mut usage_events = vec![];
+        while let Ok(evt) = chat_rx.try_recv() {
+            if let ChatStreamEvent::TokenUsage { input_tokens, output_tokens } = evt {
+                usage_events.push((input_tokens, output_tokens));
+            }
+        }
+        assert_eq!(usage_events.len(), 2);
+        assert_eq!(usage_events[0], (100, 50));
+        assert_eq!(usage_events[1], (300, 130));
+    }
+
+    #[tokio::test]
+    async fn drain_spec_events_forwards_spec_saved() {
+        let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
+        let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
+
+        let spec = make_spec();
+        spec_tx.send(SpecStreamEvent::SpecSaved(spec)).unwrap();
+        drop(spec_tx);
+
+        drain_spec_events(&mut spec_rx, &chat_tx).await;
+
+        let mut found = false;
+        while let Ok(evt) = chat_rx.try_recv() {
+            if matches!(evt, ChatStreamEvent::SpecSaved(_)) {
+                found = true;
+            }
+        }
+        assert!(found, "SpecSaved should be forwarded");
+    }
+
+    #[tokio::test]
+    async fn drain_spec_events_forwards_error() {
+        let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
+        let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
+
+        spec_tx.send(SpecStreamEvent::Error("oops".into())).unwrap();
+        drop(spec_tx);
+
+        drain_spec_events(&mut spec_rx, &chat_tx).await;
+
+        let mut found = false;
+        while let Ok(evt) = chat_rx.try_recv() {
+            if let ChatStreamEvent::Error(msg) = evt {
+                assert_eq!(msg, "oops");
+                found = true;
+            }
+        }
+        assert!(found, "Error should be forwarded");
+    }
+
+    #[tokio::test]
+    async fn drain_spec_events_ignores_progress_generating_complete() {
+        let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
+        let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
+
+        spec_tx.send(SpecStreamEvent::Progress("loading...".into())).unwrap();
+        spec_tx.send(SpecStreamEvent::Generating { tokens: 100 }).unwrap();
+        spec_tx.send(SpecStreamEvent::Complete(vec![])).unwrap();
+        drop(spec_tx);
+
+        let (accumulated, _, _) = drain_spec_events(&mut spec_rx, &chat_tx).await;
+        assert!(accumulated.is_empty());
+
+        let mut event_count = 0;
+        while let Ok(_) = chat_rx.try_recv() {
+            event_count += 1;
+        }
+        assert_eq!(event_count, 0, "Progress/Generating/Complete should not forward to chat");
+    }
+
+    #[tokio::test]
+    async fn drain_spec_events_forwards_title_and_summary() {
+        let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
+        let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
+
+        spec_tx.send(SpecStreamEvent::SpecsTitle("My Project".into())).unwrap();
+        spec_tx.send(SpecStreamEvent::SpecsSummary("A summary".into())).unwrap();
+        drop(spec_tx);
+
+        drain_spec_events(&mut spec_rx, &chat_tx).await;
+
+        let mut found_title = false;
+        let mut found_summary = false;
+        while let Ok(evt) = chat_rx.try_recv() {
+            match evt {
+                ChatStreamEvent::SpecsTitle(t) => {
+                    assert_eq!(t, "My Project");
+                    found_title = true;
+                }
+                ChatStreamEvent::SpecsSummary(s) => {
+                    assert_eq!(s, "A summary");
+                    found_summary = true;
+                }
+                _ => {}
+            }
+        }
+        assert!(found_title, "SpecsTitle should be forwarded");
+        assert!(found_summary, "SpecsSummary should be forwarded");
+    }
+
+    #[tokio::test]
+    async fn drain_spec_events_forwards_task_saved() {
+        let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
+        let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
+
+        let task = make_task();
+        spec_tx.send(SpecStreamEvent::TaskSaved(Box::new(task))).unwrap();
+        drop(spec_tx);
+
+        drain_spec_events(&mut spec_rx, &chat_tx).await;
+
+        let mut found = false;
+        while let Ok(evt) = chat_rx.try_recv() {
+            if matches!(evt, ChatStreamEvent::TaskSaved(_)) {
+                found = true;
+            }
+        }
+        assert!(found, "TaskSaved should be forwarded");
+    }
 }

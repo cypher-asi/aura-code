@@ -89,3 +89,36 @@ fn build_rollover_history(project: &Project, work_log: &[String], completed_coun
         project.name, project.description, completed_count, raw_log,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aura_core::testutil::make_project;
+
+    #[test]
+    fn test_build_rollover_history_with_tasks() {
+        let project = make_project("test", "/tmp/test");
+        let log = vec!["Implemented auth module".to_string(), "Fixed tests".to_string()];
+        let history = build_rollover_history(&project, &log, 2);
+        assert!(history.contains("test"));
+        assert!(history.contains("Implemented auth module"));
+        assert!(history.contains("Fixed tests"));
+        assert!(history.contains("2 tasks completed"));
+    }
+
+    #[test]
+    fn test_build_rollover_history_empty() {
+        let project = make_project("proj", "/tmp/proj");
+        let history = build_rollover_history(&project, &[], 0);
+        assert!(history.contains("proj"));
+        assert!(history.contains("0 tasks completed"));
+    }
+
+    #[test]
+    fn test_build_rollover_history_truncation() {
+        let project = make_project("proj", "/tmp/proj");
+        let log: Vec<String> = (0..1000).map(|i| format!("Task {} completed with lots of detail and information", i)).collect();
+        let history = build_rollover_history(&project, &log, 1000);
+        assert!(history.contains("(work log truncated)"));
+    }
+}

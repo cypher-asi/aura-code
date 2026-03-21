@@ -252,6 +252,117 @@ data: {"type":"error","error":{"type":"invalid_request_error","message":"Bad req
 }
 
 #[tokio::test]
+async fn test_parse_frame_fields_multiline_data() {
+    // When multiple `data:` lines appear, the parser keeps the last one.
+    let raw = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":5}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: first_line\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hi\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let result = sse::parse_sse_events(sse_stream(raw), &tx)
+        .await
+        .expect("multiline data");
+    assert_eq!(result.text, "Hi");
+}
+
+#[tokio::test]
+async fn test_parse_frame_fields_missing_event() {
+    // A frame with no `event:` prefix is skipped (empty event_type).
+    let raw = "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":0}}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let result = sse::parse_sse_events(sse_stream(raw), &tx)
+        .await
+        .expect("missing event");
+    assert_eq!(result.text, "");
+    assert_eq!(result.stop_reason, "end_turn"); // default, never overwritten
+}
+
+#[tokio::test]
+async fn test_handle_message_start_with_cache_tokens() {
+    let raw = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":500,\"cache_read_input_tokens\":300}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"cached\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":2}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let result = sse::parse_sse_events(sse_stream(raw), &tx)
+        .await
+        .expect("cache tokens");
+    drop(tx);
+    let events = drain_events(&mut rx);
+
+    assert_eq!(result.input_tokens, 10);
+    assert_eq!(result.cache_creation_input_tokens, 500);
+    assert_eq!(result.cache_read_input_tokens, 300);
+
+    assert!(events.iter().any(|e| matches!(
+        e,
+        ClaudeStreamEvent::Done {
+            cache_creation_input_tokens: 500,
+            cache_read_input_tokens: 300,
+            ..
+        }
+    )));
+}
+
+#[tokio::test]
+async fn test_handle_content_block_stop_malformed_json() {
+    // Malformed tool JSON falls back to empty object.
+    let raw = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"bad_tool\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{broken\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":1}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let result = sse::parse_sse_events(sse_stream(raw), &tx)
+        .await
+        .expect("malformed tool json");
+    drop(tx);
+    let events = drain_events(&mut rx);
+
+    assert_eq!(result.tool_calls.len(), 1);
+    assert_eq!(result.tool_calls[0].name, "bad_tool");
+    assert_eq!(result.tool_calls[0].input, serde_json::json!({}));
+
+    assert!(events.iter().any(|e| matches!(
+        e,
+        ClaudeStreamEvent::ToolUse { name, input, .. }
+            if name == "bad_tool" && *input == serde_json::json!({})
+    )));
+}
+
+#[tokio::test]
+async fn test_dispatch_frame_unknown_event_type() {
+    // Unknown event types are silently ignored.
+    let raw = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\nevent: ping\ndata: {}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let result = sse::parse_sse_events(sse_stream(raw), &tx)
+        .await
+        .expect("unknown event type");
+    assert_eq!(result.text, "ok");
+}
+
+#[tokio::test]
+async fn test_overloaded_error_sets_is_overloaded() {
+    let raw = "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n";
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let result = sse::parse_sse_events(sse_stream(raw), &tx).await;
+    drop(tx);
+    let events = drain_events(&mut rx);
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().is_overloaded());
+    assert!(events.iter().any(|e| matches!(e, ClaudeStreamEvent::Error(_))));
+}
+
+#[tokio::test]
+async fn test_parse_frame_fields_standard() {
+    // Straightforward frame yields correct event type and data.
+    let raw = "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":42}}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+
+    let (tx, _rx) = mpsc::unbounded_channel();
+    let result = sse::parse_sse_events(sse_stream(raw), &tx)
+        .await
+        .expect("standard frame");
+    assert_eq!(result.input_tokens, 42);
+}
+
+#[tokio::test]
 async fn test_parse_chunked_delivery() {
     let full = r#"event: message_start
 data: {"type":"message_start","message":{"usage":{"input_tokens":100}}}

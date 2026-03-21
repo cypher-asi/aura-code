@@ -467,4 +467,62 @@ mod tests {
         let desc = "a".repeat(500);
         assert_eq!(compute_exploration_allowance("Add handler", &desc, 10), 14);
     }
+
+    #[test]
+    fn test_extract_codebase_conventions_empty_input() {
+        assert_eq!(extract_codebase_conventions(""), String::new());
+    }
+
+    #[test]
+    fn test_extract_codebase_conventions_no_matches() {
+        assert_eq!(
+            extract_codebase_conventions("fn main() { println!(\"hello\"); }"),
+            String::new(),
+        );
+    }
+
+    #[test]
+    fn test_extract_codebase_conventions_all_conventions() {
+        let input = r#"
+            use thiserror;
+            #[tokio::test]
+            Arc<SomeService>
+            impl Foo {}
+            tracing::info!("hi");
+            #[derive(Serialize, Deserialize)]
+            async fn do_work() { something.await }
+            #[cfg(test)]
+        "#;
+        let result = extract_codebase_conventions(input);
+        assert!(result.contains("thiserror"), "should mention thiserror");
+        assert!(result.contains("tokio::test"), "should mention tokio::test");
+        assert!(result.contains("Arc"), "should mention Arc");
+        assert!(result.contains("tracing"), "should mention tracing");
+        assert!(result.contains("serde"), "should mention serde");
+        assert!(result.contains("async"), "should mention async");
+        assert!(result.contains("#[cfg(test)]"), "should mention cfg(test)");
+        let convention_count = result.lines().filter(|l| l.starts_with("- ")).count();
+        assert_eq!(convention_count, 7);
+    }
+
+    #[test]
+    fn test_build_full_task_context_appends_all_sections() {
+        let result = build_full_task_context(
+            "base".to_string(),
+            "workspace map",
+            "type defs",
+            "codebase snap",
+            "dep api",
+        );
+        assert!(result.contains("Workspace Structure"));
+        assert!(result.contains("Type Definitions"));
+        assert!(result.contains("Current Codebase Files"));
+        assert!(result.contains("Dependency API Surface"));
+    }
+
+    #[test]
+    fn test_build_full_task_context_empty_extras_stays_minimal() {
+        let result = build_full_task_context("base".to_string(), "", "", "", "");
+        assert_eq!(result, "base");
+    }
 }

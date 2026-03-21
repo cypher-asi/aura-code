@@ -312,6 +312,121 @@ async fn test_credits_exhausted_then_topped_up() {
     assert!(!metered.is_credits_exhausted());
 }
 
+// --- MeteredStreamRequest / complete_stream_with_tools tests ---
+
+#[tokio::test]
+async fn test_stream_with_tools_calls_provider_and_debits() {
+    use crate::testutil::{MockBillingState, make_test_llm_stateful};
+    use aura_claude::{ToolCall, ToolStreamResponse};
+
+    let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(10_000_000)));
+    let tool_call = ToolCall {
+        id: "t1".into(),
+        name: "read_file".into(),
+        input: serde_json::json!({"path": "main.rs"}),
+    };
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::tool_use(vec![tool_call.clone()]).with_tokens(200, 80),
+    ]));
+    let (metered, _tmp) = make_test_llm_stateful(mock.clone(), state.clone()).await;
+
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let resp = metered
+        .complete_stream_with_tools(super::MeteredStreamRequest {
+            api_key: "key",
+            system_prompt: "sys",
+            messages: vec![],
+            tools: vec![],
+            max_tokens: 1024,
+            thinking: None,
+            event_tx,
+            model_override: None,
+            billing_reason: "test",
+            metadata: None,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(resp.tool_calls.len(), 1);
+    assert_eq!(resp.tool_calls[0].name, "read_file");
+    assert_eq!(mock.call_count(), 1);
+
+    let guard = state.lock().await;
+    assert!(!guard.debits.is_empty(), "tokens should be debited");
+
+    let mut events = vec![];
+    while let Ok(evt) = event_rx.try_recv() { events.push(evt); }
+    assert!(events.iter().any(|e| matches!(e, ClaudeStreamEvent::Done { .. })));
+}
+
+#[tokio::test]
+async fn test_stream_with_tools_model_override() {
+    use crate::testutil::{MockBillingState, make_test_llm_stateful};
+
+    let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(10_000_000)));
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::text("fast-response").with_tokens(50, 20),
+    ]));
+    let (metered, _tmp) = make_test_llm_stateful(mock.clone(), state.clone()).await;
+
+    let (event_tx, _rx) = mpsc::unbounded_channel();
+    let resp = metered
+        .complete_stream_with_tools(super::MeteredStreamRequest {
+            api_key: "key",
+            system_prompt: "sys",
+            messages: vec![],
+            tools: vec![],
+            max_tokens: 512,
+            thinking: None,
+            event_tx,
+            model_override: Some(aura_claude::FAST_MODEL),
+            billing_reason: "test-override",
+            metadata: None,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(resp.text, "fast-response");
+    assert_eq!(mock.call_count(), 1);
+}
+
+#[tokio::test]
+async fn test_stream_with_tools_insufficient_credits() {
+    use crate::testutil::{MockBillingState, start_stateful_mock_billing_server, billing_client_for_url, store_zero_auth_session};
+
+    let state = Arc::new(tokio::sync::Mutex::new(MockBillingState::new(0)));
+    let url = start_stateful_mock_billing_server(state.clone()).await;
+    let billing = Arc::new(billing_client_for_url(&url));
+    let tmp = tempfile::TempDir::new().unwrap();
+    let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+    store_zero_auth_session(&store);
+
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::text("unreachable"),
+    ]));
+    let metered = super::MeteredLlm::new(mock.clone(), billing, store);
+
+    let (event_tx, _rx) = mpsc::unbounded_channel();
+    let err = metered
+        .complete_stream_with_tools(super::MeteredStreamRequest {
+            api_key: "key",
+            system_prompt: "sys",
+            messages: vec![],
+            tools: vec![],
+            max_tokens: 1024,
+            thinking: None,
+            event_tx,
+            model_override: None,
+            billing_reason: "test",
+            metadata: None,
+        })
+        .await
+        .unwrap_err();
+
+    assert!(err.is_insufficient_credits());
+    assert_eq!(mock.call_count(), 0, "LLM should not be called when credits are insufficient");
+}
+
 // --- LlmProvider trait impl tests ---
 
 #[tokio::test]

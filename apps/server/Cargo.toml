@@ -46,3 +46,5 @@ tempfile = "3"
 tokio = { version = "1", features = ["full", "test-util"] }
 reqwest = { version = "0.11", features = ["json"] }
 tower = { version = "0.5", features = ["util"] }
+uuid = { version = "1", features = ["v4"] }
+aura-storage = { path = "../../crates/infra/storage", features = ["test-utils"] }

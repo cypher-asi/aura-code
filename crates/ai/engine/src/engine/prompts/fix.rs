@@ -238,3 +238,153 @@ pub(crate) fn build_stub_fix_prompt(stub_reports: &[StubReport]) -> String {
 
     prompt
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aura_core::testutil::*;
+    use crate::file_ops::{ErrorReferences, StubPattern};
+
+    #[test]
+    fn test_build_fix_prompt_contains_error_output() {
+        let project = make_project("test", "/tmp/test");
+        let spec = make_spec("spec content");
+        let task = make_task("Fix build", "Fix the build errors");
+        let session = make_session();
+        let prompt = build_fix_prompt(
+            &project, &spec, &task, &session, "", "cargo build",
+            "error[E0308]: mismatched types", "Compiling test v0.1.0",
+            "initial notes",
+        );
+        assert!(prompt.contains("error[E0308]"), "stderr should be in prompt");
+        assert!(prompt.contains("Compiling test"), "stdout should be in prompt");
+    }
+
+    #[test]
+    fn test_build_fix_prompt_contains_task_and_spec() {
+        let project = make_project("myproj", "/tmp/proj");
+        let spec = make_spec("implement login flow");
+        let task = make_task("Add login handler", "Create the login endpoint");
+        let session = make_session();
+        let prompt = build_fix_prompt(
+            &project, &spec, &task, &session, "", "cargo build",
+            "error: cannot find function", "", "",
+        );
+        assert!(prompt.contains("Add login handler"), "task title should be in prompt");
+        assert!(prompt.contains("implement login flow"), "spec content should be in prompt");
+    }
+
+    #[test]
+    fn test_build_fix_prompt_with_history_includes_prior_attempts() {
+        let project = make_project("test", "/tmp/test");
+        let spec = make_spec("spec");
+        let task = make_task("Fix it", "Fix");
+        let session = make_session();
+        let prior = vec![
+            BuildFixAttemptRecord {
+                stderr: "first error".into(),
+                error_signature: "sig1".into(),
+                files_changed: vec!["src/main.rs".into()],
+                changes_summary: "changed main".into(),
+            },
+        ];
+        let params = BuildFixPromptParams {
+            project: &project,
+            spec: &spec,
+            task: &task,
+            session: &session,
+            codebase_snapshot: "",
+            build_command: "cargo build",
+            stderr: "second error",
+            stdout: "",
+            prior_notes: "",
+            prior_attempts: &prior,
+        };
+        let prompt = build_fix_prompt_with_history(&params);
+        assert!(prompt.contains("Previous Fix Attempts"), "should mention prior attempts");
+        assert!(prompt.contains("first error"), "prior error should be included");
+        assert!(prompt.contains("changed main"), "prior changes should be included");
+    }
+
+    #[test]
+    fn test_build_fix_prompt_with_history_empty_prior() {
+        let project = make_project("test", "/tmp/test");
+        let spec = make_spec("spec");
+        let task = make_task("Fix", "Fix");
+        let session = make_session();
+        let params = BuildFixPromptParams {
+            project: &project,
+            spec: &spec,
+            task: &task,
+            session: &session,
+            codebase_snapshot: "",
+            build_command: "cargo build",
+            stderr: "some error",
+            stdout: "",
+            prior_notes: "",
+            prior_attempts: &[],
+        };
+        let prompt = build_fix_prompt_with_history(&params);
+        assert!(!prompt.contains("Previous Fix Attempts"), "no prior section when empty");
+    }
+
+    #[test]
+    fn test_detect_api_hallucination_flags_method_not_found() {
+        let mut categories = vec![];
+        let refs = ErrorReferences {
+            types_referenced: vec![],
+            methods_not_found: vec![
+                ("MyStruct".into(), "method_a".into()),
+                ("MyStruct".into(), "method_b".into()),
+                ("MyStruct".into(), "method_c".into()),
+            ],
+            missing_fields: vec![],
+            source_locations: vec![],
+            wrong_arg_counts: vec![],
+        };
+        detect_api_hallucination(&refs, &mut categories);
+        assert!(categories.iter().any(|c| matches!(c, ErrorCategory::RustApiHallucination)));
+    }
+
+    #[test]
+    fn test_truncate_prompt_output_within_limit() {
+        let short = "hello world";
+        let result = truncate_prompt_output(short, 1000);
+        assert_eq!(result, short);
+    }
+
+    #[test]
+    fn test_truncate_prompt_output_over_limit() {
+        let long = "x".repeat(10_000);
+        let result = truncate_prompt_output(&long, 200);
+        assert!(result.len() < long.len());
+        assert!(result.contains("truncated"));
+    }
+
+    #[test]
+    fn test_build_stub_fix_prompt_single_report() {
+        let reports = vec![StubReport {
+            path: "src/lib.rs".into(),
+            line: 42,
+            pattern: StubPattern::TodoMacro,
+            context: "fn do_thing() { todo!() }".into(),
+        }];
+        let prompt = build_stub_fix_prompt(&reports);
+        assert!(prompt.contains("src/lib.rs:42"));
+        assert!(prompt.contains("todo!()"));
+        assert!(prompt.contains("stub/placeholder"));
+    }
+
+    #[test]
+    fn test_build_stub_fix_prompt_multiple_reports() {
+        let reports = vec![
+            StubReport { path: "a.rs".into(), line: 1, pattern: StubPattern::TodoMacro, context: "ctx1".into() },
+            StubReport { path: "b.rs".into(), line: 2, pattern: StubPattern::UnimplementedMacro, context: "ctx2".into() },
+        ];
+        let prompt = build_stub_fix_prompt(&reports);
+        assert!(prompt.contains("a.rs:1"));
+        assert!(prompt.contains("b.rs:2"));
+        assert!(prompt.contains("ctx1"));
+        assert!(prompt.contains("ctx2"));
+    }
+}

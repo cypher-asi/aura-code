@@ -57,7 +57,7 @@ pub struct TerminalManager {
     sessions: Mutex<HashMap<TerminalId, TerminalSession>>,
 }
 
-fn default_shell() -> String {
+pub(crate) fn default_shell() -> String {
     #[cfg(windows)]
     {
         if which::which("powershell.exe").is_ok() {
@@ -72,7 +72,7 @@ fn default_shell() -> String {
     }
 }
 
-fn default_cwd() -> String {
+pub(crate) fn default_cwd() -> String {
     dirs::home_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|| ".".into())
@@ -232,5 +232,36 @@ impl TerminalManager {
 impl Default for TerminalManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_shell_returns_nonempty() {
+        let shell = default_shell();
+        assert!(!shell.is_empty(), "default_shell() must not be empty");
+    }
+
+    #[test]
+    fn test_default_cwd_returns_nonempty() {
+        let cwd = default_cwd();
+        assert!(!cwd.is_empty(), "default_cwd() must not be empty");
+    }
+
+    #[test]
+    fn test_terminal_id_display() {
+        let id = TerminalId::new();
+        let s = format!("{id}");
+        assert!(!s.is_empty());
+        assert!(s.contains('-'), "UUID should contain dashes: {s}");
+    }
+
+    #[test]
+    fn test_list_empty_on_new_manager() {
+        let mgr = TerminalManager::new();
+        assert!(mgr.list().is_empty());
     }
 }

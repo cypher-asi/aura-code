@@ -242,3 +242,49 @@ pub async fn get_task_output(
         test_steps: Vec::new(),
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aura_storage::StorageTask;
+
+    fn make_valid_storage_task() -> StorageTask {
+        StorageTask {
+            id: uuid::Uuid::new_v4().to_string(),
+            project_id: Some(uuid::Uuid::new_v4().to_string()),
+            spec_id: Some(uuid::Uuid::new_v4().to_string()),
+            title: Some("Test task".into()),
+            description: Some("A test description".into()),
+            status: Some("pending".into()),
+            order_index: Some(0),
+            dependency_ids: None,
+            execution_notes: None,
+            files_changed: None,
+            model: None,
+            total_input_tokens: None,
+            total_output_tokens: None,
+            assigned_project_agent_id: None,
+            session_id: None,
+            created_at: Some(chrono::Utc::now().to_rfc3339()),
+            updated_at: Some(chrono::Utc::now().to_rfc3339()),
+        }
+    }
+
+    #[test]
+    fn test_storage_task_to_task_valid() {
+        let st = make_valid_storage_task();
+        let result = storage_task_to_task(st);
+        assert!(result.is_ok());
+        let task = result.unwrap();
+        assert_eq!(task.title, "Test task");
+        assert_eq!(task.status, TaskStatus::Pending);
+    }
+
+    #[test]
+    fn test_storage_task_to_task_invalid_id() {
+        let mut st = make_valid_storage_task();
+        st.id = "not-a-uuid".to_string();
+        let result = storage_task_to_task(st);
+        assert!(result.is_err());
+    }
+}

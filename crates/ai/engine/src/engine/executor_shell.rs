@@ -17,7 +17,7 @@ use crate::error::EngineError;
 use crate::events::EngineEvent;
 use crate::file_ops::{self, FileOp, WorkspaceCache};
 
-fn check_repeated_error(
+pub(crate) fn check_repeated_error(
     prior: &[BuildFixAttemptRecord],
     current_sig: &str,
     task_id: &TaskId,
@@ -290,5 +290,37 @@ impl DevLoopEngine {
             }
         }
         Ok(attempt_files)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_check_repeated_error_returns_none_on_first() {
+        let result = check_repeated_error(&[], "sig1", &TaskId::new(), 1, "cargo build");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_check_repeated_error_triggers_after_three_dupes() {
+        use super::BuildFixAttemptRecord;
+        let prior = vec![
+            BuildFixAttemptRecord {
+                stderr: "err".into(),
+                error_signature: "sig1".into(),
+                files_changed: vec![],
+                changes_summary: String::new(),
+            },
+            BuildFixAttemptRecord {
+                stderr: "err".into(),
+                error_signature: "sig1".into(),
+                files_changed: vec![],
+                changes_summary: String::new(),
+            },
+        ];
+        let result = check_repeated_error(&prior, "sig1", &TaskId::new(), 3, "cargo build");
+        assert!(result.is_some());
     }
 }

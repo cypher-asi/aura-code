@@ -27,18 +27,18 @@ use crate::error::EngineError;
 use crate::events::EngineEvent;
 use crate::file_ops::{FileOp, WorkspaceCache};
 
-struct ToolLoopParams {
-    max_iterations: usize,
-    max_tokens: u32,
-    thinking: Option<ThinkingConfig>,
-    stream_timeout: std::time::Duration,
-    max_context_tokens: Option<u64>,
-    credit_budget: Option<u64>,
-    exploration_allowance: usize,
-    model_override: Option<String>,
+pub(crate) struct ToolLoopParams {
+    pub(crate) max_iterations: usize,
+    pub(crate) max_tokens: u32,
+    pub(crate) thinking: Option<ThinkingConfig>,
+    pub(crate) stream_timeout: std::time::Duration,
+    pub(crate) max_context_tokens: Option<u64>,
+    pub(crate) credit_budget: Option<u64>,
+    pub(crate) exploration_allowance: usize,
+    pub(crate) model_override: Option<String>,
 }
 
-fn configure_llm_params(
+pub(crate) fn configure_llm_params(
     complexity: TaskComplexity,
     llm_config: &LlmConfig,
     engine_config: &EngineConfig,
@@ -243,7 +243,7 @@ fn build_executor(
     }
 }
 
-fn build_tool_loop_config(params: ToolLoopParams) -> ToolLoopConfig {
+pub(crate) fn build_tool_loop_config(params: ToolLoopParams) -> ToolLoopConfig {
     ToolLoopConfig {
         max_iterations: params.max_iterations,
         max_tokens: params.max_tokens,
@@ -325,3 +325,65 @@ impl DevLoopEngine {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aura_core::{LlmConfig, EngineConfig};
+
+    #[test]
+    fn test_configure_llm_params_simple_caps_max_tokens() {
+        let llm = LlmConfig::default();
+        let engine = EngineConfig::default();
+        let params = configure_llm_params(TaskComplexity::Simple, &llm, &engine, 8, 3);
+        assert!(params.max_tokens <= 8_192);
+        assert!(params.max_iterations <= 15);
+        assert!(params.model_override.is_some());
+    }
+
+    #[test]
+    fn test_configure_llm_params_complex_uses_full_budget() {
+        let llm = LlmConfig::default();
+        let engine = EngineConfig::default();
+        let params = configure_llm_params(TaskComplexity::Complex, &llm, &engine, 18, 3);
+        assert_eq!(params.max_tokens, llm.task_execution_max_tokens);
+        assert_eq!(params.max_iterations, engine.max_agentic_iterations);
+        assert!(params.model_override.is_none());
+    }
+
+    #[test]
+    fn test_build_tool_loop_config_maps_all_fields() {
+        let params = ToolLoopParams {
+            max_iterations: 10,
+            max_tokens: 4096,
+            thinking: None,
+            stream_timeout: std::time::Duration::from_secs(30),
+            max_context_tokens: Some(50_000),
+            credit_budget: Some(100),
+            exploration_allowance: 12,
+            model_override: None,
+        };
+        let config = build_tool_loop_config(params);
+        assert_eq!(config.max_iterations, 10);
+        assert_eq!(config.max_tokens, 4096);
+        assert_eq!(config.exploration_allowance, Some(12));
+        assert_eq!(config.credit_budget, Some(100));
+        assert_eq!(config.billing_reason, "aura_task");
+    }
+
+    #[test]
+    fn test_build_tool_loop_config_auto_build_cooldown() {
+        let params = ToolLoopParams {
+            max_iterations: 5,
+            max_tokens: 1024,
+            thinking: None,
+            stream_timeout: std::time::Duration::from_secs(60),
+            max_context_tokens: None,
+            credit_budget: None,
+            exploration_allowance: 8,
+            model_override: Some("fast-model".to_string()),
+        };
+        let config = build_tool_loop_config(params);
+        assert_eq!(config.auto_build_cooldown, Some(1));
+        assert_eq!(config.model_override, Some("fast-model".to_string()));
+    }
+}

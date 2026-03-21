@@ -7,6 +7,9 @@ pub mod prompts;
 pub mod rust_signatures;
 pub mod settings;
 
+#[cfg(any(test, feature = "test-utils"))]
+pub mod testutil;
+
 pub use config::*;
 pub use entities::*;
 pub use enums::*;

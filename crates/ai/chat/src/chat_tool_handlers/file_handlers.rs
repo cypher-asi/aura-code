@@ -346,3 +346,223 @@ impl ChatToolExecutor {
         write_and_report_edit(&abs, &final_content, &rel, replacements).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    // ── normalize_line_endings ──────────────────────────────────────
+
+    #[test]
+    fn normalize_line_endings_lf_to_crlf() {
+        let result = normalize_line_endings("a\nb", true);
+        assert_eq!(result, "a\r\nb");
+    }
+
+    #[test]
+    fn normalize_line_endings_crlf_to_lf() {
+        let result = normalize_line_endings("a\r\nb", false);
+        assert_eq!(result, "a\nb");
+    }
+
+    #[test]
+    fn normalize_line_endings_noop_when_already_correct() {
+        assert_eq!(normalize_line_endings("a\nb", false), "a\nb");
+        assert_eq!(normalize_line_endings("a\r\nb", true), "a\r\nb");
+    }
+
+    #[test]
+    fn normalize_line_endings_mixed_input() {
+        let input = "a\r\nb\nc\r\n";
+        assert_eq!(normalize_line_endings(input, false), "a\nb\nc\n");
+        assert_eq!(normalize_line_endings(input, true), "a\r\nb\r\nc\r\n");
+    }
+
+    // ── format_line_range ──────────────────────────────────────────
+
+    #[test]
+    fn format_line_range_full_file() {
+        let content = "line1\nline2\nline3";
+        let result = format_line_range(content, None, None, "test.rs");
+        assert!(!result.is_error);
+        assert!(result.content.contains("line1"));
+        assert!(result.content.contains("line3"));
+    }
+
+    #[test]
+    fn format_line_range_subset() {
+        let content = "line1\nline2\nline3\nline4\nline5";
+        let result = format_line_range(content, Some(2), Some(4), "test.rs");
+        assert!(!result.is_error);
+        assert!(result.content.contains("line2"));
+        assert!(result.content.contains("line4"));
+        assert!(!result.content.contains("\"start_line\": 1,") || result.content.contains("\"start_line\": 2"));
+    }
+
+    #[test]
+    fn format_line_range_out_of_bounds_start() {
+        let content = "line1\nline2";
+        let result = format_line_range(content, Some(10), None, "test.rs");
+        assert!(result.is_error, "start beyond file should error");
+    }
+
+    #[test]
+    fn format_line_range_end_clamped() {
+        let content = "line1\nline2\nline3";
+        let result = format_line_range(content, Some(1), Some(100), "test.rs");
+        assert!(!result.is_error);
+        assert!(result.content.contains("line3"));
+    }
+
+    #[test]
+    fn format_line_range_single_line() {
+        let content = "line1\nline2\nline3";
+        let result = format_line_range(content, Some(2), Some(2), "test.rs");
+        assert!(!result.is_error);
+        assert!(result.content.contains("line2"));
+    }
+
+    // ── perform_replacement ────────────────────────────────────────
+
+    #[test]
+    fn perform_replacement_single() {
+        let (result, count) = perform_replacement("aaa bbb ccc", "bbb", "ZZZ", false, "f.rs").unwrap();
+        assert_eq!(result, "aaa ZZZ ccc");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn perform_replacement_not_found() {
+        let err = perform_replacement("aaa bbb ccc", "ddd", "ZZZ", false, "f.rs");
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn perform_replacement_replace_all() {
+        let (result, count) = perform_replacement("aaa bbb aaa bbb", "bbb", "ZZZ", true, "f.rs").unwrap();
+        assert_eq!(result, "aaa ZZZ aaa ZZZ");
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn perform_replacement_ambiguous() {
+        let err = perform_replacement("aaa bbb aaa bbb", "bbb", "ZZZ", false, "f.rs");
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn perform_replacement_ambiguous_matches_without_replace_all_errors() {
+        let err = perform_replacement("one two one", "one", "three", false, "f.rs");
+        assert!(err.is_err(), "ambiguous match without replace_all should error");
+    }
+
+    // ── check_shrinkage ───────────────────────────────────────────
+
+    #[test]
+    fn check_shrinkage_within_threshold() {
+        let original = "x".repeat(500);
+        let new = "x".repeat(200);
+        assert!(check_shrinkage(&original, &new, "f.rs").is_ok());
+    }
+
+    #[test]
+    fn check_shrinkage_exceeds_threshold() {
+        let original = "x".repeat(1000);
+        let new = "x".repeat(10);
+        assert!(check_shrinkage(&original, &new, "f.rs").is_err());
+    }
+
+    #[test]
+    fn check_shrinkage_empty_new_content() {
+        let original = "x".repeat(500);
+        assert!(check_shrinkage(&original, "", "f.rs").is_err());
+    }
+
+    #[test]
+    fn check_shrinkage_small_file_allows_big_reduction() {
+        let original = "short";
+        assert!(check_shrinkage(original, "s", "f.rs").is_ok());
+    }
+
+    // ── validate_write_size ───────────────────────────────────────
+
+    #[tokio::test]
+    async fn validate_write_size_new_file_passes() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("new.txt");
+        assert!(validate_write_size(&path, "content", "new.txt").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn validate_write_size_drastic_shrink_rejected() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("big.txt");
+        let big = "x".repeat(5000);
+        tokio::fs::write(&path, &big).await.unwrap();
+
+        let small = "y".repeat(10);
+        let err = validate_write_size(&path, &small, "big.txt").await;
+        assert!(err.is_err(), "drastic size reduction should be rejected");
+    }
+
+    #[tokio::test]
+    async fn validate_write_size_reasonable_change_passes() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("normal.txt");
+        let content = "x".repeat(1000);
+        tokio::fs::write(&path, &content).await.unwrap();
+
+        let new_content = "y".repeat(800);
+        assert!(validate_write_size(&path, &new_content, "normal.txt").await.is_ok());
+    }
+
+    // ── verify_post_write ─────────────────────────────────────────
+
+    #[tokio::test]
+    async fn verify_post_write_matching() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("verified.txt");
+        let content = "hello world";
+        tokio::fs::write(&path, content).await.unwrap();
+
+        assert!(verify_post_write(&path, content, "verified.txt").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn verify_post_write_mismatch() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("mismatch.txt");
+        tokio::fs::write(&path, "short").await.unwrap();
+
+        let err = verify_post_write(&path, "this is much longer content", "mismatch.txt").await;
+        assert!(err.is_err());
+    }
+
+    #[tokio::test]
+    async fn verify_post_write_nonexistent_file_passes() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("gone.txt");
+        assert!(verify_post_write(&path, "anything", "gone.txt").await.is_ok());
+    }
+
+    // ── read_and_validate_size ────────────────────────────────────
+
+    #[tokio::test]
+    async fn read_and_validate_size_normal_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("small.txt");
+        tokio::fs::write(&path, "hello").await.unwrap();
+
+        let content = read_and_validate_size(&path, "small.txt").await.unwrap();
+        assert_eq!(content, "hello");
+    }
+
+    #[tokio::test]
+    async fn read_and_validate_size_nonexistent_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("missing.txt");
+
+        assert!(read_and_validate_size(&path, "missing.txt").await.is_err());
+    }
+}

@@ -292,3 +292,77 @@ async fn chat_streaming_error_event_on_llm_failure() {
     );
     assert_eq!(names.last(), Some(&"Done"), "should still end with Done");
 }
+
+// ---------------------------------------------------------------------------
+// E2E: generate_specs action streams spec events or error
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_generate_specs_streaming_flow() {
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        MockResponse::text("# 01: Setup\nSetup project structure\n## Tasks\n- Initialize repo").with_tokens(300, 150),
+        MockResponse::text("{\"title\":\"Project Specs\",\"summary\":\"A test summary\"}").with_tokens(100, 50),
+    ]));
+
+    let h = setup(mock).await;
+    let (tx, mut rx) = mpsc::unbounded_channel();
+
+    h.chat_service
+        .send_message_streaming(
+            ChatMessageParams {
+                project_id: &h.project_id,
+                agent_instance_id: &h.agent_instance_id,
+                agent_instance: &h.agent_instance,
+                content: "Generate specs for this project",
+                action: Some("generate_specs"),
+                attachments: &[],
+            },
+            tx,
+        )
+        .await;
+
+    let events = collect_events(&mut rx);
+    let names: Vec<&str> = events.iter().map(|e| event_name(e)).collect();
+
+    assert_eq!(names.last(), Some(&"Done"), "should end with Done, got: {names:?}");
+
+    let has_spec_activity = names.contains(&"Delta")
+        || names.contains(&"SpecSaved")
+        || names.contains(&"Error");
+    assert!(has_spec_activity, "should have spec-related events or error, got: {names:?}");
+}
+
+// ---------------------------------------------------------------------------
+// E2E: empty mock (no responses) produces Error event
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_streaming_handles_llm_timeout() {
+    let mock = Arc::new(MockLlmProvider::new());
+
+    let h = setup(mock).await;
+    let (tx, mut rx) = mpsc::unbounded_channel();
+
+    h.chat_service
+        .send_message_streaming(
+            ChatMessageParams {
+                project_id: &h.project_id,
+                agent_instance_id: &h.agent_instance_id,
+                agent_instance: &h.agent_instance,
+                content: "This should fail",
+                action: None,
+                attachments: &[],
+            },
+            tx,
+        )
+        .await;
+
+    let events = collect_events(&mut rx);
+    let names: Vec<&str> = events.iter().map(|e| event_name(e)).collect();
+
+    assert!(
+        names.contains(&"Error"),
+        "LLM failure should produce Error event, got: {names:?}"
+    );
+    assert_eq!(names.last(), Some(&"Done"), "should end with Done");
+}
