@@ -107,20 +107,33 @@ impl ChatToolExecutor {
 
         let include_clone = include_glob.clone();
         let abs_clone = abs.clone();
-        let matches = tokio::task::spawn_blocking(move || {
+        let pattern_clone = pattern.clone();
+        let (matches, files_scanned) = tokio::task::spawn_blocking(move || {
             let mut m: Vec<Value> = Vec::new();
-            search_directory(&abs_clone, &abs_clone, &regex, include_clone.as_deref(), max_results, context_lines, &mut m);
-            m
+            let mut stats = SearchStats::default();
+            search_directory(&abs_clone, &abs_clone, &regex, include_clone.as_deref(), max_results, context_lines, &mut m, &mut stats);
+            (m, stats.files_scanned)
         })
         .await
         .unwrap_or_default();
 
-        ToolExecResult::ok(json!({
-            "pattern": pattern,
-            "match_count": matches.len(),
-            "truncated": matches.len() >= max_results,
-            "matches": matches
-        }))
+        if matches.is_empty() {
+            let diagnostics = build_search_diagnostics(&pattern_clone, &abs, files_scanned);
+            ToolExecResult::ok(json!({
+                "pattern": pattern,
+                "match_count": 0,
+                "truncated": false,
+                "matches": [],
+                "diagnostics": diagnostics,
+            }))
+        } else {
+            ToolExecResult::ok(json!({
+                "pattern": pattern,
+                "match_count": matches.len(),
+                "truncated": matches.len() >= max_results,
+                "matches": matches
+            }))
+        }
     }
 
     pub(crate) async fn find_files(&self, project_id: &ProjectId, input: &Value) -> ToolExecResult {
@@ -190,6 +203,11 @@ fn should_skip_path(path: &str) -> bool {
     path.split('/').any(|segment| SKIP_DIRS.contains(&segment))
 }
 
+#[derive(Default)]
+struct SearchStats {
+    files_scanned: usize,
+}
+
 fn search_directory(
     root: &Path,
     dir: &Path,
@@ -198,6 +216,7 @@ fn search_directory(
     max_results: usize,
     context_lines: usize,
     matches: &mut Vec<Value>,
+    stats: &mut SearchStats,
 ) {
     let entries = match std::fs::read_dir(dir) {
         Ok(rd) => rd,
@@ -213,7 +232,7 @@ fn search_directory(
         }
         let path = entry.path();
         if path.is_dir() {
-            search_directory(root, &path, regex, include_glob, max_results, context_lines, matches);
+            search_directory(root, &path, regex, include_glob, max_results, context_lines, matches, stats);
         } else if path.is_file() {
             let rel = path
                 .strip_prefix(root)
@@ -227,41 +246,98 @@ fn search_directory(
                     }
                 }
             }
+            search_file(&path, &rel, regex, context_lines, max_results, matches, stats);
+        }
+    }
+}
 
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                let all_lines: Vec<&str> = content.lines().collect();
-                for (line_num, line) in all_lines.iter().enumerate() {
-                    if matches.len() >= max_results {
-                        return;
-                    }
-                    if regex.is_match(line) {
-                        if context_lines > 0 {
-                            let start = line_num.saturating_sub(context_lines);
-                            let end = (line_num + context_lines + 1).min(all_lines.len());
-                            let context: Vec<String> = all_lines[start..end]
-                                .iter()
-                                .enumerate()
-                                .map(|(i, l)| {
-                                    let ln = start + i + 1;
-                                    let marker = if start + i == line_num { ">" } else { " " };
-                                    format!("{marker}{ln:>5}| {}", l.chars().take(200).collect::<String>())
-                                })
-                                .collect();
-                            matches.push(json!({
-                                "file": rel,
-                                "line": line_num + 1,
-                                "content": context.join("\n"),
-                            }));
-                        } else {
-                            matches.push(json!({
-                                "file": rel,
-                                "line": line_num + 1,
-                                "content": line.chars().take(200).collect::<String>(),
-                            }));
-                        }
-                    }
-                }
+fn search_file(
+    path: &Path,
+    rel: &str,
+    regex: &regex::Regex,
+    context_lines: usize,
+    max_results: usize,
+    matches: &mut Vec<Value>,
+    stats: &mut SearchStats,
+) {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    stats.files_scanned += 1;
+    let all_lines: Vec<&str> = content.lines().collect();
+    for (line_num, line) in all_lines.iter().enumerate() {
+        if matches.len() >= max_results {
+            return;
+        }
+        if regex.is_match(line) {
+            if context_lines > 0 {
+                let start = line_num.saturating_sub(context_lines);
+                let end = (line_num + context_lines + 1).min(all_lines.len());
+                let context: Vec<String> = all_lines[start..end]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, l)| {
+                        let ln = start + i + 1;
+                        let marker = if start + i == line_num { ">" } else { " " };
+                        format!("{marker}{ln:>5}| {}", l.chars().take(200).collect::<String>())
+                    })
+                    .collect();
+                matches.push(json!({
+                    "file": rel,
+                    "line": line_num + 1,
+                    "content": context.join("\n"),
+                }));
+            } else {
+                matches.push(json!({
+                    "file": rel,
+                    "line": line_num + 1,
+                    "content": line.chars().take(200).collect::<String>(),
+                }));
             }
         }
     }
+}
+
+fn build_search_diagnostics(pattern: &str, search_path: &Path, files_scanned: usize) -> Value {
+    let path_exists = search_path.exists();
+    let path_is_dir = search_path.is_dir();
+
+    let has_unescaped_brackets = (pattern.contains('[') || pattern.contains(']'))
+        && !pattern.contains("\\[")
+        && !pattern.contains("\\]");
+    let has_unescaped_parens = (pattern.contains('(') || pattern.contains(')'))
+        && !pattern.contains("\\(")
+        && !pattern.contains("\\)");
+
+    let mut hints: Vec<String> = Vec::new();
+    if !path_exists {
+        hints.push(format!("Search path '{}' does not exist.", search_path.display()));
+    } else if !path_is_dir {
+        hints.push("Search path is a file, not a directory.".to_string());
+    }
+    if files_scanned == 0 && path_exists && path_is_dir {
+        hints.push("No files matched (directory may be empty or all files excluded by skip-dirs).".to_string());
+    }
+    if has_unescaped_brackets {
+        hints.push(format!(
+            "Pattern contains unescaped '[' or ']' which creates a regex character class. \
+             To match literal brackets, use '\\[' and '\\]'. Your pattern: {pattern}"
+        ));
+    }
+    if has_unescaped_parens {
+        hints.push(format!(
+            "Pattern contains unescaped '(' or ')' which creates a regex group. \
+             To match literal parens, use '\\(' and '\\)'. Your pattern: {pattern}"
+        ));
+    }
+    if hints.is_empty() {
+        hints.push(format!("No matches found in {files_scanned} files. Try a broader pattern or different path."));
+    }
+
+    json!({
+        "path_exists": path_exists,
+        "files_scanned": files_scanned,
+        "hints": hints,
+    })
 }
