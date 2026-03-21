@@ -1,12 +1,11 @@
+mod handlers;
 mod updater;
 
 use std::collections::HashMap;
 use std::net::TcpListener as StdTcpListener;
 use std::path::PathBuf;
 use std::sync::Arc;
-use axum::extract::State as AxumState;
 use axum::routing::{get as axum_get, post as axum_post};
-use axum::Json;
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::window::{Icon, WindowBuilder, WindowId};
@@ -28,7 +27,7 @@ enum WinCmd {
 }
 
 #[derive(Debug)]
-enum UserEvent {
+pub(crate) enum UserEvent {
     WindowCommand { window_id: WindowId, cmd: WinCmd },
     OpenIdeWindow { file_path: String, root_path: Option<String> },
     ShowWindow { window_id: WindowId },
@@ -79,7 +78,6 @@ fn default_data_dir() -> PathBuf {
 }
 
 fn find_frontend_dir() -> Option<PathBuf> {
-    // Prefer the path baked in at compile time by build.rs
     let compile_time = PathBuf::from(env!("FRONTEND_DIST_DIR"));
     if compile_time.join("index.html").exists() {
         return Some(compile_time);
@@ -95,7 +93,6 @@ fn find_frontend_dir() -> Option<PathBuf> {
     ];
     if let Some(ref dir) = exe_dir {
         candidates.push(dir.join("frontend/dist"));
-        // cargo-packager places resources next to the executable
         candidates.push(dir.join("dist"));
     }
 
@@ -104,176 +101,7 @@ fn find_frontend_dir() -> Option<PathBuf> {
         .find(|p| p.join("index.html").exists())
 }
 
-async fn pick_folder() -> Json<serde_json::Value> {
-    let handle = rfd::AsyncFileDialog::new()
-        .set_title("Select folder")
-        .pick_folder()
-        .await;
-    let path = handle.map(|h| h.path().to_string_lossy().into_owned());
-    Json(serde_json::json!(path))
-}
-
-async fn pick_file() -> Json<serde_json::Value> {
-    let handle = rfd::AsyncFileDialog::new()
-        .set_title("Select file")
-        .pick_file()
-        .await;
-    let path = handle.map(|h| h.path().to_string_lossy().into_owned());
-    Json(serde_json::json!(path))
-}
-
-#[derive(serde::Deserialize)]
-struct ReadFileRequest {
-    path: String,
-}
-
-async fn read_file(Json(req): Json<ReadFileRequest>) -> Json<serde_json::Value> {
-    let target = std::path::Path::new(&req.path);
-    if !target.exists() {
-        warn!(path = %req.path, "read_file: path does not exist");
-        return Json(serde_json::json!({ "ok": false, "error": "path not found" }));
-    }
-    if !target.is_file() {
-        warn!(path = %req.path, "read_file: path is not a file");
-        return Json(serde_json::json!({ "ok": false, "error": "path is not a file" }));
-    }
-    match std::fs::read_to_string(&req.path) {
-        Ok(content) => {
-            debug!(path = %req.path, bytes = content.len(), "read file");
-            Json(serde_json::json!({ "ok": true, "content": content, "path": req.path }))
-        }
-        Err(e) => {
-            warn!(path = %req.path, error = %e, "failed to read file");
-            Json(serde_json::json!({ "ok": false, "error": e.to_string() }))
-        }
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct WriteFileRequest {
-    path: String,
-    content: String,
-}
-
-async fn write_file(Json(req): Json<WriteFileRequest>) -> Json<serde_json::Value> {
-    let target = std::path::Path::new(&req.path);
-    if let Some(parent) = target.parent() {
-        if !parent.exists() {
-            warn!(path = %req.path, "write_file: parent directory does not exist");
-            return Json(serde_json::json!({ "ok": false, "error": "parent directory not found" }));
-        }
-    }
-    match std::fs::write(&req.path, &req.content) {
-        Ok(_) => {
-            debug!(path = %req.path, bytes = req.content.len(), "wrote file");
-            Json(serde_json::json!({ "ok": true, "path": req.path }))
-        }
-        Err(e) => {
-            warn!(path = %req.path, error = %e, "failed to write file");
-            Json(serde_json::json!({ "ok": false, "error": e.to_string() }))
-        }
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct OpenPathRequest {
-    path: String,
-}
-
-// ---------------------------------------------------------------------------
-// List directory (recursive file tree)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Open IDE window
-// ---------------------------------------------------------------------------
-
-#[derive(serde::Deserialize)]
-struct OpenIdeRequest {
-    path: String,
-    root: Option<String>,
-}
-
-async fn open_ide(
-    AxumState(proxy): AxumState<Arc<EventLoopProxy<UserEvent>>>,
-    Json(req): Json<OpenIdeRequest>,
-) -> Json<serde_json::Value> {
-    info!(path = %req.path, "requesting IDE window");
-    let _ = proxy.send_event(UserEvent::OpenIdeWindow { file_path: req.path, root_path: req.root });
-    Json(serde_json::json!({ "ok": true }))
-}
-
-// ---------------------------------------------------------------------------
-// Update routes
-// ---------------------------------------------------------------------------
-
-async fn get_update_status(
-    AxumState(state): AxumState<UpdateState>,
-) -> Json<serde_json::Value> {
-    let status = state.status.read().await;
-    let channel = state.channel.read().await;
-    Json(serde_json::json!({
-        "update": *status,
-        "channel": *channel,
-        "current_version": env!("CARGO_PKG_VERSION"),
-    }))
-}
-
-async fn post_update_install() -> Json<serde_json::Value> {
-    match updater::install_and_restart() {
-        Ok(()) => Json(serde_json::json!({ "ok": true })),
-        Err(e) => {
-            warn!(error = %e, "install_and_restart failed");
-            Json(serde_json::json!({ "ok": false, "error": e }))
-        }
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct SetChannelRequest {
-    channel: UpdateChannel,
-}
-
-async fn post_update_channel(
-    AxumState(state): AxumState<UpdateState>,
-    Json(req): Json<SetChannelRequest>,
-) -> Json<serde_json::Value> {
-    let old = {
-        let mut ch = state.channel.write().await;
-        let old = *ch;
-        *ch = req.channel;
-        old
-    };
-    info!(from = %old, to = %req.channel, "update channel changed");
-    updater::trigger_recheck(state);
-    Json(serde_json::json!({ "ok": true, "channel": req.channel }))
-}
-
-// ---------------------------------------------------------------------------
-// File / path helpers
-// ---------------------------------------------------------------------------
-
-async fn open_path(Json(req): Json<OpenPathRequest>) -> Json<serde_json::Value> {
-    let target = std::path::Path::new(&req.path);
-    if !target.exists() {
-        warn!(path = %req.path, "open_path: path does not exist");
-        return Json(serde_json::json!({ "ok": false, "error": "path not found" }));
-    }
-    match open::that(&req.path) {
-        Ok(_) => {
-            debug!(path = %req.path, "opened path in OS");
-            Json(serde_json::json!({ "ok": true }))
-        }
-        Err(e) => {
-            warn!(path = %req.path, error = %e, "failed to open path");
-            Json(serde_json::json!({ "ok": false, "error": e.to_string() }))
-        }
-    }
-}
-
-fn main() {
-    dotenvy::dotenv().ok();
-
+fn init_logging() {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -281,7 +109,9 @@ fn main() {
             }),
         )
         .init();
+}
 
+fn init_data_dirs() -> (PathBuf, PathBuf, Option<PathBuf>) {
     let data_dir = default_data_dir();
     std::fs::create_dir_all(&data_dir).expect("failed to create data directory");
     info!(path = %data_dir.display(), "data directory ready");
@@ -293,10 +123,10 @@ fn main() {
         Some(ref dir) => info!(path = %dir.display(), "serving frontend"),
         None => warn!("no frontend dist found; pages will not load"),
     }
+    (db_path, webview_data_dir, frontend_dir)
+}
 
-    // Try the preferred fixed port so the WebView origin stays consistent
-    // across restarts (localStorage is scoped per-origin including port).
-    // Fall back to an OS-assigned port if the preferred one is occupied.
+fn bind_listener() -> (StdTcpListener, u16, String) {
     let std_listener = StdTcpListener::bind(format!("127.0.0.1:{PREFERRED_PORT}"))
         .or_else(|_| StdTcpListener::bind("127.0.0.1:0"))
         .expect("failed to bind to an available port");
@@ -306,12 +136,15 @@ fn main() {
     let port = std_listener.local_addr().unwrap().port();
     let url = format!("http://127.0.0.1:{port}");
     info!(%url, "server binding ready");
+    (std_listener, port, url)
+}
 
-    // Create event loop early so we can hand a proxy to the Axum server thread
-    let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
-    let proxy = event_loop.create_proxy();
-    let ide_proxy: Arc<EventLoopProxy<UserEvent>> = Arc::new(proxy.clone());
-
+fn spawn_server(
+    std_listener: StdTcpListener,
+    db_path: PathBuf,
+    frontend_dir: Option<PathBuf>,
+    ide_proxy: Arc<EventLoopProxy<UserEvent>>,
+) -> std::sync::mpsc::Receiver<()> {
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
 
     std::thread::spawn(move || {
@@ -321,23 +154,23 @@ fn main() {
 
             let app_state = aura_server::build_app_state(&db_path);
             let app = aura_server::create_router_with_frontend(app_state, frontend_dir)
-                .route("/api/pick-folder", axum_post(pick_folder))
-                .route("/api/pick-file", axum_post(pick_file))
-                .route("/api/open-path", axum_post(open_path))
-                .route("/api/read-file", axum_post(read_file))
-                .route("/api/write-file", axum_post(write_file))
+                .route("/api/pick-folder", axum_post(handlers::pick_folder))
+                .route("/api/pick-file", axum_post(handlers::pick_file))
+                .route("/api/open-path", axum_post(handlers::open_path))
+                .route("/api/read-file", axum_post(handlers::read_file))
+                .route("/api/write-file", axum_post(handlers::write_file))
                 .route(
                     "/api/open-ide",
-                    axum_post(open_ide).with_state(ide_proxy),
+                    axum_post(handlers::open_ide).with_state(ide_proxy),
                 )
                 .route(
                     "/api/update-status",
-                    axum_get(get_update_status).with_state(update_state.clone()),
+                    axum_get(handlers::get_update_status).with_state(update_state.clone()),
                 )
-                .route("/api/update-install", axum_post(post_update_install))
+                .route("/api/update-install", axum_post(handlers::post_update_install))
                 .route(
                     "/api/update-channel",
-                    axum_post(post_update_channel).with_state(update_state.clone()),
+                    axum_post(handlers::post_update_channel).with_state(update_state.clone()),
                 );
 
             updater::spawn_update_loop(update_state);
@@ -348,6 +181,77 @@ fn main() {
             axum::serve(listener, app).await.expect("server error");
         });
     });
+
+    ready_rx
+}
+
+fn create_main_window(
+    event_loop: &tao::event_loop::EventLoop<UserEvent>,
+    icon_data: &IconData,
+) -> (tao::window::Window, WindowId) {
+    let window = WindowBuilder::new()
+        .with_title("AURA")
+        .with_decorations(false)
+        .with_visible(false)
+        .with_window_icon(Some(icon_data.to_icon()))
+        .with_inner_size(tao::dpi::LogicalSize::new(1280.0, 800.0))
+        .build(event_loop)
+        .expect("failed to build window");
+    let id = window.id();
+    info!("window created");
+    (window, id)
+}
+
+const READY_SCRIPT: &str = "\
+    if (document.readyState === 'loading') { \
+        document.addEventListener('DOMContentLoaded', function() { window.ipc.postMessage('ready'); }); \
+    } else { \
+        window.ipc.postMessage('ready'); \
+    }";
+
+fn create_main_webview(
+    window: &tao::window::Window,
+    web_context: &mut WebContext,
+    url: &str,
+    proxy: EventLoopProxy<UserEvent>,
+    main_window_id: WindowId,
+) -> wry::WebView {
+    let builder = WebViewBuilder::new_with_web_context(web_context)
+        .with_background_color((0, 0, 0, 255))
+        .with_url(url)
+        .with_initialization_script(READY_SCRIPT)
+        .with_ipc_handler(ipc_handler(proxy, main_window_id))
+        .with_new_window_req_handler(|uri, _features| {
+            let _ = open::that(&uri);
+            wry::NewWindowResponse::Deny
+        });
+
+    #[cfg(not(target_os = "linux"))]
+    let webview = builder.build(window).expect("failed to build webview");
+
+    #[cfg(target_os = "linux")]
+    let webview = {
+        use wry::WebViewBuilderExtUnix;
+        builder
+            .build_gtk(window.gtk_window())
+            .expect("failed to build webview")
+    };
+
+    webview
+}
+
+fn main() {
+    dotenvy::dotenv().ok();
+    init_logging();
+
+    let (db_path, webview_data_dir, frontend_dir) = init_data_dirs();
+    let (std_listener, _port, url) = bind_listener();
+
+    let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    let proxy = event_loop.create_proxy();
+    let ide_proxy: Arc<EventLoopProxy<UserEvent>> = Arc::new(proxy.clone());
+
+    let ready_rx = spawn_server(std_listener, db_path, frontend_dir, ide_proxy);
 
     ready_rx
         .recv()
@@ -362,50 +266,9 @@ fn main() {
         IconData { rgba: rgba.into_raw(), width: w, height: h }
     };
 
-    let window = WindowBuilder::new()
-        .with_title("AURA")
-        .with_decorations(false)
-        .with_visible(false)
-        .with_window_icon(Some(icon_data.to_icon()))
-        .with_inner_size(tao::dpi::LogicalSize::new(1280.0, 800.0))
-        .build(&event_loop)
-        .expect("failed to build window");
-    let main_window_id = window.id();
-    info!("window created");
-
+    let (window, main_window_id) = create_main_window(&event_loop, &icon_data);
     let mut web_context = WebContext::new(Some(webview_data_dir));
-
-    const READY_SCRIPT: &str = "\
-        if (document.readyState === 'loading') { \
-            document.addEventListener('DOMContentLoaded', function() { window.ipc.postMessage('ready'); }); \
-        } else { \
-            window.ipc.postMessage('ready'); \
-        }";
-
-    let _main_webview = {
-        let builder = WebViewBuilder::new_with_web_context(&mut web_context)
-            .with_background_color((0, 0, 0, 255))
-            .with_url(&url)
-            .with_initialization_script(READY_SCRIPT)
-            .with_ipc_handler(ipc_handler(proxy.clone(), main_window_id))
-            .with_new_window_req_handler(|uri, _features| {
-                let _ = open::that(&uri);
-                wry::NewWindowResponse::Deny
-            });
-
-        #[cfg(not(target_os = "linux"))]
-        let webview = builder.build(&window).expect("failed to build webview");
-
-        #[cfg(target_os = "linux")]
-        let webview = {
-            use wry::WebViewBuilderExtUnix;
-            builder
-                .build_gtk(window.gtk_window())
-                .expect("failed to build webview")
-        };
-
-        webview
-    };
+    let _main_webview = create_main_webview(&window, &mut web_context, &url, proxy.clone(), main_window_id);
 
     {
         let fallback_proxy = proxy.clone();
