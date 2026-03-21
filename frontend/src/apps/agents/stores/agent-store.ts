@@ -101,7 +101,7 @@ export const useAgentStore = create<AgentState>()(
         }
 
         const promise = api.agents
-          .listMessages(agentId as never)
+          .listMessages(agentId)
           .then((raw) => {
             const messages = buildDisplayMessages(raw);
             set((s) => ({
