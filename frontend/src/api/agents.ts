@@ -2,16 +2,21 @@ import type { ProjectId, AgentId, AgentInstanceId, Agent, AgentInstance, Session
 import { apiFetch } from "./core";
 import { sendAgentMessageStream, sendMessageStream } from "./streams";
 
+type ApiRequestOptions = {
+  signal?: AbortSignal;
+};
+
 export const agentTemplatesApi = {
   list: () => apiFetch<Agent[]>("/api/agents"),
   create: (data: { name: string; role: string; personality: string; system_prompt: string; skills?: string[]; icon?: string }) =>
     apiFetch<Agent>("/api/agents", { method: "POST", body: JSON.stringify(data) }),
-  get: (agentId: AgentId) => apiFetch<Agent>(`/api/agents/${agentId}`),
+  get: (agentId: AgentId, options?: ApiRequestOptions) =>
+    apiFetch<Agent>(`/api/agents/${agentId}`, { signal: options?.signal }),
   update: (agentId: AgentId, data: { name?: string; role?: string; personality?: string; system_prompt?: string; skills?: string[]; icon?: string | null }) =>
     apiFetch<Agent>(`/api/agents/${agentId}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (agentId: AgentId) => apiFetch<void>(`/api/agents/${agentId}`, { method: "DELETE" }),
-  listMessages: (agentId: AgentId) =>
-    apiFetch<Message[]>(`/api/agents/${agentId}/messages`),
+  listMessages: (agentId: AgentId, options?: ApiRequestOptions) =>
+    apiFetch<Message[]>(`/api/agents/${agentId}/messages`, { signal: options?.signal }),
   sendMessageStream: sendAgentMessageStream,
 };
 
@@ -23,8 +28,8 @@ export const agentInstancesApi = {
     }),
   listAgentInstances: (projectId: ProjectId) =>
     apiFetch<AgentInstance[]>(`/api/projects/${projectId}/agents`),
-  getAgentInstance: (projectId: ProjectId, agentInstanceId: AgentInstanceId) =>
-    apiFetch<AgentInstance>(`/api/projects/${projectId}/agents/${agentInstanceId}`),
+  getAgentInstance: (projectId: ProjectId, agentInstanceId: AgentInstanceId, options?: ApiRequestOptions) =>
+    apiFetch<AgentInstance>(`/api/projects/${projectId}/agents/${agentInstanceId}`, { signal: options?.signal }),
   updateAgentInstance: (projectId: ProjectId, agentInstanceId: AgentInstanceId, data: Partial<Pick<AgentInstance, "name" | "role" | "personality" | "system_prompt" | "skills" | "icon" | "model">>) =>
     apiFetch<AgentInstance>(`/api/projects/${projectId}/agents/${agentInstanceId}`, {
       method: "PUT",
@@ -34,9 +39,10 @@ export const agentInstancesApi = {
     apiFetch<void>(`/api/projects/${projectId}/agents/${agentInstanceId}`, {
       method: "DELETE",
     }),
-  getMessages: (projectId: ProjectId, agentInstanceId: AgentInstanceId) =>
+  getMessages: (projectId: ProjectId, agentInstanceId: AgentInstanceId, options?: ApiRequestOptions) =>
     apiFetch<Message[]>(
       `/api/projects/${projectId}/agents/${agentInstanceId}/messages`,
+      { signal: options?.signal },
     ),
   sendMessageStream,
 };
