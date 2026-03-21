@@ -52,7 +52,7 @@ fn strip_property_descriptions(mut schema: serde_json::Value) -> serde_json::Val
 }
 
 /// Core filesystem, search, and shell tools shared by both chat agent and engine.
-pub fn core_tool_definitions() -> Vec<ToolDefinition> {
+pub(crate) fn core_tool_definitions() -> Vec<ToolDefinition> {
     let mut tools = filesystem_tools();
     tools.extend(shell_tools());
     tools.extend(search_tools());
@@ -60,6 +60,12 @@ pub fn core_tool_definitions() -> Vec<ToolDefinition> {
 }
 
 fn filesystem_tools() -> Vec<ToolDefinition> {
+    let mut tools = file_io_tools();
+    tools.extend(file_management_tools());
+    tools
+}
+
+fn file_io_tools() -> Vec<ToolDefinition> {
     vec![
         tool(
             "read_file",
@@ -87,6 +93,25 @@ fn filesystem_tools() -> Vec<ToolDefinition> {
             }),
         ),
         tool(
+            "edit_file",
+            "Make targeted edits to a file by replacing specific text. More efficient than write_file for small changes in large files. The old_text must be an exact match of existing content.",
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Relative path from project root" },
+                    "old_text": { "type": "string", "description": "Exact text to find and replace (must be unique in the file)" },
+                    "new_text": { "type": "string", "description": "Replacement text" },
+                    "replace_all": { "type": "boolean", "description": "If true, replace all occurrences (default: false, first only)" }
+                },
+                "required": ["path", "old_text", "new_text"]
+            }),
+        ),
+    ]
+}
+
+fn file_management_tools() -> Vec<ToolDefinition> {
+    vec![
+        tool(
             "delete_file",
             "Delete a file relative to the project folder.",
             serde_json::json!({
@@ -106,20 +131,6 @@ fn filesystem_tools() -> Vec<ToolDefinition> {
                     "path": { "type": "string", "description": "Relative directory path (empty or '.' for project root)" }
                 },
                 "required": []
-            }),
-        ),
-        tool(
-            "edit_file",
-            "Make targeted edits to a file by replacing specific text. More efficient than write_file for small changes in large files. The old_text must be an exact match of existing content.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "path": { "type": "string", "description": "Relative path from project root" },
-                    "old_text": { "type": "string", "description": "Exact text to find and replace (must be unique in the file)" },
-                    "new_text": { "type": "string", "description": "Replacement text" },
-                    "replace_all": { "type": "boolean", "description": "If true, replace all occurrences (default: false, first only)" }
-                },
-                "required": ["path", "old_text", "new_text"]
             }),
         ),
     ]
