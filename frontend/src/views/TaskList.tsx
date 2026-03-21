@@ -21,25 +21,14 @@ export function TaskList({ searchQuery }: { searchQuery: string }) {
   const { subscribe } = useEventContext();
   const loopActive = useLoopActive(projectId);
   const [liveTaskIds, setLiveTaskIds] = useState<Set<string>>(() => new Set());
-  const [localSpecs, setLocalSpecs] = useState<Spec[]>(() => ctx?.initialSpecs ?? []);
+  const [localSpecs] = useState<Spec[]>(() => ctx?.initialSpecs ?? []);
   const [localTasks, setLocalTasks] = useState<Task[]>(() => ctx?.initialTasks ?? []);
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
 
   const sidekickRef = useRef(sidekick);
   sidekickRef.current = sidekick;
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
-
-  useEffect(() => {
-    if (!projectId) return;
-    Promise.all([api.listSpecs(projectId), api.listTasks(projectId)])
-      .then(([s, t]) => {
-        setLocalSpecs(s.sort((a, b) => a.order_index - b.order_index));
-        setLocalTasks(t.sort((a, b) => a.order_index - b.order_index));
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [projectId]);
 
   const updateTaskStatus = useCallback(
     (taskId: string, newStatus: TaskStatus, extra?: Partial<Task>) => {

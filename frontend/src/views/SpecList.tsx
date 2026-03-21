@@ -54,11 +54,6 @@ export function SpecList({ searchQuery }: { searchQuery: string }) {
     [projectId],
   );
 
-  useEffect(() => {
-    if (!projectId) return;
-    fetchSpecs();
-  }, [projectId, fetchSpecs]);
-
   const prevSpecIdsRef = useRef<string>("");
   const specIds = useMemo(() => mergedSpecs.map((s) => s.spec_id).join(","), [mergedSpecs]);
   useEffect(() => {
