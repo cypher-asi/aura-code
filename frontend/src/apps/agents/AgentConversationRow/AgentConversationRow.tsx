@@ -4,6 +4,15 @@ import type { Agent } from "../../../types";
 import type { DisplayMessage } from "../../../types/stream";
 import styles from "./AgentConversationRow.module.css";
 
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/[*_~`#>]+/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\n+/g, " ")
+    .trim();
+}
+
 interface AgentConversationRowProps {
   agent: Agent;
   lastMessage: DisplayMessage | undefined;
@@ -22,7 +31,7 @@ export function AgentConversationRow({
   onMouseOver,
 }: AgentConversationRowProps) {
   const preview = lastMessage
-    ? `${lastMessage.role === "user" ? "You: " : ""}${lastMessage.content}`
+    ? `${lastMessage.role === "user" ? "You: " : ""}${stripMarkdown(lastMessage.content)}`
     : agent.role;
 
   return (
