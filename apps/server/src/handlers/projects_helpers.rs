@@ -25,10 +25,16 @@ struct ParsedNetworkMeta {
     updated_at: DateTime<Utc>,
 }
 
-fn parse_network_ids_and_dates(net: &NetworkProject) -> ParsedNetworkMeta {
-    ParsedNetworkMeta {
-        project_id: net.id.parse::<ProjectId>().unwrap_or_else(|_| ProjectId::new()),
-        org_id: net.org_id.parse::<OrgId>().unwrap_or_else(|_| OrgId::new()),
+fn parse_network_ids_and_dates(net: &NetworkProject) -> ApiResult<ParsedNetworkMeta> {
+    let project_id = net.id.parse::<ProjectId>().map_err(|e| {
+        ApiError::internal(format!("unparseable network project id '{}': {e}", net.id))
+    })?;
+    let org_id = net.org_id.parse::<OrgId>().map_err(|e| {
+        ApiError::internal(format!("unparseable network org id '{}': {e}", net.org_id))
+    })?;
+    Ok(ParsedNetworkMeta {
+        project_id,
+        org_id,
         created_at: net
             .created_at
             .as_deref()
@@ -41,11 +47,11 @@ fn parse_network_ids_and_dates(net: &NetworkProject) -> ParsedNetworkMeta {
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(Utc::now),
-    }
+    })
 }
 
-pub(crate) fn project_from_network(net: &NetworkProject, local: Option<&Project>) -> Project {
-    let meta = parse_network_ids_and_dates(net);
+pub(crate) fn project_from_network(net: &NetworkProject, local: Option<&Project>) -> ApiResult<Project> {
+    let meta = parse_network_ids_and_dates(net)?;
     let folder = net.folder.clone().unwrap_or_default();
     debug!(
         project_id = %net.id,
@@ -55,7 +61,7 @@ pub(crate) fn project_from_network(net: &NetworkProject, local: Option<&Project>
         "project_from_network"
     );
 
-    Project {
+    Ok(Project {
         project_id: meta.project_id,
         org_id: meta.org_id,
         name: net.name.clone(),
@@ -99,7 +105,7 @@ pub(crate) fn project_from_network(net: &NetworkProject, local: Option<&Project>
             .orbit_repo
             .clone()
             .or_else(|| local.and_then(|project| project.orbit_repo.clone())),
-    }
+    })
 }
 
 pub(crate) fn ensure_local_shadow(state: &AppState, project: &Project) {

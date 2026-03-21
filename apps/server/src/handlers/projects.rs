@@ -34,7 +34,7 @@ pub(crate) async fn list_all_projects_from_network(state: &AppState) -> ApiResul
                 .parse::<ProjectId>()
                 .ok()
                 .and_then(|project_id| state.project_service.get_project(&project_id).ok());
-            let project = project_from_network(net, local.as_ref());
+            let project = project_from_network(net, local.as_ref())?;
             ensure_local_shadow(state, &project);
             projects.push(project);
         }
@@ -85,11 +85,11 @@ async fn create_project_impl(
 
         let orbit = resolve_orbit_repo(state, req, &net_project, &jwt).await?;
 
+        let project_id = net_project.id.parse::<ProjectId>().map_err(|e| {
+            ApiError::internal(format!("unparseable network project id '{}': {e}", net_project.id))
+        })?;
         let local_shadow = build_local_shadow(
-            net_project
-                .id
-                .parse::<ProjectId>()
-                .unwrap_or_else(|_| ProjectId::new()),
+            project_id,
             req,
             orbit.git_repo_url,
             orbit.git_branch,
@@ -97,7 +97,7 @@ async fn create_project_impl(
             orbit.orbit_owner,
             orbit.orbit_repo,
         );
-        let project = project_from_network(&net_project, Some(&local_shadow));
+        let project = project_from_network(&net_project, Some(&local_shadow))?;
         ensure_local_shadow(state, &project);
         return Ok((StatusCode::CREATED, Json(project)));
     }
@@ -192,7 +192,7 @@ pub async fn list_projects(
                 .await
                 .map_err(map_network_error)?;
 
-            let projects = net_projects
+            let projects: Vec<Project> = net_projects
                 .iter()
                 .map(|net| {
                     let local = net
@@ -200,11 +200,11 @@ pub async fn list_projects(
                         .parse::<ProjectId>()
                         .ok()
                         .and_then(|project_id| state.project_service.get_project(&project_id).ok());
-                    let project = project_from_network(net, local.as_ref());
+                    let project = project_from_network(net, local.as_ref())?;
                     ensure_local_shadow(&state, &project);
-                    project
+                    Ok(project)
                 })
-                .collect();
+                .collect::<ApiResult<_>>()?;
             return Ok(Json(projects));
         }
 
@@ -233,7 +233,7 @@ pub async fn get_project(
             .await
             .map_err(map_network_error)?;
         let local = state.project_service.get_project(&project_id).ok();
-        let project = project_from_network(&net_project, local.as_ref());
+        let project = project_from_network(&net_project, local.as_ref())?;
         ensure_local_shadow(&state, &project);
         return Ok(Json(project));
     }
@@ -291,7 +291,7 @@ pub async fn update_project(
             .update_project(&project_id.to_string(), &jwt, &net_req)
             .await
             .map_err(map_network_error)?;
-        let merged = project_from_network(&net_project, Some(&project));
+        let merged = project_from_network(&net_project, Some(&project))?;
         ensure_local_shadow(&state, &merged);
         return Ok(Json(merged));
     }
