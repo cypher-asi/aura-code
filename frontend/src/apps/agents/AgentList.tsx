@@ -89,6 +89,14 @@ export function AgentList() {
     [fetchAgents, navigate],
   );
 
+  const handleHoverPrefetch = useCallback(
+    (e: React.MouseEvent) => {
+      const target = (e.target as HTMLElement).closest("button[id]");
+      if (target) useAgentStore.getState().prefetchHistory(target.id);
+    },
+    [],
+  );
+
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
       const target = (e.target as HTMLElement).closest("button[id]");
@@ -196,7 +204,7 @@ export function AgentList() {
 
   return (
     <div className={styles.list}>
-      <div onContextMenu={handleContextMenu}>
+      <div onContextMenu={handleContextMenu} onMouseOver={handleHoverPrefetch}>
         <Explorer
           data={filteredData}
           enableDragDrop={false}
