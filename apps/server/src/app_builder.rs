@@ -47,6 +47,10 @@ fn init_core_services(store: &Arc<RocksStore>) -> CoreServices {
         billing_client.clone(),
         store.clone(),
     ));
+    // Phase 8: construct the provider-agnostic runtime (not yet wired into services)
+    let _runtime: Arc<dyn aura_harness::AgentRuntime> = Arc::new(
+        aura_chat::InternalRuntime::new(llm.clone(), settings_service.clone()),
+    );
     CoreServices { org_service, auth_service, settings_service, pricing_service, billing_client, llm }
 }
 
