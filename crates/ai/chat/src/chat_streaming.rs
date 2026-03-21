@@ -238,21 +238,6 @@ impl ChatService {
         project_id: &ProjectId,
         tx: &mpsc::UnboundedSender<ChatStreamEvent>,
     ) {
-        let has_text_attachments_flag = stored_messages.iter().any(|m| {
-            m.role == ChatRole::User
-                && m.content_blocks
-                    .as_ref()
-                    .map(|blocks| {
-                        blocks.iter().any(|b| {
-                            matches!(b, ChatContentBlock::Text { text } if text.contains("[File:"))
-                        })
-                    })
-                    .unwrap_or(false)
-        });
-        if has_text_attachments_flag {
-            send_or_log(&tx, ChatStreamEvent::Progress("Analyzing attachments...".to_string()));
-        }
-
         let has_text_attachments = stored_messages.iter().any(|m| {
             m.role == ChatRole::User
                 && m.content_blocks
@@ -268,6 +253,8 @@ impl ChatService {
         if !has_text_attachments {
             return;
         }
+
+        send_or_log(&tx, ChatStreamEvent::Progress("Analyzing attachments...".to_string()));
 
         let requirements_content = extract_user_text(stored_messages);
         if requirements_content.is_empty() {
@@ -332,6 +319,29 @@ impl ChatService {
         // aura-storage project agents only support status updates, not token writes.
     }
 
+    fn build_assistant_message(
+        project_id: &ProjectId,
+        agent_instance_id: &AgentInstanceId,
+        result: &ToolLoopResult,
+        content_blocks: Option<&[ChatContentBlock]>,
+        thinking_start: std::time::Instant,
+    ) -> (Message, Option<String>, Option<u64>) {
+        let thinking = if result.thinking.is_empty() { None } else { Some(result.thinking.clone()) };
+        let thinking_duration_ms = thinking.as_ref().map(|_| thinking_start.elapsed().as_millis() as u64);
+        let msg = Message {
+            message_id: MessageId::new(),
+            agent_instance_id: *agent_instance_id,
+            project_id: *project_id,
+            role: ChatRole::Assistant,
+            content: result.text.clone(),
+            content_blocks: content_blocks.map(|b| b.to_vec()),
+            thinking: thinking.clone(),
+            thinking_duration_ms,
+            created_at: Utc::now(),
+        };
+        (msg, thinking, thinking_duration_ms)
+    }
+
     async fn save_assistant_message(
         &self,
         project_id: &ProjectId,
@@ -354,19 +364,10 @@ impl ChatService {
 
         if !result.text.is_empty() || has_tool_calls {
             let assistant_reply = result.text.clone();
-            let thinking = if result.thinking.is_empty() { None } else { Some(result.thinking) };
-            let thinking_duration_ms = thinking.as_ref().map(|_| thinking_start.elapsed().as_millis() as u64);
-            let assistant_msg = Message {
-                message_id: MessageId::new(),
-                agent_instance_id: *agent_instance_id,
-                project_id: *project_id,
-                role: ChatRole::Assistant,
-                content: result.text.clone(),
-                content_blocks: content_blocks.clone(),
-                thinking: thinking.clone(),
-                thinking_duration_ms,
-                created_at: Utc::now(),
-            };
+            let (assistant_msg, thinking, thinking_duration_ms) = Self::build_assistant_message(
+                project_id, agent_instance_id, &result,
+                content_blocks.as_deref(), thinking_start,
+            );
             send_or_log(&tx, ChatStreamEvent::MessageSaved(assistant_msg));
             self.save_message_to_storage(
                 project_id,
