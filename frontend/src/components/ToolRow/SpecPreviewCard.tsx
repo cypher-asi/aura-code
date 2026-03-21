@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FileText } from "lucide-react";
 import type { ToolCallEntry } from "../../types/stream";
+import { useHighlightedHtml } from "../../hooks/use-highlighted-html";
 import fileStyles from "../FilePreviewCard.module.css";
 
 const COLLAPSED_SPEC_LINES = 20;
@@ -16,6 +17,8 @@ export function SpecPreviewCard({ entry }: { entry: ToolCallEntry }) {
       ? lines.slice(0, COLLAPSED_SPEC_LINES).join("\n")
       : content;
 
+  const highlightedHtml = useHighlightedHtml(displayContent, "markdown");
+
   return (
     <div className={fileStyles.card}>
       <div className={fileStyles.header}>
@@ -25,7 +28,10 @@ export function SpecPreviewCard({ entry }: { entry: ToolCallEntry }) {
       </div>
       <div className={`${fileStyles.codeArea} ${!expanded && needsCollapse ? fileStyles.collapsed : ""}`}>
         <pre>
-          <code className="hljs language-markdown">{displayContent}</code>
+          <code
+            className="hljs language-markdown"
+            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+          />
         </pre>
       </div>
       {needsCollapse && (
