@@ -1,1 +1,1 @@
-export { SegmentedContent } from "./SegmentedContent";
+export * from "./SegmentedContent";

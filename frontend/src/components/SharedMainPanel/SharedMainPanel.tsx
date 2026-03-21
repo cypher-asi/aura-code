@@ -1,0 +1,29 @@
+import { useEffect, type ReactNode } from "react";
+import { ConnectionTaskbar } from "../ConnectionTaskbar";
+import { ResponsiveMainLane } from "../ResponsiveMainLane";
+import { TerminalPanelHeader, TerminalPanelBody } from "../TerminalPanel";
+import { useTerminalPanelStore } from "../../stores/terminal-panel-store";
+import { useProjectContext } from "../../stores/project-action-store";
+
+export function SharedMainPanel({ children }: { children?: ReactNode }) {
+  const ctx = useProjectContext();
+  const cwd = ctx?.project?.linked_folder_path;
+  const setCwd = useTerminalPanelStore((s) => s.setCwd);
+
+  useEffect(() => {
+    setCwd(cwd);
+  }, [cwd, setCwd]);
+
+  return (
+    <ResponsiveMainLane
+      taskbar={
+        <ConnectionTaskbar>
+          <TerminalPanelHeader />
+        </ConnectionTaskbar>
+      }
+      footer={<TerminalPanelBody />}
+    >
+      {children}
+    </ResponsiveMainLane>
+  );
+}

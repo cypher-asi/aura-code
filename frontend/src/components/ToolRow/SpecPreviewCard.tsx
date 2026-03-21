@@ -2,7 +2,7 @@ import { useState } from "react";
 import { FileText } from "lucide-react";
 import type { ToolCallEntry } from "../../types/stream";
 import { useHighlightedHtml } from "../../hooks/use-highlighted-html";
-import fileStyles from "../FilePreviewCard.module.css";
+import fileStyles from "../FilePreviewCard/FilePreviewCard.module.css";
 
 const COLLAPSED_SPEC_LINES = 20;
 

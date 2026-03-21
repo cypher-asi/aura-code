@@ -1,1 +1,1 @@
-export { ActivityTimeline } from "./ActivityTimeline";
+export * from "./ActivityTimeline";
