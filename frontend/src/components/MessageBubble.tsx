@@ -5,101 +5,14 @@ import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import { FileText, Plus, CheckCircle2, XCircle, Search, Terminal, Trash2, FolderOpen, Wrench } from "lucide-react";
 import type { ToolCallEntry, ArtifactRef, DisplayContentBlockUnion, DisplayMessage } from "../types/stream";
+import { stripEmojis, normalizeMidSentenceBreaks } from "../utils/text-normalize";
+import { summarizeInput, formatResult, formatDuration } from "../utils/format";
 import styles from "./ChatView.module.css";
 import toolStyles from "./ToolCallBlock.module.css";
 import fileStyles from "./FilePreviewCard.module.css";
 import { ResponseBlock } from "./ResponseBlock";
 import { CookingIndicator, getStreamingPhaseLabel } from "./CookingIndicator";
 import { FilePreviewCard } from "./FilePreviewCard";
-
-/**
- * Split text into alternating prose / fenced-code segments so that
- * text-processing helpers can leave code blocks untouched.
- */
-function splitByCodeFences(text: string): { content: string; isCode: boolean }[] {
-  const segments: { content: string; isCode: boolean }[] = [];
-  const fenceRe = /^ {0,3}(`{3,}|~{3,})/gm;
-  let cursor = 0;
-  let insideCode = false;
-  let openFenceChar = "";
-  let openFenceLen = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = fenceRe.exec(text)) !== null) {
-    const fenceChar = match[1][0];
-    const fenceLen = match[1].length;
-
-    if (!insideCode) {
-      if (match.index > cursor) {
-        segments.push({ content: text.slice(cursor, match.index), isCode: false });
-      }
-      cursor = match.index;
-      insideCode = true;
-      openFenceChar = fenceChar;
-      openFenceLen = fenceLen;
-    } else if (fenceChar === openFenceChar && fenceLen >= openFenceLen) {
-      const lineEnd = text.indexOf("\n", match.index);
-      const blockEnd = lineEnd === -1 ? text.length : lineEnd + 1;
-      segments.push({ content: text.slice(cursor, blockEnd), isCode: true });
-      cursor = blockEnd;
-      insideCode = false;
-    }
-  }
-
-  if (cursor < text.length) {
-    segments.push({ content: text.slice(cursor), isCode: insideCode });
-  }
-
-  return segments;
-}
-
-function stripEmojis(text: string): string {
-  return splitByCodeFences(text)
-    .map((seg) =>
-      seg.isCode
-        ? seg.content
-        : seg.content
-            .replace(/\p{Extended_Pictographic}/gu, "")
-            .replace(/ {2,}/g, " "),
-    )
-    .join("");
-}
-
-/** Collapse accidental paragraph breaks in prose, preserving code blocks. */
-function normalizeProseBreaks(prose: string): string {
-  return prose.replace(/\n\n+/g, (match, offset) => {
-    const before = prose.slice(0, offset).split("\n");
-    const after = prose.slice(offset + match.length).split("\n");
-
-    const lastLine = before[before.length - 1]?.trim() ?? "";
-    const nextLine = after.find((line) => line.trim().length > 0)?.trim() ?? "";
-
-    const looksLikeTableRow = (line: string) => /^\|.+\|\s*$/.test(line);
-    if (looksLikeTableRow(lastLine) && looksLikeTableRow(nextLine)) {
-      return "\n";
-    }
-
-    const looksLikeSentenceEnd = /[.!?:]\s*$/.test(lastLine);
-    const looksLikeMarkdownBlock =
-      /^(?:[-*+]\s+|#+\s+|\d+[.)]\s+)/.test(lastLine) ||
-      /^(?:[-*+]\s+|#+\s+|\d+[.)]\s+)/.test(nextLine);
-    const looksLikeSpecIndex = /^\d{1,3}:\s+/.test(lastLine);
-    const looksLikeWrappedSentence =
-      /[a-z,]$/.test(lastLine) && /^[a-z]/.test(nextLine);
-
-    if (looksLikeSentenceEnd || looksLikeMarkdownBlock || looksLikeSpecIndex) {
-      return match;
-    }
-
-    return looksLikeWrappedSentence ? " " : match;
-  });
-}
-
-function normalizeMidSentenceBreaks(text: string): string {
-  return splitByCodeFences(text)
-    .map((seg) => (seg.isCode ? seg.content : normalizeProseBreaks(seg.content)))
-    .join("");
-}
 
 // ---------------------------------------------------------------------------
 // Inline tool-marker parsing: [tool: name(arg) -> ok|error] and [auto-build: ...]
@@ -496,37 +409,6 @@ function ArtifactRefsList({ refs }: { refs: ArtifactRef[] }) {
   );
 }
 
-function summarizeInput(name: string, input: Record<string, unknown>): string {
-  switch (name) {
-    case "read_file":
-    case "write_file":
-    case "delete_file":
-      return (input.path as string) || "";
-    case "list_files": {
-      const path = (input.path as string) || "";
-      return path === "." ? "" : path;
-    }
-    case "create_spec":
-    case "create_task":
-      return (input.title as string) || "";
-    case "get_spec":
-      return (input.spec_id as string)?.slice(0, 8) || "";
-    case "transition_task":
-      return `${(input.task_id as string)?.slice(0, 8)} → ${input.status}`;
-    default:
-      return "";
-  }
-}
-
-function formatResult(result: string): string {
-  try {
-    const parsed = JSON.parse(result);
-    return JSON.stringify(parsed, null, 2);
-  } catch {
-    return result;
-  }
-}
-
 const FILE_PREFIX_RE = /^\[File:\s*(.+?)\]\n\n([\s\S]*)$/;
 
 function FileAttachmentBlock({ text }: { text: string }) {
@@ -546,14 +428,6 @@ function FileAttachmentBlock({ text }: { text: string }) {
       <pre>{match[2]}</pre>
     </ResponseBlock>
   );
-}
-
-function formatDuration(ms: number): string {
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}m ${secs}s`;
 }
 
 interface ThinkingBlockProps {

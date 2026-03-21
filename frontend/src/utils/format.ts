@@ -47,6 +47,45 @@ export function formatModelName(model: string): string {
   return model.replace(/^claude-/, "").replace(/-(\d)$/, " $1");
 }
 
+export function formatDuration(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}m ${secs}s`;
+}
+
+export function summarizeInput(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case "read_file":
+    case "write_file":
+    case "delete_file":
+      return (input.path as string) || "";
+    case "list_files": {
+      const path = (input.path as string) || "";
+      return path === "." ? "" : path;
+    }
+    case "create_spec":
+    case "create_task":
+      return (input.title as string) || "";
+    case "get_spec":
+      return (input.spec_id as string)?.slice(0, 8) || "";
+    case "transition_task":
+      return `${(input.task_id as string)?.slice(0, 8)} → ${input.status}`;
+    default:
+      return "";
+  }
+}
+
+export function formatResult(result: string): string {
+  try {
+    const parsed = JSON.parse(result);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return result;
+  }
+}
+
 export function formatRelativeTime(iso: string): string {
   const date = new Date(iso);
   const now = Date.now();
