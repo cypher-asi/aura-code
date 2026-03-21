@@ -102,7 +102,8 @@ impl ClaudeClient {
 
             let status_code = status.as_u16();
             let body_text = response.text().await.unwrap_or_default();
-            error!(status = status_code, body = %body_text, "Claude API error response");
+            let truncated_body: String = body_text.chars().take(500).collect();
+            error!(status = status_code, body = %truncated_body, "Claude API error response");
 
             if (status_code == 429 || status_code == 529) && attempt < Self::MAX_RETRIES {
                 last_err = Some(ClaudeClientError::Overloaded);
@@ -153,7 +154,8 @@ impl ClaudeClient {
         if !status.is_success() {
             let status_code = status.as_u16();
             let body = response.text().await.unwrap_or_default();
-            error!(status = status_code, body = %body, "Claude API error response");
+            let truncated_body: String = body.chars().take(500).collect();
+            error!(status = status_code, body = %truncated_body, "Claude API error response");
             if status_code == 429 || status_code == 529 {
                 return Err(ClaudeClientError::Overloaded);
             }

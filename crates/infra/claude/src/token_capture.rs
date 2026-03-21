@@ -3,11 +3,19 @@ use tokio::sync::mpsc;
 use crate::channel_ext::send_or_log;
 use crate::types::ClaudeStreamEvent;
 
+#[derive(Default, Clone, Copy)]
+struct TokenUsage {
+    input: u64,
+    output: u64,
+    cache_creation: u64,
+    cache_read: u64,
+}
+
 /// Handle returned by [`StreamTokenCapture`] constructors. Await to get
 /// the captured `(input_tokens, output_tokens)` once the sender is dropped.
 pub struct TokenCaptureHandle {
     forwarder: tokio::task::JoinHandle<()>,
-    tokens: std::sync::Arc<tokio::sync::Mutex<(u64, u64, u64, u64)>>,
+    tokens: std::sync::Arc<tokio::sync::Mutex<TokenUsage>>,
 }
 
 impl TokenCaptureHandle {
@@ -15,7 +23,8 @@ impl TokenCaptureHandle {
     /// `(input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens)`.
     pub async fn finalize(self) -> (u64, u64, u64, u64) {
         let _ = self.forwarder.await;
-        *self.tokens.lock().await
+        let usage = *self.tokens.lock().await;
+        (usage.input, usage.output, usage.cache_creation, usage.cache_read)
     }
 }
 
@@ -29,7 +38,7 @@ impl StreamTokenCapture {
         outer: mpsc::UnboundedSender<ClaudeStreamEvent>,
     ) -> (mpsc::UnboundedSender<ClaudeStreamEvent>, TokenCaptureHandle) {
         let (tx, mut rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-        let tokens = std::sync::Arc::new(tokio::sync::Mutex::new((0u64, 0u64, 0u64, 0u64)));
+        let tokens = std::sync::Arc::new(tokio::sync::Mutex::new(TokenUsage::default()));
         let tc = tokens.clone();
         let forwarder = tokio::spawn(async move {
             while let Some(evt) = rx.recv().await {
@@ -37,11 +46,11 @@ impl StreamTokenCapture {
                     input_tokens, output_tokens,
                     cache_creation_input_tokens, cache_read_input_tokens, ..
                 } = &evt {
-                    let mut g = tc.lock().await;
-                    g.0 = *input_tokens;
-                    g.1 = *output_tokens;
-                    g.2 = *cache_creation_input_tokens;
-                    g.3 = *cache_read_input_tokens;
+                    let mut usage = tc.lock().await;
+                    usage.input = *input_tokens;
+                    usage.output = *output_tokens;
+                    usage.cache_creation = *cache_creation_input_tokens;
+                    usage.cache_read = *cache_read_input_tokens;
                 }
                 send_or_log(&outer, evt);
             }
@@ -53,7 +62,7 @@ impl StreamTokenCapture {
     /// token counts across multiple `Done` events (useful for build-fix loops).
     pub fn sink() -> (mpsc::UnboundedSender<ClaudeStreamEvent>, TokenCaptureHandle) {
         let (tx, mut rx) = mpsc::unbounded_channel::<ClaudeStreamEvent>();
-        let tokens = std::sync::Arc::new(tokio::sync::Mutex::new((0u64, 0u64, 0u64, 0u64)));
+        let tokens = std::sync::Arc::new(tokio::sync::Mutex::new(TokenUsage::default()));
         let tc = tokens.clone();
         let forwarder = tokio::spawn(async move {
             while let Some(evt) = rx.recv().await {
@@ -61,11 +70,11 @@ impl StreamTokenCapture {
                     input_tokens, output_tokens,
                     cache_creation_input_tokens, cache_read_input_tokens, ..
                 } = &evt {
-                    let mut g = tc.lock().await;
-                    g.0 += *input_tokens;
-                    g.1 += *output_tokens;
-                    g.2 += *cache_creation_input_tokens;
-                    g.3 += *cache_read_input_tokens;
+                    let mut usage = tc.lock().await;
+                    usage.input += *input_tokens;
+                    usage.output += *output_tokens;
+                    usage.cache_creation += *cache_creation_input_tokens;
+                    usage.cache_read += *cache_read_input_tokens;
                 }
             }
         });

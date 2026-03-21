@@ -22,7 +22,7 @@ async fn mock_handler(
     let (status, body) = if idx < responses.len() {
         responses[idx].clone()
     } else {
-        responses.last().unwrap().clone()
+        responses.last().expect("responses vec should not be empty").clone()
     };
     let sc = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     (sc, body).into_response()
@@ -33,8 +33,10 @@ async fn start_mock(responses: Vec<(u16, String)>) -> (String, CallCounter) {
     let app = Router::new()
         .route("/v1/messages", post(mock_handler))
         .with_state((counter.clone(), responses));
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind mock TCP listener");
+    let addr = listener.local_addr().expect("get local addr");
     tokio::spawn(async move { axum::serve(listener, app).await.ok() });
     (format!("http://{addr}"), counter)
 }

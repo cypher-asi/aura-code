@@ -53,7 +53,9 @@ data: {"type":"message_stop"}
 "#;
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let result = sse::parse_sse_events(sse_stream(raw), &tx).await.unwrap();
+    let result = sse::parse_sse_events(sse_stream(raw), &tx)
+        .await
+        .expect("parse simple text stream");
     drop(tx);
     let events = drain_events(&mut rx);
 
@@ -109,7 +111,9 @@ data: {\"type\":\"message_stop\"}\n\
 \n";
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let result = sse::parse_sse_events(sse_stream(raw), &tx).await.unwrap();
+    let result = sse::parse_sse_events(sse_stream(raw), &tx)
+        .await
+        .expect("parse tool use stream");
     drop(tx);
     let events = drain_events(&mut rx);
 
@@ -169,7 +173,9 @@ data: {"type":"message_stop"}
 "#;
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let result = sse::parse_sse_events(sse_stream(raw), &tx).await.unwrap();
+    let result = sse::parse_sse_events(sse_stream(raw), &tx)
+        .await
+        .expect("parse thinking stream");
     drop(tx);
     let events = drain_events(&mut rx);
 
@@ -211,7 +217,7 @@ data: {"type":"error","error":{"type":"overloaded_error","message":"API is overl
     let events = drain_events(&mut rx);
 
     assert!(result.is_err());
-    let err = result.unwrap_err();
+    let err = result.expect_err("should be error for overloaded");
     assert!(err.is_overloaded(), "Should be classified as overloaded: {err}");
     assert!(err.to_string().contains("overloaded"));
 
@@ -280,7 +286,7 @@ data: {"type":"message_stop"}
     let result =
         sse::parse_sse_events(sse_stream_chunked(vec![chunk1, chunk2, chunk3]), &tx)
             .await
-            .unwrap();
+            .expect("parse chunked delivery");
     drop(tx);
     let events = drain_events(&mut rx);
 
