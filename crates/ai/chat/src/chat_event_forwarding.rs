@@ -30,6 +30,12 @@ pub(crate) fn forward_tool_loop_event(
         ToolLoopEvent::ToolUseStarted { id, name } => {
             send_or_log(tx, ChatStreamEvent::ToolCallStarted { id, name });
         }
+        ToolLoopEvent::ToolInputDelta { id, partial_json } => {
+            send_or_log(tx, ChatStreamEvent::ToolCallDelta {
+                id,
+                partial_input: partial_json,
+            });
+        }
         ToolLoopEvent::ToolUseDetected { id, name, input } => {
             if let Ok(mut acc) = blocks.lock() {
                 acc.push(ChatContentBlock::ToolUse {

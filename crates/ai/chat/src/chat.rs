@@ -32,6 +32,10 @@ pub enum ChatStreamEvent {
         id: String,
         name: String,
     },
+    ToolCallDelta {
+        id: String,
+        partial_input: String,
+    },
     ToolCall {
         id: String,
         name: String,

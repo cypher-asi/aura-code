@@ -238,6 +238,10 @@ pub enum ToolLoopEvent {
         id: String,
         name: String,
     },
+    ToolInputDelta {
+        id: String,
+        partial_json: String,
+    },
     ToolUseDetected {
         id: String,
         name: String,

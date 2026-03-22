@@ -55,9 +55,14 @@ pub(crate) async fn run_single_iteration(
     let max_tokens = ctx.config.max_tokens;
     let reason = ctx.config.billing_reason;
 
+    const THINKING_TAPER_AFTER_ITERATION: usize = 2;
+    const THINKING_TAPER_FACTOR: f64 = 0.6;
+    const THINKING_MIN_BUDGET: f64 = 1_024.0;
+
     let thinking = ctx.config.thinking.as_ref().map(|base| {
-        if iteration > 2 {
-            ThinkingConfig::enabled((base.budget_tokens as f64 * 0.6).max(1_024.0) as u32)
+        if iteration > THINKING_TAPER_AFTER_ITERATION {
+            let tapered = (base.budget_tokens as f64 * THINKING_TAPER_FACTOR).max(THINKING_MIN_BUDGET);
+            ThinkingConfig::enabled(tapered as u32)
         } else {
             base.clone()
         }
@@ -96,6 +101,11 @@ pub(crate) async fn run_single_iteration(
                     send_or_log(ctx.event_tx, ToolLoopEvent::ToolUseStarted {
                         id: id.clone(),
                         name: name.clone(),
+                    });
+                }
+                ClaudeStreamEvent::ToolInputDelta { id, partial_json } => {
+                    send_or_log(ctx.event_tx, ToolLoopEvent::ToolInputDelta {
+                        id, partial_json,
                     });
                 }
                 ClaudeStreamEvent::ToolUse { id, name, input } => {

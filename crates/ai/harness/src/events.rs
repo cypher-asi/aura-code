@@ -17,6 +17,13 @@ pub enum RuntimeEvent {
         /// Tool name.
         name: String,
     },
+    /// A chunk of tool input JSON (streamed incrementally).
+    ToolInputDelta {
+        /// Tool use identifier.
+        id: String,
+        /// Partial JSON fragment.
+        partial_json: String,
+    },
     /// A tool invocation is fully parsed (input available).
     ToolUseDetected {
         /// Tool use identifier.
