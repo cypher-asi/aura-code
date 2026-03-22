@@ -232,6 +232,9 @@ pub fn build_test_app_from_store(
         llm_config.context_rollover_threshold,
         llm_config.max_context_tokens,
     ));
+    let runtime: Arc<dyn aura_harness::AgentRuntime> = Arc::new(
+        aura_chat::InternalRuntime::new(llm.clone(), settings_service.clone()),
+    );
     let chat_service = Arc::new(ChatService::new(ChatServiceDeps {
         store: store.clone(),
         settings: settings_service.clone(),
@@ -240,6 +243,7 @@ pub fn build_test_app_from_store(
         project_service: project_service.clone(),
         task_service: task_service.clone(),
         storage_client: storage_client.clone(),
+        runtime: runtime.clone(),
     }));
 
     let (event_tx, _event_rx) = mpsc::unbounded_channel::<EngineEvent>();
@@ -281,6 +285,7 @@ pub fn build_test_app_from_store(
         internal_service_token: None,
         runtime_agent_state: Arc::new(Mutex::new(HashMap::new())),
         agent_message_cache: Arc::new(Mutex::new(HashMap::new())),
+        runtime,
     };
 
     let app = aura_server::create_router(state.clone());

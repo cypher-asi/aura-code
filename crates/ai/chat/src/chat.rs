@@ -71,6 +71,7 @@ pub struct ChatService {
     pub(crate) task_service: Arc<TaskService>,
     pub(crate) storage_client: Option<Arc<StorageClient>>,
     pub(crate) llm_config: LlmConfig,
+    pub(crate) runtime: Arc<dyn aura_harness::AgentRuntime>,
 }
 
 pub struct ChatServiceDeps {
@@ -81,6 +82,7 @@ pub struct ChatServiceDeps {
     pub project_service: Arc<ProjectService>,
     pub task_service: Arc<TaskService>,
     pub storage_client: Option<Arc<StorageClient>>,
+    pub runtime: Arc<dyn aura_harness::AgentRuntime>,
 }
 
 impl ChatService {
@@ -98,6 +100,7 @@ impl ChatService {
             task_service: deps.task_service,
             storage_client: deps.storage_client,
             llm_config,
+            runtime: deps.runtime,
         }
     }
 

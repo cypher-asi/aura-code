@@ -4,18 +4,24 @@ use tokio::sync::mpsc;
 use tracing::{error, info};
 use aura_core::*;
 use aura_claude::ThinkingConfig;
+use aura_harness::RuntimeEvent;
 use aura_tools::agent_tool_definitions;
 use crate::channel_ext::send_or_log;
 use crate::chat::{ChatAttachment, ChatService, ChatStreamEvent};
 use crate::chat_event_forwarding::{
-    ContentBlockAccumulator, forward_with_text_accumulation, flush_text_buffer,
+    ContentBlockAccumulator, flush_text_buffer,
 };
 use crate::chat_message_conversion::build_attachment_blocks;
 use crate::constants::DEFAULT_STREAM_TIMEOUT;
 use crate::chat_context::build_chat_system_prompt;
 use crate::chat_tool_executor::ChatToolExecutor;
 use crate::chat_tool_loop_executor::{ForwardingToolExecutor, SingleProjectResolver};
-use crate::tool_loop::{run_tool_loop, ToolLoopConfig, ToolLoopEvent, ToolLoopInput, ToolLoopResult};
+use crate::internal_runtime::{
+    rich_messages_to_harness, tool_defs_to_harness, tool_loop_config_to_turn_config,
+    turn_result_to_tool_loop_result, map_runtime_event_to_chat_event,
+    ChatToolExecutorAdapter,
+};
+use crate::tool_loop::{ToolLoopConfig, ToolLoopResult};
 
 pub(crate) struct ChatLoopContext<'a> {
     pub(crate) project_id: &'a ProjectId,
@@ -71,7 +77,7 @@ impl ChatService {
 
         let thinking_start = std::time::Instant::now();
         let result = self.run_chat_tool_loop(
-            &api_key, &system, api_messages, &config, &executor, tx,
+            &api_key, &system, api_messages, &config, executor, tx,
             &tool_blocks,
         ).await;
 
@@ -131,41 +137,89 @@ impl ChatService {
 
     async fn run_chat_tool_loop(
         &self,
-        api_key: &str,
+        _api_key: &str,
         system: &str,
         api_messages: Vec<aura_claude::RichMessage>,
         config: &ToolLoopConfig,
-        executor: &ForwardingToolExecutor<SingleProjectResolver>,
+        executor: ForwardingToolExecutor<SingleProjectResolver>,
         tx: &mpsc::UnboundedSender<ChatStreamEvent>,
         shared_blocks: &ContentBlockAccumulator,
     ) -> ToolLoopResult {
         let tools: Arc<[aura_claude::ToolDefinition]> =
             agent_tool_definitions().iter().cloned().map(Into::into).collect::<Vec<_>>().into();
-        let (loop_tx, mut loop_rx) = mpsc::unbounded_channel::<ToolLoopEvent>();
+
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel::<RuntimeEvent>();
         let tx_clone = tx.clone();
         let fwd_blocks = Arc::clone(shared_blocks);
 
         let forwarder = tokio::spawn(async move {
             let mut text_buffer = String::new();
-            while let Some(evt) = loop_rx.recv().await {
-                forward_with_text_accumulation(evt, &tx_clone, &fwd_blocks, &mut text_buffer);
+            while let Some(evt) = event_rx.recv().await {
+                match &evt {
+                    RuntimeEvent::Delta(text) => {
+                        text_buffer.push_str(text);
+                    }
+                    RuntimeEvent::ToolUseStarted { .. } | RuntimeEvent::ToolUseDetected { .. } => {
+                        flush_text_buffer(&fwd_blocks, &mut text_buffer);
+                    }
+                    _ => {}
+                }
+                if let RuntimeEvent::ToolUseDetected { id, name, input } = &evt {
+                    if let Ok(mut acc) = fwd_blocks.lock() {
+                        acc.push(ChatContentBlock::ToolUse {
+                            id: id.clone(),
+                            name: name.clone(),
+                            input: input.clone(),
+                        });
+                    }
+                }
+                if let RuntimeEvent::ToolResult { tool_use_id, content, is_error, .. } = &evt {
+                    if let Ok(mut acc) = fwd_blocks.lock() {
+                        acc.push(ChatContentBlock::ToolResult {
+                            tool_use_id: tool_use_id.clone(),
+                            content: content.clone(),
+                            is_error: if *is_error { Some(true) } else { None },
+                        });
+                    }
+                }
+                if let Some(chat_evt) = map_runtime_event_to_chat_event(evt) {
+                    send_or_log(&tx_clone, chat_evt);
+                }
             }
             flush_text_buffer(&fwd_blocks, &mut text_buffer);
         });
-        let result = run_tool_loop(ToolLoopInput {
-            llm: self.llm.clone(),
-            api_key,
-            system_prompt: system,
-            initial_messages: api_messages,
-            tools,
-            config,
-            executor,
-            event_tx: &loop_tx,
-        })
-        .await;
-        drop(loop_tx);
+
+        let adapter: Arc<dyn aura_harness::ToolExecutor> = Arc::new(
+            ChatToolExecutorAdapter { inner: executor },
+        );
+        let request = aura_harness::TurnRequest {
+            system_prompt: system.to_string(),
+            messages: rich_messages_to_harness(api_messages),
+            tools: tool_defs_to_harness(tools),
+            executor: adapter,
+            config: tool_loop_config_to_turn_config(config),
+            event_tx: Some(event_tx),
+        };
+
+        let turn_result = self.runtime.execute_turn(request).await;
         let _ = forwarder.await;
-        result
+
+        match turn_result {
+            Ok(result) => turn_result_to_tool_loop_result(result),
+            Err(e) => {
+                send_or_log(tx, ChatStreamEvent::Error(format!("Runtime error: {e}")));
+                ToolLoopResult {
+                    text: String::new(),
+                    thinking: String::new(),
+                    total_input_tokens: 0,
+                    total_output_tokens: 0,
+                    iterations_run: 0,
+                    timed_out: false,
+                    insufficient_credits: false,
+                    llm_error: Some(e.to_string()),
+                }
+            }
+        }
     }
 
     async fn prepare_chat_context(

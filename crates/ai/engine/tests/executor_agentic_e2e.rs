@@ -66,6 +66,9 @@ mod tests {
         );
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
+        let runtime: Arc<dyn aura_harness::AgentRuntime> = Arc::new(
+            aura_chat::InternalRuntime::new(llm.clone(), settings.clone()),
+        );
         let engine = Arc::new(
             DevLoopEngine::new(
                 store.clone(),
@@ -76,6 +79,7 @@ mod tests {
                 agent_instance_service,
                 session_service,
                 event_tx,
+                runtime,
             )
             .with_storage_client(Some(storage_client.clone())),
         );
@@ -293,6 +297,9 @@ mod tests {
         let project_dir = tmp.path().join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
 
+        let runtime: Arc<dyn aura_harness::AgentRuntime> = Arc::new(
+            aura_chat::InternalRuntime::new(llm.clone(), settings.clone()),
+        );
         let engine = Arc::new(
             DevLoopEngine::new(
                 store.clone(),
@@ -303,6 +310,7 @@ mod tests {
                 agent_instance_service,
                 session_service,
                 event_tx,
+                runtime,
             )
             .with_storage_client(Some(storage_client.clone())),
         );

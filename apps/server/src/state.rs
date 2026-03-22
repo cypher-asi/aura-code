@@ -78,6 +78,8 @@ pub struct AppState {
     pub agent_message_cache: AgentMessageCache,
     /// When true, non-Pro users are blocked from API access.
     pub require_zero_pro: bool,
+    /// Provider-agnostic agent runtime for executing agentic turns.
+    pub runtime: Arc<dyn aura_harness::AgentRuntime>,
 }
 
 impl AppState {
@@ -129,6 +131,7 @@ impl AppState {
                 self.agent_instance_service.clone(),
                 self.session_service.clone(),
                 self.event_tx.clone(),
+                self.runtime.clone(),
             )
             .with_write_coordinator(self.write_coordinator.clone())
             .with_storage_client(self.storage_client.clone())

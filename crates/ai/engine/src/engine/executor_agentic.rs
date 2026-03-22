@@ -3,11 +3,15 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use tokio::sync::{mpsc, Mutex};
-use tokio::task::JoinHandle;
 
 use aura_core::*;
 use aura_claude::{RichMessage, ThinkingConfig};
-use aura_chat::{ChatToolExecutor, ToolLoopConfig, ToolLoopEvent, ToolLoopInput, run_tool_loop};
+use aura_chat::{
+    ChatToolExecutor, ChatToolExecutorAdapter, ToolLoopConfig,
+    rich_messages_to_harness, tool_defs_to_harness, tool_loop_config_to_turn_config,
+    turn_result_to_tool_loop_result,
+};
+use aura_harness::RuntimeEvent;
 use aura_tools::engine_tool_definitions;
 
 use super::agentic_context::{
@@ -79,18 +83,18 @@ pub(crate) fn configure_llm_params(
     }
 }
 
-fn spawn_delta_forwarder(
+fn spawn_runtime_event_forwarder(
     engine_tx: &mpsc::UnboundedSender<EngineEvent>,
     pid: ProjectId,
     aiid: AgentInstanceId,
     task_id: TaskId,
-) -> (JoinHandle<()>, mpsc::UnboundedSender<ToolLoopEvent>) {
-    let (loop_tx, mut loop_rx) = mpsc::unbounded_channel::<ToolLoopEvent>();
+) -> (tokio::task::JoinHandle<()>, mpsc::UnboundedSender<RuntimeEvent>) {
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel::<RuntimeEvent>();
     let engine_tx = engine_tx.clone();
     let forwarder = tokio::spawn(async move {
-        while let Some(evt) = loop_rx.recv().await {
+        while let Some(evt) = event_rx.recv().await {
             match evt {
-                ToolLoopEvent::Delta(text) => {
+                RuntimeEvent::Delta(text) => {
                     send_or_log(&engine_tx, EngineEvent::TaskOutputDelta {
                         project_id: pid,
                         agent_instance_id: aiid,
@@ -98,7 +102,7 @@ fn spawn_delta_forwarder(
                         delta: text,
                     });
                 }
-                ToolLoopEvent::Error(msg) => {
+                RuntimeEvent::Error(msg) => {
                     send_or_log(&engine_tx, EngineEvent::TaskOutputDelta {
                         project_id: pid,
                         agent_instance_id: aiid,
@@ -110,7 +114,7 @@ fn spawn_delta_forwarder(
             }
         }
     });
-    (forwarder, loop_tx)
+    (forwarder, event_tx)
 }
 
 async fn finalize_tool_loop_result(
@@ -261,7 +265,6 @@ pub(crate) struct AgenticTaskParams<'a> {
     pub project_id: &'a ProjectId,
     pub task: &'a Task,
     pub session: &'a Session,
-    pub api_key: &'a str,
     pub agent: Option<&'a AgentInstance>,
     pub work_log: &'a [String],
     pub workspace_cache: &'a WorkspaceCache,
@@ -305,20 +308,32 @@ impl DevLoopEngine {
 
         let pid = *atp.project_id;
         let aiid = atp.session.agent_instance_id;
-        let (forwarder, loop_tx) = spawn_delta_forwarder(&self.event_tx, pid, aiid, atp.task.task_id);
+        let (forwarder, event_tx) = spawn_runtime_event_forwarder(&self.event_tx, pid, aiid, atp.task.task_id);
 
-        let result = run_tool_loop(ToolLoopInput {
-            llm: self.llm.clone(),
-            api_key: atp.api_key,
-            system_prompt: &setup.system_prompt,
-            initial_messages: vec![RichMessage::user(&setup.task_context)],
-            tools: engine_tool_definitions().iter().cloned().map(Into::into).collect::<Vec<_>>().into(),
-            config: &config,
-            executor: &executor,
-            event_tx: &loop_tx,
-        }).await;
-        drop(loop_tx);
+        let tools: Arc<[aura_claude::ToolDefinition]> =
+            engine_tool_definitions().iter().cloned().map(Into::into).collect::<Vec<_>>().into();
+
+        let adapter: Arc<dyn aura_harness::ToolExecutor> = Arc::new(
+            ChatToolExecutorAdapter { inner: executor },
+        );
+        let request = aura_harness::TurnRequest {
+            system_prompt: setup.system_prompt,
+            messages: rich_messages_to_harness(vec![RichMessage::user(&setup.task_context)]),
+            tools: tool_defs_to_harness(tools),
+            executor: adapter,
+            config: tool_loop_config_to_turn_config(&config),
+            event_tx: Some(event_tx),
+        };
+
+        let turn_result = self.runtime.execute_turn(request).await;
         let _ = forwarder.await;
+
+        let result = match turn_result {
+            Ok(r) => turn_result_to_tool_loop_result(r),
+            Err(e) => {
+                return Err(EngineError::LlmError(e.to_string()));
+            }
+        };
 
         finalize_tool_loop_result(result, tracked_file_ops, notes, follow_ups).await
     }

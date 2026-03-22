@@ -33,6 +33,7 @@ struct CoreServices {
     pricing_service: Arc<PricingService>,
     billing_client: Arc<BillingClient>,
     llm: Arc<MeteredLlm>,
+    runtime: Arc<dyn aura_harness::AgentRuntime>,
 }
 
 fn init_core_services(store: &Arc<RocksStore>) -> CoreServices {
@@ -47,11 +48,10 @@ fn init_core_services(store: &Arc<RocksStore>) -> CoreServices {
         billing_client.clone(),
         store.clone(),
     ));
-    // Phase 8: construct the provider-agnostic runtime (not yet wired into services)
-    let _runtime: Arc<dyn aura_harness::AgentRuntime> = Arc::new(
+    let runtime: Arc<dyn aura_harness::AgentRuntime> = Arc::new(
         aura_chat::InternalRuntime::new(llm.clone(), settings_service.clone()),
     );
-    CoreServices { org_service, auth_service, settings_service, pricing_service, billing_client, llm }
+    CoreServices { org_service, auth_service, settings_service, pricing_service, billing_client, llm, runtime }
 }
 
 struct DomainServices {
@@ -112,6 +112,7 @@ fn init_domain_services(
         project_service: project_service.clone(),
         task_service: task_service.clone(),
         storage_client: storage_client.clone(),
+        runtime: core.runtime.clone(),
     }));
     DomainServices {
         project_service, spec_gen_service, task_extraction_service,
@@ -234,5 +235,6 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         require_zero_pro: std::env::var("REQUIRE_ZERO_PRO")
             .map(|v| v != "false" && v != "0")
             .unwrap_or(true),
+        runtime: core.runtime,
     }
 }

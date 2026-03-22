@@ -87,11 +87,15 @@ async fn setup(mock: Arc<MockLlmProvider>) -> TestHarness {
         updated_at: now,
     };
 
+    let runtime: Arc<dyn aura_harness::AgentRuntime> = Arc::new(
+        aura_chat::InternalRuntime::new(llm.clone(), settings.clone()),
+    );
     let chat_service = ChatService::with_config(
         ChatServiceDeps {
             store, settings, llm, spec_gen,
             project_service, task_service,
             storage_client: Some(storage_client),
+            runtime,
         },
         LlmConfig::from_env(),
     );

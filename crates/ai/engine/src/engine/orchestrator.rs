@@ -42,6 +42,7 @@ pub struct DevLoopEngine {
     pub(crate) storage_client: Option<Arc<StorageClient>>,
     pub(crate) network_client: Option<Arc<NetworkClient>>,
     pub(crate) internal_service_token: Option<String>,
+    pub(crate) runtime: Arc<dyn aura_harness::AgentRuntime>,
 }
 
 impl DevLoopEngine {
@@ -55,6 +56,7 @@ impl DevLoopEngine {
         agent_instance_service: Arc<AgentInstanceService>,
         session_service: Arc<SessionService>,
         event_tx: mpsc::UnboundedSender<EngineEvent>,
+        runtime: Arc<dyn aura_harness::AgentRuntime>,
     ) -> Self {
         let pricing_service = PricingService::new(store.clone());
         Self {
@@ -73,6 +75,7 @@ impl DevLoopEngine {
             storage_client: None,
             network_client: None,
             internal_service_token: None,
+            runtime,
         }
     }
 
@@ -351,7 +354,7 @@ impl DevLoopEngine {
         }
         let agentic_params = super::executor_agentic::AgenticTaskParams {
             project_id: &ctx.project_id, task, session: &ctx.session,
-            api_key: &ctx.api_key, agent,
+            agent,
             work_log: &ctx.work_log, workspace_cache: &ctx.workspace_cache,
         };
         tokio::select! {

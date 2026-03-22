@@ -127,7 +127,7 @@ impl DevLoopEngine {
             self.execute_shell_task(&project, &task, &cmd, aiid).await
         } else {
             self.execute_task_agentic(&super::executor_agentic::AgenticTaskParams {
-                project_id: &project_id, task: &task, session: &session, api_key: &api_key,
+                project_id: &project_id, task: &task, session: &session,
                 agent: Some(&agent), work_log: &[], workspace_cache: &workspace_cache,
             }).await
         };
