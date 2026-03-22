@@ -127,6 +127,17 @@ data: {\"type\":\"message_stop\"}\n\
     assert_eq!(result.input_tokens, 200);
     assert_eq!(result.output_tokens, 30);
 
+    let input_deltas: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(e, ClaudeStreamEvent::ToolInputDelta { .. }))
+        .collect();
+    assert_eq!(input_deltas.len(), 2, "should emit ToolInputDelta for each input_json_delta");
+    assert!(matches!(
+        &input_deltas[0],
+        ClaudeStreamEvent::ToolInputDelta { id, partial_json }
+            if id == "toolu_01" && partial_json == "{\"path\":"
+    ));
+
     assert!(events.iter().any(|e| matches!(
         e,
         ClaudeStreamEvent::ToolUse { name, .. } if name == "read_file"
@@ -414,4 +425,78 @@ data: {"type":"message_stop"}
         })
         .collect();
     assert_eq!(delta_texts, vec!["Hello ", "world"]);
+}
+
+// -- inject_message_cache_breakpoint -------------------------------------
+
+#[test]
+fn cache_breakpoint_on_last_user_message_array_content() {
+    let mut body = serde_json::json!({
+        "messages": [
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}
+            ]},
+            {"role": "assistant", "content": [{"type": "text", "text": "done"}]},
+            {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "t2", "content": "result"}
+            ]}
+        ]
+    });
+    inject_message_cache_breakpoint(&mut body);
+
+    let last_user = &body["messages"][2]["content"][0];
+    assert_eq!(
+        last_user["cache_control"],
+        serde_json::json!({"type": "ephemeral"}),
+    );
+    assert!(body["messages"][0]["content"][0].get("cache_control").is_none());
+}
+
+#[test]
+fn cache_breakpoint_on_string_content_promotes_to_array() {
+    let mut body = serde_json::json!({
+        "messages": [
+            {"role": "user", "content": "hello world"}
+        ]
+    });
+    inject_message_cache_breakpoint(&mut body);
+
+    let content = &body["messages"][0]["content"];
+    assert!(content.is_array(), "string content should be promoted to array");
+    assert_eq!(content[0]["type"], "text");
+    assert_eq!(content[0]["text"], "hello world");
+    assert_eq!(content[0]["cache_control"], serde_json::json!({"type": "ephemeral"}));
+}
+
+#[test]
+fn cache_breakpoint_skips_trailing_assistant_messages() {
+    let mut body = serde_json::json!({
+        "messages": [
+            {"role": "user", "content": [{"type": "text", "text": "task"}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "thinking..."}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "more"}]}
+        ]
+    });
+    inject_message_cache_breakpoint(&mut body);
+
+    let first_user_block = &body["messages"][0]["content"][0];
+    assert_eq!(
+        first_user_block["cache_control"],
+        serde_json::json!({"type": "ephemeral"}),
+        "should fall back to the only user message"
+    );
+}
+
+#[test]
+fn cache_breakpoint_noop_on_empty_messages() {
+    let mut body = serde_json::json!({"messages": []});
+    inject_message_cache_breakpoint(&mut body);
+    assert_eq!(body["messages"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn cache_breakpoint_noop_on_missing_messages() {
+    let mut body = serde_json::json!({"model": "test"});
+    inject_message_cache_breakpoint(&mut body);
+    assert!(body.get("messages").is_none());
 }

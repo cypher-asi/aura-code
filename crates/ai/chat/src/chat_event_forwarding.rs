@@ -294,6 +294,30 @@ mod tests {
         assert!(blocks.lock().unwrap().is_empty());
     }
 
+    #[test]
+    fn forward_tool_input_delta() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
+
+        forward_tool_loop_event(
+            ToolLoopEvent::ToolInputDelta {
+                id: "t1".into(),
+                partial_json: "{\"title\":".into(),
+            },
+            &tx,
+            &blocks,
+        );
+
+        match rx.try_recv().unwrap() {
+            ChatStreamEvent::ToolCallDelta { id, partial_input } => {
+                assert_eq!(id, "t1");
+                assert_eq!(partial_input, "{\"title\":");
+            }
+            other => panic!("expected ToolCallDelta, got {other:?}"),
+        }
+        assert!(blocks.lock().unwrap().is_empty());
+    }
+
     // ── extract_user_text ──────────────────────────────────────────
 
     #[test]
