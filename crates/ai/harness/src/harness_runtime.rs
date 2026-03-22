@@ -54,8 +54,8 @@ impl HarnessRuntime {
         let api_key = std::env::var("ANTHROPIC_API_KEY")
             .or_else(|_| std::env::var("AURA_API_KEY"))
             .unwrap_or_default();
-        let model = std::env::var("AURA_MODEL")
-            .unwrap_or_else(|_| "claude-opus-4-6-20250514".to_string());
+        let model =
+            std::env::var("AURA_MODEL").unwrap_or_else(|_| "claude-opus-4-6-20250514".to_string());
         let auth_token = std::env::var("AURA_AUTH_TOKEN").ok();
         Ok(Self {
             api_key,
@@ -257,6 +257,13 @@ fn forward_events(
                 aura_agent::AgentLoopEvent::ToolInputSnapshot { id, name, input } => {
                     let parsed = serde_json::from_str(&input)
                         .unwrap_or_else(|_| serde_json::Value::String(input));
+                    if !matches!(parsed, serde_json::Value::String(_)) {
+                        let _ = app_tx.send(RuntimeEvent::ToolUseDetected {
+                            id: id.clone(),
+                            name: name.clone(),
+                            input: parsed.clone(),
+                        });
+                    }
                     RuntimeEvent::ToolInputSnapshot {
                         id,
                         name,
@@ -288,13 +295,12 @@ fn forward_events(
                     RuntimeEvent::IterationComplete { iteration }
                 }
 
-                aura_agent::AgentLoopEvent::Error { message, .. } => {
-                    RuntimeEvent::Error(message)
-                }
+                aura_agent::AgentLoopEvent::Error { message, .. } => RuntimeEvent::Error(message),
 
-                // ToolComplete and Warning have no RuntimeEvent counterpart.
-                aura_agent::AgentLoopEvent::ToolComplete { .. }
-                | aura_agent::AgentLoopEvent::Warning(_) => continue,
+                aura_agent::AgentLoopEvent::Warning(warning) => RuntimeEvent::Warning(warning),
+
+                // ToolComplete has no RuntimeEvent counterpart.
+                aura_agent::AgentLoopEvent::ToolComplete { .. } => continue,
             };
 
             if app_tx.send(mapped).is_err() {
@@ -326,9 +332,9 @@ fn convert_message(msg: &types::Message) -> aura_reasoner::Message {
 
 fn convert_content_block(block: &types::ContentBlock) -> aura_reasoner::ContentBlock {
     match block {
-        types::ContentBlock::Text { text } => aura_reasoner::ContentBlock::Text {
-            text: text.clone(),
-        },
+        types::ContentBlock::Text { text } => {
+            aura_reasoner::ContentBlock::Text { text: text.clone() }
+        }
         types::ContentBlock::Image { source } => aura_reasoner::ContentBlock::Image {
             source: aura_reasoner::ImageSource {
                 source_type: source.source_type.clone(),
@@ -358,11 +364,12 @@ fn convert_tool_def(tool: &types::ToolDefinition) -> aura_reasoner::ToolDefiniti
         name: tool.name.clone(),
         description: tool.description.clone(),
         input_schema: tool.input_schema.clone(),
-        cache_control: tool.cache_control.as_ref().map(|cc| {
-            aura_reasoner::CacheControl {
+        cache_control: tool
+            .cache_control
+            .as_ref()
+            .map(|cc| aura_reasoner::CacheControl {
                 cache_type: cc.cache_type.clone(),
-            }
-        }),
+            }),
     }
 }
 

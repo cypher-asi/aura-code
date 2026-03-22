@@ -58,6 +58,8 @@ pub enum RuntimeEvent {
         /// Zero-based iteration index.
         iteration: usize,
     },
+    /// A non-fatal warning occurred during the turn.
+    Warning(String),
     /// An error occurred during the turn.
     Error(String),
 }

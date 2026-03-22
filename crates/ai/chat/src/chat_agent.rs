@@ -1,23 +1,26 @@
-use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 use tokio::sync::mpsc;
 use tracing::info;
 
-use aura_core::*;
 use aura_claude::ThinkingConfig;
+use aura_core::*;
+use aura_harness::RuntimeEvent;
 
 use crate::channel_ext::send_or_log;
 use crate::chat::{ChatService, ChatStreamEvent};
+use crate::chat_event_forwarding::{flush_text_buffer, ContentBlockAccumulator};
 use crate::chat_message_conversion::convert_messages_to_rich;
-use crate::chat_event_forwarding::{
-    ContentBlockAccumulator, forward_with_text_accumulation, flush_text_buffer,
-};
-use crate::constants::DEFAULT_STREAM_TIMEOUT;
 use crate::chat_tool_executor::ChatToolExecutor;
 use crate::chat_tool_loop_executor::{ForwardingToolExecutor, MultiProjectResolver};
-use crate::tool_loop::{run_tool_loop, ToolLoopConfig, ToolLoopEvent, ToolLoopInput};
+use crate::constants::DEFAULT_STREAM_TIMEOUT;
+use crate::internal_runtime::{
+    map_runtime_event_to_chat_event, rich_messages_to_harness, tool_defs_to_harness,
+    tool_loop_config_to_turn_config, turn_result_to_tool_loop_result, ChatToolExecutorAdapter,
+};
+use crate::tool_loop::{ToolLoopConfig, ToolLoopResult};
 use aura_tools::multi_project_tool_definitions;
 
 fn build_multi_project_system_prompt(agent: &Agent, projects: &[Project]) -> String {
@@ -72,8 +75,13 @@ impl ChatService {
         tx: &mpsc::UnboundedSender<ChatStreamEvent>,
     ) {
         let AgentChatParams {
-            agent_id, agent, projects, stored_messages,
-            anchor_project_id, anchor_instance_id, active_session_id,
+            agent_id,
+            agent,
+            projects,
+            stored_messages,
+            anchor_project_id,
+            anchor_instance_id,
+            active_session_id,
         } = params;
         let send = |evt: ChatStreamEvent| {
             send_or_log(tx, evt);
@@ -87,7 +95,10 @@ impl ChatService {
             }
         };
 
-        send_or_log(tx, ChatStreamEvent::Progress("Building context...".to_string()));
+        send_or_log(
+            tx,
+            ChatStreamEvent::Progress("Building context...".to_string()),
+        );
 
         let system = build_multi_project_system_prompt(agent, projects);
 
@@ -100,15 +111,20 @@ impl ChatService {
         api_messages = crate::chat_sanitize::sanitize_orphan_tool_results(api_messages);
         api_messages = crate::chat_sanitize::sanitize_tool_use_results(api_messages);
 
-        send_or_log(tx, ChatStreamEvent::Progress("Waiting for response...".to_string()));
+        send_or_log(
+            tx,
+            ChatStreamEvent::Progress("Waiting for response...".to_string()),
+        );
 
-        let tools: Arc<[aura_claude::ToolDefinition]> =
-            multi_project_tool_definitions().iter().cloned().map(Into::into).collect::<Vec<_>>().into();
-
-        let allowed_project_ids: HashSet<String> = projects
+        let tools: Arc<[aura_claude::ToolDefinition]> = multi_project_tool_definitions()
             .iter()
-            .map(|p| p.project_id.to_string())
-            .collect();
+            .cloned()
+            .map(Into::into)
+            .collect::<Vec<_>>()
+            .into();
+
+        let allowed_project_ids: HashSet<String> =
+            projects.iter().map(|p| p.project_id.to_string()).collect();
 
         let tool_blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
 
@@ -119,7 +135,9 @@ impl ChatService {
                 self.project_service.clone(),
                 self.task_service.clone(),
             ),
-            resolver: MultiProjectResolver { allowed_project_ids },
+            resolver: MultiProjectResolver {
+                allowed_project_ids,
+            },
             chat_tx: tx.clone(),
             blocks: Arc::clone(&tool_blocks),
         };
@@ -141,31 +159,83 @@ impl ChatService {
 
         let thinking_start = std::time::Instant::now();
 
-        let (loop_tx, mut loop_rx) = mpsc::unbounded_channel::<ToolLoopEvent>();
+        let (event_tx, mut event_rx) = mpsc::unbounded_channel::<RuntimeEvent>();
         let tx_clone = tx.clone();
         let fwd_blocks = Arc::clone(&tool_blocks);
 
         let forwarder = tokio::spawn(async move {
             let mut text_buffer = String::new();
-            while let Some(evt) = loop_rx.recv().await {
-                forward_with_text_accumulation(evt, &tx_clone, &fwd_blocks, &mut text_buffer);
+            while let Some(evt) = event_rx.recv().await {
+                match &evt {
+                    RuntimeEvent::Delta(text) => {
+                        text_buffer.push_str(text);
+                    }
+                    RuntimeEvent::ToolUseStarted { .. } | RuntimeEvent::ToolUseDetected { .. } => {
+                        flush_text_buffer(&fwd_blocks, &mut text_buffer);
+                    }
+                    _ => {}
+                }
+                if let RuntimeEvent::ToolUseDetected { id, name, input } = &evt {
+                    if let Ok(mut acc) = fwd_blocks.lock() {
+                        acc.push(ChatContentBlock::ToolUse {
+                            id: id.clone(),
+                            name: name.clone(),
+                            input: input.clone(),
+                        });
+                    }
+                }
+                if let RuntimeEvent::ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                    ..
+                } = &evt
+                {
+                    if let Ok(mut acc) = fwd_blocks.lock() {
+                        acc.push(ChatContentBlock::ToolResult {
+                            tool_use_id: tool_use_id.clone(),
+                            content: content.clone(),
+                            is_error: if *is_error { Some(true) } else { None },
+                        });
+                    }
+                }
+                if let Some(chat_evt) = map_runtime_event_to_chat_event(evt) {
+                    send_or_log(&tx_clone, chat_evt);
+                }
             }
             flush_text_buffer(&fwd_blocks, &mut text_buffer);
         });
 
-        let result = run_tool_loop(ToolLoopInput {
-            llm: self.llm.clone(),
-            api_key: &api_key,
-            system_prompt: &system,
-            initial_messages: api_messages,
-            tools,
-            config: &config,
-            executor: &executor,
-            event_tx: &loop_tx,
-        })
-        .await;
-        drop(loop_tx);
+        let adapter: Arc<dyn aura_harness::ToolExecutor> =
+            Arc::new(ChatToolExecutorAdapter { inner: executor });
+        let request = aura_harness::TurnRequest {
+            system_prompt: system.to_string(),
+            messages: rich_messages_to_harness(api_messages),
+            tools: tool_defs_to_harness(tools),
+            executor: adapter,
+            config: tool_loop_config_to_turn_config(&config),
+            event_tx: Some(event_tx),
+        };
+
+        let turn_result = self.runtime.execute_turn(request).await;
         let _ = forwarder.await;
+
+        let result: ToolLoopResult = match turn_result {
+            Ok(r) => turn_result_to_tool_loop_result(r),
+            Err(e) => {
+                send_or_log(tx, ChatStreamEvent::Error(format!("Runtime error: {e}")));
+                ToolLoopResult {
+                    text: String::new(),
+                    thinking: String::new(),
+                    total_input_tokens: 0,
+                    total_output_tokens: 0,
+                    iterations_run: 0,
+                    timed_out: false,
+                    insufficient_credits: false,
+                    llm_error: Some(e.to_string()),
+                }
+            }
+        };
 
         info!(
             ?agent_id,
@@ -180,11 +250,21 @@ impl ChatService {
             Err(arc) => arc.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         };
         let has_tool_calls = !accumulated_blocks.is_empty();
-        let content_blocks = if has_tool_calls { Some(accumulated_blocks) } else { None };
+        let content_blocks = if has_tool_calls {
+            Some(accumulated_blocks)
+        } else {
+            None
+        };
 
         if !result.text.is_empty() || has_tool_calls {
-            let thinking = if result.thinking.is_empty() { None } else { Some(result.thinking) };
-            let thinking_duration_ms = thinking.as_ref().map(|_| thinking_start.elapsed().as_millis() as u64);
+            let thinking = if result.thinking.is_empty() {
+                None
+            } else {
+                Some(result.thinking)
+            };
+            let thinking_duration_ms = thinking
+                .as_ref()
+                .map(|_| thinking_start.elapsed().as_millis() as u64);
             let assistant_msg = Message {
                 message_id: MessageId::new(),
                 agent_instance_id: *anchor_instance_id,

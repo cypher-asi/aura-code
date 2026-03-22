@@ -9,11 +9,15 @@ use async_trait::async_trait;
 use tokio::sync::mpsc;
 
 use aura_billing::MeteredLlm;
-use aura_harness::{AgentRuntime, RuntimeError, RuntimeEvent, TotalUsage, TurnConfig, TurnRequest, TurnResult};
+use aura_harness::{
+    AgentRuntime, RuntimeError, RuntimeEvent, TotalUsage, TurnConfig, TurnRequest, TurnResult,
+};
 use aura_settings::SettingsService;
 
 use crate::chat::ChatStreamEvent;
-use crate::tool_loop::{run_tool_loop, ToolLoopConfig, ToolLoopEvent, ToolLoopInput, ToolLoopResult};
+use crate::tool_loop::{
+    run_tool_loop, ToolLoopConfig, ToolLoopEvent, ToolLoopInput, ToolLoopResult,
+};
 use crate::tool_loop_types::{self as chat_types};
 
 /// In-process agent runtime that delegates to [`run_tool_loop`].
@@ -117,20 +121,22 @@ impl chat_types::ToolExecutor for ExecutorAdapter {
     }
 
     async fn auto_build_check(&self) -> Option<chat_types::AutoBuildResult> {
-        self.inner.auto_build_check().await.map(|r| {
-            chat_types::AutoBuildResult {
+        self.inner
+            .auto_build_check()
+            .await
+            .map(|r| chat_types::AutoBuildResult {
                 success: r.success,
                 output: r.output,
-            }
-        })
+            })
     }
 
     async fn capture_build_baseline(&self) -> Option<chat_types::BuildBaseline> {
-        self.inner.capture_build_baseline().await.map(|r| {
-            chat_types::BuildBaseline {
+        self.inner
+            .capture_build_baseline()
+            .await
+            .map(|r| chat_types::BuildBaseline {
                 error_signatures: r.error_signatures,
-            }
-        })
+            })
     }
 }
 
@@ -187,9 +193,7 @@ fn convert_block(block: aura_harness::ContentBlock) -> aura_claude::ContentBlock
     }
 }
 
-fn convert_tools(
-    tools: Arc<[aura_harness::ToolDefinition]>,
-) -> Arc<[aura_claude::ToolDefinition]> {
+fn convert_tools(tools: Arc<[aura_harness::ToolDefinition]>) -> Arc<[aura_claude::ToolDefinition]> {
     let claude_tools: Vec<aura_claude::ToolDefinition> =
         tools.iter().map(convert_tool_def).collect();
     claude_tools.into()
@@ -200,9 +204,12 @@ fn convert_tool_def(td: &aura_harness::ToolDefinition) -> aura_claude::ToolDefin
         name: td.name.clone(),
         description: td.description.clone(),
         input_schema: td.input_schema.clone(),
-        cache_control: td.cache_control.as_ref().map(|cc| aura_claude::CacheControl {
-            cache_type: cc.cache_type.clone(),
-        }),
+        cache_control: td
+            .cache_control
+            .as_ref()
+            .map(|cc| aura_claude::CacheControl {
+                cache_type: cc.cache_type.clone(),
+            }),
     }
 }
 
@@ -210,10 +217,13 @@ fn convert_config(config: &aura_harness::TurnConfig) -> ToolLoopConfig {
     ToolLoopConfig {
         max_iterations: config.max_iterations,
         max_tokens: config.max_tokens,
-        thinking: config.thinking.as_ref().map(|tc| aura_claude::ThinkingConfig {
-            thinking_type: tc.thinking_type.clone(),
-            budget_tokens: tc.budget_tokens,
-        }),
+        thinking: config
+            .thinking
+            .as_ref()
+            .map(|tc| aura_claude::ThinkingConfig {
+                thinking_type: tc.thinking_type.clone(),
+                budget_tokens: tc.budget_tokens,
+            }),
         stream_timeout: config.stream_timeout,
         billing_reason: "agent_runtime",
         max_context_tokens: config.max_context_tokens,
@@ -243,9 +253,7 @@ fn map_loop_event(evt: ToolLoopEvent) -> RuntimeEvent {
     match evt {
         ToolLoopEvent::Delta(s) => RuntimeEvent::Delta(s),
         ToolLoopEvent::ThinkingDelta(s) => RuntimeEvent::ThinkingDelta(s),
-        ToolLoopEvent::ToolUseStarted { id, name } => {
-            RuntimeEvent::ToolUseStarted { id, name }
-        }
+        ToolLoopEvent::ToolUseStarted { id, name } => RuntimeEvent::ToolUseStarted { id, name },
         ToolLoopEvent::ToolInputSnapshot { id, name, input } => {
             RuntimeEvent::ToolInputSnapshot { id, name, input }
         }
@@ -308,9 +316,7 @@ fn message_content_to_harness(
     match content {
         aura_claude::MessageContent::Text(t) => aura_harness::MessageContent::Text(t),
         aura_claude::MessageContent::Blocks(blocks) => {
-            aura_harness::MessageContent::Blocks(
-                blocks.into_iter().map(block_to_harness).collect(),
-            )
+            aura_harness::MessageContent::Blocks(blocks.into_iter().map(block_to_harness).collect())
         }
     }
 }
@@ -353,9 +359,12 @@ fn tool_def_to_harness(td: &aura_claude::ToolDefinition) -> aura_harness::ToolDe
         name: td.name.clone(),
         description: td.description.clone(),
         input_schema: td.input_schema.clone(),
-        cache_control: td.cache_control.as_ref().map(|cc| aura_harness::CacheControl {
-            cache_type: cc.cache_type.clone(),
-        }),
+        cache_control: td
+            .cache_control
+            .as_ref()
+            .map(|cc| aura_harness::CacheControl {
+                cache_type: cc.cache_type.clone(),
+            }),
     }
 }
 
@@ -363,10 +372,13 @@ pub fn tool_loop_config_to_turn_config(config: &ToolLoopConfig) -> TurnConfig {
     TurnConfig {
         max_iterations: config.max_iterations,
         max_tokens: config.max_tokens,
-        thinking: config.thinking.as_ref().map(|tc| aura_harness::ThinkingConfig {
-            thinking_type: tc.thinking_type.clone(),
-            budget_tokens: tc.budget_tokens,
-        }),
+        thinking: config
+            .thinking
+            .as_ref()
+            .map(|tc| aura_harness::ThinkingConfig {
+                thinking_type: tc.thinking_type.clone(),
+                budget_tokens: tc.budget_tokens,
+            }),
         stream_timeout: config.stream_timeout,
         max_context_tokens: config.max_context_tokens,
         model_override: config.model_override.clone(),
@@ -402,8 +414,13 @@ pub struct ChatToolExecutorAdapter<T: chat_types::ToolExecutor + 'static> {
 }
 
 #[async_trait]
-impl<T: chat_types::ToolExecutor + 'static> aura_harness::ToolExecutor for ChatToolExecutorAdapter<T> {
-    async fn execute(&self, tool_calls: &[aura_harness::ToolCall]) -> Vec<aura_harness::ToolCallResult> {
+impl<T: chat_types::ToolExecutor + 'static> aura_harness::ToolExecutor
+    for ChatToolExecutorAdapter<T>
+{
+    async fn execute(
+        &self,
+        tool_calls: &[aura_harness::ToolCall],
+    ) -> Vec<aura_harness::ToolCallResult> {
         let claude_calls: Vec<aura_claude::ToolCall> = tool_calls
             .iter()
             .map(|tc| aura_claude::ToolCall {
@@ -427,16 +444,22 @@ impl<T: chat_types::ToolExecutor + 'static> aura_harness::ToolExecutor for ChatT
     }
 
     async fn auto_build_check(&self) -> Option<aura_harness::AutoBuildResult> {
-        self.inner.auto_build_check().await.map(|r| aura_harness::AutoBuildResult {
-            success: r.success,
-            output: r.output,
-        })
+        self.inner
+            .auto_build_check()
+            .await
+            .map(|r| aura_harness::AutoBuildResult {
+                success: r.success,
+                output: r.output,
+            })
     }
 
     async fn capture_build_baseline(&self) -> Option<aura_harness::BuildBaseline> {
-        self.inner.capture_build_baseline().await.map(|r| aura_harness::BuildBaseline {
-            error_signatures: r.error_signatures,
-        })
+        self.inner
+            .capture_build_baseline()
+            .await
+            .map(|r| aura_harness::BuildBaseline {
+                error_signatures: r.error_signatures,
+            })
     }
 }
 
@@ -479,6 +502,7 @@ pub fn map_runtime_event_to_chat_event(evt: RuntimeEvent) -> Option<ChatStreamEv
             input_tokens,
             output_tokens,
         }),
+        RuntimeEvent::Warning(msg) => Some(ChatStreamEvent::Progress(format!("Warning: {msg}"))),
         RuntimeEvent::Error(msg) => Some(ChatStreamEvent::Error(msg)),
         RuntimeEvent::IterationComplete { .. } => None,
     }

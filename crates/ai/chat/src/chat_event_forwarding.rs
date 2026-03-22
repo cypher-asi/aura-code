@@ -15,6 +15,7 @@ pub(crate) type ContentBlockAccumulator = Arc<Mutex<Vec<ChatContentBlock>>>;
 /// Uses `std::sync::Mutex` intentionally: the critical sections are sub-microsecond
 /// (single `Vec::push`) and never held across `.await` points, which is the
 /// recommended pattern per Tokio docs for short, synchronous locks.
+#[allow(dead_code)]
 pub(crate) fn forward_tool_loop_event(
     evt: ToolLoopEvent,
     tx: &mpsc::UnboundedSender<ChatStreamEvent>,
@@ -31,11 +32,7 @@ pub(crate) fn forward_tool_loop_event(
             send_or_log(tx, ChatStreamEvent::ToolCallStarted { id, name });
         }
         ToolLoopEvent::ToolInputSnapshot { id, name, input } => {
-            send_or_log(tx, ChatStreamEvent::ToolCallSnapshot {
-                id,
-                name,
-                input,
-            });
+            send_or_log(tx, ChatStreamEvent::ToolCallSnapshot { id, name, input });
         }
         ToolLoopEvent::ToolUseDetected { id, name, input } => {
             if let Ok(mut acc) = blocks.lock() {
@@ -60,21 +57,27 @@ pub(crate) fn forward_tool_loop_event(
                     is_error: if is_error { Some(true) } else { None },
                 });
             }
-            send_or_log(tx, ChatStreamEvent::ToolResult {
-                id: tool_use_id,
-                name: tool_name,
-                result: content,
-                is_error,
-            });
+            send_or_log(
+                tx,
+                ChatStreamEvent::ToolResult {
+                    id: tool_use_id,
+                    name: tool_name,
+                    result: content,
+                    is_error,
+                },
+            );
         }
         ToolLoopEvent::IterationTokenUsage {
             input_tokens,
             output_tokens,
         } => {
-            send_or_log(tx, ChatStreamEvent::TokenUsage {
-                input_tokens,
-                output_tokens,
-            });
+            send_or_log(
+                tx,
+                ChatStreamEvent::TokenUsage {
+                    input_tokens,
+                    output_tokens,
+                },
+            );
         }
         ToolLoopEvent::IterationComplete { .. } => {
             // Handled by the forwarder in chat_streaming to trigger incremental saves.
@@ -106,6 +109,7 @@ pub(crate) fn flush_text_buffer(blocks: &ContentBlockAccumulator, buf: &mut Stri
 /// the interleaved order that the live-stream timeline captures.
 /// The caller must call [`flush_text_buffer`] once more after the receive
 /// loop exits to commit any trailing text segment.
+#[allow(dead_code)]
 pub(crate) fn forward_with_text_accumulation(
     evt: ToolLoopEvent,
     tx: &mpsc::UnboundedSender<ChatStreamEvent>,
@@ -137,7 +141,11 @@ pub(crate) fn extract_user_text(messages: &[Message]) -> String {
                         _ => None,
                     })
                     .collect();
-                if texts.is_empty() { None } else { Some(texts.join("\n\n")) }
+                if texts.is_empty() {
+                    None
+                } else {
+                    Some(texts.join("\n\n"))
+                }
             });
             block_text.unwrap_or_else(|| m.content.clone())
         })
@@ -242,11 +250,18 @@ mod tests {
 
         let acc = blocks.lock().unwrap();
         assert_eq!(acc.len(), 1);
-        assert!(matches!(&acc[0], ChatContentBlock::ToolResult { tool_use_id, is_error, .. }
-            if tool_use_id == "t1" && is_error.is_none()));
+        assert!(
+            matches!(&acc[0], ChatContentBlock::ToolResult { tool_use_id, is_error, .. }
+            if tool_use_id == "t1" && is_error.is_none())
+        );
 
         match rx.try_recv().unwrap() {
-            ChatStreamEvent::ToolResult { id, name, result, is_error } => {
+            ChatStreamEvent::ToolResult {
+                id,
+                name,
+                result,
+                is_error,
+            } => {
                 assert_eq!(id, "t1");
                 assert_eq!(name, "read_file");
                 assert_eq!(result, "fn main() {}");
@@ -273,7 +288,13 @@ mod tests {
         );
 
         let acc = blocks.lock().unwrap();
-        assert!(matches!(&acc[0], ChatContentBlock::ToolResult { is_error: Some(true), .. }));
+        assert!(matches!(
+            &acc[0],
+            ChatContentBlock::ToolResult {
+                is_error: Some(true),
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -282,13 +303,19 @@ mod tests {
         let blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
 
         forward_tool_loop_event(
-            ToolLoopEvent::IterationTokenUsage { input_tokens: 100, output_tokens: 50 },
+            ToolLoopEvent::IterationTokenUsage {
+                input_tokens: 100,
+                output_tokens: 50,
+            },
             &tx,
             &blocks,
         );
 
         match rx.try_recv().unwrap() {
-            ChatStreamEvent::TokenUsage { input_tokens, output_tokens } => {
+            ChatStreamEvent::TokenUsage {
+                input_tokens,
+                output_tokens,
+            } => {
                 assert_eq!(input_tokens, 100);
                 assert_eq!(output_tokens, 50);
             }
@@ -301,11 +328,7 @@ mod tests {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
 
-        forward_tool_loop_event(
-            ToolLoopEvent::Error("something broke".into()),
-            &tx,
-            &blocks,
-        );
+        forward_tool_loop_event(ToolLoopEvent::Error("something broke".into()), &tx, &blocks);
 
         match rx.try_recv().unwrap() {
             ChatStreamEvent::Error(msg) => assert_eq!(msg, "something broke"),
@@ -319,7 +342,10 @@ mod tests {
         let blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
 
         forward_tool_loop_event(
-            ToolLoopEvent::ToolUseStarted { id: "t1".into(), name: "read_file".into() },
+            ToolLoopEvent::ToolUseStarted {
+                id: "t1".into(),
+                name: "read_file".into(),
+            },
             &tx,
             &blocks,
         );
@@ -390,38 +416,57 @@ mod tests {
         let mut buf = String::new();
 
         forward_with_text_accumulation(
-            ToolLoopEvent::Delta("hello ".into()), &tx, &blocks, &mut buf,
+            ToolLoopEvent::Delta("hello ".into()),
+            &tx,
+            &blocks,
+            &mut buf,
         );
         forward_with_text_accumulation(
-            ToolLoopEvent::Delta("world".into()), &tx, &blocks, &mut buf,
+            ToolLoopEvent::Delta("world".into()),
+            &tx,
+            &blocks,
+            &mut buf,
         );
         forward_with_text_accumulation(
-            ToolLoopEvent::ToolUseStarted { id: "t1".into(), name: "read_file".into() },
-            &tx, &blocks, &mut buf,
+            ToolLoopEvent::ToolUseStarted {
+                id: "t1".into(),
+                name: "read_file".into(),
+            },
+            &tx,
+            &blocks,
+            &mut buf,
         );
         forward_with_text_accumulation(
             ToolLoopEvent::ToolUseDetected {
-                id: "t1".into(), name: "read_file".into(), input: json!({"path": "a.rs"}),
+                id: "t1".into(),
+                name: "read_file".into(),
+                input: json!({"path": "a.rs"}),
             },
-            &tx, &blocks, &mut buf,
+            &tx,
+            &blocks,
+            &mut buf,
         );
         forward_with_text_accumulation(
             ToolLoopEvent::ToolResult {
-                tool_use_id: "t1".into(), tool_name: "read_file".into(),
-                content: "fn main(){}".into(), is_error: false,
+                tool_use_id: "t1".into(),
+                tool_name: "read_file".into(),
+                content: "fn main(){}".into(),
+                is_error: false,
             },
-            &tx, &blocks, &mut buf,
+            &tx,
+            &blocks,
+            &mut buf,
         );
-        forward_with_text_accumulation(
-            ToolLoopEvent::Delta("done".into()), &tx, &blocks, &mut buf,
-        );
+        forward_with_text_accumulation(ToolLoopEvent::Delta("done".into()), &tx, &blocks, &mut buf);
         flush_text_buffer(&blocks, &mut buf);
 
         let acc = blocks.lock().unwrap();
         assert_eq!(acc.len(), 4);
         assert!(matches!(&acc[0], ChatContentBlock::Text { text } if text == "hello world"));
         assert!(matches!(&acc[1], ChatContentBlock::ToolUse { id, .. } if id == "t1"));
-        assert!(matches!(&acc[2], ChatContentBlock::ToolResult { tool_use_id, .. } if tool_use_id == "t1"));
+        assert!(
+            matches!(&acc[2], ChatContentBlock::ToolResult { tool_use_id, .. } if tool_use_id == "t1")
+        );
         assert!(matches!(&acc[3], ChatContentBlock::Text { text } if text == "done"));
     }
 
@@ -432,14 +477,23 @@ mod tests {
         let mut buf = String::new();
 
         forward_with_text_accumulation(
-            ToolLoopEvent::ToolUseStarted { id: "t1".into(), name: "run".into() },
-            &tx, &blocks, &mut buf,
+            ToolLoopEvent::ToolUseStarted {
+                id: "t1".into(),
+                name: "run".into(),
+            },
+            &tx,
+            &blocks,
+            &mut buf,
         );
         forward_with_text_accumulation(
             ToolLoopEvent::ToolUseDetected {
-                id: "t1".into(), name: "run".into(), input: json!({}),
+                id: "t1".into(),
+                name: "run".into(),
+                input: json!({}),
             },
-            &tx, &blocks, &mut buf,
+            &tx,
+            &blocks,
+            &mut buf,
         );
         flush_text_buffer(&blocks, &mut buf);
 
@@ -455,7 +509,10 @@ mod tests {
         let mut buf = String::new();
 
         forward_with_text_accumulation(
-            ToolLoopEvent::Delta("just text".into()), &tx, &blocks, &mut buf,
+            ToolLoopEvent::Delta("just text".into()),
+            &tx,
+            &blocks,
+            &mut buf,
         );
         flush_text_buffer(&blocks, &mut buf);
 
@@ -470,16 +527,17 @@ mod tests {
         let blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
         let mut buf = String::new();
 
-        forward_with_text_accumulation(
-            ToolLoopEvent::Delta("hi".into()), &tx, &blocks, &mut buf,
-        );
+        forward_with_text_accumulation(ToolLoopEvent::Delta("hi".into()), &tx, &blocks, &mut buf);
         match rx.try_recv().unwrap() {
             ChatStreamEvent::Delta(t) => assert_eq!(t, "hi"),
             other => panic!("expected Delta, got {other:?}"),
         }
 
         forward_with_text_accumulation(
-            ToolLoopEvent::ThinkingDelta("hmm".into()), &tx, &blocks, &mut buf,
+            ToolLoopEvent::ThinkingDelta("hmm".into()),
+            &tx,
+            &blocks,
+            &mut buf,
         );
         match rx.try_recv().unwrap() {
             ChatStreamEvent::ThinkingDelta(t) => assert_eq!(t, "hmm"),
@@ -498,9 +556,9 @@ mod tests {
     #[test]
     fn extract_user_text_blocks_preferred_over_content() {
         let mut msg = make_msg(ChatRole::User, "fallback");
-        msg.content_blocks = Some(vec![
-            ChatContentBlock::Text { text: "from blocks".into() },
-        ]);
+        msg.content_blocks = Some(vec![ChatContentBlock::Text {
+            text: "from blocks".into(),
+        }]);
         assert_eq!(extract_user_text(&[msg]), "from blocks");
     }
 
@@ -541,13 +599,11 @@ mod tests {
     #[test]
     fn extract_user_text_blocks_with_non_text_blocks_only() {
         let mut msg = make_msg(ChatRole::User, "fallback content");
-        msg.content_blocks = Some(vec![
-            ChatContentBlock::ToolResult {
-                tool_use_id: "t1".into(),
-                content: "result".into(),
-                is_error: None,
-            },
-        ]);
+        msg.content_blocks = Some(vec![ChatContentBlock::ToolResult {
+            tool_use_id: "t1".into(),
+            content: "result".into(),
+            is_error: None,
+        }]);
         assert_eq!(extract_user_text(&[msg]), "fallback content");
     }
 
@@ -555,8 +611,12 @@ mod tests {
     fn extract_user_text_multiple_text_blocks_joined() {
         let mut msg = make_msg(ChatRole::User, "");
         msg.content_blocks = Some(vec![
-            ChatContentBlock::Text { text: "block one".into() },
-            ChatContentBlock::Text { text: "block two".into() },
+            ChatContentBlock::Text {
+                text: "block one".into(),
+            },
+            ChatContentBlock::Text {
+                text: "block two".into(),
+            },
         ]);
         let result = extract_user_text(&[msg]);
         assert!(result.contains("block one"));
