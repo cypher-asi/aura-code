@@ -2,9 +2,10 @@ use super::*;
 
 #[tokio::test]
 async fn test_tool_loop_simple_end_turn() {
-    let mock = Arc::new(MockLlmProvider::with_responses(vec![
-        MockResponse::text("Done!").with_tokens(100, 50),
-    ]));
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![MockResponse::text(
+        "Done!",
+    )
+    .with_tokens(100, 50)]));
 
     let (llm, _tmp) = testutil::make_test_llm(mock).await;
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
@@ -157,11 +158,16 @@ async fn test_stop_loop_flag_exits_after_first_iteration() {
     };
 
     let result = run_tool_loop(ToolLoopInput {
-        llm, api_key: "test-key", system_prompt: "test",
+        llm,
+        api_key: "test-key",
+        system_prompt: "test",
         initial_messages: vec![RichMessage::user("Do it")],
-        tools: Arc::from(Vec::<ToolDefinition>::new()), config: &config,
-        executor: &executor, event_tx: &event_tx,
-    }).await;
+        tools: Arc::from(Vec::<ToolDefinition>::new()),
+        config: &config,
+        executor: &executor,
+        event_tx: &event_tx,
+    })
+    .await;
 
     assert_eq!(result.iterations_run, 1);
     assert!(!result.timed_out);
@@ -171,10 +177,23 @@ async fn test_stop_loop_flag_exits_after_first_iteration() {
 async fn test_multiple_tool_calls_in_single_iteration() {
     let mock = Arc::new(MockLlmProvider::with_responses(vec![
         MockResponse::tool_use(vec![
-            ToolCall { id: "t1".into(), name: "read_file".into(), input: serde_json::json!({"path": "a.rs"}) },
-            ToolCall { id: "t2".into(), name: "read_file".into(), input: serde_json::json!({"path": "b.rs"}) },
-            ToolCall { id: "t3".into(), name: "read_file".into(), input: serde_json::json!({"path": "c.rs"}) },
-        ]).with_tokens(100, 80),
+            ToolCall {
+                id: "t1".into(),
+                name: "read_file".into(),
+                input: serde_json::json!({"path": "a.rs"}),
+            },
+            ToolCall {
+                id: "t2".into(),
+                name: "read_file".into(),
+                input: serde_json::json!({"path": "b.rs"}),
+            },
+            ToolCall {
+                id: "t3".into(),
+                name: "read_file".into(),
+                input: serde_json::json!({"path": "c.rs"}),
+            },
+        ])
+        .with_tokens(100, 80),
         MockResponse::text("All three read.").with_tokens(80, 40),
     ]));
 
@@ -184,21 +203,29 @@ async fn test_multiple_tool_calls_in_single_iteration() {
 
     let executor = SimpleExecutor {
         handler: Box::new(|calls| {
-            calls.iter().map(|tc| ToolCallResult {
-                tool_use_id: tc.id.clone(),
-                content: format!("content of {}", tc.input["path"].as_str().unwrap_or("")),
-                is_error: false,
-                stop_loop: false,
-            }).collect()
+            calls
+                .iter()
+                .map(|tc| ToolCallResult {
+                    tool_use_id: tc.id.clone(),
+                    content: format!("content of {}", tc.input["path"].as_str().unwrap_or("")),
+                    is_error: false,
+                    stop_loop: false,
+                })
+                .collect()
         }),
     };
 
     let result = run_tool_loop(ToolLoopInput {
-        llm, api_key: "test-key", system_prompt: "test",
+        llm,
+        api_key: "test-key",
+        system_prompt: "test",
         initial_messages: vec![RichMessage::user("Read three files")],
-        tools: Arc::from(Vec::<ToolDefinition>::new()), config: &config,
-        executor: &executor, event_tx: &event_tx,
-    }).await;
+        tools: Arc::from(Vec::<ToolDefinition>::new()),
+        config: &config,
+        executor: &executor,
+        event_tx: &event_tx,
+    })
+    .await;
 
     assert_eq!(result.iterations_run, 2);
 
@@ -208,22 +235,28 @@ async fn test_multiple_tool_calls_in_single_iteration() {
             tool_result_count += 1;
         }
     }
-    assert_eq!(tool_result_count, 3, "should have 3 tool results from the batch");
+    assert_eq!(
+        tool_result_count, 3,
+        "should have 3 tool results from the batch"
+    );
 }
 
 #[tokio::test]
 async fn test_text_accumulation_across_iterations() {
-    let mock = Arc::new(MockLlmProvider::with_responses(vec![{
-        let mut r = MockResponse::tool_use(vec![ToolCall {
-            id: "t1".into(),
-            name: "do_thing".into(),
-            input: serde_json::json!({}),
-        }]);
-        r.text = "First part".into();
-        r.input_tokens = 50;
-        r.output_tokens = 30;
-        r
-    }, MockResponse::text("Second part").with_tokens(50, 30)]));
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![
+        {
+            let mut r = MockResponse::tool_use(vec![ToolCall {
+                id: "t1".into(),
+                name: "do_thing".into(),
+                input: serde_json::json!({}),
+            }]);
+            r.text = "First part".into();
+            r.input_tokens = 50;
+            r.output_tokens = 30;
+            r
+        },
+        MockResponse::text("Second part").with_tokens(50, 30),
+    ]));
 
     let (llm, _tmp) = testutil::make_test_llm(mock).await;
     let (event_tx, _) = mpsc::unbounded_channel();
@@ -231,11 +264,16 @@ async fn test_text_accumulation_across_iterations() {
     let executor = ok_executor();
 
     let result = run_tool_loop(ToolLoopInput {
-        llm, api_key: "test-key", system_prompt: "test",
+        llm,
+        api_key: "test-key",
+        system_prompt: "test",
         initial_messages: vec![RichMessage::user("go")],
-        tools: Arc::from(Vec::<ToolDefinition>::new()), config: &config,
-        executor: &executor, event_tx: &event_tx,
-    }).await;
+        tools: Arc::from(Vec::<ToolDefinition>::new()),
+        config: &config,
+        executor: &executor,
+        event_tx: &event_tx,
+    })
+    .await;
 
     assert!(result.text.contains("First part"));
     assert!(result.text.contains("Second part"));
@@ -255,11 +293,16 @@ async fn test_empty_tool_call_list_with_tool_use_stop_reason() {
     let executor = noop_executor();
 
     let result = run_tool_loop(ToolLoopInput {
-        llm, api_key: "test-key", system_prompt: "test",
+        llm,
+        api_key: "test-key",
+        system_prompt: "test",
         initial_messages: vec![RichMessage::user("go")],
-        tools: Arc::from(Vec::<ToolDefinition>::new()), config: &config,
-        executor: &executor, event_tx: &event_tx,
-    }).await;
+        tools: Arc::from(Vec::<ToolDefinition>::new()),
+        config: &config,
+        executor: &executor,
+        event_tx: &event_tx,
+    })
+    .await;
 
     assert_eq!(result.iterations_run, 1);
     assert!(!result.timed_out);
@@ -287,30 +330,42 @@ async fn test_max_tokens_truncation_handling() {
     let executor = noop_executor();
 
     let result = run_tool_loop(ToolLoopInput {
-        llm, api_key: "test-key", system_prompt: "test",
+        llm,
+        api_key: "test-key",
+        system_prompt: "test",
         initial_messages: vec![RichMessage::user("write")],
-        tools: Arc::from(Vec::<ToolDefinition>::new()), config: &config,
-        executor: &executor, event_tx: &event_tx,
-    }).await;
+        tools: Arc::from(Vec::<ToolDefinition>::new()),
+        config: &config,
+        executor: &executor,
+        event_tx: &event_tx,
+    })
+    .await;
 
     assert_eq!(result.iterations_run, 2);
 
     let mut found_truncation_error = false;
     while let Ok(evt) = event_rx.try_recv() {
-        if let ToolLoopEvent::ToolResult { content, is_error, .. } = evt {
+        if let ToolLoopEvent::ToolResult {
+            content, is_error, ..
+        } = evt
+        {
             if is_error && content.contains("truncated") {
                 found_truncation_error = true;
             }
         }
     }
-    assert!(found_truncation_error, "should emit truncation error for tool calls with max_tokens");
+    assert!(
+        found_truncation_error,
+        "should emit truncation error for tool calls with max_tokens"
+    );
 }
 
 #[tokio::test]
 async fn test_zero_iterations_config() {
-    let mock = Arc::new(MockLlmProvider::with_responses(vec![
-        MockResponse::text("Should not run").with_tokens(100, 50),
-    ]));
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![MockResponse::text(
+        "Should not run",
+    )
+    .with_tokens(100, 50)]));
 
     let (llm, _tmp) = testutil::make_test_llm(mock).await;
     let (event_tx, _) = mpsc::unbounded_channel();
@@ -318,11 +373,16 @@ async fn test_zero_iterations_config() {
     let executor = noop_executor();
 
     let result = run_tool_loop(ToolLoopInput {
-        llm, api_key: "test-key", system_prompt: "test",
+        llm,
+        api_key: "test-key",
+        system_prompt: "test",
         initial_messages: vec![RichMessage::user("go")],
-        tools: Arc::from(Vec::<ToolDefinition>::new()), config: &config,
-        executor: &executor, event_tx: &event_tx,
-    }).await;
+        tools: Arc::from(Vec::<ToolDefinition>::new()),
+        config: &config,
+        executor: &executor,
+        event_tx: &event_tx,
+    })
+    .await;
 
     assert_eq!(result.iterations_run, 0);
 }
@@ -334,7 +394,8 @@ async fn test_event_emission_delta_tool_use_tool_result_token_usage() {
             id: "t1".into(),
             name: "read_file".into(),
             input: serde_json::json!({"path": "a.rs"}),
-        }]).with_tokens(100, 50),
+        }])
+        .with_tokens(100, 50),
         MockResponse::text("Done").with_tokens(80, 40),
     ]));
 
@@ -343,21 +404,29 @@ async fn test_event_emission_delta_tool_use_tool_result_token_usage() {
     let config = default_config(5);
     let executor = SimpleExecutor {
         handler: Box::new(|calls| {
-            calls.iter().map(|tc| ToolCallResult {
-                tool_use_id: tc.id.clone(),
-                content: "fn main() {}".into(),
-                is_error: false,
-                stop_loop: false,
-            }).collect()
+            calls
+                .iter()
+                .map(|tc| ToolCallResult {
+                    tool_use_id: tc.id.clone(),
+                    content: "fn main() {}".into(),
+                    is_error: false,
+                    stop_loop: false,
+                })
+                .collect()
         }),
     };
 
     let _result = run_tool_loop(ToolLoopInput {
-        llm, api_key: "test-key", system_prompt: "test",
+        llm,
+        api_key: "test-key",
+        system_prompt: "test",
         initial_messages: vec![RichMessage::user("read")],
-        tools: Arc::from(Vec::<ToolDefinition>::new()), config: &config,
-        executor: &executor, event_tx: &event_tx,
-    }).await;
+        tools: Arc::from(Vec::<ToolDefinition>::new()),
+        config: &config,
+        executor: &executor,
+        event_tx: &event_tx,
+    })
+    .await;
 
     let mut has_delta = false;
     let mut has_tool_use = false;

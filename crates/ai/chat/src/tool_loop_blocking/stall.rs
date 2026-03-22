@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use aura_claude::{RichMessage, ToolCall};
+use super::WriteTrackingState;
 use crate::channel_ext::send_or_log;
 use crate::constants::CMD_FAILURE_WARNING_THRESHOLD;
 use crate::tool_loop_types::{ToolCallResult, ToolLoopEvent};
-use super::WriteTrackingState;
+use aura_claude::{RichMessage, ToolCall};
 
 pub(crate) fn track_write_failures(
     tool_calls: &[ToolCall],

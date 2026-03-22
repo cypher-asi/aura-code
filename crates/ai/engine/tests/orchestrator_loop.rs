@@ -54,10 +54,7 @@ mod tests {
     }
 
     /// Start a mock storage server + billing, wire everything together.
-    async fn setup_with_config(
-        mock: Arc<MockLlmProvider>,
-        cfg: SetupConfig,
-    ) -> TestHarness {
+    async fn setup_with_config(mock: Arc<MockLlmProvider>, cfg: SetupConfig) -> TestHarness {
         let tmp = tempfile::TempDir::new().unwrap();
         let store = Arc::new(RocksStore::open(tmp.path()).unwrap());
 
@@ -68,9 +65,9 @@ mod tests {
         std::env::set_var("ANTHROPIC_API_KEY", "test-key");
 
         // Billing: use stateful mock so we can control balance
-        let billing_state = Arc::new(tokio::sync::Mutex::new(
-            testutil::MockBillingState::new(if cfg.zero_balance { 0 } else { 10_000_000 }),
-        ));
+        let billing_state = Arc::new(tokio::sync::Mutex::new(testutil::MockBillingState::new(
+            if cfg.zero_balance { 0 } else { 10_000_000 },
+        )));
         let billing_url = testutil::start_stateful_mock_billing_server(billing_state).await;
         let billing = Arc::new(testutil::billing_client_for_url(&billing_url));
 
@@ -93,8 +90,12 @@ mod tests {
             None,
         ));
         let session_service = Arc::new(
-            SessionService::new(store.clone(), cfg.rollover_threshold, cfg.model_context_window)
-                .with_storage_client(Some(storage_client.clone())),
+            SessionService::new(
+                store.clone(),
+                cfg.rollover_threshold,
+                cfg.model_context_window,
+            )
+            .with_storage_client(Some(storage_client.clone())),
         );
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
@@ -159,11 +160,15 @@ mod tests {
         }
     }
 
-    async fn setup_with_billing(
-        mock: Arc<MockLlmProvider>,
-        zero_balance: bool,
-    ) -> TestHarness {
-        setup_with_config(mock, SetupConfig { zero_balance, ..Default::default() }).await
+    async fn setup_with_billing(mock: Arc<MockLlmProvider>, zero_balance: bool) -> TestHarness {
+        setup_with_config(
+            mock,
+            SetupConfig {
+                zero_balance,
+                ..Default::default()
+            },
+        )
+        .await
     }
 
     async fn setup(mock: Arc<MockLlmProvider>) -> TestHarness {
@@ -171,11 +176,7 @@ mod tests {
     }
 
     /// Create a task in mock storage with the given status string.
-    async fn create_storage_task(
-        h: &TestHarness,
-        title: &str,
-        status: &str,
-    ) -> String {
+    async fn create_storage_task(h: &TestHarness, title: &str, status: &str) -> String {
         let jwt = h.store.get_jwt().unwrap();
         let task = h
             .storage_client
@@ -206,13 +207,12 @@ mod tests {
 
     #[tokio::test]
     async fn loop_completes_single_task() {
-        let mock = Arc::new(MockLlmProvider::with_responses(vec![
-            MockResponse::text("Task completed successfully"),
-        ]));
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![MockResponse::text(
+            "Task completed successfully",
+        )]));
         let mut h = setup(mock).await;
 
-        let task_id_str =
-            create_storage_task(&h, "Implement feature A", "ready").await;
+        let task_id_str = create_storage_task(&h, "Implement feature A", "ready").await;
 
         let handle = h.engine.clone().start(h.project_id, None).await.unwrap();
         let outcome = handle.wait().await.unwrap();
@@ -223,9 +223,15 @@ mod tests {
         );
 
         let events = collect_events(&mut h.event_rx);
-        assert!(events.iter().any(|e| matches!(e, EngineEvent::TaskStarted { .. })));
-        assert!(events.iter().any(|e| matches!(e, EngineEvent::TaskCompleted { .. })));
-        assert!(events.iter().any(|e| matches!(e, EngineEvent::LoopFinished { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, EngineEvent::TaskStarted { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, EngineEvent::TaskCompleted { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, EngineEvent::LoopFinished { .. })));
 
         let jwt = h.store.get_jwt().unwrap();
         let stored = h.storage_client.get_task(&task_id_str, &jwt).await.unwrap();
@@ -244,13 +250,19 @@ mod tests {
         let outcome = handle.wait().await.expect("loop should complete");
 
         assert!(
-            matches!(outcome, LoopOutcome::Paused { .. } | LoopOutcome::AllTasksComplete),
+            matches!(
+                outcome,
+                LoopOutcome::Paused { .. } | LoopOutcome::AllTasksComplete
+            ),
             "expected Paused or AllTasksComplete, got {outcome:?}"
         );
 
         let events = collect_events(&mut h.event_rx);
         assert!(events.iter().any(|e| {
-            matches!(e, EngineEvent::LoopPaused { .. } | EngineEvent::LoopFinished { .. })
+            matches!(
+                e,
+                EngineEvent::LoopPaused { .. } | EngineEvent::LoopFinished { .. }
+            )
         }));
     }
 
@@ -275,19 +287,25 @@ mod tests {
             outcome,
             LoopOutcome::Stopped { .. } | LoopOutcome::AllTasksComplete
         );
-        assert!(is_valid, "expected Stopped or AllTasksComplete, got {outcome:?}");
+        assert!(
+            is_valid,
+            "expected Stopped or AllTasksComplete, got {outcome:?}"
+        );
 
         let events = collect_events(&mut h.event_rx);
         assert!(events.iter().any(|e| {
-            matches!(e, EngineEvent::LoopStopped { .. } | EngineEvent::LoopFinished { .. })
+            matches!(
+                e,
+                EngineEvent::LoopStopped { .. } | EngineEvent::LoopFinished { .. }
+            )
         }));
     }
 
     #[tokio::test]
     async fn loop_retries_failed_tasks() {
-        let mock = Arc::new(MockLlmProvider::with_responses(vec![
-            MockResponse::text("done on retry"),
-        ]));
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![MockResponse::text(
+            "done on retry",
+        )]));
         let mut h = setup(mock).await;
 
         create_storage_task(&h, "Flaky task", "failed").await;
@@ -299,10 +317,16 @@ mod tests {
         let has_retry_ready = events
             .iter()
             .any(|e| matches!(e, EngineEvent::TaskBecameReady { .. }));
-        assert!(has_retry_ready, "expected TaskBecameReady for the failed task");
+        assert!(
+            has_retry_ready,
+            "expected TaskBecameReady for the failed task"
+        );
 
         assert!(
-            matches!(outcome, LoopOutcome::AllTasksComplete | LoopOutcome::AllTasksBlocked),
+            matches!(
+                outcome,
+                LoopOutcome::AllTasksComplete | LoopOutcome::AllTasksBlocked
+            ),
             "expected AllTasksComplete or AllTasksBlocked, got {outcome:?}"
         );
     }
@@ -312,8 +336,7 @@ mod tests {
         let mock = Arc::new(MockLlmProvider::new());
         let mut h = setup(mock).await;
 
-        let task_id_str =
-            create_storage_task(&h, "Run cargo --version", "ready").await;
+        let task_id_str = create_storage_task(&h, "Run cargo --version", "ready").await;
 
         let handle = h.engine.clone().start(h.project_id, None).await.unwrap();
         let outcome = handle.wait().await.unwrap();
@@ -329,25 +352,33 @@ mod tests {
 
         let events = collect_events(&mut h.event_rx);
         assert!(
-            events.iter().any(|e| matches!(e, EngineEvent::BuildVerificationStarted { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, EngineEvent::BuildVerificationStarted { .. })),
             "shell task should emit BuildVerificationStarted"
         );
         assert!(
-            events.iter().any(|e| matches!(e, EngineEvent::BuildVerificationPassed { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, EngineEvent::BuildVerificationPassed { .. })),
             "shell task should emit BuildVerificationPassed"
         );
     }
 
     #[tokio::test]
     async fn loop_runs_build_verification_when_configured() {
-        let mock = Arc::new(MockLlmProvider::with_responses(vec![
-            MockResponse::text("Task completed successfully"),
-        ]));
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![MockResponse::text(
+            "Task completed successfully",
+        )]));
 
-        let mut h = setup_with_config(mock, SetupConfig {
-            build_command: Some("cargo --version".into()),
-            ..Default::default()
-        }).await;
+        let mut h = setup_with_config(
+            mock,
+            SetupConfig {
+                build_command: Some("cargo --version".into()),
+                ..Default::default()
+            },
+        )
+        .await;
 
         create_storage_task(&h, "Implement feature A", "ready").await;
 
@@ -361,11 +392,15 @@ mod tests {
 
         let events = collect_events(&mut h.event_rx);
         assert!(
-            events.iter().any(|e| matches!(e, EngineEvent::BuildVerificationStarted { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, EngineEvent::BuildVerificationStarted { .. })),
             "should trigger build verification"
         );
         assert!(
-            events.iter().any(|e| matches!(e, EngineEvent::BuildVerificationPassed { .. })),
+            events
+                .iter()
+                .any(|e| matches!(e, EngineEvent::BuildVerificationPassed { .. })),
             "build verification should pass"
         );
     }
@@ -384,11 +419,15 @@ mod tests {
             MockResponse::text("Extra response").with_tokens(100, 50),
         ]));
 
-        let mut h = setup_with_config(mock, SetupConfig {
-            rollover_threshold: 0.01,
-            model_context_window: 10_000,
-            ..Default::default()
-        }).await;
+        let mut h = setup_with_config(
+            mock,
+            SetupConfig {
+                rollover_threshold: 0.01,
+                model_context_window: 10_000,
+                ..Default::default()
+            },
+        )
+        .await;
 
         for i in 0..3 {
             let jwt = h.store.get_jwt().unwrap();
@@ -440,9 +479,9 @@ mod tests {
 
     #[tokio::test]
     async fn loop_stops_on_credits_exhausted() {
-        let mock = Arc::new(MockLlmProvider::with_responses(vec![
-            MockResponse::text("unreachable"),
-        ]));
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![MockResponse::text(
+            "unreachable",
+        )]));
         let mut h = setup_with_billing(mock, true).await;
 
         create_storage_task(&h, "Task that needs credits", "ready").await;
@@ -456,6 +495,8 @@ mod tests {
         );
 
         let events = collect_events(&mut h.event_rx);
-        assert!(events.iter().any(|e| matches!(e, EngineEvent::LoopFinished { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, EngineEvent::LoopFinished { .. })));
     }
 }

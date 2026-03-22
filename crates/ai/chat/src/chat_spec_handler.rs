@@ -45,18 +45,30 @@ impl ChatService {
             "Spec gen finished"
         );
         self.update_instance_token_usage(
-            project_id, agent_instance_id,
-            spec_input_tokens, spec_output_tokens, tx,
+            project_id,
+            agent_instance_id,
+            spec_input_tokens,
+            spec_output_tokens,
+            tx,
         );
 
         if !accumulated.is_empty() {
-            let blocks = if content_blocks.is_empty() { None } else { Some(content_blocks) };
+            let blocks = if content_blocks.is_empty() {
+                None
+            } else {
+                Some(content_blocks)
+            };
             self.save_spec_assistant_message(SpecSaveContext {
-                project_id, agent_instance_id, content: &accumulated,
+                project_id,
+                agent_instance_id,
+                content: &accumulated,
                 content_blocks: blocks.as_deref(),
-                input_tokens: spec_input_tokens, output_tokens: spec_output_tokens,
-                tx, active_session_id,
-            }).await;
+                input_tokens: spec_input_tokens,
+                output_tokens: spec_output_tokens,
+                tx,
+                active_session_id,
+            })
+            .await;
         }
     }
 
@@ -84,10 +96,12 @@ impl ChatService {
             input_tokens: Some(ctx.input_tokens),
             output_tokens: Some(ctx.output_tokens),
             session_id: ctx.active_session_id,
-        }).await;
+        })
+        .await;
 
         if let Some(sid) = ctx.active_session_id {
-            self.update_session_context_usage(sid, ctx.input_tokens, ctx.output_tokens).await;
+            self.update_session_context_usage(sid, ctx.input_tokens, ctx.output_tokens)
+                .await;
         }
     }
 }
@@ -109,26 +123,39 @@ pub(crate) async fn drain_spec_events(
             SpecStreamEvent::Delta(text) => {
                 accumulated.push_str(&text);
             }
-            SpecStreamEvent::SpecDraftPreview { draft_index, title, markdown_preview } => {
+            SpecStreamEvent::SpecDraftPreview {
+                draft_index,
+                title,
+                markdown_preview,
+            } => {
                 let id = format!("draft-spec-{draft_index}");
                 if !draft_started || draft_index != current_draft_index {
                     current_draft_index = draft_index;
                     draft_started = true;
-                    send_or_log(tx, ChatStreamEvent::ToolCallStarted {
-                        id: id.clone(),
-                        name: "create_spec".into(),
-                    });
+                    send_or_log(
+                        tx,
+                        ChatStreamEvent::ToolCallStarted {
+                            id: id.clone(),
+                            name: "create_spec".into(),
+                        },
+                    );
                 }
                 let mut input = serde_json::Map::new();
                 if let Some(t) = title {
                     input.insert("title".into(), serde_json::Value::String(t));
                 }
-                input.insert("markdown_contents".into(), serde_json::Value::String(markdown_preview));
-                send_or_log(tx, ChatStreamEvent::ToolCallSnapshot {
-                    id,
-                    name: "create_spec".into(),
-                    input: serde_json::Value::Object(input),
-                });
+                input.insert(
+                    "markdown_contents".into(),
+                    serde_json::Value::String(markdown_preview),
+                );
+                send_or_log(
+                    tx,
+                    ChatStreamEvent::ToolCallSnapshot {
+                        id,
+                        name: "create_spec".into(),
+                        input: serde_json::Value::Object(input),
+                    },
+                );
             }
             SpecStreamEvent::SpecSaved(spec) => {
                 if draft_started {
@@ -137,17 +164,23 @@ pub(crate) async fn drain_spec_events(
                         "title": spec.title,
                         "markdown_contents": spec.markdown_contents,
                     });
-                    send_or_log(tx, ChatStreamEvent::ToolCall {
-                        id: id.clone(),
-                        name: "create_spec".into(),
-                        input,
-                    });
-                    send_or_log(tx, ChatStreamEvent::ToolResult {
-                        id,
-                        name: "create_spec".into(),
-                        result: format!("Spec \"{}\" saved", spec.title),
-                        is_error: false,
-                    });
+                    send_or_log(
+                        tx,
+                        ChatStreamEvent::ToolCall {
+                            id: id.clone(),
+                            name: "create_spec".into(),
+                            input,
+                        },
+                    );
+                    send_or_log(
+                        tx,
+                        ChatStreamEvent::ToolResult {
+                            id,
+                            name: "create_spec".into(),
+                            result: format!("Spec \"{}\" saved", spec.title),
+                            is_error: false,
+                        },
+                    );
                     draft_started = false;
                 }
                 content_blocks.push(ChatContentBlock::SpecRef {
@@ -169,13 +202,19 @@ pub(crate) async fn drain_spec_events(
                 });
                 send_or_log(tx, ChatStreamEvent::TaskSaved(task));
             }
-            SpecStreamEvent::TokenUsage { input_tokens: it, output_tokens: ot } => {
+            SpecStreamEvent::TokenUsage {
+                input_tokens: it,
+                output_tokens: ot,
+            } => {
                 input_tokens += it;
                 output_tokens += ot;
-                send_or_log(tx, ChatStreamEvent::TokenUsage {
-                    input_tokens,
-                    output_tokens,
-                });
+                send_or_log(
+                    tx,
+                    ChatStreamEvent::TokenUsage {
+                        input_tokens,
+                        output_tokens,
+                    },
+                );
             }
             SpecStreamEvent::Error(msg) => {
                 send_or_log(tx, ChatStreamEvent::Error(msg));
@@ -184,7 +223,10 @@ pub(crate) async fn drain_spec_events(
                 send_or_log(tx, ChatStreamEvent::Progress(stage));
             }
             SpecStreamEvent::Generating { .. } => {
-                send_or_log(tx, ChatStreamEvent::Progress("Generating spec...".to_string()));
+                send_or_log(
+                    tx,
+                    ChatStreamEvent::Progress("Generating spec...".to_string()),
+                );
             }
             SpecStreamEvent::Complete(_) => {}
         }
@@ -241,8 +283,12 @@ mod tests {
         let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
         let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
 
-        spec_tx.send(SpecStreamEvent::Delta("Hello ".into())).unwrap();
-        spec_tx.send(SpecStreamEvent::Delta("World".into())).unwrap();
+        spec_tx
+            .send(SpecStreamEvent::Delta("Hello ".into()))
+            .unwrap();
+        spec_tx
+            .send(SpecStreamEvent::Delta("World".into()))
+            .unwrap();
         drop(spec_tx);
 
         let (accumulated, _blocks, input_tokens, output_tokens) =
@@ -266,8 +312,18 @@ mod tests {
         let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
         let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
 
-        spec_tx.send(SpecStreamEvent::TokenUsage { input_tokens: 100, output_tokens: 50 }).unwrap();
-        spec_tx.send(SpecStreamEvent::TokenUsage { input_tokens: 200, output_tokens: 80 }).unwrap();
+        spec_tx
+            .send(SpecStreamEvent::TokenUsage {
+                input_tokens: 100,
+                output_tokens: 50,
+            })
+            .unwrap();
+        spec_tx
+            .send(SpecStreamEvent::TokenUsage {
+                input_tokens: 200,
+                output_tokens: 80,
+            })
+            .unwrap();
         drop(spec_tx);
 
         let (_, _blocks, input_tokens, output_tokens) =
@@ -278,7 +334,11 @@ mod tests {
 
         let mut usage_events = vec![];
         while let Ok(evt) = chat_rx.try_recv() {
-            if let ChatStreamEvent::TokenUsage { input_tokens, output_tokens } = evt {
+            if let ChatStreamEvent::TokenUsage {
+                input_tokens,
+                output_tokens,
+            } = evt
+            {
                 usage_events.push((input_tokens, output_tokens));
             }
         }
@@ -335,8 +395,12 @@ mod tests {
         let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
         let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
 
-        spec_tx.send(SpecStreamEvent::Progress("loading...".into())).unwrap();
-        spec_tx.send(SpecStreamEvent::Generating { tokens: 100 }).unwrap();
+        spec_tx
+            .send(SpecStreamEvent::Progress("loading...".into()))
+            .unwrap();
+        spec_tx
+            .send(SpecStreamEvent::Generating { tokens: 100 })
+            .unwrap();
         spec_tx.send(SpecStreamEvent::Complete(vec![])).unwrap();
         drop(spec_tx);
 
@@ -349,7 +413,11 @@ mod tests {
                 progress_events.push(stage);
             }
         }
-        assert_eq!(progress_events.len(), 2, "Progress and Generating should forward as Progress events");
+        assert_eq!(
+            progress_events.len(),
+            2,
+            "Progress and Generating should forward as Progress events"
+        );
         assert_eq!(progress_events[0], "loading...");
         assert_eq!(progress_events[1], "Generating spec...");
     }
@@ -359,8 +427,12 @@ mod tests {
         let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
         let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
 
-        spec_tx.send(SpecStreamEvent::SpecsTitle("My Project".into())).unwrap();
-        spec_tx.send(SpecStreamEvent::SpecsSummary("A summary".into())).unwrap();
+        spec_tx
+            .send(SpecStreamEvent::SpecsTitle("My Project".into()))
+            .unwrap();
+        spec_tx
+            .send(SpecStreamEvent::SpecsSummary("A summary".into()))
+            .unwrap();
         drop(spec_tx);
 
         drain_spec_events(&mut spec_rx, &chat_tx).await;
@@ -390,7 +462,9 @@ mod tests {
         let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
 
         let task = make_task();
-        spec_tx.send(SpecStreamEvent::TaskSaved(Box::new(task))).unwrap();
+        spec_tx
+            .send(SpecStreamEvent::TaskSaved(Box::new(task)))
+            .unwrap();
         drop(spec_tx);
 
         let (_accumulated, blocks, _it, _ot) = drain_spec_events(&mut spec_rx, &chat_tx).await;
@@ -412,16 +486,20 @@ mod tests {
         let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
         let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
 
-        spec_tx.send(SpecStreamEvent::SpecDraftPreview {
-            draft_index: 0,
-            title: Some("Auth Module".into()),
-            markdown_preview: "## Purpose\n\nHandle auth".into(),
-        }).unwrap();
-        spec_tx.send(SpecStreamEvent::SpecDraftPreview {
-            draft_index: 0,
-            title: Some("Auth Module".into()),
-            markdown_preview: "## Purpose\n\nHandle auth\n\n# Details".into(),
-        }).unwrap();
+        spec_tx
+            .send(SpecStreamEvent::SpecDraftPreview {
+                draft_index: 0,
+                title: Some("Auth Module".into()),
+                markdown_preview: "## Purpose\n\nHandle auth".into(),
+            })
+            .unwrap();
+        spec_tx
+            .send(SpecStreamEvent::SpecDraftPreview {
+                draft_index: 0,
+                title: Some("Auth Module".into()),
+                markdown_preview: "## Purpose\n\nHandle auth\n\n# Details".into(),
+            })
+            .unwrap();
         drop(spec_tx);
 
         drain_spec_events(&mut spec_rx, &chat_tx).await;
@@ -431,19 +509,29 @@ mod tests {
             events.push(evt);
         }
 
-        assert!(matches!(&events[0], ChatStreamEvent::ToolCallStarted { id, name }
+        assert!(
+            matches!(&events[0], ChatStreamEvent::ToolCallStarted { id, name }
             if id == "draft-spec-0" && name == "create_spec"),
-            "First event should be ToolCallStarted");
+            "First event should be ToolCallStarted"
+        );
 
-        assert!(matches!(&events[1], ChatStreamEvent::ToolCallSnapshot { id, name, .. }
+        assert!(
+            matches!(&events[1], ChatStreamEvent::ToolCallSnapshot { id, name, .. }
             if id == "draft-spec-0" && name == "create_spec"),
-            "Second event should be ToolCallSnapshot");
+            "Second event should be ToolCallSnapshot"
+        );
 
-        assert!(matches!(&events[2], ChatStreamEvent::ToolCallSnapshot { id, name, .. }
+        assert!(
+            matches!(&events[2], ChatStreamEvent::ToolCallSnapshot { id, name, .. }
             if id == "draft-spec-0" && name == "create_spec"),
-            "Third event should be another ToolCallSnapshot (no second ToolCallStarted)");
+            "Third event should be another ToolCallSnapshot (no second ToolCallStarted)"
+        );
 
-        assert_eq!(events.len(), 3, "Should be exactly 3 events: 1 started + 2 snapshots");
+        assert_eq!(
+            events.len(),
+            3,
+            "Should be exactly 3 events: 1 started + 2 snapshots"
+        );
     }
 
     #[tokio::test]
@@ -451,11 +539,13 @@ mod tests {
         let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
         let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
 
-        spec_tx.send(SpecStreamEvent::SpecDraftPreview {
-            draft_index: 0,
-            title: Some("Auth".into()),
-            markdown_preview: "preview".into(),
-        }).unwrap();
+        spec_tx
+            .send(SpecStreamEvent::SpecDraftPreview {
+                draft_index: 0,
+                title: Some("Auth".into()),
+                markdown_preview: "preview".into(),
+            })
+            .unwrap();
         let spec = make_spec();
         spec_tx.send(SpecStreamEvent::SpecSaved(spec)).unwrap();
         drop(spec_tx);
@@ -467,17 +557,23 @@ mod tests {
             events.push(evt);
         }
 
-        let event_names: Vec<&str> = events.iter().map(|e| match e {
-            ChatStreamEvent::ToolCallStarted { .. } => "started",
-            ChatStreamEvent::ToolCallSnapshot { .. } => "snapshot",
-            ChatStreamEvent::ToolCall { .. } => "call",
-            ChatStreamEvent::ToolResult { .. } => "result",
-            ChatStreamEvent::SpecSaved(_) => "spec_saved",
-            _ => "other",
-        }).collect();
+        let event_names: Vec<&str> = events
+            .iter()
+            .map(|e| match e {
+                ChatStreamEvent::ToolCallStarted { .. } => "started",
+                ChatStreamEvent::ToolCallSnapshot { .. } => "snapshot",
+                ChatStreamEvent::ToolCall { .. } => "call",
+                ChatStreamEvent::ToolResult { .. } => "result",
+                ChatStreamEvent::SpecSaved(_) => "spec_saved",
+                _ => "other",
+            })
+            .collect();
 
-        assert_eq!(event_names, vec!["started", "snapshot", "call", "result", "spec_saved"],
-            "Draft preview → SpecSaved should produce: started, snapshot, call, result, spec_saved");
+        assert_eq!(
+            event_names,
+            vec!["started", "snapshot", "call", "result", "spec_saved"],
+            "Draft preview → SpecSaved should produce: started, snapshot, call, result, spec_saved"
+        );
 
         assert_eq!(blocks.len(), 1);
         assert!(matches!(&blocks[0], ChatContentBlock::SpecRef { .. }));
@@ -488,18 +584,22 @@ mod tests {
         let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
         let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
 
-        spec_tx.send(SpecStreamEvent::SpecDraftPreview {
-            draft_index: 0,
-            title: Some("First".into()),
-            markdown_preview: "md1".into(),
-        }).unwrap();
+        spec_tx
+            .send(SpecStreamEvent::SpecDraftPreview {
+                draft_index: 0,
+                title: Some("First".into()),
+                markdown_preview: "md1".into(),
+            })
+            .unwrap();
         let spec1 = make_spec();
         spec_tx.send(SpecStreamEvent::SpecSaved(spec1)).unwrap();
-        spec_tx.send(SpecStreamEvent::SpecDraftPreview {
-            draft_index: 1,
-            title: Some("Second".into()),
-            markdown_preview: "md2".into(),
-        }).unwrap();
+        spec_tx
+            .send(SpecStreamEvent::SpecDraftPreview {
+                draft_index: 1,
+                title: Some("Second".into()),
+                markdown_preview: "md2".into(),
+            })
+            .unwrap();
         drop(spec_tx);
 
         drain_spec_events(&mut spec_rx, &chat_tx).await;
@@ -510,7 +610,10 @@ mod tests {
                 started_ids.push(id);
             }
         }
-        assert_eq!(started_ids, vec!["draft-spec-0", "draft-spec-1"],
-            "Each draft spec should get a distinct synthetic ID");
+        assert_eq!(
+            started_ids,
+            vec!["draft-spec-0", "draft-spec-1"],
+            "Each draft spec should get a distinct synthetic ID"
+        );
     }
 }

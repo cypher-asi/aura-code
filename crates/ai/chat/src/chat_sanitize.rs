@@ -102,9 +102,7 @@ pub(crate) fn sanitize_orphan_tool_results(messages: Vec<RichMessage>) -> Vec<Ri
         let kept: Vec<ContentBlock> = tool_result_blocks
             .into_iter()
             .filter_map(|b| match &b {
-                ContentBlock::ToolResult { tool_use_id, .. }
-                    if valid_ids.contains(tool_use_id) =>
-                {
+                ContentBlock::ToolResult { tool_use_id, .. } if valid_ids.contains(tool_use_id) => {
                     Some(b)
                 }
                 ContentBlock::ToolResult { tool_use_id, .. } => {

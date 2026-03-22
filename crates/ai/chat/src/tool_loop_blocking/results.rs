@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use tracing::warn;
 
-use aura_claude::ToolCall;
-use crate::tool_loop_types::ToolCallResult;
-use crate::tool_loop_read_guard as read_guard;
 use super::BlockedSets;
+use crate::tool_loop_read_guard as read_guard;
+use crate::tool_loop_types::ToolCallResult;
+use aura_claude::ToolCall;
 
 enum BlockReason<'a> {
     DuplicateWrite { path: &'a str },
@@ -32,22 +32,40 @@ fn classify_block<'a>(
     sets: &BlockedSets,
     ctx: &BlockedResultContext<'_>,
 ) -> Option<BlockReason<'a>> {
-    let path = || tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let path = || {
+        tc.input
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+    };
 
     if sets.duplicate_write.contains(&index) {
         Some(BlockReason::DuplicateWrite { path: path() })
     } else if sets.write_fail.contains(&index) {
-        Some(BlockReason::WriteFail { path: path(), count: ctx.file_write_failures.get(path()).copied().unwrap_or(0) })
+        Some(BlockReason::WriteFail {
+            path: path(),
+            count: ctx.file_write_failures.get(path()).copied().unwrap_or(0),
+        })
     } else if sets.cooldown.contains(&index) {
-        Some(BlockReason::Cooldown { path: path(), remaining: ctx.cooldowns.get(path()).copied().unwrap_or(0) })
+        Some(BlockReason::Cooldown {
+            path: path(),
+            remaining: ctx.cooldowns.get(path()).copied().unwrap_or(0),
+        })
     } else if sets.cmd.contains(&index) {
-        Some(BlockReason::CommandBlocked { consecutive_failures: ctx.consecutive_cmd_failures })
+        Some(BlockReason::CommandBlocked {
+            consecutive_failures: ctx.consecutive_cmd_failures,
+        })
     } else if sets.read.contains(&index) {
-        Some(BlockReason::ReadBlocked { path: path(), count: ctx.file_read_counts.get(path()).copied().unwrap_or(0) })
+        Some(BlockReason::ReadBlocked {
+            path: path(),
+            count: ctx.file_read_counts.get(path()).copied().unwrap_or(0),
+        })
     } else if sets.shell_read.contains(&index) {
         Some(BlockReason::ShellReadBlocked)
     } else if sets.exploration.contains(&index) {
-        Some(BlockReason::ExplorationBlocked { total_calls: ctx.exploration_total_calls })
+        Some(BlockReason::ExplorationBlocked {
+            total_calls: ctx.exploration_total_calls,
+        })
     } else {
         None
     }
@@ -73,7 +91,8 @@ pub(crate) fn build_blocked_result(
                      body at a time.",
                     tc.name, path
                 )
-            }).to_string()
+            })
+            .to_string()
         }
         BlockReason::WriteFail { path, count } => {
             warn!(path, count, tool = %tc.name, "Blocked write after repeated failures");
@@ -84,14 +103,19 @@ pub(crate) fn build_blocked_result(
             )
         }
         BlockReason::Cooldown { path, remaining } => {
-            warn!(path, remaining, "Blocked write_file during adaptive cooldown");
+            warn!(
+                path,
+                remaining, "Blocked write_file during adaptive cooldown"
+            );
             format!(
                 "write_file on '{path}' is temporarily blocked for {remaining} more iterations \
                  due to repeated rewrite stalls. Use edit_file with small, targeted chunks instead \
                  of rewriting the full file."
             )
         }
-        BlockReason::CommandBlocked { consecutive_failures } => {
+        BlockReason::CommandBlocked {
+            consecutive_failures,
+        } => {
             warn!(tool = %tc.name, consecutive_failures,
                 "Blocked run_command after 5+ consecutive failures");
             "run_command is temporarily blocked after 5+ consecutive failures. \

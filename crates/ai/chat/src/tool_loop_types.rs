@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use tokio::sync::mpsc;
 use aura_billing::MeteredLlm;
 use aura_claude::{RichMessage, ThinkingConfig, ToolCall, ToolDefinition};
+use tokio::sync::mpsc;
 
 // ---------------------------------------------------------------------------
 // Per-call input bundle (replaces 8 positional args to `run_tool_loop`)
@@ -192,7 +192,10 @@ impl BuildBaseline {
             if trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) && trimmed.contains('|') {
                 continue;
             }
-            if trimmed.chars().all(|c| c == '^' || c == '-' || c == ' ' || c == '~' || c == '+') {
+            if trimmed
+                .chars()
+                .all(|c| c == '^' || c == '-' || c == ' ' || c == '~' || c == '+')
+            {
                 continue;
             }
             let normalized = Self::strip_line_col(trimmed);

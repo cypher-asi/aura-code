@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use tokio::sync::mpsc;
 
-use aura_claude::{ContentBlock, ToolCall};
-use crate::compaction;
 use crate::channel_ext::send_or_log;
+use crate::compaction;
 use crate::tool_loop_types::{ToolCallResult, ToolLoopEvent};
+use aura_claude::{ContentBlock, ToolCall};
 
 pub(crate) fn build_tool_result_blocks(
     tool_calls: &[ToolCall],
@@ -17,29 +17,35 @@ pub(crate) fn build_tool_result_blocks(
     let mut result_blocks: Vec<ContentBlock> = Vec::new();
 
     for (tc, result) in tool_calls.iter().zip(results) {
-        send_or_log(event_tx, ToolLoopEvent::ToolResult {
-            tool_use_id: result.tool_use_id.clone(),
-            tool_name: tc.name.clone(),
-            content: result.content.clone(),
-            is_error: result.is_error,
-        });
+        send_or_log(
+            event_tx,
+            ToolLoopEvent::ToolResult {
+                tool_use_id: result.tool_use_id.clone(),
+                tool_name: tc.name.clone(),
+                content: result.content.clone(),
+                is_error: result.is_error,
+            },
+        );
 
-        let write_truncation_warning = if (tc.name == "write_file" || tc.name == "edit_file")
-            && !result.is_error
-        {
-            let written = tc.input.get("content").and_then(|v| v.as_str()).unwrap_or("");
-            if looks_truncated(written) {
-                Some(
+        let write_truncation_warning =
+            if (tc.name == "write_file" || tc.name == "edit_file") && !result.is_error {
+                let written = tc
+                    .input
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if looks_truncated(written) {
+                    Some(
                     "[WARNING: The file content appears to have been truncated during generation. \
                      Use read_file to check what was actually written. Consider breaking large \
                      files into smaller writes.]"
                 )
+                } else {
+                    None
+                }
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
 
         let content_for_llm = build_content_for_llm(tc, result, file_read_cache);
 
@@ -69,8 +75,8 @@ fn build_content_for_llm(
 ) -> String {
     if tc.name == "read_file" && !result.is_error {
         let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("");
-        let has_line_range = tc.input.get("start_line").is_some()
-            || tc.input.get("end_line").is_some();
+        let has_line_range =
+            tc.input.get("start_line").is_some() || tc.input.get("end_line").is_some();
 
         if has_line_range {
             return compaction::smart_compact(&tc.name, &result.content);
@@ -104,7 +110,10 @@ fn build_content_for_llm(
 }
 
 pub(crate) fn summarize_write_file_input(input: &serde_json::Value) -> serde_json::Value {
-    let path = input.get("path").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let path = input
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     let content = input.get("content").and_then(|v| v.as_str()).unwrap_or("");
     let content_len = content.len();
     let lines: Vec<&str> = content.lines().collect();

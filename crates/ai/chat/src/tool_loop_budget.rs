@@ -36,7 +36,11 @@ pub(crate) fn inject_exploration_warnings(
              Begin writing immediately.",
             exploration.total_calls, exploration.allowance,
         );
-        info!(total_exploration = exploration.total_calls, allowance = exploration.allowance, "Injecting strong exploration warning");
+        info!(
+            total_exploration = exploration.total_calls,
+            allowance = exploration.allowance,
+            "Injecting strong exploration warning"
+        );
         push_or_replace_warning(api_messages, "[EXPLORATION WARNING]", &warning);
     } else if exploration.total_calls >= mild_threshold && !exploration.warning_mild_sent {
         exploration.warning_mild_sent = true;
@@ -45,7 +49,11 @@ pub(crate) fn inject_exploration_warnings(
              Start implementing now.",
             exploration.total_calls, exploration.allowance,
         );
-        info!(total_exploration = exploration.total_calls, allowance = exploration.allowance, "Injecting exploration warning");
+        info!(
+            total_exploration = exploration.total_calls,
+            allowance = exploration.allowance,
+            "Injecting exploration warning"
+        );
         push_or_replace_warning(api_messages, "[EXPLORATION WARNING]", &warning);
     }
 }
@@ -76,7 +84,10 @@ pub(crate) fn check_budget_warnings(
              and call task_done. Do NOT start new explorations.",
             utilization * 100.0,
         );
-        info!(utilization_pct = (utilization * 100.0) as u32, "Injecting 60% budget warning");
+        info!(
+            utilization_pct = (utilization * 100.0) as u32,
+            "Injecting 60% budget warning"
+        );
         push_or_replace_warning(api_messages, "[BUDGET WARNING]", &warning);
     } else if utilization >= 0.30 && !budget_state.warning_30_sent {
         budget_state.warning_30_sent = true;
@@ -86,19 +97,25 @@ pub(crate) fn check_budget_warnings(
              Focus on writing and verifying code.",
             utilization * 100.0,
         );
-        info!(utilization_pct = (utilization * 100.0) as u32, "Injecting 30% budget warning");
+        info!(
+            utilization_pct = (utilization * 100.0) as u32,
+            "Injecting 30% budget warning"
+        );
         push_or_replace_warning(api_messages, "[BUDGET WARNING]", &warning);
     }
 
     let next_estimate = llm.estimate_credits(billing_model, iter_input_tokens, 0);
     if budget_state.cumulative_credits + next_estimate > budget {
         warn!(
-            budget_state.cumulative_credits, next_estimate, budget,
-            "Credit budget would be exceeded, stopping tool loop"
+            budget_state.cumulative_credits,
+            next_estimate, budget, "Credit budget would be exceeded, stopping tool loop"
         );
-        send_or_log(event_tx, ToolLoopEvent::Error(
-            "Stopping: credit budget for this session would be exceeded.".to_string(),
-        ));
+        send_or_log(
+            event_tx,
+            ToolLoopEvent::Error(
+                "Stopping: credit budget for this session would be exceeded.".to_string(),
+            ),
+        );
         return Some(None);
     }
 
@@ -127,7 +144,10 @@ pub(crate) fn check_no_write_budget_warning(
              write a skeleton and iterate with edit_file.",
             utilization * 100.0,
         );
-        info!(utilization_pct = (utilization * 100.0) as u32, "Injecting no-write budget warning");
+        info!(
+            utilization_pct = (utilization * 100.0) as u32,
+            "Injecting no-write budget warning"
+        );
         push_or_replace_warning(api_messages, "[CRITICAL WARNING]", &warning);
     }
 }
@@ -142,7 +162,10 @@ pub(crate) fn update_exploration_counts(
         .enumerate()
         .filter(|(i, tc)| {
             !all_blocked.contains(i)
-                && matches!(tc.name.as_str(), "read_file" | "search_code" | "find_files" | "list_files")
+                && matches!(
+                    tc.name.as_str(),
+                    "read_file" | "search_code" | "find_files" | "list_files"
+                )
         })
         .count();
     exploration.total_calls += count;

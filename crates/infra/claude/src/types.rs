@@ -187,7 +187,8 @@ pub trait LlmProvider: Send + Sync {
         max_tokens: u32,
     ) -> Result<LlmResponse, ClaudeClientError> {
         let _ = model;
-        self.complete(api_key, system_prompt, user_message, max_tokens).await
+        self.complete(api_key, system_prompt, user_message, max_tokens)
+            .await
     }
 }
 
@@ -337,17 +338,11 @@ pub fn estimate_message_tokens(msg: &RichMessage) -> u64 {
             for block in blocks {
                 total += match block {
                     ContentBlock::Text { text } => estimate_tokens(text),
-                    ContentBlock::Image { source } => {
-                        1000 + (source.data.len() as u64 / 4)
-                    }
+                    ContentBlock::Image { source } => 1000 + (source.data.len() as u64 / 4),
                     ContentBlock::ToolUse { name, input, .. } => {
-                        estimate_tokens(name)
-                            + estimate_tokens(&input.to_string())
-                            + 10
+                        estimate_tokens(name) + estimate_tokens(&input.to_string()) + 10
                     }
-                    ContentBlock::ToolResult { content, .. } => {
-                        estimate_tokens(content) + 10
-                    }
+                    ContentBlock::ToolResult { content, .. } => estimate_tokens(content) + 10,
                 };
             }
             total

@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use aura_claude::ToolCall;
 
-use crate::constants::{MAX_WRITE_FAILURES_PER_FILE, MAX_CONSECUTIVE_CMD_FAILURES};
-use crate::tool_loop_read_guard as read_guard;
 use super::{BlockedSets, BlockingContext};
+use crate::constants::{MAX_CONSECUTIVE_CMD_FAILURES, MAX_WRITE_FAILURES_PER_FILE};
+use crate::tool_loop_read_guard as read_guard;
 use tracing::info;
 
 pub(crate) fn detect_blocked_writes(
@@ -15,7 +15,10 @@ pub(crate) fn detect_blocked_writes(
         .iter()
         .map(|tc| {
             if tc.name == "write_file" {
-                tc.input.get("path").and_then(|v| v.as_str()).map(String::from)
+                tc.input
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
             } else {
                 None
             }
@@ -57,7 +60,9 @@ pub(crate) fn detect_blocked_write_failures(
         .filter_map(|(i, tc)| {
             if matches!(tc.name.as_str(), "write_file" | "edit_file") {
                 let path = tc.input.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                if file_write_failures.get(path).copied().unwrap_or(0) >= MAX_WRITE_FAILURES_PER_FILE {
+                if file_write_failures.get(path).copied().unwrap_or(0)
+                    >= MAX_WRITE_FAILURES_PER_FILE
+                {
                     return Some(i);
                 }
             }
@@ -67,10 +72,7 @@ pub(crate) fn detect_blocked_write_failures(
 }
 
 /// Block all exploration tool calls when the hard limit has been reached.
-pub(crate) fn detect_blocked_exploration(
-    tool_calls: &[ToolCall],
-    blocked: bool,
-) -> Vec<usize> {
+pub(crate) fn detect_blocked_exploration(tool_calls: &[ToolCall], blocked: bool) -> Vec<usize> {
     if !blocked {
         return vec![];
     }
@@ -78,7 +80,10 @@ pub(crate) fn detect_blocked_exploration(
         .iter()
         .enumerate()
         .filter_map(|(i, tc)| {
-            if matches!(tc.name.as_str(), "read_file" | "search_code" | "find_files" | "list_files") {
+            if matches!(
+                tc.name.as_str(),
+                "read_file" | "search_code" | "find_files" | "list_files"
+            ) {
                 Some(i)
             } else {
                 None
@@ -88,7 +93,10 @@ pub(crate) fn detect_blocked_exploration(
 }
 
 /// Block `run_command` calls when consecutive failures reach the hard limit (5+).
-pub(crate) fn detect_blocked_commands(tool_calls: &[ToolCall], consecutive_failures: usize) -> Vec<usize> {
+pub(crate) fn detect_blocked_commands(
+    tool_calls: &[ToolCall],
+    consecutive_failures: usize,
+) -> Vec<usize> {
     if consecutive_failures < MAX_CONSECUTIVE_CMD_FAILURES {
         return vec![];
     }
@@ -126,7 +134,10 @@ pub(crate) fn detect_write_file_cooldowns(
         .collect()
 }
 
-pub(crate) fn collect_duplicate_write_paths(tool_calls: &[ToolCall], blocked_indices: &[usize]) -> Vec<String> {
+pub(crate) fn collect_duplicate_write_paths(
+    tool_calls: &[ToolCall],
+    blocked_indices: &[usize],
+) -> Vec<String> {
     let mut paths: Vec<String> = Vec::new();
     for i in blocked_indices {
         if let Some(tc) = tool_calls.get(*i) {
@@ -169,7 +180,8 @@ pub(crate) fn detect_all_blocked(
 
     let all_blocked: Vec<usize> = {
         let mut v = duplicate_write.clone();
-        for i in write_fail.iter()
+        for i in write_fail
+            .iter()
             .chain(cooldown.iter())
             .chain(cmd.iter())
             .chain(read.iter())
@@ -193,10 +205,21 @@ pub(crate) fn detect_all_blocked(
              Use edit_file instead: (1) read_file with a line range, (2) edit_file for one small \
              section/function at a time, (3) verify before the next edit. Do NOT rewrite the full file."
         );
-        info!(path = path.as_str(), "Injecting adaptive rewrite recovery instruction");
+        info!(
+            path = path.as_str(),
+            "Injecting adaptive rewrite recovery instruction"
+        );
         deferred_recovery_msgs.push(recovery);
     }
 
-    let sets = BlockedSets { duplicate_write, write_fail, cooldown, cmd, read, shell_read, exploration };
+    let sets = BlockedSets {
+        duplicate_write,
+        write_fail,
+        cooldown,
+        cmd,
+        read,
+        shell_read,
+        exploration,
+    };
     (all_blocked, sets, deferred_recovery_msgs)
 }

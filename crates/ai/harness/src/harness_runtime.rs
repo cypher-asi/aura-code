@@ -256,7 +256,7 @@ fn forward_events(
 
                 aura_agent::AgentLoopEvent::ToolInputSnapshot { id, name, input } => {
                     let parsed = serde_json::from_str(&input)
-                        .unwrap_or_else(|_| serde_json::Value::String(input));
+                        .unwrap_or(serde_json::Value::String(input));
                     if !matches!(parsed, serde_json::Value::String(_)) {
                         let _ = app_tx.send(RuntimeEvent::ToolUseDetected {
                             id: id.clone(),

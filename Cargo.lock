@@ -300,6 +300,7 @@ dependencies = [
  "async-trait",
  "aura-core 0.1.0",
  "aura-executor",
+ "aura-kernel",
  "aura-reasoner",
  "futures-util",
  "serde_json",
@@ -315,7 +316,7 @@ dependencies = [
  "aura-core 0.2.0",
  "aura-network",
  "aura-storage",
- "aura-store",
+ "aura-store 0.2.0",
  "chrono",
  "serde_json",
  "thiserror 1.0.69",
@@ -327,7 +328,7 @@ name = "aura-auth"
 version = "0.1.0"
 dependencies = [
  "aura-core 0.2.0",
- "aura-store",
+ "aura-store 0.2.0",
  "chrono",
  "reqwest 0.11.27",
  "serde",
@@ -345,7 +346,7 @@ dependencies = [
  "aura-core 0.2.0",
  "aura-provider",
  "aura-settings",
- "aura-store",
+ "aura-store 0.2.0",
  "axum",
  "chrono",
  "futures-util",
@@ -371,9 +372,9 @@ dependencies = [
  "aura-settings",
  "aura-specs",
  "aura-storage",
- "aura-store",
+ "aura-store 0.2.0",
  "aura-tasks",
- "aura-tools",
+ "aura-tools 0.2.0",
  "axum",
  "base64 0.22.1",
  "chrono",
@@ -473,9 +474,9 @@ dependencies = [
  "aura-sessions",
  "aura-settings",
  "aura-storage",
- "aura-store",
+ "aura-store 0.2.0",
  "aura-tasks",
- "aura-tools",
+ "aura-tools 0.2.0",
  "chrono",
  "futures",
  "regex",
@@ -526,6 +527,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "aura-kernel"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aura-core 0.1.0",
+ "aura-executor",
+ "aura-reasoner",
+ "aura-store 0.1.0",
+ "aura-tools 0.1.0",
+ "bytes",
+ "dashmap",
+ "futures-util",
+ "hex",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "aura-network"
 version = "0.1.0"
 dependencies = [
@@ -557,7 +579,7 @@ name = "aura-orgs"
 version = "0.1.0"
 dependencies = [
  "aura-core 0.2.0",
- "aura-store",
+ "aura-store 0.2.0",
  "chrono",
  "serde_json",
  "thiserror 1.0.69",
@@ -570,7 +592,7 @@ version = "0.1.0"
 dependencies = [
  "aura-core 0.2.0",
  "aura-network",
- "aura-store",
+ "aura-store 0.2.0",
  "chrono",
  "serde_json",
  "thiserror 1.0.69",
@@ -627,10 +649,10 @@ dependencies = [
  "aura-settings",
  "aura-specs",
  "aura-storage",
- "aura-store",
+ "aura-store 0.2.0",
  "aura-tasks",
  "aura-terminal",
- "aura-tools",
+ "aura-tools 0.2.0",
  "axum",
  "base64 0.22.1",
  "chrono",
@@ -661,7 +683,7 @@ dependencies = [
  "aura-claude",
  "aura-core 0.2.0",
  "aura-storage",
- "aura-store",
+ "aura-store 0.2.0",
  "axum",
  "chrono",
  "serde_json",
@@ -676,7 +698,7 @@ name = "aura-settings"
 version = "0.1.0"
 dependencies = [
  "aura-core 0.2.0",
- "aura-store",
+ "aura-store 0.2.0",
  "chrono",
  "serde",
  "serde_json",
@@ -694,7 +716,7 @@ dependencies = [
  "aura-projects",
  "aura-settings",
  "aura-storage",
- "aura-store",
+ "aura-store 0.2.0",
  "chrono",
  "serde",
  "serde_json",
@@ -721,6 +743,18 @@ dependencies = [
 
 [[package]]
 name = "aura-store"
+version = "0.1.0"
+dependencies = [
+ "aura-core 0.1.0",
+ "bytes",
+ "rocksdb",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
+name = "aura-store"
 version = "0.2.0"
 dependencies = [
  "aura-core 0.2.0",
@@ -743,7 +777,7 @@ dependencies = [
  "aura-core 0.2.0",
  "aura-settings",
  "aura-storage",
- "aura-store",
+ "aura-store 0.2.0",
  "chrono",
  "serde",
  "serde_json",
@@ -766,6 +800,27 @@ dependencies = [
  "tracing",
  "uuid",
  "which",
+]
+
+[[package]]
+name = "aura-tools"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aura-core 0.1.0",
+ "aura-executor",
+ "aura-reasoner",
+ "bytes",
+ "glob",
+ "regex",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "walkdir",
 ]
 
 [[package]]
@@ -1400,6 +1455,20 @@ checksum = "32a2785755761f3ddc1492979ce1e48d2c00d09311c39e4466429188f3dd6501"
 dependencies = [
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "dashmap"
+version = "6.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
 ]
 
 [[package]]
@@ -2337,6 +2406,12 @@ dependencies = [
  "crunchy",
  "zerocopy",
 ]
+
+[[package]]
+name = "hashbrown"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 
 [[package]]
 name = "hashbrown"

@@ -37,9 +37,9 @@ mod tests {
         testutil::store_zero_auth_session(&store);
         std::env::set_var("ANTHROPIC_API_KEY", "test-key");
 
-        let billing_state = Arc::new(tokio::sync::Mutex::new(
-            testutil::MockBillingState::new(10_000_000),
-        ));
+        let billing_state = Arc::new(tokio::sync::Mutex::new(testutil::MockBillingState::new(
+            10_000_000,
+        )));
         let billing_url = testutil::start_stateful_mock_billing_server(billing_state).await;
         let billing = Arc::new(testutil::billing_client_for_url(&billing_url));
 
@@ -179,9 +179,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_task_agentic_simple() {
-        let mock = Arc::new(MockLlmProvider::with_responses(vec![
-            MockResponse::text("Completed simple task").with_tokens(200, 80),
-        ]));
+        let mock = Arc::new(MockLlmProvider::with_responses(vec![MockResponse::text(
+            "Completed simple task",
+        )
+        .with_tokens(200, 80)]));
         let mut h = setup(mock.clone()).await;
 
         create_task(&h, "Add enum definition", "ready").await;
@@ -195,8 +196,12 @@ mod tests {
         );
 
         let events = collect_events(&mut h.event_rx);
-        assert!(events.iter().any(|e| matches!(e, EngineEvent::TaskStarted { .. })));
-        assert!(events.iter().any(|e| matches!(e, EngineEvent::TaskCompleted { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, EngineEvent::TaskStarted { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, EngineEvent::TaskCompleted { .. })));
         assert!(mock.call_count() >= 1, "LLM should have been called");
     }
 
@@ -247,16 +252,16 @@ mod tests {
         assert_eq!(stored.status.as_deref(), Some("done"));
 
         let events = collect_events(&mut h.event_rx);
-        assert!(events.iter().any(|e| matches!(e, EngineEvent::BuildVerificationStarted { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, EngineEvent::BuildVerificationStarted { .. })));
     }
 
     #[tokio::test]
     async fn test_build_fix_loop() {
         let mut responses = Vec::new();
         for i in 0..50 {
-            responses.push(
-                MockResponse::text(format!("Response {i}")).with_tokens(200, 80),
-            );
+            responses.push(MockResponse::text(format!("Response {i}")).with_tokens(200, 80));
         }
         let mock = Arc::new(MockLlmProvider::with_responses(responses));
 
@@ -265,9 +270,9 @@ mod tests {
         testutil::store_zero_auth_session(&store);
         std::env::set_var("ANTHROPIC_API_KEY", "test-key");
 
-        let billing_state = Arc::new(tokio::sync::Mutex::new(
-            testutil::MockBillingState::new(10_000_000),
-        ));
+        let billing_state = Arc::new(tokio::sync::Mutex::new(testutil::MockBillingState::new(
+            10_000_000,
+        )));
         let billing_url = testutil::start_stateful_mock_billing_server(billing_state).await;
         let billing = Arc::new(testutil::billing_client_for_url(&billing_url));
 
@@ -360,7 +365,11 @@ mod tests {
             .await
             .unwrap();
 
-        let handle = engine.clone().start(project.project_id, None).await.unwrap();
+        let handle = engine
+            .clone()
+            .start(project.project_id, None)
+            .await
+            .unwrap();
         // The loop may exhaust mock responses if retries exceed our budget; either outcome is fine.
         let _outcome = handle.wait().await;
 
@@ -374,9 +383,14 @@ mod tests {
                     | EngineEvent::BuildFixAttempt { .. }
             )
         });
-        assert!(has_build_event, "expected at least one build verification event");
         assert!(
-            events.iter().any(|e| matches!(e, EngineEvent::LoopFinished { .. })),
+            has_build_event,
+            "expected at least one build verification event"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, EngineEvent::LoopFinished { .. })),
             "loop should finish"
         );
     }

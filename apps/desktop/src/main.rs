@@ -1,11 +1,11 @@
 mod handlers;
 mod updater;
 
+use axum::routing::{get as axum_get, post as axum_post};
 use std::collections::HashMap;
 use std::net::TcpListener as StdTcpListener;
 use std::path::PathBuf;
 use std::sync::Arc;
-use axum::routing::{get as axum_get, post as axum_post};
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::window::{Icon, WindowBuilder, WindowId};
@@ -28,12 +28,23 @@ enum WinCmd {
 
 #[derive(Debug)]
 pub(crate) enum UserEvent {
-    WindowCommand { window_id: WindowId, cmd: WinCmd },
-    OpenIdeWindow { file_path: String, root_path: Option<String> },
-    ShowWindow { window_id: WindowId },
+    WindowCommand {
+        window_id: WindowId,
+        cmd: WinCmd,
+    },
+    OpenIdeWindow {
+        file_path: String,
+        root_path: Option<String>,
+    },
+    ShowWindow {
+        window_id: WindowId,
+    },
 }
 
-fn ipc_handler(proxy: EventLoopProxy<UserEvent>, window_id: WindowId) -> impl Fn(wry::http::Request<String>) + 'static {
+fn ipc_handler(
+    proxy: EventLoopProxy<UserEvent>,
+    window_id: WindowId,
+) -> impl Fn(wry::http::Request<String>) + 'static {
     move |req: wry::http::Request<String>| {
         let msg = req.body().trim();
         if msg == "ready" {
@@ -103,11 +114,11 @@ fn find_frontend_dir() -> Option<PathBuf> {
 
 fn init_logging() {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                EnvFilter::new("aura_desktop=debug,aura_server=debug,aura_engine=debug,tower_http=debug,info")
-            }),
-        )
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            EnvFilter::new(
+                "aura_desktop=debug,aura_server=debug,aura_engine=debug,tower_http=debug,info",
+            )
+        }))
         .init();
 }
 
@@ -167,7 +178,10 @@ fn spawn_server(
                     "/api/update-status",
                     axum_get(handlers::get_update_status).with_state(update_state.clone()),
                 )
-                .route("/api/update-install", axum_post(handlers::post_update_install))
+                .route(
+                    "/api/update-install",
+                    axum_post(handlers::post_update_install),
+                )
                 .route(
                     "/api/update-channel",
                     axum_post(handlers::post_update_channel).with_state(update_state.clone()),
@@ -189,10 +203,10 @@ fn set_square_corners(_window: &tao::window::Window) {
     #[cfg(target_os = "windows")]
     {
         use tao::platform::windows::WindowExtWindows;
+        use windows::Win32::Foundation::HWND;
         use windows::Win32::Graphics::Dwm::{
             DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWM_WINDOW_CORNER_PREFERENCE,
         };
-        use windows::Win32::Foundation::HWND;
 
         let hwnd = HWND(_window.hwnd() as *mut std::ffi::c_void);
         let preference = DWM_WINDOW_CORNER_PREFERENCE(1); // DWMWCP_DONOTROUND
@@ -329,18 +343,30 @@ fn main() {
         let img = image::load_from_memory(png_bytes).expect("failed to decode icon");
         let rgba = img.to_rgba8();
         let (w, h) = rgba.dimensions();
-        IconData { rgba: rgba.into_raw(), width: w, height: h }
+        IconData {
+            rgba: rgba.into_raw(),
+            width: w,
+            height: h,
+        }
     };
 
     let (window, main_window_id) = create_main_window(&event_loop, &icon_data);
     let mut web_context = WebContext::new(Some(webview_data_dir));
-    let _main_webview = create_main_webview(&window, &mut web_context, &url, proxy.clone(), main_window_id);
+    let _main_webview = create_main_webview(
+        &window,
+        &mut web_context,
+        &url,
+        proxy.clone(),
+        main_window_id,
+    );
 
     {
         let fallback_proxy = proxy.clone();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(500));
-            let _ = fallback_proxy.send_event(UserEvent::ShowWindow { window_id: main_window_id });
+            let _ = fallback_proxy.send_event(UserEvent::ShowWindow {
+                window_id: main_window_id,
+            });
         });
     }
 
@@ -369,18 +395,27 @@ fn main() {
                             WinCmd::Minimize => window.set_minimized(true),
                             WinCmd::Maximize => window.set_maximized(!window.is_maximized()),
                             WinCmd::Close => *control_flow = ControlFlow::Exit,
-                            WinCmd::Drag => { let _ = window.drag_window(); }
+                            WinCmd::Drag => {
+                                let _ = window.drag_window();
+                            }
                         }
                     } else if let Some((ide_win, _)) = ide_windows.get(&window_id) {
                         match cmd {
                             WinCmd::Minimize => ide_win.set_minimized(true),
                             WinCmd::Maximize => ide_win.set_maximized(!ide_win.is_maximized()),
-                            WinCmd::Close => { ide_windows.remove(&window_id); }
-                            WinCmd::Drag => { let _ = ide_win.drag_window(); }
+                            WinCmd::Close => {
+                                ide_windows.remove(&window_id);
+                            }
+                            WinCmd::Drag => {
+                                let _ = ide_win.drag_window();
+                            }
                         }
                     }
                 }
-                UserEvent::OpenIdeWindow { file_path, root_path } => {
+                UserEvent::OpenIdeWindow {
+                    file_path,
+                    root_path,
+                } => {
                     let p = proxy.clone();
                     let (win, wv) = aura_ide::open_ide_window(
                         elwt,
@@ -395,7 +430,8 @@ fn main() {
                     let fallback_proxy = proxy.clone();
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_millis(500));
-                        let _ = fallback_proxy.send_event(UserEvent::ShowWindow { window_id: ide_wid });
+                        let _ =
+                            fallback_proxy.send_event(UserEvent::ShowWindow { window_id: ide_wid });
                     });
                 }
                 UserEvent::ShowWindow { window_id } => {

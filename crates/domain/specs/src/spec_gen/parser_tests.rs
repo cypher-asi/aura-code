@@ -45,7 +45,10 @@ fn parse_empty_title_returns_error() {
     let input = r##"[{"title": "", "purpose": "x", "markdown": "# Content"}]"##;
     let err = parse_claude_response(input).expect_err("empty title should produce an error");
     let msg = format!("{err}");
-    assert!(msg.contains("empty title"), "expected title error, got: {msg}");
+    assert!(
+        msg.contains("empty title"),
+        "expected title error, got: {msg}"
+    );
 }
 
 #[test]
@@ -53,7 +56,10 @@ fn parse_empty_markdown_returns_error() {
     let input = r##"[{"title": "Spec", "purpose": "x", "markdown": "  "}]"##;
     let err = parse_claude_response(input).expect_err("empty markdown should produce an error");
     let msg = format!("{err}");
-    assert!(msg.contains("empty markdown"), "expected markdown error, got: {msg}");
+    assert!(
+        msg.contains("empty markdown"),
+        "expected markdown error, got: {msg}"
+    );
 }
 
 #[test]
@@ -71,7 +77,8 @@ fn incremental_parser_single_object() {
     let mut parser = IncrementalSpecParser::new();
     let objects = parser.feed(r#"[{"title":"A","purpose":"p","markdown":"m"}]"#);
     assert_eq!(objects.len(), 1);
-    let parsed: RawSpecOutput = serde_json::from_str(&objects[0]).expect("parsed object should deserialize");
+    let parsed: RawSpecOutput =
+        serde_json::from_str(&objects[0]).expect("parsed object should deserialize");
     assert_eq!(parsed.title, "A");
 }
 
@@ -87,20 +94,17 @@ fn incremental_parser_multiple_objects() {
 #[test]
 fn incremental_parser_handles_braces_in_strings() {
     let mut parser = IncrementalSpecParser::new();
-    let objects = parser.feed(
-        r#"[{"title":"T","purpose":"p","markdown":"code: { x } end"}]"#,
-    );
+    let objects = parser.feed(r#"[{"title":"T","purpose":"p","markdown":"code: { x } end"}]"#);
     assert_eq!(objects.len(), 1);
-    let parsed: RawSpecOutput = serde_json::from_str(&objects[0]).expect("parsed object should deserialize");
+    let parsed: RawSpecOutput =
+        serde_json::from_str(&objects[0]).expect("parsed object should deserialize");
     assert!(parsed.markdown.contains("{ x }"));
 }
 
 #[test]
 fn incremental_parser_handles_escaped_quotes() {
     let mut parser = IncrementalSpecParser::new();
-    let objects = parser.feed(
-        r#"[{"title":"T","purpose":"p","markdown":"say \"hello\""}]"#,
-    );
+    let objects = parser.feed(r#"[{"title":"T","purpose":"p","markdown":"say \"hello\""}]"#);
     assert_eq!(objects.len(), 1);
 }
 
@@ -119,10 +123,19 @@ fn incremental_parser_chunked_delivery() {
 
 #[test]
 fn order_index_from_spec_title_parses_nn_prefix() {
-    assert_eq!(order_index_from_spec_title("05: Requirements Ingestion"), Some(5));
-    assert_eq!(order_index_from_spec_title("02: RocksDB Storage Layer"), Some(2));
+    assert_eq!(
+        order_index_from_spec_title("05: Requirements Ingestion"),
+        Some(5)
+    );
+    assert_eq!(
+        order_index_from_spec_title("02: RocksDB Storage Layer"),
+        Some(2)
+    );
     assert_eq!(order_index_from_spec_title("1: Core Domain"), Some(1));
-    assert_eq!(order_index_from_spec_title("01: Core Domain Types"), Some(1));
+    assert_eq!(
+        order_index_from_spec_title("01: Core Domain Types"),
+        Some(1)
+    );
 }
 
 #[test]
@@ -298,7 +311,8 @@ fn repair_partial_json_unterminated_string() {
 fn repair_partial_json_trailing_comma() {
     let input = r##"{"title":"A","purpose":"p","markdown":"m","##;
     let repaired = repair_partial_json(input);
-    let v: serde_json::Value = serde_json::from_str(&repaired).expect("trailing comma should be fixed");
+    let v: serde_json::Value =
+        serde_json::from_str(&repaired).expect("trailing comma should be fixed");
     assert_eq!(v["title"].as_str().unwrap(), "A");
 }
 
@@ -336,7 +350,9 @@ fn best_effort_partial_returns_none_when_title_empty() {
 fn best_effort_partial_title_only_no_other_fields() {
     let mut parser = IncrementalSpecParser::new();
     parser.feed(r##"[{"title":"Core Domain Types"##);
-    let partial = parser.best_effort_partial().expect("title-only should succeed");
+    let partial = parser
+        .best_effort_partial()
+        .expect("title-only should succeed");
     assert_eq!(partial.title, "Core Domain Types");
     assert_eq!(partial.purpose, "", "purpose should default to empty");
     assert_eq!(partial.markdown, "", "markdown should default to empty");
@@ -346,7 +362,9 @@ fn best_effort_partial_title_only_no_other_fields() {
 fn best_effort_partial_title_and_purpose_no_markdown() {
     let mut parser = IncrementalSpecParser::new();
     parser.feed(r##"[{"title":"Auth Module","purpose":"Handle login and session mgmt"##);
-    let partial = parser.best_effort_partial().expect("title+purpose should succeed");
+    let partial = parser
+        .best_effort_partial()
+        .expect("title+purpose should succeed");
     assert_eq!(partial.title, "Auth Module");
     assert_eq!(partial.purpose, "Handle login and session mgmt");
     assert_eq!(partial.markdown, "", "markdown should default to empty");
@@ -355,8 +373,12 @@ fn best_effort_partial_title_and_purpose_no_markdown() {
 #[test]
 fn best_effort_partial_returns_partial_spec_with_all_fields() {
     let mut parser = IncrementalSpecParser::new();
-    parser.feed(r##"[{"title":"Auth Module","purpose":"Handle login","markdown":"# Auth\nSome content"##);
-    let partial = parser.best_effort_partial().expect("should produce partial");
+    parser.feed(
+        r##"[{"title":"Auth Module","purpose":"Handle login","markdown":"# Auth\nSome content"##,
+    );
+    let partial = parser
+        .best_effort_partial()
+        .expect("should produce partial");
     assert_eq!(partial.title, "Auth Module");
     assert_eq!(partial.purpose, "Handle login");
     assert!(partial.markdown.contains("# Auth"));
@@ -369,7 +391,9 @@ fn best_effort_partial_resets_after_complete_object() {
         r##"[{"title":"A","purpose":"p","markdown":"m"},{"title":"B","purpose":"q","markdown":"# St"##,
     );
     assert_eq!(completed.len(), 1);
-    let partial = parser.best_effort_partial().expect("should see partial for second object");
+    let partial = parser
+        .best_effort_partial()
+        .expect("should see partial for second object");
     assert_eq!(partial.title, "B");
     assert!(partial.markdown.starts_with("# St"));
 }
@@ -418,7 +442,9 @@ fn best_effort_partial_with_dangling_backslash() {
     let mut parser = IncrementalSpecParser::new();
     let input = "[{\"title\": \"Auth\", \"purpose\": \"handle auth\", \"markdown\": \"# Auth\\n## Details\\";
     parser.feed(input);
-    let partial = parser.best_effort_partial().expect("should produce partial despite dangling backslash");
+    let partial = parser
+        .best_effort_partial()
+        .expect("should produce partial despite dangling backslash");
     assert_eq!(partial.title, "Auth");
     assert!(partial.markdown.contains("Details"));
 }

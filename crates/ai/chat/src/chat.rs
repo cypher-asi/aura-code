@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use aura_core::*;
 use aura_billing::MeteredLlm;
+use aura_core::*;
 use aura_settings::SettingsService;
 use aura_storage::StorageClient;
 use aura_store::RocksStore;
@@ -158,7 +158,9 @@ impl ChatService {
         input_tokens: u64,
         output_tokens: u64,
     ) {
-        let Some(ref storage) = self.storage_client else { return };
+        let Some(ref storage) = self.storage_client else {
+            return;
+        };
         let Some(jwt) = self.get_jwt() else { return };
 
         let current = match storage.get_session(session_id, &jwt).await {

@@ -1,6 +1,6 @@
-use aura_core::*;
 use crate::chat::ChatService;
 use crate::tool_loop::ToolLoopResult;
+use aura_core::*;
 
 fn make_result(text: &str, thinking: &str) -> ToolLoopResult {
     ToolLoopResult {

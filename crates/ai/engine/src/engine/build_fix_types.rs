@@ -6,7 +6,9 @@ use crate::file_ops;
 
 fn type_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"found for (?:struct|enum|trait|union) `(\w+)").expect("static regex"))
+    RE.get_or_init(|| {
+        Regex::new(r"found for (?:struct|enum|trait|union) `(\w+)").expect("static regex")
+    })
 }
 fn init_type_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
@@ -86,8 +88,11 @@ pub(crate) fn classify_build_errors(stderr: &str) -> Vec<ErrorCategory> {
         categories.push(ErrorCategory::RustMissingModule);
     }
 
-    if stderr.contains("cannot find") || stderr.contains("E0425") || stderr.contains("E0433")
-        || stderr.contains("not found in this scope") || stderr.contains("use of undeclared")
+    if stderr.contains("cannot find")
+        || stderr.contains("E0425")
+        || stderr.contains("E0433")
+        || stderr.contains("not found in this scope")
+        || stderr.contains("use of undeclared")
     {
         categories.push(ErrorCategory::RustMissingImport);
     }
@@ -96,8 +101,10 @@ pub(crate) fn classify_build_errors(stderr: &str) -> Vec<ErrorCategory> {
         categories.push(ErrorCategory::RustMissingMethod);
     }
 
-    if stderr.contains("missing field") || stderr.contains("E0063")
-        || stderr.contains("has no field named") || stderr.contains("E0560")
+    if stderr.contains("missing field")
+        || stderr.contains("E0063")
+        || stderr.contains("has no field named")
+        || stderr.contains("E0560")
     {
         categories.push(ErrorCategory::RustStructFieldMismatch);
     }
@@ -123,7 +130,9 @@ pub(crate) fn classify_build_errors(stderr: &str) -> Vec<ErrorCategory> {
     }
 
     if categories.is_empty()
-        && (stderr.contains("expected") || stderr.contains("syntax error") || stderr.contains("parse error"))
+        && (stderr.contains("expected")
+            || stderr.contains("syntax error")
+            || stderr.contains("parse error"))
     {
         categories.push(ErrorCategory::GenericSyntax);
     }
@@ -252,8 +261,7 @@ pub(crate) fn parse_error_references(stderr: &str) -> file_ops::ErrorReferences 
     for cap in method_re().captures_iter(stderr) {
         let method = cap[1].to_string();
         let type_name = cap[2].to_string();
-        refs.methods_not_found
-            .push((type_name.clone(), method));
+        refs.methods_not_found.push((type_name.clone(), method));
         if !refs.types_referenced.contains(&type_name) {
             refs.types_referenced.push(type_name);
         }
@@ -280,7 +288,11 @@ pub(crate) fn parse_error_references(stderr: &str) -> file_ops::ErrorReferences 
     for cap in loc_re().captures_iter(stderr) {
         let file = cap[1].to_string();
         let line: u32 = cap[2].parse().unwrap_or(0);
-        if !refs.source_locations.iter().any(|(f, l)| f == &file && *l == line) {
+        if !refs
+            .source_locations
+            .iter()
+            .any(|(f, l)| f == &file && *l == line)
+        {
             refs.source_locations.push((file, line));
         }
     }

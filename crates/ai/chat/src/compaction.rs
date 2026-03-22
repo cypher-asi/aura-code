@@ -87,7 +87,8 @@ fn smart_compact_inner(tool_name: &str, content: &str, is_error: bool) -> String
     if content.len() <= cfg.threshold {
         return content.to_string();
     }
-    if !is_error && tool_name == "read_file" && aura_core::rust_signatures::looks_like_rust(content) {
+    if !is_error && tool_name == "read_file" && aura_core::rust_signatures::looks_like_rust(content)
+    {
         let sigs = aura_core::rust_signatures::extract_signatures(content);
         if !sigs.is_empty() && sigs.len() < content.len() / 2 {
             return format!(

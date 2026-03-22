@@ -104,8 +104,7 @@ impl BuildBaseline {
                 lines.push("-->LOCATION".into());
                 continue;
             }
-            if trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) && trimmed.contains('|')
-            {
+            if trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) && trimmed.contains('|') {
                 continue;
             }
             if trimmed

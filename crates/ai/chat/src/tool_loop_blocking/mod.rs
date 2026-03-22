@@ -3,9 +3,9 @@ mod results;
 mod stall;
 mod tool_results;
 
-use std::collections::HashMap;
 use crate::tool_loop_budget::ExplorationState;
 use crate::tool_loop_read_guard::ReadGuardState;
+use std::collections::HashMap;
 
 pub(crate) struct WriteTrackingState {
     pub(crate) consecutive_write_tracker: HashMap<String, usize>,
@@ -35,18 +35,16 @@ pub(crate) struct BlockingContext<'a> {
     pub(crate) exploration: &'a ExplorationState,
 }
 
-pub(crate) use detection::{decrement_write_file_cooldowns, detect_all_blocked};
 #[allow(unused_imports)]
 pub(crate) use detection::{
     collect_duplicate_write_paths, detect_blocked_commands, detect_blocked_exploration,
     detect_blocked_write_failures, detect_blocked_writes, detect_write_file_cooldowns,
 };
-pub(crate) use results::{BlockedResultContext, execute_with_blocked};
-pub(crate) use stall::{
-    apply_cmd_failure_tracking, detect_stall_fail_fast, track_write_failures,
-};
+pub(crate) use detection::{decrement_write_file_cooldowns, detect_all_blocked};
+pub(crate) use results::{execute_with_blocked, BlockedResultContext};
 #[allow(unused_imports)]
 pub(crate) use stall::detect_same_target_stall;
+pub(crate) use stall::{apply_cmd_failure_tracking, detect_stall_fail_fast, track_write_failures};
 pub(crate) use tool_results::{
     build_tool_result_blocks, looks_truncated, summarize_edit_file_input,
     summarize_write_file_input,

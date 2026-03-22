@@ -73,17 +73,15 @@ data: {"type":"message_stop"}
         .collect();
     assert_eq!(delta_texts, vec!["Hello ", "world"]);
 
-    assert!(
-        events.iter().any(|e| matches!(
-            e,
-            ClaudeStreamEvent::Done {
-                stop_reason,
-                input_tokens: 100,
-                output_tokens: 50,
-                ..
-            } if stop_reason == "end_turn"
-        ))
-    );
+    assert!(events.iter().any(|e| matches!(
+        e,
+        ClaudeStreamEvent::Done {
+            stop_reason,
+            input_tokens: 100,
+            output_tokens: 50,
+            ..
+        } if stop_reason == "end_turn"
+    )));
 }
 
 #[tokio::test]
@@ -131,7 +129,11 @@ data: {\"type\":\"message_stop\"}\n\
         .iter()
         .filter(|e| matches!(e, ClaudeStreamEvent::ToolInputDelta { .. }))
         .collect();
-    assert_eq!(input_deltas.len(), 2, "should emit ToolInputDelta for each input_json_delta");
+    assert_eq!(
+        input_deltas.len(),
+        2,
+        "should emit ToolInputDelta for each input_json_delta"
+    );
     assert!(matches!(
         &input_deltas[0],
         ClaudeStreamEvent::ToolInputDelta { id, partial_json }
@@ -202,14 +204,16 @@ data: {\"type\":\"message_stop\"}\n\
         "expected at least two snapshots while input_json_delta streams, got {}",
         snapshots.len()
     );
-    assert!(snapshots.iter().any(|v| *v == serde_json::json!({
-        "title": "Spec",
-        "markdown_contents": "Hello"
-    })));
-    assert!(snapshots.iter().any(|v| *v == serde_json::json!({
-        "title": "Spec",
-        "markdown_contents": "Hello world"
-    })));
+    assert!(snapshots.iter().any(|v| *v
+        == serde_json::json!({
+            "title": "Spec",
+            "markdown_contents": "Hello"
+        })));
+    assert!(snapshots.iter().any(|v| *v
+        == serde_json::json!({
+            "title": "Spec",
+            "markdown_contents": "Hello world"
+        })));
 }
 
 #[tokio::test]
@@ -289,7 +293,10 @@ data: {"type":"error","error":{"type":"overloaded_error","message":"API is overl
 
     assert!(result.is_err());
     let err = result.expect_err("should be error for overloaded");
-    assert!(err.is_overloaded(), "Should be classified as overloaded: {err}");
+    assert!(
+        err.is_overloaded(),
+        "Should be classified as overloaded: {err}"
+    );
     assert!(err.to_string().contains("overloaded"));
 
     assert!(events
@@ -314,7 +321,10 @@ data: {"type":"error","error":{"type":"invalid_request_error","message":"Bad req
 
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert!(!err.is_overloaded(), "Should NOT be classified as overloaded: {err}");
+    assert!(
+        !err.is_overloaded(),
+        "Should NOT be classified as overloaded: {err}"
+    );
     assert!(err.to_string().contains("Bad request"));
 
     assert!(events
@@ -418,7 +428,9 @@ async fn test_overloaded_error_sets_is_overloaded() {
 
     assert!(result.is_err());
     assert!(result.unwrap_err().is_overloaded());
-    assert!(events.iter().any(|e| matches!(e, ClaudeStreamEvent::Error(_))));
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, ClaudeStreamEvent::Error(_))));
 }
 
 #[tokio::test]
@@ -465,10 +477,9 @@ data: {"type":"message_stop"}
     let chunk3 = &full[split2..];
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let result =
-        sse::parse_sse_events(sse_stream_chunked(vec![chunk1, chunk2, chunk3]), &tx)
-            .await
-            .expect("parse chunked delivery");
+    let result = sse::parse_sse_events(sse_stream_chunked(vec![chunk1, chunk2, chunk3]), &tx)
+        .await
+        .expect("parse chunked delivery");
     drop(tx);
     let events = drain_events(&mut rx);
 
@@ -509,7 +520,9 @@ fn cache_breakpoint_on_last_user_message_array_content() {
         last_user["cache_control"],
         serde_json::json!({"type": "ephemeral"}),
     );
-    assert!(body["messages"][0]["content"][0].get("cache_control").is_none());
+    assert!(body["messages"][0]["content"][0]
+        .get("cache_control")
+        .is_none());
 }
 
 #[test]
@@ -522,10 +535,16 @@ fn cache_breakpoint_on_string_content_promotes_to_array() {
     inject_message_cache_breakpoint(&mut body);
 
     let content = &body["messages"][0]["content"];
-    assert!(content.is_array(), "string content should be promoted to array");
+    assert!(
+        content.is_array(),
+        "string content should be promoted to array"
+    );
     assert_eq!(content[0]["type"], "text");
     assert_eq!(content[0]["text"], "hello world");
-    assert_eq!(content[0]["cache_control"], serde_json::json!({"type": "ephemeral"}));
+    assert_eq!(
+        content[0]["cache_control"],
+        serde_json::json!({"type": "ephemeral"})
+    );
 }
 
 #[test]

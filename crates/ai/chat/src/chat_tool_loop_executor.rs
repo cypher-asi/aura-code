@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
-use aura_core::*;
 use aura_claude::ToolCall;
+use aura_core::*;
 
 use crate::channel_ext::send_or_log;
 use crate::chat::ChatStreamEvent;
@@ -138,7 +138,9 @@ impl<R: ProjectResolver> ToolExecutor for ForwardingToolExecutor<R> {
                         let pid = self.resolver.resolve(tc);
                         async move {
                             match pid {
-                                Ok(pid) => self.inner.execute(&pid, &tc.name, tc.input.clone()).await,
+                                Ok(pid) => {
+                                    self.inner.execute(&pid, &tc.name, tc.input.clone()).await
+                                }
                                 Err(msg) => ToolExecResult::err_static(msg),
                             }
                         }

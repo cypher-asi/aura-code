@@ -5,9 +5,9 @@ use tracing::info;
 
 use aura_claude::{ContentBlock, MessageContent, RichMessage, ToolCall};
 
-use crate::compaction;
-use crate::chat_sanitize;
 use crate::channel_ext::send_or_log;
+use crate::chat_sanitize;
+use crate::compaction;
 use crate::tool_loop::{BuildState, LoopState, ToolExecutor, ToolLoopConfig, ToolLoopEvent};
 use crate::tool_loop_blocking::{summarize_edit_file_input, summarize_write_file_input};
 use crate::tool_loop_budget::ExplorationState;
@@ -18,11 +18,11 @@ use crate::tool_loop_streaming::IterationCompleted;
 // ---------------------------------------------------------------------------
 
 const COMPACTION_TIERS: [(f64, usize, &compaction::CompactConfig, bool); 5] = [
-    (0.85, 2, &compaction::HISTORY,    true),
+    (0.85, 2, &compaction::HISTORY, true),
     (0.70, 3, &compaction::AGGRESSIVE, true),
     (0.60, 4, &compaction::AGGRESSIVE, false),
-    (0.30, 5, &compaction::MICRO,      false),
-    (0.15, 8, &compaction::MICRO,      false),
+    (0.30, 5, &compaction::MICRO, false),
+    (0.15, 8, &compaction::MICRO, false),
 ];
 
 pub(crate) fn check_context_compaction(
@@ -31,7 +31,9 @@ pub(crate) fn check_context_compaction(
     duplicate_stall_active: bool,
     api_messages: &mut [RichMessage],
 ) {
-    let Some(max_ctx) = config.max_context_tokens else { return };
+    let Some(max_ctx) = config.max_context_tokens else {
+        return;
+    };
     let utilization = iteration_input_tokens as f64 / max_ctx as f64;
     info!(
         input_tokens = iteration_input_tokens,
@@ -66,19 +68,16 @@ pub(crate) fn check_context_compaction(
             utilization_pct = (utilization * 100.0) as u32,
             "Duplicate-write stall active, compacting non-tool text as well"
         );
-        compaction::compact_older_message_text_tiered(
-            api_messages, 4, &compaction::AGGRESSIVE,
-        );
+        compaction::compact_older_message_text_tiered(api_messages, 4, &compaction::AGGRESSIVE);
     }
 }
 
-fn build_assistant_content_blocks(
-    tool_calls: &[ToolCall],
-    iter_text: &str,
-) -> Vec<ContentBlock> {
+fn build_assistant_content_blocks(tool_calls: &[ToolCall], iter_text: &str) -> Vec<ContentBlock> {
     let mut blocks: Vec<ContentBlock> = Vec::new();
     if !iter_text.is_empty() {
-        blocks.push(ContentBlock::Text { text: iter_text.to_string() });
+        blocks.push(ContentBlock::Text {
+            text: iter_text.to_string(),
+        });
     }
     for tc in tool_calls {
         let input = match tc.name.as_str() {
@@ -101,7 +100,9 @@ pub(crate) fn handle_truncated_tool_calls(
     state: &mut LoopState,
 ) {
     let assistant_blocks = build_assistant_content_blocks(&iter.iter_tool_calls, &iter.iter_text);
-    state.api_messages.push(RichMessage::assistant_blocks(assistant_blocks));
+    state
+        .api_messages
+        .push(RichMessage::assistant_blocks(assistant_blocks));
 
     let mut result_blocks: Vec<ContentBlock> = Vec::new();
     for tc in &iter.iter_tool_calls {
@@ -112,19 +113,24 @@ pub(crate) fn handle_truncated_tool_calls(
              to fill in one section at a time.",
             tc.name
         );
-        send_or_log(event_tx, ToolLoopEvent::ToolResult {
-            tool_use_id: tc.id.clone(),
-            tool_name: tc.name.clone(),
-            content: msg.clone(),
-            is_error: true,
-        });
+        send_or_log(
+            event_tx,
+            ToolLoopEvent::ToolResult {
+                tool_use_id: tc.id.clone(),
+                tool_name: tc.name.clone(),
+                content: msg.clone(),
+                is_error: true,
+            },
+        );
         result_blocks.push(ContentBlock::ToolResult {
             tool_use_id: tc.id.clone(),
             content: msg,
             is_error: Some(true),
         });
     }
-    state.api_messages.push(RichMessage::tool_results(result_blocks));
+    state
+        .api_messages
+        .push(RichMessage::tool_results(result_blocks));
 }
 
 pub(crate) fn push_assistant_tool_message(
@@ -191,14 +197,21 @@ pub(crate) async fn maybe_run_auto_build(
     if build.auto_build_cooldown == 0 {
         if let Some(build_result) = executor.auto_build_check().await {
             build.auto_build_cooldown = build.auto_build_reset;
-            let status = if build_result.success { "PASSED" } else { "FAILED" };
+            let status = if build_result.success {
+                "PASSED"
+            } else {
+                "FAILED"
+            };
             let output = if let Some(ref baseline) = build.baseline {
                 baseline.annotate(&build_result.output)
             } else {
                 build_result.output
             };
             let msg = format!("[AUTO-BUILD] Build check {status}:\n{output}");
-            info!(success = build_result.success, "Auto-build check after write batch");
+            info!(
+                success = build_result.success,
+                "Auto-build check after write batch"
+            );
             push_or_replace_warning(api_messages, "[AUTO-BUILD]", &msg);
         }
     }
@@ -218,9 +231,7 @@ pub(crate) fn maybe_compact_after_exploration(
         );
         compaction::compact_older_tool_results(api_messages, 4);
         if !write_cooldowns.is_empty() {
-            compaction::compact_older_message_text_tiered(
-                api_messages, 4, &compaction::AGGRESSIVE,
-            );
+            compaction::compact_older_message_text_tiered(api_messages, 4, &compaction::AGGRESSIVE);
         }
         sanitize_after_compaction(api_messages);
     }
@@ -269,14 +280,16 @@ mod tests {
 
     #[test]
     fn push_or_replace_warning_skips_non_text_content() {
-        let mut msgs = vec![
-            RichMessage::tool_results(vec![ContentBlock::ToolResult {
-                tool_use_id: "t1".into(),
-                content: "[WARN] inside tool result".into(),
-                is_error: None,
-            }]),
-        ];
+        let mut msgs = vec![RichMessage::tool_results(vec![ContentBlock::ToolResult {
+            tool_use_id: "t1".into(),
+            content: "[WARN] inside tool result".into(),
+            is_error: None,
+        }])];
         push_or_replace_warning(&mut msgs, "[WARN]", "[WARN] new");
-        assert_eq!(msgs.len(), 2, "should append since tool_result content doesn't match");
+        assert_eq!(
+            msgs.len(),
+            2,
+            "should append since tool_result content doesn't match"
+        );
     }
 }

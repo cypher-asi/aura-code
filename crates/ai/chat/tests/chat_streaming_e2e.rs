@@ -3,9 +3,9 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use aura_billing::testutil;
+use aura_chat::{ChatMessageParams, ChatService, ChatServiceDeps, ChatStreamEvent};
 use aura_claude::mock::{MockLlmProvider, MockResponse};
 use aura_core::*;
-use aura_chat::{ChatMessageParams, ChatService, ChatServiceDeps, ChatStreamEvent};
 
 use aura_projects::{CreateProjectInput, ProjectService};
 use aura_settings::SettingsService;
@@ -87,13 +87,18 @@ async fn setup(mock: Arc<MockLlmProvider>) -> TestHarness {
         updated_at: now,
     };
 
-    let runtime: Arc<dyn aura_harness::AgentRuntime> = Arc::new(
-        aura_chat::InternalRuntime::new(llm.clone(), settings.clone()),
-    );
+    let runtime: Arc<dyn aura_harness::AgentRuntime> = Arc::new(aura_chat::InternalRuntime::new(
+        llm.clone(),
+        settings.clone(),
+    ));
     let chat_service = ChatService::with_config(
         ChatServiceDeps {
-            store, settings, llm, spec_gen,
-            project_service, task_service,
+            store,
+            settings,
+            llm,
+            spec_gen,
+            project_service,
+            task_service,
             storage_client: Some(storage_client),
             runtime,
         },
@@ -144,9 +149,10 @@ fn event_name(e: &ChatStreamEvent) -> &'static str {
 
 #[tokio::test]
 async fn chat_streaming_simple_text_event_sequence() {
-    let mock = Arc::new(MockLlmProvider::with_responses(vec![
-        MockResponse::text("Hello! How can I help you today?").with_tokens(200, 80),
-    ]));
+    let mock = Arc::new(MockLlmProvider::with_responses(vec![MockResponse::text(
+        "Hello! How can I help you today?",
+    )
+    .with_tokens(200, 80)]));
 
     let h = setup(mock).await;
     let (tx, mut rx) = mpsc::unbounded_channel();
@@ -169,7 +175,10 @@ async fn chat_streaming_simple_text_event_sequence() {
     let names: Vec<&str> = events.iter().map(|e| event_name(e)).collect();
 
     // Must start with Progress events
-    assert_eq!(names[0], "Progress", "first event should be Progress(Connecting...)");
+    assert_eq!(
+        names[0], "Progress",
+        "first event should be Progress(Connecting...)"
+    );
     assert!(
         names.contains(&"Progress"),
         "should contain Progress events"
@@ -241,12 +250,30 @@ async fn chat_streaming_tool_use_event_sequence() {
     let events = collect_events(&mut rx);
     let names: Vec<&str> = events.iter().map(|e| event_name(e)).collect();
 
-    assert!(names.contains(&"ToolCallStarted"), "should contain ToolCallStarted, got: {names:?}");
-    assert!(names.contains(&"ToolCall"), "should contain ToolCall, got: {names:?}");
-    assert!(names.contains(&"ToolResult"), "should contain ToolResult, got: {names:?}");
-    assert!(names.contains(&"TokenUsage"), "should contain TokenUsage, got: {names:?}");
-    assert!(names.contains(&"Delta"), "should contain Delta for final text, got: {names:?}");
-    assert!(names.contains(&"MessageSaved"), "should contain MessageSaved, got: {names:?}");
+    assert!(
+        names.contains(&"ToolCallStarted"),
+        "should contain ToolCallStarted, got: {names:?}"
+    );
+    assert!(
+        names.contains(&"ToolCall"),
+        "should contain ToolCall, got: {names:?}"
+    );
+    assert!(
+        names.contains(&"ToolResult"),
+        "should contain ToolResult, got: {names:?}"
+    );
+    assert!(
+        names.contains(&"TokenUsage"),
+        "should contain TokenUsage, got: {names:?}"
+    );
+    assert!(
+        names.contains(&"Delta"),
+        "should contain Delta for final text, got: {names:?}"
+    );
+    assert!(
+        names.contains(&"MessageSaved"),
+        "should contain MessageSaved, got: {names:?}"
+    );
     assert_eq!(names.last(), Some(&"Done"));
 
     // Verify tool call has correct name
@@ -259,7 +286,10 @@ async fn chat_streaming_tool_use_event_sequence() {
     // Verify ToolCallStarted comes before ToolResult
     let started_idx = names.iter().position(|n| *n == "ToolCallStarted").unwrap();
     let result_idx = names.iter().position(|n| *n == "ToolResult").unwrap();
-    assert!(started_idx < result_idx, "ToolCallStarted should come before ToolResult");
+    assert!(
+        started_idx < result_idx,
+        "ToolCallStarted should come before ToolResult"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -305,8 +335,10 @@ async fn chat_streaming_error_event_on_llm_failure() {
 #[tokio::test]
 async fn test_generate_specs_streaming_flow() {
     let mock = Arc::new(MockLlmProvider::with_responses(vec![
-        MockResponse::text("# 01: Setup\nSetup project structure\n## Tasks\n- Initialize repo").with_tokens(300, 150),
-        MockResponse::text("{\"title\":\"Project Specs\",\"summary\":\"A test summary\"}").with_tokens(100, 50),
+        MockResponse::text("# 01: Setup\nSetup project structure\n## Tasks\n- Initialize repo")
+            .with_tokens(300, 150),
+        MockResponse::text("{\"title\":\"Project Specs\",\"summary\":\"A test summary\"}")
+            .with_tokens(100, 50),
     ]));
 
     let h = setup(mock).await;
@@ -329,12 +361,18 @@ async fn test_generate_specs_streaming_flow() {
     let events = collect_events(&mut rx);
     let names: Vec<&str> = events.iter().map(|e| event_name(e)).collect();
 
-    assert_eq!(names.last(), Some(&"Done"), "should end with Done, got: {names:?}");
+    assert_eq!(
+        names.last(),
+        Some(&"Done"),
+        "should end with Done, got: {names:?}"
+    );
 
-    let has_spec_activity = names.contains(&"Delta")
-        || names.contains(&"SpecSaved")
-        || names.contains(&"Error");
-    assert!(has_spec_activity, "should have spec-related events or error, got: {names:?}");
+    let has_spec_activity =
+        names.contains(&"Delta") || names.contains(&"SpecSaved") || names.contains(&"Error");
+    assert!(
+        has_spec_activity,
+        "should have spec-related events or error, got: {names:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -1,25 +1,22 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use tokio::sync::{mpsc, Mutex};
 
-use aura_core::*;
-use aura_claude::{RichMessage, ThinkingConfig};
 use aura_chat::{
-    ChatToolExecutor, ChatToolExecutorAdapter, ToolLoopConfig,
     rich_messages_to_harness, tool_defs_to_harness, tool_loop_config_to_turn_config,
-    turn_result_to_tool_loop_result,
+    turn_result_to_tool_loop_result, ChatToolExecutor, ChatToolExecutorAdapter, ToolLoopConfig,
 };
+use aura_claude::{RichMessage, ThinkingConfig};
+use aura_core::*;
 use aura_harness::RuntimeEvent;
 use aura_tools::engine_tool_definitions;
 
 use super::agentic_context::{
-    TaskComplexity,
-    build_full_task_context, build_work_log_summary,
-    check_already_completed, classify_task_complexity, compute_exploration_allowance,
-    compute_thinking_budget, fetch_codebase_context, resolve_completed_deps,
-    resolve_simple_model,
+    build_full_task_context, build_work_log_summary, check_already_completed,
+    classify_task_complexity, compute_exploration_allowance, compute_thinking_budget,
+    fetch_codebase_context, resolve_completed_deps, resolve_simple_model, TaskComplexity,
 };
 use super::orchestrator::DevLoopEngine;
 use super::planning::{TaskPhase, TaskPlan};
@@ -51,12 +48,12 @@ pub(crate) fn configure_llm_params(
 ) -> ToolLoopParams {
     let thinking_budget = match complexity {
         TaskComplexity::Simple => 2_000.min(llm_config.thinking_budget),
-        TaskComplexity::Standard => compute_thinking_budget(
-            llm_config.thinking_budget, member_count,
-        ),
-        TaskComplexity::Complex => compute_thinking_budget(
-            llm_config.thinking_budget, member_count,
-        ).max(12_000),
+        TaskComplexity::Standard => {
+            compute_thinking_budget(llm_config.thinking_budget, member_count)
+        }
+        TaskComplexity::Complex => {
+            compute_thinking_budget(llm_config.thinking_budget, member_count).max(12_000)
+        }
     };
     let max_tokens = match complexity {
         TaskComplexity::Simple => llm_config.task_execution_max_tokens.min(8_192),
@@ -88,27 +85,36 @@ fn spawn_runtime_event_forwarder(
     pid: ProjectId,
     aiid: AgentInstanceId,
     task_id: TaskId,
-) -> (tokio::task::JoinHandle<()>, mpsc::UnboundedSender<RuntimeEvent>) {
+) -> (
+    tokio::task::JoinHandle<()>,
+    mpsc::UnboundedSender<RuntimeEvent>,
+) {
     let (event_tx, mut event_rx) = mpsc::unbounded_channel::<RuntimeEvent>();
     let engine_tx = engine_tx.clone();
     let forwarder = tokio::spawn(async move {
         while let Some(evt) = event_rx.recv().await {
             match evt {
                 RuntimeEvent::Delta(text) => {
-                    send_or_log(&engine_tx, EngineEvent::TaskOutputDelta {
-                        project_id: pid,
-                        agent_instance_id: aiid,
-                        task_id,
-                        delta: text,
-                    });
+                    send_or_log(
+                        &engine_tx,
+                        EngineEvent::TaskOutputDelta {
+                            project_id: pid,
+                            agent_instance_id: aiid,
+                            task_id,
+                            delta: text,
+                        },
+                    );
                 }
                 RuntimeEvent::Error(msg) => {
-                    send_or_log(&engine_tx, EngineEvent::TaskOutputDelta {
-                        project_id: pid,
-                        agent_instance_id: aiid,
-                        task_id,
-                        delta: format!("\n[error] {msg}\n"),
-                    });
+                    send_or_log(
+                        &engine_tx,
+                        EngineEvent::TaskOutputDelta {
+                            project_id: pid,
+                            agent_instance_id: aiid,
+                            task_id,
+                            delta: format!("\n[error] {msg}\n"),
+                        },
+                    );
                 }
                 _ => {}
             }
@@ -179,12 +185,16 @@ async fn prepare_agentic_task(
     let project = engine.project_service.get_project_async(project_id).await?;
     let spec = engine.load_spec(project_id, &task.spec_id).await?;
 
-    let exploration_allowance = compute_exploration_allowance(
-        &task.title, &task.description, workspace_cache.member_count,
-    );
+    let exploration_allowance =
+        compute_exploration_allowance(&task.title, &task.description, workspace_cache.member_count);
     let workspace_map = &workspace_cache.workspace_map_text;
-    let workspace_info = if workspace_map.is_empty() { None } else { Some(workspace_map.as_str()) };
-    let system_prompt = agentic_execution_system_prompt(&project, agent, workspace_info, exploration_allowance);
+    let workspace_info = if workspace_map.is_empty() {
+        None
+    } else {
+        Some(workspace_map.as_str())
+    };
+    let system_prompt =
+        agentic_execution_system_prompt(&project, agent, workspace_info, exploration_allowance);
 
     let ctx = fetch_codebase_context(&project, task, &spec, workspace_cache, workspace_map).await;
     let completed_deps = resolve_completed_deps(&engine.task_service, project_id, task).await;
@@ -192,15 +202,30 @@ async fn prepare_agentic_task(
 
     let work_log_summary = build_work_log_summary(work_log);
     let base_context = build_agentic_task_context(
-        &project, &spec, task, session, &completed_deps, &work_log_summary,
+        &project,
+        &spec,
+        task,
+        session,
+        &completed_deps,
+        &work_log_summary,
     );
     let task_context = build_full_task_context(
-        base_context, workspace_map, &ctx.type_defs_context, &ctx.codebase_snapshot, &ctx.dep_api_context,
+        base_context,
+        workspace_map,
+        &ctx.type_defs_context,
+        &ctx.codebase_snapshot,
+        &ctx.dep_api_context,
     );
 
     Ok(AgenticTaskSetup {
-        project, spec, system_prompt, task_context, complexity,
-        completed_deps, work_log_summary, exploration_allowance,
+        project,
+        spec,
+        system_prompt,
+        task_context,
+        complexity,
+        completed_deps,
+        work_log_summary,
+        exploration_allowance,
     })
 }
 
@@ -217,8 +242,10 @@ fn build_executor(
     let aiid = session.agent_instance_id;
     EngineToolLoopExecutor {
         inner: ChatToolExecutor::new(
-            engine.store.clone(), engine.storage_client.clone(),
-            engine.project_service.clone(), engine.task_service.clone(),
+            engine.store.clone(),
+            engine.storage_client.clone(),
+            engine.project_service.clone(),
+            engine.task_service.clone(),
         ),
         project_id: pid,
         project: setup.project.clone(),
@@ -234,13 +261,13 @@ fn build_executor(
         stub_fix_attempts: Arc::new(Mutex::new(0)),
         completed_deps: setup.completed_deps.clone(),
         work_log_summary: setup.work_log_summary.clone(),
-        task_phase: Arc::new(Mutex::new(
-            if setup.complexity == TaskComplexity::Simple {
-                TaskPhase::Implementing { plan: TaskPlan::empty() }
-            } else {
-                TaskPhase::Exploring
+        task_phase: Arc::new(Mutex::new(if setup.complexity == TaskComplexity::Simple {
+            TaskPhase::Implementing {
+                plan: TaskPlan::empty(),
             }
-        )),
+        } else {
+            TaskPhase::Exploring
+        })),
         self_review_done: Arc::new(AtomicBool::new(false)),
         files_read: Arc::new(Mutex::new(HashSet::new())),
     }
@@ -276,17 +303,28 @@ impl DevLoopEngine {
         atp: &AgenticTaskParams<'_>,
     ) -> Result<TaskExecution, EngineError> {
         let setup = prepare_agentic_task(
-            self, atp.project_id, atp.task, atp.session, atp.agent,
-            atp.work_log, atp.workspace_cache,
-        ).await?;
+            self,
+            atp.project_id,
+            atp.task,
+            atp.session,
+            atp.agent,
+            atp.work_log,
+            atp.workspace_cache,
+        )
+        .await?;
 
         if setup.complexity == TaskComplexity::Simple {
-            if let Some(skip_reason) = check_already_completed(&setup.project, atp.task, &setup.completed_deps).await {
+            if let Some(skip_reason) =
+                check_already_completed(&setup.project, atp.task, &setup.completed_deps).await
+            {
                 tracing::info!(task_id = %atp.task.task_id, reason = %skip_reason, "Skipping redundant simple task");
                 return Ok(TaskExecution {
                     notes: format!("Task skipped as redundant: {}", skip_reason),
-                    file_ops: Vec::new(), follow_up_tasks: Vec::new(),
-                    input_tokens: 0, output_tokens: 0, parse_retries: 0,
+                    file_ops: Vec::new(),
+                    follow_up_tasks: Vec::new(),
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    parse_retries: 0,
                     files_already_applied: true,
                 });
             }
@@ -297,25 +335,37 @@ impl DevLoopEngine {
         let follow_ups: Arc<Mutex<Vec<FollowUpSuggestion>>> = Arc::new(Mutex::new(Vec::new()));
 
         let executor = build_executor(
-            self, &setup, atp.task, atp.session,
-            tracked_file_ops.clone(), notes.clone(), follow_ups.clone(),
+            self,
+            &setup,
+            atp.task,
+            atp.session,
+            tracked_file_ops.clone(),
+            notes.clone(),
+            follow_ups.clone(),
         );
         let llm_params = configure_llm_params(
-            setup.complexity, &self.llm_config, &self.engine_config,
-            setup.exploration_allowance, atp.workspace_cache.member_count,
+            setup.complexity,
+            &self.llm_config,
+            &self.engine_config,
+            setup.exploration_allowance,
+            atp.workspace_cache.member_count,
         );
         let config = build_tool_loop_config(llm_params);
 
         let pid = *atp.project_id;
         let aiid = atp.session.agent_instance_id;
-        let (forwarder, event_tx) = spawn_runtime_event_forwarder(&self.event_tx, pid, aiid, atp.task.task_id);
+        let (forwarder, event_tx) =
+            spawn_runtime_event_forwarder(&self.event_tx, pid, aiid, atp.task.task_id);
 
-        let tools: Arc<[aura_claude::ToolDefinition]> =
-            engine_tool_definitions().iter().cloned().map(Into::into).collect::<Vec<_>>().into();
+        let tools: Arc<[aura_claude::ToolDefinition]> = engine_tool_definitions()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect::<Vec<_>>()
+            .into();
 
-        let adapter: Arc<dyn aura_harness::ToolExecutor> = Arc::new(
-            ChatToolExecutorAdapter { inner: executor },
-        );
+        let adapter: Arc<dyn aura_harness::ToolExecutor> =
+            Arc::new(ChatToolExecutorAdapter { inner: executor });
         let request = aura_harness::TurnRequest {
             system_prompt: setup.system_prompt,
             messages: rich_messages_to_harness(vec![RichMessage::user(&setup.task_context)]),
@@ -342,7 +392,7 @@ impl DevLoopEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aura_core::{LlmConfig, EngineConfig};
+    use aura_core::{EngineConfig, LlmConfig};
 
     #[test]
     fn test_configure_llm_params_simple_caps_max_tokens() {

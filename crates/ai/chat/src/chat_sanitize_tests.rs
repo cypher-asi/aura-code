@@ -78,10 +78,7 @@ fn no_merging_when_roles_alternate() {
 
 #[test]
 fn merge_two_consecutive_user_text_messages() {
-    let msgs = vec![
-        RichMessage::user("hello"),
-        RichMessage::user("world"),
-    ];
+    let msgs = vec![RichMessage::user("hello"), RichMessage::user("world")];
     let result = merge_consecutive_same_role(msgs);
     assert_eq!(result.len(), 1);
     match &result[0].content {
@@ -175,13 +172,11 @@ fn passes_through_matched_tool_use_tool_result_pairs() {
 
 #[test]
 fn drops_orphan_tool_result_with_no_preceding_assistant() {
-    let msgs = vec![
-        RichMessage::tool_results(vec![ContentBlock::ToolResult {
-            tool_use_id: "orphan".into(),
-            content: "lost result".into(),
-            is_error: None,
-        }]),
-    ];
+    let msgs = vec![RichMessage::tool_results(vec![ContentBlock::ToolResult {
+        tool_use_id: "orphan".into(),
+        content: "lost result".into(),
+        is_error: None,
+    }])];
     let result = sanitize_orphan_tool_results(msgs);
     assert_eq!(result.len(), 1);
     match &result[0].content {
@@ -220,7 +215,10 @@ fn drops_tool_result_when_tool_use_id_not_in_previous_assistant() {
     assert_eq!(result.len(), 3);
     match &result[2].content {
         MessageContent::Blocks(blocks) => {
-            let tool_results: Vec<_> = blocks.iter().filter(|b| matches!(b, ContentBlock::ToolResult { .. })).collect();
+            let tool_results: Vec<_> = blocks
+                .iter()
+                .filter(|b| matches!(b, ContentBlock::ToolResult { .. }))
+                .collect();
             assert_eq!(tool_results.len(), 1);
         }
         _ => panic!("expected blocks"),
@@ -281,15 +279,14 @@ fn injects_synthetic_error_result_for_orphaned_tool_use() {
         RichMessage::assistant_text("continued without result"),
     ];
     let result = sanitize_tool_use_results(msgs);
-    let has_synthetic = result.iter().any(|m| {
-        match &m.content {
-            MessageContent::Blocks(blocks) => blocks.iter().any(|b| match b {
-                ContentBlock::ToolResult { content, is_error, .. } =>
-                    content.contains("interrupted") && *is_error == Some(true),
-                _ => false,
-            }),
+    let has_synthetic = result.iter().any(|m| match &m.content {
+        MessageContent::Blocks(blocks) => blocks.iter().any(|b| match b {
+            ContentBlock::ToolResult {
+                content, is_error, ..
+            } => content.contains("interrupted") && *is_error == Some(true),
             _ => false,
-        }
+        }),
+        _ => false,
     });
     assert!(has_synthetic, "should inject synthetic error result");
 }
@@ -299,8 +296,16 @@ fn merges_synthetic_results_with_existing_user_message() {
     let msgs = vec![
         RichMessage::user("go"),
         RichMessage::assistant_blocks(vec![
-            ContentBlock::ToolUse { id: "t1".into(), name: "a".into(), input: serde_json::json!({}) },
-            ContentBlock::ToolUse { id: "t2".into(), name: "b".into(), input: serde_json::json!({}) },
+            ContentBlock::ToolUse {
+                id: "t1".into(),
+                name: "a".into(),
+                input: serde_json::json!({}),
+            },
+            ContentBlock::ToolUse {
+                id: "t2".into(),
+                name: "b".into(),
+                input: serde_json::json!({}),
+            },
         ]),
         RichMessage::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
@@ -310,15 +315,19 @@ fn merges_synthetic_results_with_existing_user_message() {
     ];
     let result = sanitize_tool_use_results(msgs);
     let user_msg = result.iter().find(|m| {
-        m.role == "user" && match &m.content {
-            MessageContent::Blocks(blocks) => blocks.iter().any(|b| match b {
-                ContentBlock::ToolResult { tool_use_id, .. } => tool_use_id == "t2",
+        m.role == "user"
+            && match &m.content {
+                MessageContent::Blocks(blocks) => blocks.iter().any(|b| match b {
+                    ContentBlock::ToolResult { tool_use_id, .. } => tool_use_id == "t2",
+                    _ => false,
+                }),
                 _ => false,
-            }),
-            _ => false,
-        }
+            }
     });
-    assert!(user_msg.is_some(), "should merge synthetic t2 result into existing user message");
+    assert!(
+        user_msg.is_some(),
+        "should merge synthetic t2 result into existing user message"
+    );
 }
 
 #[test]
@@ -334,16 +343,24 @@ fn handles_text_user_message_following_tool_use() {
     ];
     let result = sanitize_tool_use_results(msgs);
     let has_both = result.iter().any(|m| {
-        m.role == "user" && match &m.content {
-            MessageContent::Blocks(blocks) => {
-                let has_text = blocks.iter().any(|b| matches!(b, ContentBlock::Text { .. }));
-                let has_result = blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. }));
-                has_text && has_result
+        m.role == "user"
+            && match &m.content {
+                MessageContent::Blocks(blocks) => {
+                    let has_text = blocks
+                        .iter()
+                        .any(|b| matches!(b, ContentBlock::Text { .. }));
+                    let has_result = blocks
+                        .iter()
+                        .any(|b| matches!(b, ContentBlock::ToolResult { .. }));
+                    has_text && has_result
+                }
+                _ => false,
             }
-            _ => false,
-        }
     });
-    assert!(has_both, "should convert text user msg to blocks and merge with synthetic result");
+    assert!(
+        has_both,
+        "should convert text user msg to blocks and merge with synthetic result"
+    );
 }
 
 #[test]
@@ -362,7 +379,9 @@ fn handles_tool_use_at_end_of_messages_with_no_next() {
     assert_eq!(last.role, "user");
     match &last.content {
         MessageContent::Blocks(blocks) => {
-            assert!(blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. })));
+            assert!(blocks
+                .iter()
+                .any(|b| matches!(b, ContentBlock::ToolResult { .. })));
         }
         _ => panic!("expected blocks with tool_result"),
     }
@@ -417,17 +436,25 @@ fn complex_scenario_empty_broken_alternation_orphans_missing_results() {
 
     for i in 1..result.len() {
         assert_ne!(
-            result[i].role, result[i - 1].role,
+            result[i].role,
+            result[i - 1].role,
             "messages at index {} and {} have same role '{}'",
-            i - 1, i, result[i].role
+            i - 1,
+            i,
+            result[i].role
         );
     }
 
     let has_tool_result = result.iter().any(|m| match &m.content {
-        MessageContent::Blocks(blocks) => blocks.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. })),
+        MessageContent::Blocks(blocks) => blocks
+            .iter()
+            .any(|b| matches!(b, ContentBlock::ToolResult { .. })),
         _ => false,
     });
-    assert!(has_tool_result, "should have injected synthetic tool_result");
+    assert!(
+        has_tool_result,
+        "should have injected synthetic tool_result"
+    );
 }
 
 // -------------------------------------------------------------------

@@ -1,22 +1,26 @@
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
-use aura_core::*;
+use aura_chat::{
+    AutoBuildResult, BuildBaseline, ChatToolExecutor, ToolCallResult, ToolExecResult, ToolExecutor,
+};
 use aura_claude::ToolCall;
-use aura_chat::{AutoBuildResult, BuildBaseline, ChatToolExecutor, ToolCallResult, ToolExecResult, ToolExecutor};
+use aura_core::*;
 
-use super::tool_executor_helpers::{normalize_tool_path, looks_like_compiler_errors, format_tool_arg_hint};
 use super::build_fix::{
-    infer_default_build_command,
-    classify_build_errors, error_category_guidance, parse_error_references,
+    classify_build_errors, error_category_guidance, infer_default_build_command,
+    parse_error_references,
 };
 use super::planning::{TaskPhase, TaskPlan};
 use super::prompts::build_stub_fix_prompt;
+use super::tool_executor_helpers::{
+    format_tool_arg_hint, looks_like_compiler_errors, normalize_tool_path,
+};
 use super::types::{track_file_op, FollowUpSuggestion};
 use crate::build_verify;
 use crate::channel_ext::send_or_log;
@@ -54,17 +58,23 @@ pub(crate) struct EngineToolLoopExecutor {
 impl ToolExecutor for EngineToolLoopExecutor {
     async fn auto_build_check(&self) -> Option<AutoBuildResult> {
         let project_root = std::path::Path::new(&self.project.linked_folder_path);
-        let cmd = self.project.build_command.as_deref()
+        let cmd = self
+            .project
+            .build_command
+            .as_deref()
             .filter(|s| !s.trim().is_empty())
             .map(String::from)
             .or_else(|| infer_default_build_command(project_root))?;
 
-        send_or_log(&self.engine_event_tx, EngineEvent::TaskOutputDelta {
-            project_id: self.project_id,
-            agent_instance_id: self.agent_instance_id,
-            task_id: self.task_id,
-            delta: format!("\n[auto-build: {}]\n", cmd),
-        });
+        send_or_log(
+            &self.engine_event_tx,
+            EngineEvent::TaskOutputDelta {
+                project_id: self.project_id,
+                agent_instance_id: self.agent_instance_id,
+                task_id: self.task_id,
+                delta: format!("\n[auto-build: {}]\n", cmd),
+            },
+        );
 
         match build_verify::run_build_command(project_root, &cmd, None).await {
             Ok(result) => {
@@ -73,7 +83,9 @@ impl ToolExecutor for EngineToolLoopExecutor {
                     output.push_str(&result.stdout);
                 }
                 if !result.stderr.is_empty() {
-                    if !output.is_empty() { output.push('\n'); }
+                    if !output.is_empty() {
+                        output.push('\n');
+                    }
                     output.push_str(&result.stderr);
                 }
                 let output = if !result.success {
@@ -95,7 +107,10 @@ impl ToolExecutor for EngineToolLoopExecutor {
 
     async fn capture_build_baseline(&self) -> Option<BuildBaseline> {
         let project_root = std::path::Path::new(&self.project.linked_folder_path);
-        let cmd = self.project.build_command.as_deref()
+        let cmd = self
+            .project
+            .build_command
+            .as_deref()
             .filter(|s| !s.trim().is_empty())
             .map(String::from)
             .or_else(|| infer_default_build_command(project_root))?;
@@ -107,7 +122,9 @@ impl ToolExecutor for EngineToolLoopExecutor {
                     count = sigs.len(),
                     "captured build baseline with pre-existing errors"
                 );
-                Some(BuildBaseline { error_signatures: sigs })
+                Some(BuildBaseline {
+                    error_signatures: sigs,
+                })
             }
             Ok(_) => Some(BuildBaseline::default()),
             Err(e) => {
@@ -134,7 +151,10 @@ impl ToolExecutor for EngineToolLoopExecutor {
                             track_file_op(&tc.name, &tc.input, &mut ops);
                         }
                         if let Some(path) = tc.input.get("path").and_then(|v| v.as_str()) {
-                            self.files_read.lock().await.remove(&normalize_tool_path(path));
+                            self.files_read
+                                .lock()
+                                .await
+                                .remove(&normalize_tool_path(path));
                         }
                         executor_indices.push(i);
                     }
@@ -146,7 +166,10 @@ impl ToolExecutor for EngineToolLoopExecutor {
                     }
                     if tc.name == "read_file" {
                         if let Some(path) = tc.input.get("path").and_then(|v| v.as_str()) {
-                            self.files_read.lock().await.insert(normalize_tool_path(path));
+                            self.files_read
+                                .lock()
+                                .await
+                                .insert(normalize_tool_path(path));
                         }
                     }
                     executor_indices.push(i);
@@ -158,7 +181,8 @@ impl ToolExecutor for EngineToolLoopExecutor {
             .iter()
             .map(|&i| {
                 let tc = &tool_calls[i];
-                self.inner.execute(&self.project_id, &tc.name, tc.input.clone())
+                self.inner
+                    .execute(&self.project_id, &tc.name, tc.input.clone())
             })
             .collect();
         let executor_results = futures::future::join_all(executor_futures).await;
@@ -285,9 +309,20 @@ impl EngineToolLoopExecutor {
         if let Some(arr) = tc.input.get("follow_ups").and_then(|v| v.as_array()) {
             let mut fu_lock = self.follow_ups.lock().await;
             for fu in arr {
-                let title = fu.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let desc = fu.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                fu_lock.push(FollowUpSuggestion { title, description: desc });
+                let title = fu
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let desc = fu
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                fu_lock.push(FollowUpSuggestion {
+                    title,
+                    description: desc,
+                });
             }
         }
         if let Some(reasoning) = tc.input.get("reasoning").and_then(|v| v.as_array()) {
@@ -354,15 +389,20 @@ impl EngineToolLoopExecutor {
         }
         *attempts += 1;
         let attempt = *attempts;
-        send_or_log(&self.engine_event_tx, EngineEvent::TaskOutputDelta {
-            project_id: self.project_id,
-            agent_instance_id: self.agent_instance_id,
-            task_id: self.task_id,
-            delta: format!(
-                "\n[stub detection] found {} stub(s), requesting fix (attempt {}/{})\n",
-                stub_reports.len(), attempt, MAX_STUB_FIX_ATTEMPTS,
-            ),
-        });
+        send_or_log(
+            &self.engine_event_tx,
+            EngineEvent::TaskOutputDelta {
+                project_id: self.project_id,
+                agent_instance_id: self.agent_instance_id,
+                task_id: self.task_id,
+                delta: format!(
+                    "\n[stub detection] found {} stub(s), requesting fix (attempt {}/{})\n",
+                    stub_reports.len(),
+                    attempt,
+                    MAX_STUB_FIX_ATTEMPTS,
+                ),
+            },
+        );
         Some(build_stub_fix_prompt(&stub_reports))
     }
 
@@ -442,12 +482,15 @@ impl EngineToolLoopExecutor {
             } else {
                 format!("\n[tool: {}({}) -> {}]\n", tc.name, arg_hint, status_str)
             };
-            send_or_log(&self.engine_event_tx, EngineEvent::TaskOutputDelta {
-                project_id: self.project_id,
-                agent_instance_id: self.agent_instance_id,
-                task_id: self.task_id,
-                delta: marker,
-            });
+            send_or_log(
+                &self.engine_event_tx,
+                EngineEvent::TaskOutputDelta {
+                    project_id: self.project_id,
+                    agent_instance_id: self.agent_instance_id,
+                    task_id: self.task_id,
+                    delta: marker,
+                },
+            );
 
             let content = if tc.name == "run_command" && result.is_error {
                 self.enrich_compiler_output(&result.content)

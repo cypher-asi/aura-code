@@ -1,5 +1,5 @@
-use aura_core::*;
 use aura_claude::{ContentBlock, ImageSource, MessageContent, RichMessage};
+use aura_core::*;
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use tracing::warn;
@@ -13,9 +13,7 @@ fn convert_content_blocks(blocks: &[ChatContentBlock], role: &str) -> Vec<RichMe
     for b in blocks {
         match b {
             ChatContentBlock::Text { text } => {
-                assistant_blocks.push(ContentBlock::Text {
-                    text: text.clone(),
-                });
+                assistant_blocks.push(ContentBlock::Text { text: text.clone() });
             }
             ChatContentBlock::ToolUse { id, name, input } => {
                 assistant_blocks.push(ContentBlock::ToolUse {
@@ -129,7 +127,11 @@ pub(crate) fn build_attachment_blocks(
             });
         }
     }
-    if blocks.is_empty() { None } else { Some(blocks) }
+    if blocks.is_empty() {
+        None
+    } else {
+        Some(blocks)
+    }
 }
 
 #[cfg(test)]
@@ -238,7 +240,11 @@ mod tests {
         ]);
 
         let rich = convert_messages_to_rich(&[msg]);
-        assert_eq!(rich.len(), 2, "assistant msg with ToolResult should split into 2 messages");
+        assert_eq!(
+            rich.len(),
+            2,
+            "assistant msg with ToolResult should split into 2 messages"
+        );
         assert_eq!(rich[0].role, "assistant");
         assert_eq!(rich[1].role, "user");
         match &rich[0].content {

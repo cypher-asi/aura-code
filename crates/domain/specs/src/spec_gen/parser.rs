@@ -1,8 +1,8 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use aura_core::*;
 use aura_core::extract_fenced_json;
+use aura_core::*;
 
 use crate::error::SpecGenError;
 
@@ -109,14 +109,26 @@ impl IncrementalSpecParser {
         let repaired = repair_partial_json(&self.current_object);
         let val: serde_json::Value = serde_json::from_str(&repaired).ok()?;
         let obj = val.as_object()?;
-        let title = obj.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let title = obj
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         if title.trim().is_empty() {
             return None;
         }
         Some(RawSpecOutput {
             title,
-            purpose: obj.get("purpose").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            markdown: obj.get("markdown").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            purpose: obj
+                .get("purpose")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            markdown: obj
+                .get("markdown")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
         })
     }
 }
@@ -172,9 +184,7 @@ fn repair_partial_json(buf: &str) -> String {
     candidate
 }
 
-pub(crate) fn parse_claude_response(
-    response: &str,
-) -> Result<Vec<RawSpecOutput>, SpecGenError> {
+pub(crate) fn parse_claude_response(response: &str) -> Result<Vec<RawSpecOutput>, SpecGenError> {
     let trimmed = response.trim();
 
     if let Ok(specs) = serde_json::from_str::<Vec<RawSpecOutput>>(trimmed) {

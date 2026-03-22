@@ -25,11 +25,21 @@ impl ChatService {
     /// When `session_id` is provided, skips the session lookup HTTP call.
     pub(crate) async fn save_message_to_storage(&self, params: SaveMessageParams<'_>) {
         let SaveMessageParams {
-            project_id, agent_instance_id, role, content, content_blocks,
-            thinking, thinking_duration_ms, input_tokens, output_tokens, session_id,
+            project_id,
+            agent_instance_id,
+            role,
+            content,
+            content_blocks,
+            thinking,
+            thinking_duration_ms,
+            input_tokens,
+            output_tokens,
+            session_id,
         } = params;
 
-        let Some(ref storage) = self.storage_client else { return };
+        let Some(ref storage) = self.storage_client else {
+            return;
+        };
         let Some(jwt) = self.get_jwt() else { return };
 
         let owned_session_id;
@@ -111,7 +121,11 @@ impl ChatService {
                     .iter()
                     .filter_map(|v| serde_json::from_value(v.clone()).ok())
                     .collect();
-                if blocks.is_empty() { None } else { Some(blocks) }
+                if blocks.is_empty() {
+                    None
+                } else {
+                    Some(blocks)
+                }
             });
             Message {
                 message_id,
@@ -148,9 +162,10 @@ impl ChatService {
         project_id: &ProjectId,
         agent_instance_id: &AgentInstanceId,
     ) -> Result<Vec<Message>, ChatError> {
-        let storage = self.storage_client.as_ref().ok_or_else(|| {
-            ChatError::Storage(aura_storage::StorageError::NotConfigured)
-        })?;
+        let storage = self
+            .storage_client
+            .as_ref()
+            .ok_or_else(|| ChatError::Storage(aura_storage::StorageError::NotConfigured))?;
         let jwt = self.get_jwt().ok_or_else(|| {
             ChatError::Storage(aura_storage::StorageError::Deserialize(
                 "not authenticated".to_string(),
@@ -166,7 +181,10 @@ impl ChatService {
                 .list_messages(&session.id, &jwt, None, None)
                 .await
                 .map_err(ChatError::Storage)?;
-            for sm in session_msgs.iter().filter(|sm| sm.role.as_deref() != Some("system")) {
+            for sm in session_msgs
+                .iter()
+                .filter(|sm| sm.role.as_deref() != Some("system"))
+            {
                 messages.push(Self::storage_message_to_message(
                     sm,
                     *project_id,
@@ -270,7 +288,9 @@ mod tests {
         let pid = ProjectId::new();
         let aid = AgentInstanceId::new();
         let blocks = vec![
-            ChatContentBlock::Text { text: "check this".into() },
+            ChatContentBlock::Text {
+                text: "check this".into(),
+            },
             ChatContentBlock::ToolUse {
                 id: "t1".into(),
                 name: "read_file".into(),

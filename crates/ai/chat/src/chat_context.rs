@@ -1,7 +1,7 @@
 use tracing::{info, warn};
 
-use aura_claude::{self, ContentBlock, MessageContent, RichMessage};
 use aura_billing::MeteredCompletionRequest;
+use aura_claude::{self, ContentBlock, MessageContent, RichMessage};
 use aura_core::*;
 
 use crate::ChatService;
@@ -73,8 +73,12 @@ fn append_directory_listing(prompt: &mut String, folder: &std::path::Path) {
     let mut items: Vec<String> = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') || name == "node_modules" || name == "target"
-            || name == "__pycache__" || name == "dist" || name == "build"
+        if name.starts_with('.')
+            || name == "node_modules"
+            || name == "target"
+            || name == "__pycache__"
+            || name == "dist"
+            || name == "build"
         {
             continue;
         }
@@ -83,14 +87,22 @@ fn append_directory_listing(prompt: &mut String, folder: &std::path::Path) {
     }
     items.sort();
     if !items.is_empty() {
-        let listing = items.iter().take(30).cloned().collect::<Vec<_>>().join(", ");
+        let listing = items
+            .iter()
+            .take(30)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
         prompt.push_str(&format!("\n### Project Structure\n{listing}\n"));
     }
 }
 
 fn append_config_previews(prompt: &mut String, folder: &std::path::Path) {
     let config_files: &[&str] = &[
-        "Cargo.toml", "package.json", "tsconfig.json", "pyproject.toml",
+        "Cargo.toml",
+        "package.json",
+        "tsconfig.json",
+        "pyproject.toml",
     ];
     let mut config_budget: usize = 2000;
     let mut config_sections: Vec<String> = Vec::new();
@@ -121,14 +133,15 @@ fn build_summary_input(old_messages: &[RichMessage]) -> String {
     let mut input = String::from(
         "Summarize the following conversation concisely, preserving key decisions, \
          tool calls made, and their outcomes. Focus on what was discussed, what was decided, \
-         and what actions were taken. Keep it under 500 words.\n\n"
+         and what actions were taken. Keep it under 500 words.\n\n",
     );
     for msg in old_messages {
         let role = &msg.role;
         let text = match &msg.content {
             aura_claude::MessageContent::Text(t) => t.clone(),
-            aura_claude::MessageContent::Blocks(blocks) => {
-                blocks.iter().map(|b| match b {
+            aura_claude::MessageContent::Blocks(blocks) => blocks
+                .iter()
+                .map(|b| match b {
                     ContentBlock::Text { text } => text.clone(),
                     ContentBlock::Image { .. } => "[Image]".to_string(),
                     ContentBlock::ToolUse { name, .. } => format!("[Tool call: {name}]"),
@@ -136,11 +149,15 @@ fn build_summary_input(old_messages: &[RichMessage]) -> String {
                         let preview: String = content.chars().take(100).collect();
                         format!("[Tool result: {preview}...]")
                     }
-                }).collect::<Vec<_>>().join(" ")
-            }
+                })
+                .collect::<Vec<_>>()
+                .join(" "),
         };
         if !text.is_empty() {
-            input.push_str(&format!("{role}: {}\n", text.chars().take(500).collect::<String>()));
+            input.push_str(&format!(
+                "{role}: {}\n",
+                text.chars().take(500).collect::<String>()
+            ));
         }
     }
     input
@@ -189,19 +206,29 @@ impl ChatService {
             if pct <= threshold_pct {
                 let keep = keep_recent.min(keep_cap);
                 if threshold_pct == 75 && total <= target_chat_tokens * 2 {
-                    info!(total_tokens = total, utilization_pct = pct,
-                        "Compaction: truncating large tool results in older messages");
+                    info!(
+                        total_tokens = total,
+                        utilization_pct = pct,
+                        "Compaction: truncating large tool results in older messages"
+                    );
                     return crate::compaction::compact_tool_results_in_history(messages, keep);
                 }
-                info!(total_tokens = total, utilization_pct = pct,
-                    "Compaction: summarizing older messages");
+                info!(
+                    total_tokens = total,
+                    utilization_pct = pct,
+                    "Compaction: summarizing older messages"
+                );
                 return self.apply_compaction(api_key, &messages, keep).await;
             }
         }
 
-        info!(total_tokens = total, utilization_pct = pct,
-            "Tier-3 compaction: aggressive summarization");
-        self.apply_compaction(api_key, &messages, AGGRESSIVE_KEEP).await
+        info!(
+            total_tokens = total,
+            utilization_pct = pct,
+            "Tier-3 compaction: aggressive summarization"
+        );
+        self.apply_compaction(api_key, &messages, AGGRESSIVE_KEEP)
+            .await
     }
 
     async fn apply_compaction(
@@ -234,8 +261,13 @@ impl ChatService {
         match self
             .llm
             .complete(MeteredCompletionRequest {
-                model: Some(aura_claude::FAST_MODEL), api_key, system_prompt: CONTEXT_SUMMARY_SYSTEM_PROMPT,
-                user_message: &summary_input, max_tokens: 1024, billing_reason: "aura_context_summary", metadata: None,
+                model: Some(aura_claude::FAST_MODEL),
+                api_key,
+                system_prompt: CONTEXT_SUMMARY_SYSTEM_PROMPT,
+                user_message: &summary_input,
+                max_tokens: 1024,
+                billing_reason: "aura_context_summary",
+                metadata: None,
             })
             .await
         {

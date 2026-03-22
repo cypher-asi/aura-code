@@ -155,6 +155,7 @@ impl ChatService {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_chat_tool_loop(
         &self,
         _api_key: &str,

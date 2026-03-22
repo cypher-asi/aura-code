@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use aura_claude::ToolCall;
 
-use crate::constants::{MAX_READS_PER_FILE, MAX_RANGE_READS_PER_FILE};
+use crate::constants::{MAX_RANGE_READS_PER_FILE, MAX_READS_PER_FILE};
 
 // ---------------------------------------------------------------------------
 // State
@@ -36,9 +36,17 @@ pub(crate) fn is_range_read(tc: &ToolCall) -> bool {
 pub(crate) fn is_shell_read_cmd(command: &str) -> bool {
     let lower = command.to_lowercase();
     let patterns = [
-        "get-content", "cat ", "type ", "head ", "tail ",
-        "findstr", "select-string", "python -c",
-        "python3 -c", "more ", "less ",
+        "get-content",
+        "cat ",
+        "type ",
+        "head ",
+        "tail ",
+        "findstr",
+        "select-string",
+        "python -c",
+        "python3 -c",
+        "more ",
+        "less ",
     ];
     patterns.iter().any(|p| lower.contains(p))
 }
@@ -103,8 +111,16 @@ pub(crate) fn detect_shell_read_workaround(tool_calls: &[ToolCall]) -> Vec<usize
             if tc.name != "run_command" {
                 return None;
             }
-            let cmd = tc.input.get("command").and_then(|v| v.as_str()).unwrap_or("");
-            if is_shell_read_cmd(cmd) { Some(i) } else { None }
+            let cmd = tc
+                .input
+                .get("command")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if is_shell_read_cmd(cmd) {
+                Some(i)
+            } else {
+                None
+            }
         })
         .collect()
 }

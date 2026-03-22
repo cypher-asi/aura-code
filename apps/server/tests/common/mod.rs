@@ -12,12 +12,12 @@ use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, Mutex};
 
-use aura_core::*;
-use aura_agents::{AgentService, AgentInstanceService};
+use aura_agents::{AgentInstanceService, AgentService};
 use aura_auth::AuthService;
 use aura_billing::{BillingClient, MeteredLlm, PricingService};
 use aura_chat::{ChatService, ChatServiceDeps};
 use aura_claude::ClaudeClient;
+use aura_core::*;
 use aura_engine::EngineEvent;
 use aura_network::NetworkClient;
 use aura_orbit::OrbitClient;
@@ -27,8 +27,8 @@ use aura_server::state::{AppState, TaskOutputBuffers, TaskStepBuffers};
 use aura_sessions::SessionService;
 use aura_settings::SettingsService;
 use aura_specs::SpecGenerationService;
-use aura_store::RocksStore;
 use aura_storage::StorageClient;
+use aura_store::RocksStore;
 use aura_tasks::{TaskExtractionService, TaskService};
 
 pub fn store_zero_auth_session(store: &RocksStore) {
@@ -68,21 +68,23 @@ pub async fn build_test_app_with_mocks() -> (Router, AppState, tempfile::TempDir
     let network_app = Router::new()
         .route(
             "/api/projects",
-            get(move |Query(q): Query<std::collections::HashMap<String, String>>| async move {
-                if q.contains_key("org_id") {
-                    Json(vec![serde_json::json!({
-                        "id": ProjectId::new().to_string(),
-                        "name": "Test Project",
-                        "description": "A test",
-                        "orgId": q.get("org_id").unwrap_or(&String::new()),
-                        "folder": ".",
-                        "createdAt": now_list,
-                        "updatedAt": now_list,
-                    })])
-                } else {
-                    Json(vec![])
-                }
-            })
+            get(
+                move |Query(q): Query<std::collections::HashMap<String, String>>| async move {
+                    if q.contains_key("org_id") {
+                        Json(vec![serde_json::json!({
+                            "id": ProjectId::new().to_string(),
+                            "name": "Test Project",
+                            "description": "A test",
+                            "orgId": q.get("org_id").unwrap_or(&String::new()),
+                            "folder": ".",
+                            "createdAt": now_list,
+                            "updatedAt": now_list,
+                        })])
+                    } else {
+                        Json(vec![])
+                    }
+                },
+            )
             .post(move || {
                 let created_ids = created_ids_post.clone();
                 let id = ProjectId::new().to_string();
@@ -147,7 +149,10 @@ pub async fn build_test_app_with_mocks() -> (Router, AppState, tempfile::TempDir
                             })),
                         )
                     } else {
-                        (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "not found"})))
+                        (
+                            StatusCode::NOT_FOUND,
+                            Json(serde_json::json!({"error": "not found"})),
+                        )
                     }
                 }
             })
@@ -172,7 +177,10 @@ pub async fn build_test_app_with_mocks() -> (Router, AppState, tempfile::TempDir
         .route(
             "/api/project-agents/:id",
             get(|Path(_id): Path<String>| async {
-                (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "not found"})))
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({"error": "not found"})),
+                )
             }),
         );
     let storage_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -198,10 +206,17 @@ pub fn build_test_app_from_store(
     let settings_service = Arc::new(SettingsService::new(store.clone()));
     let billing_client = Arc::new(BillingClient::new());
     let claude_client: Arc<ClaudeClient> = Arc::new(ClaudeClient::new());
-    let llm = Arc::new(MeteredLlm::new(claude_client.clone(), billing_client.clone(), store.clone()));
+    let llm = Arc::new(MeteredLlm::new(
+        claude_client.clone(),
+        billing_client.clone(),
+        store.clone(),
+    ));
     let org_service = Arc::new(OrgService::new(store.clone()));
     let auth_service = Arc::new(AuthService::new(store.clone()));
-    let project_service = Arc::new(ProjectService::new_with_network(network_client.clone(), store.clone()));
+    let project_service = Arc::new(ProjectService::new_with_network(
+        network_client.clone(),
+        store.clone(),
+    ));
     let spec_gen_service = Arc::new(SpecGenerationService::new(
         store.clone(),
         project_service.clone(),
@@ -232,9 +247,10 @@ pub fn build_test_app_from_store(
         llm_config.context_rollover_threshold,
         llm_config.max_context_tokens,
     ));
-    let runtime: Arc<dyn aura_harness::AgentRuntime> = Arc::new(
-        aura_chat::InternalRuntime::new(llm.clone(), settings_service.clone()),
-    );
+    let runtime: Arc<dyn aura_harness::AgentRuntime> = Arc::new(aura_chat::InternalRuntime::new(
+        llm.clone(),
+        settings_service.clone(),
+    ));
     let chat_service = Arc::new(ChatService::new(ChatServiceDeps {
         store: store.clone(),
         settings: settings_service.clone(),
@@ -248,11 +264,9 @@ pub fn build_test_app_from_store(
 
     let (event_tx, _event_rx) = mpsc::unbounded_channel::<EngineEvent>();
     let (event_broadcast, _) = broadcast::channel::<EngineEvent>(256);
-    let task_output_buffers: TaskOutputBuffers =
-        Arc::new(std::sync::Mutex::new(HashMap::new()));
+    let task_output_buffers: TaskOutputBuffers = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
-    let task_step_buffers: TaskStepBuffers =
-        Arc::new(std::sync::Mutex::new(HashMap::new()));
+    let task_step_buffers: TaskStepBuffers = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
     let state = AppState {
         store,

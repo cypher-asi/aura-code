@@ -145,7 +145,10 @@ mod tests {
             "key_decisions": ["Reuse existing types"]
         });
         let plan = TaskPlan::from_tool_input(&input);
-        assert_eq!(plan.approach, "Modify the handler to support the new feature");
+        assert_eq!(
+            plan.approach,
+            "Modify the handler to support the new feature"
+        );
         assert_eq!(plan.files_to_modify, vec!["src/handler.rs"]);
         assert_eq!(plan.files_to_create, vec!["src/new_module.rs"]);
         assert_eq!(plan.key_decisions, vec!["Reuse existing types"]);
