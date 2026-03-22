@@ -1,18 +1,26 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { Bot, ChevronDown } from "lucide-react";
 import { api } from "../../api/client";
 import { useChatStream } from "../../hooks/use-chat-stream";
 import { useIsStreaming } from "../../hooks/stream/hooks";
 import { useDelayedLoading } from "../../hooks/use-delayed-loading";
+import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
+import { useProjectsList } from "../../apps/projects/useProjectsList";
 import { setLastAgent, setLastProject } from "../../utils/storage";
+import { projectAgentChatRoute } from "../../utils/mobileNavigation";
 import { ChatPanel } from "../ChatPanel";
 import { useChatHistoryStore, useChatHistory, projectChatHistoryKey } from "../../stores/chat-history-store";
+import styles from "./ChatView.module.css";
 
 export function ChatView() {
+  const navigate = useNavigate();
   const { projectId, agentInstanceId } = useParams<{
     projectId: string;
     agentInstanceId: string;
   }>();
+  const { isMobileLayout } = useAuraCapabilities();
+  const { agentsByProject, loadingAgentsByProject, refreshProjectAgents } = useProjectsList();
 
   const historyKey = projectId && agentInstanceId
     ? projectChatHistoryKey(projectId, agentInstanceId)
@@ -35,6 +43,16 @@ export function ChatView() {
   const resetMessagesRef = useRef(resetMessages);
   useEffect(() => { resetMessagesRef.current = resetMessages; }, [resetMessages]);
 
+  const projectAgents = projectId ? (agentsByProject[projectId] ?? []) : [];
+  const selectedProjectAgent = projectAgents.find((agent) => agent.agent_instance_id === agentInstanceId) ?? null;
+  const isLoadingProjectAgents = projectId ? Boolean(loadingAgentsByProject[projectId]) : false;
+
+  useEffect(() => {
+    if (!projectId) return;
+    if (agentsByProject[projectId]) return;
+    void refreshProjectAgents(projectId).catch(() => {});
+  }, [agentsByProject, projectId, refreshProjectAgents]);
+
   // Fetch agent instance metadata (name)
   useEffect(() => {
     const loadId = ++metadataLoadIdRef.current;
@@ -42,6 +60,7 @@ export function ChatView() {
 
     if (projectId && agentInstanceId) {
       setLastProject(projectId);
+      setAgentName(undefined);
       setLastAgent(projectId, agentInstanceId);
       api
         .getAgentInstance(projectId, agentInstanceId, { signal: controller.signal })
@@ -125,20 +144,60 @@ export function ChatView() {
   const rawLoading = historyStatus === "loading" || historyStatus === "idle";
   const deferredLoading = useDelayedLoading(rawLoading);
   const historyResolved = historyStatus === "ready" || historyStatus === "error";
+  const handleProjectAgentChange = useCallback((nextAgentInstanceId: string) => {
+    if (!projectId || !nextAgentInstanceId || nextAgentInstanceId === agentInstanceId) return;
+    navigate(projectAgentChatRoute(projectId, nextAgentInstanceId));
+  }, [agentInstanceId, navigate, projectId]);
 
   if (!agentInstanceId) return null;
 
   return (
-    <ChatPanel
-      key={agentInstanceId}
-      streamKey={streamKey}
-      onSend={wrappedSend}
-      onStop={stopStreaming}
-      agentName={agentName}
-      isLoading={deferredLoading}
-      historyResolved={historyResolved}
-      contextUsagePercent={projectId && agentInstanceId ? contextUsagePercent : undefined}
-      scrollResetKey={agentInstanceId}
-    />
+    <div className={styles.container}>
+      {isMobileLayout && projectId ? (
+        <section className={styles.projectAgentBar}>
+          {projectAgents.length > 1 ? (
+            <label className={styles.projectAgentSelectWrap}>
+              <Bot size={16} aria-hidden="true" />
+              <select
+                aria-label="Project agent"
+                className={styles.projectAgentSelect}
+                value={agentInstanceId}
+                onChange={(event) => handleProjectAgentChange(event.target.value)}
+              >
+                {projectAgents.map((agent) => (
+                  <option key={agent.agent_instance_id} value={agent.agent_instance_id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={16} aria-hidden="true" className={styles.projectAgentChevron} />
+            </label>
+          ) : (
+            <div className={styles.projectAgentSummary}>
+              <Bot size={16} aria-hidden="true" />
+              <div className={styles.projectAgentSummaryCopy}>
+                <span className={styles.projectAgentName}>
+                  {selectedProjectAgent?.name ?? agentName ?? (isLoadingProjectAgents ? "Loading project agent..." : "Project agent")}
+                </span>
+                <span className={styles.projectAgentSummaryHint}>
+                  {selectedProjectAgent?.role ?? "Chat in this project's agent context."}
+                </span>
+              </div>
+            </div>
+          )}
+        </section>
+      ) : null}
+      <ChatPanel
+        key={agentInstanceId}
+        streamKey={streamKey}
+        onSend={wrappedSend}
+        onStop={stopStreaming}
+        agentName={selectedProjectAgent?.name ?? agentName}
+        isLoading={deferredLoading}
+        historyResolved={historyResolved}
+        contextUsagePercent={projectId && agentInstanceId ? contextUsagePercent : undefined}
+        scrollResetKey={agentInstanceId}
+      />
+    </div>
   );
 }

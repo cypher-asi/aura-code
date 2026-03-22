@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { MessageSquare, AlertCircle } from "lucide-react";
 import { Text } from "@cypher-asi/zui";
 import { useAutoScroll } from "../../hooks/use-auto-scroll";
+import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import { ChatMessageList } from "../ChatMessageList";
 import { ChatInputBar } from "../ChatInputBar";
 import type { ChatInputBarHandle, AttachmentItem } from "../ChatInputBar";
@@ -43,13 +44,15 @@ export function ChatPanel({
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const inputBarRef = useRef<ChatInputBarHandle>(null);
+  const { isMobileLayout } = useAuraCapabilities();
   const attachmentsRef = useRef(attachments);
   useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
   const { handleScroll, scrollToBottom } = useAutoScroll(messageAreaRef, scrollResetKey);
 
   useEffect(() => {
+    if (isMobileLayout) return;
     requestAnimationFrame(() => inputBarRef.current?.focus());
-  }, [scrollResetKey]);
+  }, [isMobileLayout, scrollResetKey]);
 
   const handleRemoveAttachment = useCallback(
     (id: string) => setAttachments((prev) => prev.filter((a) => a.id !== id)),
