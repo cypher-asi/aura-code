@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { api } from "../../api/client";
 import { useChatStream } from "../../hooks/use-chat-stream";
 import { useIsStreaming } from "../../hooks/stream/hooks";
-import { setLastAgent } from "../../utils/storage";
+import { setLastAgent, setLastProject } from "../../utils/storage";
 import { ChatPanel } from "../ChatPanel";
 import { useChatHistoryStore, useChatHistory, projectChatHistoryKey } from "../../stores/chat-history-store";
 
@@ -40,6 +40,7 @@ export function ChatView() {
     const controller = new AbortController();
 
     if (projectId && agentInstanceId) {
+      setLastProject(projectId);
       setLastAgent(projectId, agentInstanceId);
       api
         .getAgentInstance(projectId, agentInstanceId, { signal: controller.signal })
