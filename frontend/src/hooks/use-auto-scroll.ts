@@ -48,15 +48,9 @@ export function useAutoScroll(
       }
     };
 
-    let pendingRaf: number | null = null;
-
     const mutationObs = new MutationObserver(() => {
-      if (pendingRaf !== null) return;
-      pendingRaf = requestAnimationFrame(() => {
-        pendingRaf = null;
-        scrollIfNeeded();
-        syncHeight();
-      });
+      scrollIfNeeded();
+      syncHeight();
     });
     mutationObs.observe(el, {
       childList: true,
@@ -91,7 +85,6 @@ export function useAutoScroll(
     syncHeight();
 
     return () => {
-      if (pendingRaf !== null) cancelAnimationFrame(pendingRaf);
       mutationObs.disconnect();
       resizeObs.disconnect();
     };
