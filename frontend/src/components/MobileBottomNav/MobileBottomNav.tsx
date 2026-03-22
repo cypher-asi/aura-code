@@ -1,13 +1,12 @@
-import { Brain, CheckSquare, FolderOpen, GitCommitVertical } from "lucide-react";
+import { Brain, CheckSquare, FolderOpen } from "lucide-react";
 import styles from "../AppShell/AppShell.module.css";
 
-export type MobileNavId = "agent" | "tasks" | "files" | "feed";
+export type MobileNavId = "agent" | "tasks" | "files";
 
 const MOBILE_NAV_ITEMS: Array<{ id: MobileNavId; label: string; icon: typeof Brain }> = [
   { id: "agent", label: "Agent", icon: Brain },
   { id: "tasks", label: "Tasks", icon: CheckSquare },
   { id: "files", label: "Files", icon: FolderOpen },
-  { id: "feed", label: "Feed", icon: GitCommitVertical },
 ];
 
 export function MobileBottomNav({

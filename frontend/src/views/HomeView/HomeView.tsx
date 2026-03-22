@@ -1,12 +1,30 @@
+import { Navigate } from "react-router-dom";
 import { PageEmptyState } from "@cypher-asi/zui";
 import { Rocket } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
+import { useProjectsList } from "../../apps/projects/useProjectsList";
+import { getLastAgent } from "../../utils/storage";
+import { projectAgentRoute } from "../../utils/mobileNavigation";
 import { useOrgStore } from "../../stores/org-store";
 
 export function HomeView() {
+  const { isMobileLayout } = useAuraCapabilities();
+  const { projects, mostRecentProject } = useProjectsList();
   const { activeOrg, isLoading } = useOrgStore(
     useShallow((s) => ({ activeOrg: s.activeOrg, isLoading: s.isLoading })),
   );
+
+  const lastAgent = getLastAgent();
+  const targetProject = (
+    lastAgent
+      ? projects.find((project) => project.project_id === lastAgent.projectId)
+      : null
+  ) ?? mostRecentProject ?? projects[0] ?? null;
+
+  if (isMobileLayout && targetProject) {
+    return <Navigate to={projectAgentRoute(targetProject.project_id)} replace />;
+  }
 
   return (
     <PageEmptyState

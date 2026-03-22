@@ -64,6 +64,7 @@ function MobileSpecsList({ projectId }: { projectId: string }) {
           key={spec.spec_id}
           type="button"
           className={styles.itemButton}
+          aria-label={`Open spec ${spec.title || "Spec"}`}
           onClick={() => sidekick.viewSpec(spec)}
         >
           <span className={styles.itemTitle}>{spec.title || "Spec"}</span>
@@ -89,6 +90,7 @@ function MobileTasksList({ projectId }: { projectId: string }) {
           key={task.task_id}
           type="button"
           className={styles.itemButton}
+          aria-label={`Open task ${task.title}`}
           onClick={() => sidekick.viewTask(task)}
         >
           <span className={styles.itemButtonMeta}>

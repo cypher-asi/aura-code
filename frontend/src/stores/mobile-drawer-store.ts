@@ -9,10 +9,12 @@ function blurActiveElement() {
 
 interface MobileDrawerState {
   navOpen: boolean;
+  appOpen: boolean;
   previewOpen: boolean;
   accountOpen: boolean;
 
   setNavOpen: (open: boolean) => void;
+  setAppOpen: (open: boolean) => void;
   setPreviewOpen: (open: boolean) => void;
   setAccountOpen: (open: boolean) => void;
   closeDrawers: () => void;
@@ -21,16 +23,18 @@ interface MobileDrawerState {
 
 export const useMobileDrawerStore = create<MobileDrawerState>()((set) => ({
   navOpen: false,
+  appOpen: false,
   previewOpen: false,
   accountOpen: false,
 
   setNavOpen: (open) => set({ navOpen: open }),
+  setAppOpen: (open) => set({ appOpen: open }),
   setPreviewOpen: (open) => set({ previewOpen: open }),
   setAccountOpen: (open) => set({ accountOpen: open }),
 
   closeDrawers: () => {
     blurActiveElement();
-    set({ navOpen: false, previewOpen: false, accountOpen: false });
+    set({ navOpen: false, appOpen: false, previewOpen: false, accountOpen: false });
   },
 
   openAfterDrawerClose: (callback) => {
@@ -41,9 +45,9 @@ export const useMobileDrawerStore = create<MobileDrawerState>()((set) => ({
 }));
 
 export function selectDrawerOpen(s: MobileDrawerState): boolean {
-  return s.navOpen || s.previewOpen || s.accountOpen;
+  return s.navOpen || s.appOpen || s.previewOpen || s.accountOpen;
 }
 
 export function selectOverlayDrawerOpen(s: MobileDrawerState): boolean {
-  return s.navOpen || s.previewOpen || s.accountOpen;
+  return s.navOpen || s.appOpen || s.previewOpen || s.accountOpen;
 }

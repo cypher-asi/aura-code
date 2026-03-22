@@ -16,7 +16,7 @@ export const AgentsApp: AuraApp = {
   MainPanel: AgentMainPanel,
   ResponsiveControls: AgentList,
   SidekickPanel: AgentInfoPanel,
-  searchPlaceholder: "",
+  searchPlaceholder: "Search Agents...",
   onPrefetch: () => {
     useAgentStore.getState().fetchAgents().catch(() => {});
     const lastId = localStorage.getItem(LAST_AGENT_ID_KEY);
