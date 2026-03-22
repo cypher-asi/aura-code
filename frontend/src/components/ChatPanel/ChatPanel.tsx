@@ -112,6 +112,7 @@ export function ChatPanel({
           <div className={styles.messageContent}>
             <ChatMessageList
               streamKey={streamKey}
+              scrollRef={messageAreaRef}
               emptyState={emptyState}
             />
           </div>
