@@ -55,7 +55,7 @@ test("desktop browser agents route keeps desktop layout without mobile switcher"
 
   await expect(page.getByPlaceholder("Search Agents...")).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Choose agent" })).toHaveCount(0);
-  await expect(page.getByText("Send a message to chat with Builder Bot across all linked projects")).toBeVisible();
+  await expect(page.getByText("Send a message")).toBeVisible();
   await expect(page.getByRole("button", { name: "Open navigation" })).toHaveCount(0);
 });
 

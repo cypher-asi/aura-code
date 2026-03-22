@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 
 interface MockAuthenticatedAppOptions {
   project?: Record<string, unknown>;
+  projects?: Record<string, unknown>[];
   agentInstances?: Record<string, unknown>[];
   agents?: Record<string, unknown>[];
   tasks?: Record<string, unknown>[];
@@ -74,6 +75,7 @@ export async function mockAuthenticatedApp(page: Page, options: MockAuthenticate
       updated_at: "2026-03-17T01:00:00.000Z",
       ...options.project,
     };
+    const projects = options.projects ?? [project];
 
     const defaultAgentInstance = {
       agent_instance_id: "agent-inst-1",
@@ -238,33 +240,49 @@ export async function mockAuthenticatedApp(page: Page, options: MockAuthenticate
     if (path === "/api/orgs/org-1/integrations/github") return json(null);
     if (path === "/api/orgs/org-1/integrations/github/app") return json([]);
     if (path === "/api/orgs/org-1/credits/transactions") return json({ transactions: [], has_more: false });
-    if (pathname === "/api/projects" && (!url.search || url.search === "?org_id=org-1")) return json([project]);
-    if (pathname === `/api/projects/${project.project_id}`) return json(project);
-    if (pathname === `/api/projects/${project.project_id}/specs`) return json(specs);
-    if (pathname === `/api/projects/${project.project_id}/tasks`) return json(tasks);
-    if (pathname === `/api/projects/${project.project_id}/agents`) return json(agentInstances);
+    if (pathname === "/api/projects" && (!url.search || url.search === "?org_id=org-1")) return json(projects);
+
+    const matchingProject = projects.find((candidate) => pathname === `/api/projects/${candidate.project_id}`);
+    if (matchingProject) return json(matchingProject);
+
+    const matchingProjectSpecs = projects.find((candidate) => pathname === `/api/projects/${candidate.project_id}/specs`);
+    if (matchingProjectSpecs) {
+      return json(specs.map((spec) => ({ ...spec, project_id: matchingProjectSpecs.project_id })));
+    }
+
+    const matchingProjectTasks = projects.find((candidate) => pathname === `/api/projects/${candidate.project_id}/tasks`);
+    if (matchingProjectTasks) {
+      return json(tasks.map((task) => ({ ...task, project_id: matchingProjectTasks.project_id })));
+    }
+
+    const matchingProjectAgents = projects.find((candidate) => pathname === `/api/projects/${candidate.project_id}/agents`);
+    if (matchingProjectAgents) {
+      return json(agentInstances.map((agent) => ({ ...agent, project_id: matchingProjectAgents.project_id })));
+    }
 
     const matchingAgentInstance = agentInstances.find(
-      (instance) => pathname === `/api/projects/${project.project_id}/agents/${instance.agent_instance_id}`,
+      (instance) => projects.some((candidate) => pathname === `/api/projects/${candidate.project_id}/agents/${instance.agent_instance_id}`),
     );
     if (matchingAgentInstance) return json(matchingAgentInstance);
 
     const matchingAgentInstanceMessages = agentInstances.find(
-      (instance) => pathname === `/api/projects/${project.project_id}/agents/${instance.agent_instance_id}/messages`,
+      (instance) => projects.some((candidate) => pathname === `/api/projects/${candidate.project_id}/agents/${instance.agent_instance_id}/messages`),
     );
     if (matchingAgentInstanceMessages) return json([]);
 
     const matchingAgentInstanceSessions = agentInstances.find(
-      (instance) => pathname === `/api/projects/${project.project_id}/agents/${instance.agent_instance_id}/sessions`,
+      (instance) => projects.some((candidate) => pathname === `/api/projects/${candidate.project_id}/agents/${instance.agent_instance_id}/sessions`),
     );
     if (matchingAgentInstanceSessions) return json([]);
 
-    if (pathname === `/api/projects/${project.project_id}/loop/status`) {
+    const matchingLoopProject = projects.find((candidate) => pathname === `/api/projects/${candidate.project_id}/loop/status`);
+    if (matchingLoopProject) {
       return json({ running: false, paused: false, project_id: "proj-1", active_agent_instances: [] });
     }
-    if (pathname === `/api/projects/${project.project_id}/progress`) {
+    const matchingProgressProject = projects.find((candidate) => pathname === `/api/projects/${candidate.project_id}/progress`);
+    if (matchingProgressProject) {
       return json({
-        project_id: project.project_id,
+        project_id: matchingProgressProject.project_id,
         total_tasks: 0,
         pending_tasks: 0,
         ready_tasks: 0,
@@ -285,9 +303,9 @@ export async function mockAuthenticatedApp(page: Page, options: MockAuthenticate
         total_tests: 0,
       });
     }
-    if (pathname === `/api/projects/${project.project_id}/start-loop`) return json({ ok: true });
-    if (pathname === `/api/projects/${project.project_id}/pause-loop`) return json({ ok: true });
-    if (pathname === `/api/projects/${project.project_id}/stop-loop`) return json({ ok: true });
+    if (projects.some((candidate) => pathname === `/api/projects/${candidate.project_id}/start-loop`)) return json({ ok: true });
+    if (projects.some((candidate) => pathname === `/api/projects/${candidate.project_id}/pause-loop`)) return json({ ok: true });
+    if (projects.some((candidate) => pathname === `/api/projects/${candidate.project_id}/stop-loop`)) return json({ ok: true });
     if (pathname === "/api/log-entries") return json([]);
     if (pathname === "/api/list-directory") {
       const workspaceRoot = typeof project.linked_folder_path === "string" && project.linked_folder_path.length > 0
@@ -315,6 +333,17 @@ export async function mockAuthenticatedApp(page: Page, options: MockAuthenticate
           },
         ],
       });
+    }
+    if (pathname === "/api/read-file") {
+      const body = JSON.parse(route.request().postData() || "{}");
+      const pathArg = typeof body.path === "string" ? body.path : "";
+      if (pathArg.endsWith("README.md")) {
+        return json({ ok: true, content: "# Demo Project\n\nPreview the imported snapshot here on mobile.", path: pathArg });
+      }
+      if (pathArg.endsWith("auth.ts")) {
+        return json({ ok: true, content: "export function signIn() {\n  return true;\n}\n", path: pathArg });
+      }
+      return json({ ok: false, error: "Preview unavailable" });
     }
     if (pathname === "/api/agents") return json(agents);
     if (pathname === "/api/feed") return json(mockFeedEvents);

@@ -75,26 +75,42 @@ async function mockProjectWorkApp(page: import("@playwright/test").Page) {
   });
 }
 
-async function expectGlobalMobileChrome(
+async function expectProjectMobileChrome(
   page: import("@playwright/test").Page,
   factor: "desktop" | "tablet" | "phone",
 ) {
   if (factor === "desktop") {
-    await expect(page.getByRole("button", { name: /Open project navigation/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open apps" })).toHaveCount(0);
     return;
   }
 
+  await expect(page.getByRole("button", { name: "Open apps" })).toBeVisible();
+  const navigation = page.getByRole("navigation", { name: "Primary mobile navigation" });
   await expect(page.getByRole("button", { name: /Open project navigation/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Agent" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Tasks" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Files" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Feed" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Projects" })).toHaveCount(0);
+  await expect(navigation.getByRole("button", { name: "Agent", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("button", { name: "Tasks", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("button", { name: "Files", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("button", { name: "Feed", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Projects", exact: true })).toHaveCount(0);
+}
+
+async function expectGlobalAppChrome(
+  page: import("@playwright/test").Page,
+  factor: "desktop" | "tablet" | "phone",
+) {
+  if (factor === "desktop") {
+    await expect(page.getByRole("button", { name: "Open apps" })).toHaveCount(0);
+    return;
+  }
+
+  await expect(page.getByRole("button", { name: "Open apps" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Primary mobile navigation" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Open project navigation/i })).toHaveCount(0);
 }
 
 async function tapPrimaryNav(
   page: import("@playwright/test").Page,
-  label: "Agent" | "Tasks" | "Files" | "Feed",
+  label: "Agent" | "Tasks" | "Files",
 ) {
   await page
     .getByRole("navigation", { name: "Primary mobile navigation" })
@@ -120,32 +136,37 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("login keeps the same host targeting entry across form factors", async ({ page }) => {
+test("login keeps the same host targeting entry across form factors", async ({ page }, testInfo) => {
+  const factor = formFactor(testInfo.project.name);
   await page.goto("/login");
 
-  await expect(page.getByRole("button", { name: "Change host" })).toBeVisible();
-  await page.getByRole("button", { name: "Change host" }).click();
+  const hostButton = factor === "desktop"
+    ? page.getByRole("button", { name: "Change host" })
+    : page.getByRole("button", { name: /Host .*?(online|auth required|unreachable|error|checking)/i });
+
+  await expect(hostButton).toBeVisible();
+  await hostButton.click();
   await expect(page.getByRole("heading", { name: "Host Connection" })).toBeVisible();
 });
 
-test("projects root keeps the shared welcome view while mobile/tablet use project navigation chrome", async ({ page }, testInfo) => {
+test("projects entry keeps desktop welcome, while mobile/tablet resolve directly into the current project", async ({ page }, testInfo) => {
   const factor = formFactor(testInfo.project.name);
 
   await mockAuthenticatedApp(page);
   await page.goto("/projects");
 
-  await expect(page.getByText("Welcome to AURA")).toBeVisible();
-  await expect(page.getByText("Select a project from navigation or create a new one to get started.")).toBeVisible();
-
   if (factor === "desktop") {
+    await expect(page.getByText("Welcome to AURA")).toBeVisible();
     await expect(page.getByPlaceholder("Search Projects...")).toBeVisible();
   } else {
+    await expect(page).toHaveURL(/\/projects\/proj-1\/agents\/agent-inst-1$/);
+    await expect(page.getByPlaceholder("Add a follow-up")).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole("treeitem", { name: "Demo Project" })).toHaveCount(0);
-    await expectGlobalMobileChrome(page, factor);
+    await expectProjectMobileChrome(page, factor);
   }
 });
 
-test("projects root does not auto-redirect from remembered agent state", async ({ page }, testInfo) => {
+test("projects entry uses remembered agent state on smaller form factors", async ({ page }, testInfo) => {
   const factor = formFactor(testInfo.project.name);
 
   await mockAuthenticatedApp(page);
@@ -157,13 +178,22 @@ test("projects root does not auto-redirect from remembered agent state", async (
   });
   await page.goto("/projects");
 
-  await expect(page).toHaveURL(/\/projects$/);
-  await expect(page.getByText("Welcome to AURA")).toBeVisible();
+  if (factor === "desktop") {
+    await expect(page).toHaveURL(/\/projects$/);
+    await expect(page.getByText("Welcome to AURA")).toBeVisible();
+  } else {
+    await expect(page).toHaveURL(/\/projects\/proj-1\/agents\/agent-inst-1$/);
+    await expect(page.getByPlaceholder("Add a follow-up")).toBeVisible({ timeout: 10000 });
+  }
 
-  await expectGlobalMobileChrome(page, factor);
+  if (factor === "desktop") {
+    await expectProjectMobileChrome(page, factor);
+  } else {
+    await expectProjectMobileChrome(page, factor);
+  }
 });
 
-test("feed keeps shared content while mobile/tablet use the four-tab primary navigation", async ({ page }, testInfo) => {
+test("feed keeps shared content while mobile/tablet use the global app chrome", async ({ page }, testInfo) => {
   const factor = formFactor(testInfo.project.name);
 
   await mockAuthenticatedApp(page);
@@ -171,7 +201,7 @@ test("feed keeps shared content while mobile/tablet use the four-tab primary nav
 
   await expect(page.getByRole("treeitem", { name: "My Agents" })).toBeVisible();
   await expect(page.getByRole("treeitem", { name: "Organization" })).toBeVisible();
-  await expectGlobalMobileChrome(page, factor);
+  await expectGlobalAppChrome(page, factor);
 });
 
 test("leaderboard remains reachable directly with shared content across form factors", async ({ page }, testInfo) => {
@@ -182,7 +212,7 @@ test("leaderboard remains reachable directly with shared content across form fac
 
   await expect(page.getByRole("treeitem", { name: "My Agents" })).toBeVisible();
   await expect(page.getByRole("treeitem", { name: "Following" })).toBeVisible();
-  await expectGlobalMobileChrome(page, factor);
+  await expectGlobalAppChrome(page, factor);
 });
 
 test("profile remains reachable directly with shared content across form factors", async ({ page }, testInfo) => {
@@ -192,8 +222,8 @@ test("profile remains reachable directly with shared content across form factors
   await page.goto("/profile");
 
   await expect(page.getByRole("treeitem", { name: "All" })).toBeVisible();
-  await expect(page.getByRole("treeitem", { name: "aura-code" })).toBeVisible();
-  await expectGlobalMobileChrome(page, factor);
+  await expect(page.getByRole("treeitem", { name: "Demo Project" })).toBeVisible();
+  await expectGlobalAppChrome(page, factor);
 });
 
 test("project work route uses the combined mobile work view while desktop keeps shared project chrome", async ({ page }, testInfo) => {
@@ -230,7 +260,7 @@ test("primary project destinations keep the title drawer instead of a back butto
   await expect(page.getByRole("button", { name: /Open project navigation for Demo Project/i })).toBeVisible();
 });
 
-test("account sheet holds profile, leaderboard, and settings access on smaller form factors", async ({ page }, testInfo) => {
+test("account sheet holds settings access on smaller form factors", async ({ page }, testInfo) => {
   const factor = formFactor(testInfo.project.name);
   test.skip(factor === "desktop", "Desktop keeps these surfaces in persistent chrome.");
 
@@ -238,10 +268,11 @@ test("account sheet holds profile, leaderboard, and settings access on smaller f
   await page.goto("/projects");
 
   await page.getByRole("button", { name: "Open account" }).click();
-  await expect(page.getByRole("button", { name: "Profile" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Leaderboard" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Team settings" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Host settings" })).toBeVisible();
   await expect(page.getByRole("button", { name: "App settings" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Profile" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Leaderboard" })).toHaveCount(0);
 });
 
 test("modal flows lock the background document across form factors", async ({ page }, testInfo) => {
