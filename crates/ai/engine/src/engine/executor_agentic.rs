@@ -6,13 +6,16 @@ use tokio::sync::{mpsc, Mutex};
 
 use aura_chat::ChatToolExecutor;
 use aura_core::*;
+use aura_link::policy::{
+    classify_task_complexity, compute_exploration_allowance, compute_thinking_budget,
+    resolve_simple_model, TaskComplexity,
+};
 use aura_link::{RuntimeEvent, TurnConfig, TurnResult};
 use aura_tools::engine_tool_definitions;
 
 use super::agentic_context::{
     build_full_task_context, build_work_log_summary, check_already_completed,
-    classify_task_complexity, compute_exploration_allowance, compute_thinking_budget,
-    fetch_codebase_context, resolve_completed_deps, resolve_simple_model, TaskComplexity,
+    fetch_codebase_context, resolve_completed_deps,
 };
 use super::orchestrator::DevLoopEngine;
 use super::planning::{TaskPhase, TaskPlan};
@@ -49,7 +52,7 @@ pub(crate) fn configure_turn_config(
         _ => engine_config.max_agentic_iterations,
     };
     let model_override = match complexity {
-        TaskComplexity::Simple => Some(resolve_simple_model()),
+        TaskComplexity::Simple => Some(resolve_simple_model(aura_claude::MID_MODEL)),
         _ => None,
     };
 

@@ -1,73 +1,9 @@
 use aura_link::{ContentBlock, Message, MessageContent, Role};
 
-// ---------------------------------------------------------------------------
-// Configurable head/tail truncation
-// ---------------------------------------------------------------------------
-
-pub struct CompactConfig {
-    pub threshold: usize,
-    pub keep_head: usize,
-    pub keep_tail: usize,
-}
-
-pub const MICRO: CompactConfig = CompactConfig {
-    threshold: 16_000,
-    keep_head: 6_000,
-    keep_tail: 3_000,
+pub use aura_link::compaction::{
+    CompactConfig, AGGRESSIVE, HISTORY, MICRO,
+    microcompact, truncate,
 };
-
-pub const AGGRESSIVE: CompactConfig = CompactConfig {
-    threshold: 4_000,
-    keep_head: 1_600,
-    keep_tail: 800,
-};
-
-pub const HISTORY: CompactConfig = CompactConfig {
-    threshold: 2_000,
-    keep_head: 500,
-    keep_tail: 200,
-};
-
-/// Core head/tail truncation with a caller-supplied omission marker.
-fn truncate_with_marker(
-    content: &str,
-    cfg: &CompactConfig,
-    marker_fn: impl FnOnce(usize) -> String,
-) -> String {
-    if content.len() <= cfg.threshold {
-        return content.to_string();
-    }
-    let head: String = content.chars().take(cfg.keep_head).collect();
-    let tail: String = content
-        .chars()
-        .rev()
-        .take(cfg.keep_tail)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-    let omitted = content.len() - cfg.keep_head - cfg.keep_tail;
-    let marker = marker_fn(omitted);
-    format!("{head}{marker}{tail}")
-}
-
-/// Head/tail truncation with an omission marker in the middle.
-pub fn truncate(content: &str, cfg: &CompactConfig) -> String {
-    truncate_with_marker(content, cfg, |omitted| {
-        format!("\n[...{omitted} chars omitted...]\n")
-    })
-}
-
-/// Microcompact: moderate truncation for tool results sent to the LLM.
-pub fn microcompact(content: &str) -> String {
-    truncate_with_marker(content, &MICRO, |omitted| {
-        format!(
-            "\n\n[... {omitted} characters omitted \
-             — use read_file with start_line/end_line for specific sections, \
-             or re-run the command if you need the full output ...]\n\n"
-        )
-    })
-}
 
 /// Smart compaction: for `read_file` results that look like Rust source,
 /// extract public signatures instead of doing head/tail truncation. Falls
