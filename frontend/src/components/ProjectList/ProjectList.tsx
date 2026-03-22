@@ -183,6 +183,8 @@ export function ProjectList() {
         const lastAid = getLastAgent(id);
         const target = (lastAid ? agents.find((a) => a.agent_instance_id === lastAid) : undefined) ?? agents[0];
         navigate(`/projects/${id}/agents/${target.agent_instance_id}`);
+      } else if (!agents) {
+        navigate(projectAgentRoute(id));
       }
     } else if (id.startsWith("execution:")) {
       const pid = id.slice("execution:".length);
