@@ -30,6 +30,12 @@ const mockActiveApp = {
   PreviewHeader: undefined as React.ComponentType | undefined,
 };
 
+const demoProject = {
+  project_id: "proj-1",
+  name: "Demo Project",
+  description: "Test project",
+};
+
 vi.mock("../../stores/app-store", () => ({
   useAppStore: (sel: (s: { activeApp: typeof mockActiveApp }) => unknown) =>
     sel({ activeApp: mockActiveApp }),
@@ -37,9 +43,11 @@ vi.mock("../../stores/app-store", () => ({
 
 const drawers = {
   navOpen: false,
+  appOpen: false,
   previewOpen: false,
   accountOpen: false,
   setNavOpen: vi.fn(),
+  setAppOpen: vi.fn(),
   setPreviewOpen: vi.fn(),
   setAccountOpen: vi.fn(),
   closeDrawers: vi.fn(),
@@ -48,8 +56,8 @@ const drawers = {
 
 vi.mock("../../stores/mobile-drawer-store", () => ({
   useMobileDrawerStore: (sel: (s: typeof drawers) => unknown) => sel(drawers),
-  selectDrawerOpen: (s: typeof drawers) => s.navOpen || s.previewOpen || s.accountOpen,
-  selectOverlayDrawerOpen: (s: typeof drawers) => s.navOpen || s.previewOpen || s.accountOpen,
+  selectDrawerOpen: (s: typeof drawers) => s.navOpen || s.appOpen || s.previewOpen || s.accountOpen,
+  selectOverlayDrawerOpen: (s: typeof drawers) => s.navOpen || s.appOpen || s.previewOpen || s.accountOpen,
 }));
 
 vi.mock("../../stores/ui-modal-store", () => ({
@@ -80,21 +88,29 @@ vi.mock("../../context/SidebarSearchContext", () => ({
 
 vi.mock("../../apps/projects/useProjectsList", () => ({
   useProjectsList: () => ({
-    projects: [],
-    mostRecentProject: null,
+    projects: [demoProject],
+    recentProjects: [],
+    mostRecentProject: demoProject,
     openNewProjectModal: vi.fn(),
   }),
 }));
 
 vi.mock("../../utils/storage", () => ({
   getLastAgentEntry: () => null,
+  getLastAgent: () => ({ projectId: "proj-1", agentInstanceId: "agent-inst-1" }),
 }));
 
 vi.mock("../../utils/mobileNavigation", () => ({
-  getMobileProjectDestination: () => null,
-  getMobileShellMode: () => "root",
-  getProjectIdFromPathname: () => null,
-  isProjectSubroute: () => false,
+  getMobileProjectDestination: (pathname: string) => {
+    if (pathname.includes("/work")) return "tasks";
+    if (pathname.includes("/files")) return "files";
+    if (pathname.includes("/agent")) return "agent";
+    if (pathname.includes("/agents/")) return "agent";
+    return null;
+  },
+  getMobileShellMode: (pathname: string) => (pathname.startsWith("/projects/proj-1") ? "project" : "global"),
+  getProjectIdFromPathname: (pathname: string) => (pathname.startsWith("/projects/proj-1") ? "proj-1" : null),
+  isProjectSubroute: (pathname: string) => pathname.startsWith("/projects/proj-1/"),
   projectAgentRoute: (id: string) => `/projects/${id}/agent`,
   projectFilesRoute: (id: string) => `/projects/${id}/files`,
   projectRootPath: (id: string) => `/projects/${id}`,
@@ -131,6 +147,7 @@ function renderMobile(path = "/projects") {
 beforeEach(() => {
   vi.clearAllMocks();
   drawers.navOpen = false;
+  drawers.appOpen = false;
   drawers.previewOpen = false;
   drawers.accountOpen = false;
   mockActiveApp.PreviewPanel = undefined;
@@ -143,17 +160,17 @@ describe("MobileShell", () => {
     expect(screen.getByTestId("main-panel")).toBeInTheDocument();
   });
 
-  it("renders bottom navigation with 4 items", () => {
-    renderMobile();
+  it("renders project bottom navigation with 3 items", () => {
+    renderMobile("/projects/proj-1/agent");
     expect(screen.getByText("Agent")).toBeInTheDocument();
     expect(screen.getByText("Tasks")).toBeInTheDocument();
     expect(screen.getByText("Files")).toBeInTheDocument();
-    expect(screen.getByText("Feed")).toBeInTheDocument();
+    expect(screen.queryByText("Feed")).not.toBeInTheDocument();
   });
 
-  it("renders AURA title when no project", () => {
-    renderMobile();
-    expect(screen.getByText("AURA")).toBeInTheDocument();
+  it("renders the global navigation trigger on global routes", () => {
+    renderMobile("/feed");
+    expect(screen.getByRole("button", { name: "Open apps" })).toBeInTheDocument();
   });
 
   it("renders account button", () => {
@@ -176,7 +193,7 @@ describe("MobileShell", () => {
 
   it("hides bottom nav when a drawer is open", () => {
     drawers.navOpen = true;
-    renderMobile();
+    renderMobile("/projects/proj-1/agent");
     expect(screen.queryByText("Agent")).not.toBeInTheDocument();
   });
 
