@@ -21,9 +21,9 @@ export function ProjectAgentRedirectView() {
       const agents = cachedAgents ?? await refreshProjectAgents(projectId);
       if (cancelled) return;
 
-      const lastAgent = getLastAgent();
-      if (lastAgent?.projectId === projectId) {
-        const matching = agents.find((agent) => agent.agent_instance_id === lastAgent.agentInstanceId);
+      const lastAgentInstanceId = getLastAgent(projectId);
+      if (lastAgentInstanceId) {
+        const matching = agents.find((agent) => agent.agent_instance_id === lastAgentInstanceId);
         if (matching) {
           setEmptyProjectId((current) => (current === projectId ? null : current));
           navigate(projectAgentChatRoute(projectId, matching.agent_instance_id), { replace: true });
