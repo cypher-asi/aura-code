@@ -3,16 +3,3 @@
   flex-direction: column;
   gap: 8px;
 }
-
-.timelineItem {
-  animation: slideIn 0.15s ease-out;
-}
-
-@keyframes slideIn {
-  from {
-    transform: translateY(4px);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
