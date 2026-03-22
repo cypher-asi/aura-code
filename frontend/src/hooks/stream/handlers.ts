@@ -127,10 +127,12 @@ export function handleToolCallStarted(
   setters: StreamSetters,
   info: ToolCallStartedInfo,
 ): void {
+  const buffered = refs.toolInputBuffers.current.get(info.id);
+  const partialInput = buffered ? parsePartialToolInput(buffered) : null;
   const entry: ToolCallEntry = {
     id: info.id,
     name: info.name,
-    input: {},
+    input: partialInput ?? {},
     pending: true,
     started: true,
   };
@@ -142,12 +144,103 @@ export function handleToolCallStarted(
 }
 
 function tryParseToolInput(buf: string): Record<string, unknown> | null {
-  for (const suffix of ["", '"}',"'}", '"}]']) {
+  for (const suffix of ["", "\"}", "\"}}"]) {
     try {
       return JSON.parse(buf + suffix) as Record<string, unknown>;
     } catch { /* try next */ }
   }
   return null;
+}
+
+function extractPartialJsonStringField(buf: string, key: string): string | undefined {
+  const keyToken = `"${key}"`;
+  const keyIdx = buf.indexOf(keyToken);
+  if (keyIdx === -1) return undefined;
+
+  const colonIdx = buf.indexOf(":", keyIdx + keyToken.length);
+  if (colonIdx === -1) return undefined;
+
+  let i = colonIdx + 1;
+  while (i < buf.length && /\s/.test(buf[i])) i++;
+  if (i >= buf.length || buf[i] !== "\"") return undefined;
+  i += 1;
+
+  let out = "";
+  while (i < buf.length) {
+    const ch = buf[i];
+    if (ch === "\"") {
+      return out;
+    }
+    if (ch !== "\\") {
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (i + 1 >= buf.length) {
+      return out;
+    }
+
+    const esc = buf[i + 1];
+    switch (esc) {
+      case "\"":
+      case "\\":
+      case "/":
+        out += esc;
+        i += 2;
+        break;
+      case "b":
+        out += "\b";
+        i += 2;
+        break;
+      case "f":
+        out += "\f";
+        i += 2;
+        break;
+      case "n":
+        out += "\n";
+        i += 2;
+        break;
+      case "r":
+        out += "\r";
+        i += 2;
+        break;
+      case "t":
+        out += "\t";
+        i += 2;
+        break;
+      case "u": {
+        if (i + 6 > buf.length) return out;
+        const hex = buf.slice(i + 2, i + 6);
+        const code = Number.parseInt(hex, 16);
+        if (Number.isNaN(code)) return out;
+        out += String.fromCharCode(code);
+        i += 6;
+        break;
+      }
+      default:
+        out += esc;
+        i += 2;
+        break;
+    }
+  }
+
+  return out;
+}
+
+function parsePartialToolInput(buf: string): Record<string, unknown> | null {
+  const parsed = tryParseToolInput(buf);
+  if (parsed) return parsed;
+
+  const title = extractPartialJsonStringField(buf, "title");
+  const markdown = extractPartialJsonStringField(buf, "markdown_contents");
+  if (title === undefined && markdown === undefined) {
+    return null;
+  }
+
+  const partial: Record<string, unknown> = {};
+  if (title !== undefined) partial.title = title;
+  if (markdown !== undefined) partial.markdown_contents = markdown;
+  return partial;
 }
 
 export function handleToolCallDelta(
@@ -165,7 +258,7 @@ export function handleToolCallDelta(
       let changed = false;
 
       for (const [id, buf] of buffers) {
-        const parsed = tryParseToolInput(buf);
+        const parsed = parsePartialToolInput(buf);
         if (!parsed) continue;
 
         const idx = refs.toolCalls.current.findIndex((tc) => tc.id === id);
