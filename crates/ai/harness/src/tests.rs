@@ -74,6 +74,8 @@ mod tests {
             model_override: None,
             exploration_allowance: None,
             auto_build_cooldown: None,
+            credit_budget: None,
+            billing_reason: None,
         }
     }
 
@@ -421,6 +423,8 @@ error[E0599]: no method named `bar`
                 model_override: Some("fast-model".into()),
                 exploration_allowance: Some(3),
                 auto_build_cooldown: Some(2),
+                credit_budget: None,
+                billing_reason: None,
             },
             event_tx: Some(tx),
         };

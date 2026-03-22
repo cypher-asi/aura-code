@@ -7,8 +7,8 @@ use crate::chat_tool_executor::ChatToolExecutor;
 use crate::chat_tool_loop_executor::{ForwardingToolExecutor, SingleProjectResolver};
 use crate::constants::DEFAULT_STREAM_TIMEOUT;
 use crate::runtime_conversions::{
-    map_runtime_event_to_chat_event, rich_messages_to_harness, tool_defs_to_harness,
-    tool_loop_config_to_turn_config, turn_result_to_tool_loop_result, ChatToolExecutorAdapter,
+    rich_messages_to_harness, tool_defs_to_harness, tool_loop_config_to_turn_config,
+    turn_result_to_tool_loop_result, ChatToolExecutorAdapter,
 };
 use crate::tool_loop::{ToolLoopConfig, ToolLoopResult};
 use aura_claude::ThinkingConfig;
@@ -180,42 +180,9 @@ impl ChatService {
         let forwarder = tokio::spawn(async move {
             let mut text_buffer = String::new();
             while let Some(evt) = event_rx.recv().await {
-                match &evt {
-                    RuntimeEvent::Delta(text) => {
-                        text_buffer.push_str(text);
-                    }
-                    RuntimeEvent::ToolUseStarted { .. } | RuntimeEvent::ToolUseDetected { .. } => {
-                        flush_text_buffer(&fwd_blocks, &mut text_buffer);
-                    }
-                    _ => {}
-                }
-                if let RuntimeEvent::ToolUseDetected { id, name, input } = &evt {
-                    if let Ok(mut acc) = fwd_blocks.lock() {
-                        acc.push(ChatContentBlock::ToolUse {
-                            id: id.clone(),
-                            name: name.clone(),
-                            input: input.clone(),
-                        });
-                    }
-                }
-                if let RuntimeEvent::ToolResult {
-                    tool_use_id,
-                    content,
-                    is_error,
-                    ..
-                } = &evt
-                {
-                    if let Ok(mut acc) = fwd_blocks.lock() {
-                        acc.push(ChatContentBlock::ToolResult {
-                            tool_use_id: tool_use_id.clone(),
-                            content: content.clone(),
-                            is_error: if *is_error { Some(true) } else { None },
-                        });
-                    }
-                }
-                if let Some(chat_evt) = map_runtime_event_to_chat_event(evt) {
-                    send_or_log(&tx_clone, chat_evt);
-                }
+                crate::chat_event_forwarding::forward_runtime_event(
+                    evt, &tx_clone, &fwd_blocks, &mut text_buffer,
+                );
             }
             flush_text_buffer(&fwd_blocks, &mut text_buffer);
         });

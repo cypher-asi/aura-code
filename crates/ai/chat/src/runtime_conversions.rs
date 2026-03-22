@@ -110,6 +110,8 @@ pub fn tool_loop_config_to_turn_config(config: &ToolLoopConfig) -> TurnConfig {
         model_override: config.model_override.clone(),
         exploration_allowance: config.exploration_allowance,
         auto_build_cooldown: config.auto_build_cooldown,
+        credit_budget: config.credit_budget,
+        billing_reason: Some(config.billing_reason.to_string()),
     }
 }
 
@@ -176,6 +178,7 @@ impl<T: chat_types::ToolExecutor + 'static> aura_harness::ToolExecutor
             .map(|r| aura_harness::AutoBuildResult {
                 success: r.success,
                 output: r.output,
+                error_count: 0,
             })
     }
 

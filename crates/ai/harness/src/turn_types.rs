@@ -27,6 +27,10 @@ pub struct TurnConfig {
     pub exploration_allowance: Option<usize>,
     /// Iterations between automatic build checks.
     pub auto_build_cooldown: Option<usize>,
+    /// Credit budget for the turn (None = unlimited).
+    pub credit_budget: Option<u64>,
+    /// Billing attribution reason (e.g. "aura_chat", "aura_task").
+    pub billing_reason: Option<String>,
 }
 
 /// A request to execute a single agent turn.

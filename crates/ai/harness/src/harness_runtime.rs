@@ -220,7 +220,7 @@ impl aura_agent::AgentToolExecutor for ExecutorAdapter {
             .map(|r| aura_agent::AutoBuildResult {
                 success: r.success,
                 output: r.output,
-                error_count: 0,
+                error_count: r.error_count,
             })
     }
 
@@ -244,6 +244,7 @@ fn forward_events(
     app_tx: mpsc::UnboundedSender<RuntimeEvent>,
 ) {
     tokio::spawn(async move {
+        let mut detected_tool_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
         while let Some(event) = agent_rx.recv().await {
             let mapped = match event {
                 aura_agent::AgentLoopEvent::TextDelta(t) => RuntimeEvent::Delta(t),
@@ -257,7 +258,7 @@ fn forward_events(
                 aura_agent::AgentLoopEvent::ToolInputSnapshot { id, name, input } => {
                     let parsed = serde_json::from_str(&input)
                         .unwrap_or(serde_json::Value::String(input));
-                    if !matches!(parsed, serde_json::Value::String(_)) {
+                    if !matches!(parsed, serde_json::Value::String(_)) && detected_tool_ids.insert(id.clone()) {
                         let _ = app_tx.send(RuntimeEvent::ToolUseDetected {
                             id: id.clone(),
                             name: name.clone(),

@@ -22,6 +22,8 @@ pub struct AutoBuildResult {
     pub success: bool,
     /// Combined stdout+stderr output.
     pub output: String,
+    /// Number of errors detected in the build output.
+    pub error_count: usize,
 }
 
 /// Normalized error signatures from a build baseline, used to distinguish

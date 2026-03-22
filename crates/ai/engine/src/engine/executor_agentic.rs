@@ -93,30 +93,37 @@ fn spawn_runtime_event_forwarder(
     let engine_tx = engine_tx.clone();
     let forwarder = tokio::spawn(async move {
         while let Some(evt) = event_rx.recv().await {
-            match evt {
-                RuntimeEvent::Delta(text) => {
-                    send_or_log(
-                        &engine_tx,
-                        EngineEvent::TaskOutputDelta {
-                            project_id: pid,
-                            agent_instance_id: aiid,
-                            task_id,
-                            delta: text,
-                        },
-                    );
+            let delta = match evt {
+                RuntimeEvent::Delta(text) => Some(text),
+                RuntimeEvent::ThinkingDelta(_) => None,
+                RuntimeEvent::ToolUseStarted { name, .. } => {
+                    Some(format!("\n[tool] {name}\n"))
                 }
-                RuntimeEvent::Error(msg) => {
-                    send_or_log(
-                        &engine_tx,
-                        EngineEvent::TaskOutputDelta {
-                            project_id: pid,
-                            agent_instance_id: aiid,
-                            task_id,
-                            delta: format!("\n[error] {msg}\n"),
-                        },
-                    );
+                RuntimeEvent::ToolResult {
+                    tool_name,
+                    is_error,
+                    ..
+                } => {
+                    if is_error {
+                        Some(format!("\n[tool error] {tool_name}\n"))
+                    } else {
+                        None
+                    }
                 }
-                _ => {}
+                RuntimeEvent::Warning(msg) => Some(format!("\n[warning] {msg}\n")),
+                RuntimeEvent::Error(msg) => Some(format!("\n[error] {msg}\n")),
+                _ => None,
+            };
+            if let Some(text) = delta {
+                send_or_log(
+                    &engine_tx,
+                    EngineEvent::TaskOutputDelta {
+                        project_id: pid,
+                        agent_instance_id: aiid,
+                        task_id,
+                        delta: text,
+                    },
+                );
             }
         }
     });
@@ -381,7 +388,12 @@ impl DevLoopEngine {
         let result = match turn_result {
             Ok(r) => turn_result_to_tool_loop_result(r),
             Err(e) => {
-                return Err(EngineError::LlmError(e.to_string()));
+                return Err(match e {
+                    aura_harness::RuntimeError::InsufficientCredits => {
+                        EngineError::InsufficientCredits
+                    }
+                    other => EngineError::LlmError(other.to_string()),
+                });
             }
         };
 

@@ -3,9 +3,11 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 use aura_core::*;
+use aura_harness::RuntimeEvent;
 
 use crate::channel_ext::send_or_log;
 use crate::chat::ChatStreamEvent;
+use crate::runtime_conversions::map_runtime_event_to_chat_event;
 use crate::tool_loop::ToolLoopEvent;
 
 pub(crate) type ContentBlockAccumulator = Arc<Mutex<Vec<ChatContentBlock>>>;
@@ -126,6 +128,57 @@ pub(crate) fn forward_with_text_accumulation(
         _ => {}
     }
     forward_tool_loop_event(evt, tx, blocks);
+}
+
+/// Forward a [`RuntimeEvent`] to the chat stream, accumulating content blocks
+/// for tool use and tool results.
+///
+/// Text deltas are buffered; when a tool-use event arrives the buffer is
+/// flushed as a `Text` content block *before* the tool block.
+/// The caller must call [`flush_text_buffer`] once more after the receive
+/// loop exits to commit any trailing text segment.
+pub(crate) fn forward_runtime_event(
+    evt: RuntimeEvent,
+    tx: &mpsc::UnboundedSender<ChatStreamEvent>,
+    blocks: &ContentBlockAccumulator,
+    text_buffer: &mut String,
+) {
+    match &evt {
+        RuntimeEvent::Delta(text) => {
+            text_buffer.push_str(text);
+        }
+        RuntimeEvent::ToolUseStarted { .. } | RuntimeEvent::ToolUseDetected { .. } => {
+            flush_text_buffer(blocks, text_buffer);
+        }
+        _ => {}
+    }
+    if let RuntimeEvent::ToolUseDetected { id, name, input } = &evt {
+        if let Ok(mut acc) = blocks.lock() {
+            acc.push(ChatContentBlock::ToolUse {
+                id: id.clone(),
+                name: name.clone(),
+                input: input.clone(),
+            });
+        }
+    }
+    if let RuntimeEvent::ToolResult {
+        tool_use_id,
+        content,
+        is_error,
+        ..
+    } = &evt
+    {
+        if let Ok(mut acc) = blocks.lock() {
+            acc.push(ChatContentBlock::ToolResult {
+                tool_use_id: tool_use_id.clone(),
+                content: content.clone(),
+                is_error: if *is_error { Some(true) } else { None },
+            });
+        }
+    }
+    if let Some(chat_evt) = map_runtime_event_to_chat_event(evt) {
+        send_or_log(tx, chat_evt);
+    }
 }
 
 pub(crate) fn extract_user_text(messages: &[Message]) -> String {
