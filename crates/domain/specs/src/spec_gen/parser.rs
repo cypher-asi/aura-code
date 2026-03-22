@@ -100,16 +100,24 @@ impl IncrementalSpecParser {
     /// Attempt a best-effort parse of the in-progress JSON object buffer.
     /// Returns `Some(RawSpecOutput)` when enough fields have accumulated to
     /// produce a meaningful partial spec (at minimum a non-empty title).
+    /// Uses `serde_json::Value` internally so that partially-populated objects
+    /// (e.g. title present but purpose/markdown still streaming) succeed.
     pub fn best_effort_partial(&self) -> Option<RawSpecOutput> {
         if !self.in_object || self.current_object.len() < 10 {
             return None;
         }
         let repaired = repair_partial_json(&self.current_object);
-        let raw: RawSpecOutput = serde_json::from_str(&repaired).ok()?;
-        if raw.title.trim().is_empty() {
+        let val: serde_json::Value = serde_json::from_str(&repaired).ok()?;
+        let obj = val.as_object()?;
+        let title = obj.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if title.trim().is_empty() {
             return None;
         }
-        Some(raw)
+        Some(RawSpecOutput {
+            title,
+            purpose: obj.get("purpose").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            markdown: obj.get("markdown").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        })
     }
 }
 

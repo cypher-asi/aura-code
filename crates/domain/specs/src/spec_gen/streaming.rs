@@ -185,7 +185,7 @@ impl SpecGenerationService {
                         send_or_log(tx, SpecStreamEvent::Generating { tokens: token_count });
                     }
                     let completed = parser.feed(&text);
-                    if completed.is_empty() && delta_count % 5 == 0 {
+                    if completed.is_empty() && delta_count % 3 == 0 {
                         if let Some(partial) = parser.best_effort_partial() {
                             let markdown = format!(
                                 "## Purpose\n\n{}\n\n{}", partial.purpose, partial.markdown,

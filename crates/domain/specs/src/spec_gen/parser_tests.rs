@@ -333,7 +333,27 @@ fn best_effort_partial_returns_none_when_title_empty() {
 }
 
 #[test]
-fn best_effort_partial_returns_partial_spec_with_title() {
+fn best_effort_partial_title_only_no_other_fields() {
+    let mut parser = IncrementalSpecParser::new();
+    parser.feed(r##"[{"title":"Core Domain Types"##);
+    let partial = parser.best_effort_partial().expect("title-only should succeed");
+    assert_eq!(partial.title, "Core Domain Types");
+    assert_eq!(partial.purpose, "", "purpose should default to empty");
+    assert_eq!(partial.markdown, "", "markdown should default to empty");
+}
+
+#[test]
+fn best_effort_partial_title_and_purpose_no_markdown() {
+    let mut parser = IncrementalSpecParser::new();
+    parser.feed(r##"[{"title":"Auth Module","purpose":"Handle login and session mgmt"##);
+    let partial = parser.best_effort_partial().expect("title+purpose should succeed");
+    assert_eq!(partial.title, "Auth Module");
+    assert_eq!(partial.purpose, "Handle login and session mgmt");
+    assert_eq!(partial.markdown, "", "markdown should default to empty");
+}
+
+#[test]
+fn best_effort_partial_returns_partial_spec_with_all_fields() {
     let mut parser = IncrementalSpecParser::new();
     parser.feed(r##"[{"title":"Auth Module","purpose":"Handle login","markdown":"# Auth\nSome content"##);
     let partial = parser.best_effort_partial().expect("should produce partial");
