@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { api } from "../../api/client";
 import { useChatStream } from "../../hooks/use-chat-stream";
 import { useIsStreaming } from "../../hooks/stream/hooks";
+import { useDelayedLoading } from "../../hooks/use-delayed-loading";
 import { setLastAgent, setLastProject } from "../../utils/storage";
 import { ChatPanel } from "../ChatPanel";
 import { useChatHistoryStore, useChatHistory, projectChatHistoryKey } from "../../stores/chat-history-store";
@@ -118,6 +119,9 @@ export function ChatView() {
     [sendMessage, historyKey],
   );
 
+  const rawLoading = historyStatus === "loading" || historyStatus === "idle";
+  const deferredLoading = useDelayedLoading(rawLoading);
+
   if (!agentInstanceId) return null;
 
   return (
@@ -127,7 +131,7 @@ export function ChatView() {
       onSend={wrappedSend}
       onStop={stopStreaming}
       agentName={agentName}
-      isLoading={historyStatus === "loading" || historyStatus === "idle"}
+      isLoading={deferredLoading}
       contextUsagePercent={projectId && agentInstanceId ? contextUsagePercent : undefined}
       scrollResetKey={agentInstanceId}
     />
