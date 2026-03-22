@@ -25,9 +25,14 @@ export function AgentChatView() {
 
   useEffect(() => {
     if (!agentId) return;
+    const key = agentHistoryKey(agentId);
     resetMessagesRef.current([], { allowWhileStreaming: true });
+    const cached = useChatHistoryStore.getState().entries[key];
+    if (cached?.status === "ready") {
+      resetMessagesRef.current(cached.messages, { allowWhileStreaming: true });
+    }
     useChatHistoryStore.getState().fetchHistory(
-      agentHistoryKey(agentId),
+      key,
       () => api.agents.listMessages(agentId),
     );
     setSelectedAgent(agentId);
