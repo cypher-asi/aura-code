@@ -31,6 +31,16 @@ export function ToolCallBlock({
 
   const renderBody = () => {
     if (entry.started) {
+      const hasPartialContent = isSpec && typeof entry.input.markdown_contents === "string" && entry.input.markdown_contents !== "";
+      if (hasPartialContent) {
+        return (
+          <div className={`${toolStyles.toolBodyWrap} ${toolStyles.toolBodyExpanded}`}>
+            <div className={toolStyles.toolBody}>
+              <SpecPreviewCard entry={entry} />
+            </div>
+          </div>
+        );
+      }
       return (
         <div className={`${toolStyles.toolBodyWrap} ${toolStyles.startedWrap}`}>
           <div className={toolStyles.toolBody}>
