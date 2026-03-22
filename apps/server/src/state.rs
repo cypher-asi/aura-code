@@ -76,6 +76,8 @@ pub struct AppState {
     pub runtime_agent_state: RuntimeAgentStateMap,
     /// TTL cache for aggregated agent messages (avoids expensive fan-out on every load).
     pub agent_message_cache: AgentMessageCache,
+    /// When true, non-Pro users are blocked from API access.
+    pub require_zero_pro: bool,
 }
 
 impl AppState {
@@ -85,7 +87,15 @@ impl AppState {
             .store
             .get_setting("zero_auth_session")
             .map_err(|_| ApiError::unauthorized("no active session"))?;
-        serde_json::from_slice(&bytes).map_err(|e| ApiError::internal(e.to_string()))
+        let session: ZeroAuthSession =
+            serde_json::from_slice(&bytes).map_err(|e| ApiError::internal(e.to_string()))?;
+
+        // Enforce ZERO Pro requirement when enabled
+        if self.require_zero_pro && !session.is_zero_pro {
+            return Err(ApiError::forbidden("ZERO Pro subscription required"));
+        }
+
+        Ok(session)
     }
 
     /// Extract the JWT access token from the stored zOS session.
