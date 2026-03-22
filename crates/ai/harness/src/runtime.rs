@@ -11,9 +11,12 @@ use crate::turn_types::{TurnRequest, TurnResult};
 /// result injection, and iteration until the model returns `EndTurn` or a
 /// stop condition is reached.
 ///
-/// The current in-process implementation (`InternalRuntime` in `aura-chat`)
-/// wraps the existing tool loop. Future adapters will wrap `aura-runtime`'s
-/// `TurnProcessor` (local) or its WebSocket protocol (remote).
+/// The current production implementation is
+/// [`HarnessRuntime`](crate::HarnessRuntime), which wraps
+/// `aura-agent::AgentLoop`.
+///
+/// `aura-chat::InternalRuntime` still exists only for legacy integration tests
+/// that have not yet migrated to `HarnessRuntime`.
 #[async_trait]
 pub trait AgentRuntime: Send + Sync {
     /// Execute a complete agent turn.

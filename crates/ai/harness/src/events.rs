@@ -46,7 +46,9 @@ pub enum RuntimeEvent {
         /// Whether this result represents an error.
         is_error: bool,
     },
-    /// Token usage for a single LLM iteration within the turn.
+    /// Cumulative token usage reported after each LLM iteration.
+    ///
+    /// Values are running totals for the turn, not per-iteration deltas.
     IterationTokenUsage {
         /// Input tokens consumed.
         input_tokens: u64,

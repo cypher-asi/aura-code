@@ -92,8 +92,11 @@ async fn turn_request_all_fields_constructible() {
             model_override: Some("claude-sonnet-4-20250514".into()),
             exploration_allowance: Some(8),
             auto_build_cooldown: Some(3),
+            credit_budget: None,
+            billing_reason: None,
         },
         event_tx: Some(tx),
+        auth_token: None,
     };
 
     assert_eq!(req.system_prompt, "You are a coding assistant.");
@@ -319,6 +322,7 @@ fn auto_build_result_constructible() {
     let r = AutoBuildResult {
         success: true,
         output: "Build succeeded".into(),
+        error_count: 0,
     };
     assert!(r.success);
 }

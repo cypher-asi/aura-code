@@ -139,7 +139,7 @@ impl AgentRuntime for HarnessRuntime {
             auto_build_cooldown: request.config.auto_build_cooldown.unwrap_or(2),
             system_prompt: request.system_prompt.clone(),
             model: model.to_string(),
-            auth_token: self.auth_token.clone(),
+            auth_token: request.auth_token.clone().or_else(|| self.auth_token.clone()),
             ..aura_agent::AgentLoopConfig::default()
         };
 

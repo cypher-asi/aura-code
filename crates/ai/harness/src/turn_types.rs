@@ -47,6 +47,9 @@ pub struct TurnRequest {
     pub config: TurnConfig,
     /// Optional channel for streaming runtime events.
     pub event_tx: Option<mpsc::UnboundedSender<RuntimeEvent>>,
+    /// Per-request JWT for proxy-mode auth. Takes priority over any
+    /// environment-level token configured on the runtime.
+    pub auth_token: Option<String>,
 }
 
 /// Aggregated token usage across all iterations of a turn.

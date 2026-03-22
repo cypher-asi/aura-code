@@ -380,6 +380,7 @@ impl DevLoopEngine {
             executor: adapter,
             config: tool_loop_config_to_turn_config(&config),
             event_tx: Some(event_tx),
+            auth_token: self.store.get_jwt(),
         };
 
         let turn_result = self.runtime.execute_turn(request).await;

@@ -87,6 +87,7 @@ mod tests {
             executor,
             config: default_turn_config(),
             event_tx: None,
+            auth_token: None,
         }
     }
 
@@ -427,6 +428,7 @@ error[E0599]: no method named `bar`
                 billing_reason: None,
             },
             event_tx: Some(tx),
+            auth_token: None,
         };
 
         assert_eq!(req.system_prompt, "sys");

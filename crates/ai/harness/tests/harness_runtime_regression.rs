@@ -247,6 +247,8 @@ fn default_config(max_iterations: usize) -> TurnConfig {
         model_override: None,
         exploration_allowance: None,
         auto_build_cooldown: None,
+        credit_budget: None,
+        billing_reason: None,
     }
 }
 
@@ -258,6 +260,7 @@ fn make_request(executor: Arc<dyn ToolExecutor>, config: TurnConfig) -> TurnRequ
         executor,
         config,
         event_tx: None,
+        auth_token: None,
     }
 }
 
@@ -273,6 +276,7 @@ fn make_request_with_events(
         executor,
         config,
         event_tx: Some(tx),
+        auth_token: None,
     }
 }
 
