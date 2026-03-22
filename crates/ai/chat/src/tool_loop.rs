@@ -3,17 +3,19 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use aura_claude::RichMessage;
 use crate::compaction;
 use crate::constants::DEFAULT_EXPLORATION_ALLOWANCE;
+use aura_claude::RichMessage;
 
-pub use crate::tool_loop_types::*;
 use crate::channel_ext::send_or_log;
 use crate::tool_loop_blocking::{
-    BlockedResultContext, BlockingContext, WriteTrackingState,
     apply_cmd_failure_tracking, build_tool_result_blocks, decrement_write_file_cooldowns,
-    detect_all_blocked, detect_stall_fail_fast, execute_with_blocked,
-    track_write_failures,
+    detect_all_blocked, detect_stall_fail_fast, execute_with_blocked, track_write_failures,
+    BlockedResultContext, BlockingContext, WriteTrackingState,
+};
+use crate::tool_loop_budget::{
+    check_budget_warnings, check_no_write_budget_warning, inject_exploration_warnings,
+    update_exploration_counts, BudgetState, ExplorationState,
 };
 use crate::tool_loop_helpers::{
     check_context_compaction, handle_truncated_tool_calls, maybe_compact_after_exploration,
@@ -21,14 +23,8 @@ use crate::tool_loop_helpers::{
     sanitize_after_compaction,
 };
 use crate::tool_loop_read_guard::{self as read_guard, ReadGuardState};
-use crate::tool_loop_budget::{
-    BudgetState, ExplorationState,
-    check_budget_warnings, check_no_write_budget_warning, inject_exploration_warnings,
-    update_exploration_counts,
-};
-use crate::tool_loop_streaming::{
-    run_single_iteration, IterationOutcome, IterationCompleted,
-};
+use crate::tool_loop_streaming::{run_single_iteration, IterationCompleted, IterationOutcome};
+pub use crate::tool_loop_types::*;
 
 // ---------------------------------------------------------------------------
 // Build state (auto-build cooldown and checkpoint tracking)
@@ -79,7 +75,9 @@ impl LoopState {
             had_any_write: false,
             exploration: ExplorationState {
                 total_calls: 0,
-                allowance: config.exploration_allowance.unwrap_or(DEFAULT_EXPLORATION_ALLOWANCE),
+                allowance: config
+                    .exploration_allowance
+                    .unwrap_or(DEFAULT_EXPLORATION_ALLOWANCE),
                 warning_mild_sent: false,
                 warning_strong_sent: false,
             },
@@ -176,41 +174,63 @@ impl LoopState {
 /// ```
 pub async fn run_tool_loop(input: ToolLoopInput<'_>) -> ToolLoopResult {
     let ToolLoopInput {
-        llm, api_key, system_prompt, initial_messages, tools, config, executor, event_tx,
+        llm,
+        api_key,
+        system_prompt,
+        initial_messages,
+        tools,
+        config,
+        executor,
+        event_tx,
     } = input;
 
     let build_baseline = executor.capture_build_baseline().await;
-    let mut state = LoopState::new(initial_messages, config, build_baseline);
+    let sanitized_messages = crate::chat_sanitize::sanitize_tool_use_results(
+        crate::chat_sanitize::sanitize_orphan_tool_results(initial_messages),
+    );
+    let mut state = LoopState::new(sanitized_messages, config, build_baseline);
 
     let ctx = IterationContext {
-        llm: &llm, api_key, system_prompt, tools: &tools, config, event_tx,
+        llm: &llm,
+        api_key,
+        system_prompt,
+        tools: &tools,
+        config,
+        event_tx,
     };
 
     for iteration in 0..config.max_iterations {
-        info!(iteration, billing_reason = config.billing_reason, "tool_loop_iteration start");
+        info!(
+            iteration,
+            billing_reason = config.billing_reason,
+            "tool_loop_iteration start"
+        );
 
         decrement_write_file_cooldowns(&mut state.writes.cooldowns);
         state.build.auto_build_cooldown = state.build.auto_build_cooldown.saturating_sub(1);
-        let iter = match run_single_iteration(
-            &ctx, &mut state, iteration,
-        ).await {
+        let iter = match run_single_iteration(&ctx, &mut state, iteration).await {
             IterationOutcome::EarlyReturn(r) => return r,
             IterationOutcome::Completed(c) => c,
         };
 
         state.total_input_tokens += iter.input_tokens;
         state.total_output_tokens += iter.output_tokens;
-        send_or_log(ctx.event_tx, ToolLoopEvent::IterationTokenUsage {
-            input_tokens: state.total_input_tokens,
-            output_tokens: state.total_output_tokens,
-        });
+        send_or_log(
+            ctx.event_tx,
+            ToolLoopEvent::IterationTokenUsage {
+                input_tokens: state.total_input_tokens,
+                output_tokens: state.total_output_tokens,
+            },
+        );
 
         let billing_model = if iter.model_used.is_empty() {
             aura_claude::DEFAULT_MODEL
         } else {
             &iter.model_used
         };
-        let iter_credits = ctx.llm.estimate_credits(billing_model, iter.input_tokens, iter.output_tokens);
+        let iter_credits =
+            ctx.llm
+                .estimate_credits(billing_model, iter.input_tokens, iter.output_tokens);
         state.budget.cumulative_credits += iter_credits;
 
         check_context_compaction(
@@ -230,7 +250,9 @@ pub async fn run_tool_loop(input: ToolLoopInput<'_>) -> ToolLoopResult {
             );
             handle_truncated_tool_calls(&iter, ctx.event_tx, &mut state);
             compaction::compact_older_tool_results_tiered(
-                &mut state.api_messages, 2, &compaction::HISTORY,
+                &mut state.api_messages,
+                2,
+                &compaction::HISTORY,
             );
             sanitize_after_compaction(&mut state.api_messages);
             continue;
@@ -252,18 +274,30 @@ pub async fn run_tool_loop(input: ToolLoopInput<'_>) -> ToolLoopResult {
 
         if let Some(budget) = config.credit_budget {
             check_no_write_budget_warning(
-                &mut state.budget, budget, state.had_any_write, &mut state.api_messages,
+                &mut state.budget,
+                budget,
+                state.had_any_write,
+                &mut state.api_messages,
             );
             if let Some(result) = check_budget_warnings(
-                &mut state.budget, budget, billing_model, iter.input_tokens,
-                ctx.llm, ctx.event_tx, &mut state.api_messages,
+                &mut state.budget,
+                budget,
+                billing_model,
+                iter.input_tokens,
+                ctx.llm,
+                ctx.event_tx,
+                &mut state.api_messages,
             ) {
-                return result.unwrap_or_else(|| state.build_result(iteration + 1, false, true, None));
+                return result
+                    .unwrap_or_else(|| state.build_result(iteration + 1, false, true, None));
             }
         }
 
         if iteration + 1 >= config.max_iterations {
-            warn!(config.max_iterations, "Tool-use loop hit max iterations, stopping");
+            warn!(
+                config.max_iterations,
+                "Tool-use loop hit max iterations, stopping"
+            );
         }
     }
 
@@ -282,10 +316,18 @@ async fn process_tool_calls(
 ) -> bool {
     const STALL_FAIL_FAST_STREAK: usize = 3;
 
-    let tool_names: Vec<&str> = iter.iter_tool_calls.iter().map(|tc| tc.name.as_str()).collect();
+    let tool_names: Vec<&str> = iter
+        .iter_tool_calls
+        .iter()
+        .map(|tc| tc.name.as_str())
+        .collect();
     info!(num_calls = iter.iter_tool_calls.len(), tools = ?tool_names, "process_tool_calls start");
 
-    push_assistant_tool_message(&iter.iter_tool_calls, &iter.iter_text, &mut state.api_messages);
+    push_assistant_tool_message(
+        &iter.iter_tool_calls,
+        &iter.iter_text,
+        &mut state.api_messages,
+    );
 
     let (all_blocked, blocked_sets, deferred_recovery_msgs) = {
         let mut ctx = BlockingContext {
@@ -308,10 +350,19 @@ async fn process_tool_calls(
         exploration_total_calls: state.exploration.total_calls,
     };
     let results = execute_with_blocked(
-        &iter.iter_tool_calls, executor, &all_blocked, &blocked_sets, &blocked_ctx,
-    ).await;
+        &iter.iter_tool_calls,
+        executor,
+        &all_blocked,
+        &blocked_sets,
+        &blocked_ctx,
+    )
+    .await;
 
-    track_write_failures(&iter.iter_tool_calls, &results, &mut state.writes.file_write_failures);
+    track_write_failures(
+        &iter.iter_tool_calls,
+        &results,
+        &mut state.writes.file_write_failures,
+    );
 
     let results = apply_cmd_failure_tracking(
         &iter.iter_tool_calls,
@@ -320,30 +371,35 @@ async fn process_tool_calls(
     );
 
     let (result_blocks, should_stop) = build_tool_result_blocks(
-        &iter.iter_tool_calls, &results, &mut state.file_read_cache, event_tx,
+        &iter.iter_tool_calls,
+        &results,
+        &mut state.file_read_cache,
+        event_tx,
     );
-    state.api_messages.push(RichMessage::tool_results(result_blocks));
+    state
+        .api_messages
+        .push(RichMessage::tool_results(result_blocks));
 
     for recovery in deferred_recovery_msgs {
         state.api_messages.push(RichMessage::user(&recovery));
     }
 
     if detect_stall_fail_fast(
-        &iter.iter_tool_calls, &results, &mut state.writes,
-        STALL_FAIL_FAST_STREAK, event_tx, &mut state.api_messages,
+        &iter.iter_tool_calls,
+        &results,
+        &mut state.writes,
+        STALL_FAIL_FAST_STREAK,
+        event_tx,
+        &mut state.api_messages,
     ) {
         return true;
     }
 
     update_exploration_counts(&iter.iter_tool_calls, &all_blocked, &mut state.exploration);
 
-    let had_write = iter.iter_tool_calls
-        .iter()
-        .enumerate()
-        .any(|(i, tc)| {
-            !all_blocked.contains(&i)
-                && matches!(tc.name.as_str(), "write_file" | "edit_file")
-        });
+    let had_write = iter.iter_tool_calls.iter().enumerate().any(|(i, tc)| {
+        !all_blocked.contains(&i) && matches!(tc.name.as_str(), "write_file" | "edit_file")
+    });
     if had_write {
         state.had_any_write = true;
         state.exploration.allowance = state.exploration.total_calls + 4;
@@ -369,7 +425,6 @@ async fn process_tool_calls(
 
     should_stop
 }
-
 
 pub(crate) fn append_text(total: &mut String, new: &str) {
     if !new.is_empty() {
