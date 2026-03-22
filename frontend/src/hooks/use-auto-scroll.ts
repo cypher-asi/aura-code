@@ -1,6 +1,24 @@
 import { useEffect, useRef, useCallback } from "react";
 
 /**
+ * Sets `el.scrollTop` to `target` and guards the resulting scroll event so
+ * it isn't misread as a user-initiated scroll (which would disable
+ * auto-scroll when new content increases scrollHeight between the
+ * assignment and the event).
+ */
+function guardedScroll(
+  el: HTMLElement,
+  target: number,
+  guardRef: React.MutableRefObject<boolean>,
+) {
+  guardRef.current = true;
+  el.scrollTop = target;
+  requestAnimationFrame(() => {
+    guardRef.current = false;
+  });
+}
+
+/**
  * Auto-scrolls a container to the bottom whenever its content changes,
  * but only if the user is already near the bottom. Uses MutationObserver
  * to detect DOM changes and ResizeObserver to compensate for content
@@ -12,34 +30,21 @@ export function useAutoScroll(
 ): { handleScroll: () => void; scrollToBottom: () => void } {
   const autoScrollRef = useRef(true);
   const prevScrollHeightRef = useRef(0);
-  // Guards against programmatic scrollTop assignments firing the onScroll
-  // handler and falsely disabling auto-scroll when new content has already
-  // increased scrollHeight between the assignment and the scroll event.
   const programmaticScrollRef = useRef(false);
-
-  useEffect(() => {
-    autoScrollRef.current = true;
-  }, [resetKey]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
+    autoScrollRef.current = true;
+
     const syncHeight = () => {
       prevScrollHeightRef.current = el.scrollHeight;
     };
 
-    const doProgrammaticScroll = (target: number) => {
-      programmaticScrollRef.current = true;
-      el.scrollTop = target;
-      requestAnimationFrame(() => {
-        programmaticScrollRef.current = false;
-      });
-    };
-
     const scrollIfNeeded = () => {
-      if (autoScrollRef.current && el) {
-        doProgrammaticScroll(el.scrollHeight);
+      if (autoScrollRef.current) {
+        guardedScroll(el, el.scrollHeight, programmaticScrollRef);
       }
     };
 
@@ -69,9 +74,13 @@ export function useAutoScroll(
       const newSH = el.scrollHeight;
 
       if (autoScrollRef.current) {
-        doProgrammaticScroll(newSH);
+        guardedScroll(el, newSH, programmaticScrollRef);
       } else if (oldSH > 0 && newSH !== oldSH) {
-        doProgrammaticScroll(Math.round(el.scrollTop * (newSH / oldSH)));
+        guardedScroll(
+          el,
+          Math.round(el.scrollTop * (newSH / oldSH)),
+          programmaticScrollRef,
+        );
       }
 
       syncHeight();
@@ -100,7 +109,7 @@ export function useAutoScroll(
     autoScrollRef.current = true;
     const el = ref.current;
     if (el) {
-      el.scrollTop = el.scrollHeight;
+      guardedScroll(el, el.scrollHeight, programmaticScrollRef);
     }
   }, [ref]);
 
