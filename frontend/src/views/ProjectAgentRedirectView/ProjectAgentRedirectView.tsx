@@ -1,53 +1,37 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect } from "react";
+import { Navigate, useParams } from "react-router-dom";
 import { getLastAgent } from "../../utils/storage";
 import { useProjectsList } from "../../apps/projects/useProjectsList";
 import { projectAgentChatRoute } from "../../utils/mobileNavigation";
 import { ProjectEmptyView } from "../ProjectEmptyView";
+import type { AgentInstance } from "../../types";
+
+function resolveAgentTarget(projectId: string, agents: AgentInstance[]): string | null {
+  const lastAgentInstanceId = getLastAgent(projectId);
+  if (lastAgentInstanceId) {
+    const matching = agents.find((a) => a.agent_instance_id === lastAgentInstanceId);
+    if (matching) return projectAgentChatRoute(projectId, matching.agent_instance_id);
+  }
+  if (agents.length > 0) {
+    return projectAgentChatRoute(projectId, agents[0].agent_instance_id);
+  }
+  return null;
+}
 
 export function ProjectAgentRedirectView() {
-  const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
   const { agentsByProject, refreshProjectAgents } = useProjectsList();
-  const [emptyProjectId, setEmptyProjectId] = useState<string | null>(null);
+
+  const cachedAgents = projectId ? agentsByProject[projectId] : undefined;
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || cachedAgents !== undefined) return;
+    void refreshProjectAgents(projectId);
+  }, [projectId, cachedAgents, refreshProjectAgents]);
 
-    let cancelled = false;
-
-    const resolveTarget = async () => {
-      const cachedAgents = agentsByProject[projectId];
-      const agents = cachedAgents ?? await refreshProjectAgents(projectId);
-      if (cancelled) return;
-
-      const lastAgentInstanceId = getLastAgent(projectId);
-      if (lastAgentInstanceId) {
-        const matching = agents.find((agent) => agent.agent_instance_id === lastAgentInstanceId);
-        if (matching) {
-          setEmptyProjectId((current) => (current === projectId ? null : current));
-          navigate(projectAgentChatRoute(projectId, matching.agent_instance_id), { replace: true });
-          return;
-        }
-      }
-
-      if (agents.length > 0) {
-        setEmptyProjectId((current) => (current === projectId ? null : current));
-        navigate(projectAgentChatRoute(projectId, agents[0].agent_instance_id), { replace: true });
-        return;
-      }
-
-      setEmptyProjectId(projectId);
-    };
-
-    void resolveTarget();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [agentsByProject, navigate, projectId, refreshProjectAgents]);
-
-  if (projectId && emptyProjectId === projectId) {
+  if (projectId && cachedAgents) {
+    const target = resolveAgentTarget(projectId, cachedAgents);
+    if (target) return <Navigate to={target} replace />;
     return <ProjectEmptyView mode="agent" />;
   }
 
