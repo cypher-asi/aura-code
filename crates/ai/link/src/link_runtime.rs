@@ -3,30 +3,21 @@
 //!
 //! This module is the **only** place in `aura-app` that imports from the
 //! external `aura-agent` / `aura-reasoner` crates.  All other code interacts
-//! through the crate-local boundary types defined in [`crate::types`],
-//! [`crate::events`], and [`crate::executor`].
-
-use std::sync::Arc;
+//! through the re-exported types in [`crate::types`], [`crate::events`],
+//! and [`crate::executor`].
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
 use crate::error::RuntimeError;
 use crate::events::RuntimeEvent;
-use crate::executor::ToolExecutor;
 use crate::runtime::AgentRuntime;
 use crate::turn_types::{TotalUsage, TurnRequest, TurnResult};
-use crate::types;
-
-// ---------------------------------------------------------------------------
-// LinkRuntime
-// ---------------------------------------------------------------------------
 
 /// Default [`AgentRuntime`] that delegates to `aura_agent::AgentLoop`.
 ///
 /// Holds the credentials and model name needed to construct an
-/// `AnthropicProvider` per turn.  All type conversions between the link
-/// boundary types and the external crate types live in this module.
+/// `AnthropicProvider` per turn.
 pub struct LinkRuntime {
     api_key: String,
     model: String,
@@ -113,15 +104,10 @@ impl AgentRuntime for LinkRuntime {
     async fn execute_turn(&self, request: TurnRequest) -> Result<TurnResult, RuntimeError> {
         let provider = self.build_provider()?;
 
-        let executor_adapter = ExecutorAdapter {
-            inner: request.executor.clone(),
-        };
-
         let messages: Vec<aura_reasoner::Message> =
-            request.messages.iter().map(convert_message).collect();
+            request.messages.iter().map(|m| m.to_reasoner()).collect();
 
-        let tools: Vec<aura_reasoner::ToolDefinition> =
-            request.tools.iter().map(convert_tool_def).collect();
+        let tools: Vec<aura_reasoner::ToolDefinition> = request.tools.to_vec();
 
         let model = request
             .config
@@ -145,7 +131,6 @@ impl AgentRuntime for LinkRuntime {
 
         let agent_loop = aura_agent::AgentLoop::new(config);
 
-        // Only allocate an event channel when the caller wants streaming events.
         let event_tx_for_agent = request.event_tx.as_ref().map(|app_tx| {
             let (agent_tx, agent_rx) = mpsc::unbounded_channel();
             forward_events(agent_rx, app_tx.clone());
@@ -155,7 +140,7 @@ impl AgentRuntime for LinkRuntime {
         let result = agent_loop
             .run_with_events(
                 &provider,
-                &executor_adapter,
+                request.executor.as_ref(),
                 messages,
                 tools,
                 event_tx_for_agent,
@@ -176,65 +161,6 @@ impl AgentRuntime for LinkRuntime {
 }
 
 // ===========================================================================
-// Executor Adapter
-// ===========================================================================
-
-/// Bridges the crate-local [`ToolExecutor`] trait to
-/// `aura_agent::AgentToolExecutor`.
-struct ExecutorAdapter {
-    inner: Arc<dyn ToolExecutor>,
-}
-
-#[async_trait]
-impl aura_agent::AgentToolExecutor for ExecutorAdapter {
-    async fn execute(
-        &self,
-        tool_calls: &[aura_agent::ToolCallInfo],
-    ) -> Vec<aura_agent::ToolCallResult> {
-        let link_calls: Vec<types::ToolCall> = tool_calls
-            .iter()
-            .map(|tc| types::ToolCall {
-                id: tc.id.clone(),
-                name: tc.name.clone(),
-                input: tc.input.clone(),
-            })
-            .collect();
-
-        self.inner
-            .execute(&link_calls)
-            .await
-            .into_iter()
-            .map(|r| aura_agent::ToolCallResult {
-                tool_use_id: r.tool_use_id,
-                content: r.content,
-                is_error: r.is_error,
-                stop_loop: r.stop_loop,
-            })
-            .collect()
-    }
-
-    async fn auto_build_check(&self) -> Option<aura_agent::AutoBuildResult> {
-        self.inner
-            .auto_build_check()
-            .await
-            .map(|r| aura_agent::AutoBuildResult {
-                success: r.success,
-                output: r.output,
-                error_count: r.error_count,
-            })
-    }
-
-    async fn capture_build_baseline(&self) -> Option<aura_agent::BuildBaseline> {
-        self.inner
-            .capture_build_baseline()
-            .await
-            .map(|b| aura_agent::BuildBaseline {
-                error_signatures: b.error_signatures,
-            })
-    }
-}
-
-// ===========================================================================
 // Event Forwarding
 // ===========================================================================
 
@@ -244,7 +170,8 @@ fn forward_events(
     app_tx: mpsc::UnboundedSender<RuntimeEvent>,
 ) {
     tokio::spawn(async move {
-        let mut detected_tool_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut detected_tool_ids: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         while let Some(event) = agent_rx.recv().await {
             let mapped = match event {
                 aura_agent::AgentLoopEvent::TextDelta(t) => RuntimeEvent::Delta(t),
@@ -258,7 +185,9 @@ fn forward_events(
                 aura_agent::AgentLoopEvent::ToolInputSnapshot { id, name, input } => {
                     let parsed = serde_json::from_str(&input)
                         .unwrap_or(serde_json::Value::String(input));
-                    if !matches!(parsed, serde_json::Value::String(_)) && detected_tool_ids.insert(id.clone()) {
+                    if !matches!(parsed, serde_json::Value::String(_))
+                        && detected_tool_ids.insert(id.clone())
+                    {
                         let _ = app_tx.send(RuntimeEvent::ToolUseDetected {
                             id: id.clone(),
                             name: name.clone(),
@@ -296,11 +225,12 @@ fn forward_events(
                     RuntimeEvent::IterationComplete { iteration }
                 }
 
-                aura_agent::AgentLoopEvent::Error { message, .. } => RuntimeEvent::Error(message),
+                aura_agent::AgentLoopEvent::Error { message, .. } => {
+                    RuntimeEvent::Error(message)
+                }
 
                 aura_agent::AgentLoopEvent::Warning(warning) => RuntimeEvent::Warning(warning),
 
-                // ToolComplete has no RuntimeEvent counterpart.
                 aura_agent::AgentLoopEvent::ToolComplete { .. } => continue,
             };
 
@@ -312,70 +242,7 @@ fn forward_events(
 }
 
 // ===========================================================================
-// Type Conversions: link → aura-reasoner
-// ===========================================================================
-
-fn convert_message(msg: &types::Message) -> aura_reasoner::Message {
-    let role = match msg.role {
-        types::Role::User => aura_reasoner::Role::User,
-        types::Role::Assistant => aura_reasoner::Role::Assistant,
-    };
-
-    let content = match &msg.content {
-        types::MessageContent::Text(s) => {
-            vec![aura_reasoner::ContentBlock::Text { text: s.clone() }]
-        }
-        types::MessageContent::Blocks(blocks) => blocks.iter().map(convert_content_block).collect(),
-    };
-
-    aura_reasoner::Message { role, content }
-}
-
-fn convert_content_block(block: &types::ContentBlock) -> aura_reasoner::ContentBlock {
-    match block {
-        types::ContentBlock::Text { text } => {
-            aura_reasoner::ContentBlock::Text { text: text.clone() }
-        }
-        types::ContentBlock::Image { source } => aura_reasoner::ContentBlock::Image {
-            source: aura_reasoner::ImageSource {
-                source_type: source.source_type.clone(),
-                media_type: source.media_type.clone(),
-                data: source.data.clone(),
-            },
-        },
-        types::ContentBlock::ToolUse { id, name, input } => aura_reasoner::ContentBlock::ToolUse {
-            id: id.clone(),
-            name: name.clone(),
-            input: input.clone(),
-        },
-        types::ContentBlock::ToolResult {
-            tool_use_id,
-            content,
-            is_error,
-        } => aura_reasoner::ContentBlock::ToolResult {
-            tool_use_id: tool_use_id.clone(),
-            content: aura_reasoner::ToolResultContent::Text(content.clone()),
-            is_error: is_error.unwrap_or(false),
-        },
-    }
-}
-
-fn convert_tool_def(tool: &types::ToolDefinition) -> aura_reasoner::ToolDefinition {
-    aura_reasoner::ToolDefinition {
-        name: tool.name.clone(),
-        description: tool.description.clone(),
-        input_schema: tool.input_schema.clone(),
-        cache_control: tool
-            .cache_control
-            .as_ref()
-            .map(|cc| aura_reasoner::CacheControl {
-                cache_type: cc.cache_type.clone(),
-            }),
-    }
-}
-
-// ===========================================================================
-// Type Conversions: aura-agent → link
+// Type Conversion: aura-agent → link
 // ===========================================================================
 
 fn convert_loop_result(r: aura_agent::AgentLoopResult) -> TurnResult {

@@ -22,7 +22,10 @@ fn estimate_message_tokens(msg: &Message) -> u64 {
                     ContentBlock::ToolUse { name, input, .. } => {
                         estimate_tokens(name) + estimate_tokens(&input.to_string()) + 10
                     }
-                    ContentBlock::ToolResult { content, .. } => estimate_tokens(content) + 10,
+                    ContentBlock::ToolResult { content, .. } => {
+                        estimate_tokens(aura_link::tool_result_as_str(content)) + 10
+                    }
+                    ContentBlock::Thinking { thinking, .. } => estimate_tokens(thinking),
                 };
             }
             total
@@ -173,8 +176,12 @@ fn build_summary_input(old_messages: &[Message]) -> String {
                     ContentBlock::Image { .. } => "[Image]".to_string(),
                     ContentBlock::ToolUse { name, .. } => format!("[Tool call: {name}]"),
                     ContentBlock::ToolResult { content, .. } => {
-                        let preview: String = content.chars().take(100).collect();
+                        let preview: String =
+                            aura_link::tool_result_as_str(content).chars().take(100).collect();
                         format!("[Tool result: {preview}...]")
+                    }
+                    ContentBlock::Thinking { thinking, .. } => {
+                        format!("[Thinking: {}...]", thinking.chars().take(50).collect::<String>())
                     }
                 })
                 .collect::<Vec<_>>()

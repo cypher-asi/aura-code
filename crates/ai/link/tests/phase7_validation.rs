@@ -7,9 +7,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use aura_link::{
-    AutoBuildResult, BuildBaseline, CacheControl, ContentBlock, LinkRuntime, ImageSource,
-    Message, MessageContent, Role, RuntimeError, RuntimeEvent, ThinkingConfig, ToolCall,
-    ToolCallResult, ToolDefinition, ToolExecutor, TotalUsage, TurnConfig, TurnRequest, TurnResult,
+    AutoBuildResult, BuildBaseline, CacheControl, ContentBlock, ImageSource, LinkRuntime, Message,
+    MessageContent, Role, RuntimeError, RuntimeEvent, ThinkingConfig, ToolCall, ToolCallResult,
+    ToolDefinition, ToolExecutor, ToolResultContent, TotalUsage, TurnConfig, TurnRequest,
+    TurnResult,
 };
 
 // ── Stub executor for TurnRequest construction ────────────────────────
@@ -77,8 +78,8 @@ async fn turn_request_all_fields_constructible() {
             ]),
             Message::tool_results(vec![ContentBlock::ToolResult {
                 tool_use_id: "tu_1".into(),
-                content: "fn main() {}".into(),
-                is_error: None,
+                content: ToolResultContent::Text("fn main() {}".into()),
+                is_error: false,
             }]),
         ],
         tools,
@@ -86,7 +87,7 @@ async fn turn_request_all_fields_constructible() {
         config: TurnConfig {
             max_iterations: 15,
             max_tokens: 16384,
-            thinking: Some(ThinkingConfig::enabled(10_000)),
+            thinking: Some(ThinkingConfig { budget_tokens: 10_000 }),
             stream_timeout: Duration::from_secs(120),
             max_context_tokens: Some(200_000),
             model_override: Some("claude-sonnet-4-20250514".into()),
@@ -191,8 +192,8 @@ fn message_serde_roundtrip_blocks() {
         },
         ContentBlock::ToolResult {
             tool_use_id: "tu_1".into(),
-            content: "found 3 results".into(),
-            is_error: Some(false),
+            content: ToolResultContent::Text("found 3 results".into()),
+            is_error: false,
         },
         ContentBlock::Image {
             source: ImageSource {
@@ -240,10 +241,9 @@ fn tool_call_serde_roundtrip() {
 
 #[test]
 fn thinking_config_serde_roundtrip() {
-    let tc = ThinkingConfig::enabled(25_000);
+    let tc = ThinkingConfig { budget_tokens: 25_000 };
     let json = serde_json::to_string(&tc).unwrap();
     let back: ThinkingConfig = serde_json::from_str(&json).unwrap();
-    assert_eq!(back.thinking_type, "enabled");
     assert_eq!(back.budget_tokens, 25_000);
 }
 

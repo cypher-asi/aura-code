@@ -1,4 +1,5 @@
 use super::*;
+use aura_link::ToolResultContent;
 
 #[test]
 fn compact_older_message_text_tiered_truncates_old_text_blocks() {
@@ -38,21 +39,23 @@ fn compact_older_message_text_tiered_truncates_old_text_blocks() {
 fn compact_older_message_text_tiered_skips_tool_result_blocks() {
     let mut messages = vec![Message::tool_results(vec![ContentBlock::ToolResult {
         tool_use_id: "t1".into(),
-        content: "x".repeat(5000),
-        is_error: Some(false),
+        content: ToolResultContent::Text("x".repeat(5000)),
+        is_error: false,
     }])];
 
     compact_older_message_text_tiered(&mut messages, 0, &AGGRESSIVE);
 
-    let content = match &messages[0].content {
+    let content_len = match &messages[0].content {
         MessageContent::Blocks(blocks) => match &blocks[0] {
-            ContentBlock::ToolResult { content, .. } => content.clone(),
-            _ => String::new(),
+            ContentBlock::ToolResult { content, .. } => {
+                aura_link::tool_result_as_str(content).len()
+            }
+            _ => 0,
         },
-        _ => String::new(),
+        _ => 0,
     };
     assert_eq!(
-        content.len(),
+        content_len,
         5000,
         "tool results are compacted by dedicated routines"
     );
@@ -158,18 +161,18 @@ fn compact_older_tool_results_skips_last_n_messages() {
         Message::user("initial context"),
         Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
-            content: big_content.clone(),
-            is_error: None,
+            content: ToolResultContent::Text(big_content.clone()),
+            is_error: false,
         }]),
         Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t2".into(),
-            content: big_content.clone(),
-            is_error: None,
+            content: ToolResultContent::Text(big_content.clone()),
+            is_error: false,
         }]),
         Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t3".into(),
-            content: big_content.clone(),
-            is_error: None,
+            content: ToolResultContent::Text(big_content.clone()),
+            is_error: false,
         }]),
     ];
 
@@ -177,14 +180,18 @@ fn compact_older_tool_results_skips_last_n_messages() {
 
     let c1 = match &messages[1].content {
         MessageContent::Blocks(b) => match &b[0] {
-            ContentBlock::ToolResult { content, .. } => content.len(),
+            ContentBlock::ToolResult { content, .. } => {
+                aura_link::tool_result_as_str(content).len()
+            }
             _ => 0,
         },
         _ => 0,
     };
     let c3 = match &messages[3].content {
         MessageContent::Blocks(b) => match &b[0] {
-            ContentBlock::ToolResult { content, .. } => content.len(),
+            ContentBlock::ToolResult { content, .. } => {
+                aura_link::tool_result_as_str(content).len()
+            }
             _ => 0,
         },
         _ => 0,
@@ -200,8 +207,8 @@ fn compact_older_tool_results_only_compacts_user_messages() {
         Message::assistant_text(&big_content),
         Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
-            content: big_content.clone(),
-            is_error: None,
+            content: ToolResultContent::Text(big_content.clone()),
+            is_error: false,
         }]),
     ];
 
@@ -243,15 +250,15 @@ fn compact_older_tool_results_small_results_untouched() {
     let small = "small content";
     let mut messages = vec![Message::tool_results(vec![ContentBlock::ToolResult {
         tool_use_id: "t1".into(),
-        content: small.into(),
-        is_error: None,
+        content: ToolResultContent::Text(small.into()),
+        is_error: false,
     }])];
 
     compact_older_tool_results(&mut messages, 0);
 
     let content = match &messages[0].content {
         MessageContent::Blocks(b) => match &b[0] {
-            ContentBlock::ToolResult { content, .. } => content.as_str(),
+            ContentBlock::ToolResult { content, .. } => aura_link::tool_result_as_str(content),
             _ => "",
         },
         _ => "",
@@ -266,8 +273,8 @@ fn compact_older_tool_results_tiered_uses_custom_thresholds() {
         Message::user("initial context"),
         Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
-            content: content.clone(),
-            is_error: None,
+            content: ToolResultContent::Text(content.clone()),
+            is_error: false,
         }]),
         Message::user("recent"),
     ];
@@ -276,7 +283,9 @@ fn compact_older_tool_results_tiered_uses_custom_thresholds() {
 
     let compacted = match &messages[1].content {
         MessageContent::Blocks(b) => match &b[0] {
-            ContentBlock::ToolResult { content, .. } => content.clone(),
+            ContentBlock::ToolResult { content, .. } => {
+                aura_link::tool_result_as_str(content).to_string()
+            }
             _ => String::new(),
         },
         _ => String::new(),
@@ -294,8 +303,8 @@ fn compact_tool_results_in_history_uses_history_config() {
         Message::user("initial context"),
         Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
-            content: big.clone(),
-            is_error: None,
+            content: ToolResultContent::Text(big.clone()),
+            is_error: false,
         }]),
         Message::user("recent"),
     ];
@@ -304,7 +313,9 @@ fn compact_tool_results_in_history_uses_history_config() {
 
     let compacted = match &result[1].content {
         MessageContent::Blocks(b) => match &b[0] {
-            ContentBlock::ToolResult { content, .. } => content.clone(),
+            ContentBlock::ToolResult { content, .. } => {
+                aura_link::tool_result_as_str(content).to_string()
+            }
             _ => String::new(),
         },
         _ => String::new(),
@@ -331,15 +342,17 @@ fn compact_tool_results_in_history_preserves_recent() {
     let big = "r".repeat(5_000);
     let messages = vec![Message::tool_results(vec![ContentBlock::ToolResult {
         tool_use_id: "t1".into(),
-        content: big.clone(),
-        is_error: None,
+        content: ToolResultContent::Text(big.clone()),
+        is_error: false,
     }])];
 
     let result = compact_tool_results_in_history(messages, 1);
 
     let content = match &result[0].content {
         MessageContent::Blocks(b) => match &b[0] {
-            ContentBlock::ToolResult { content, .. } => content.clone(),
+            ContentBlock::ToolResult { content, .. } => {
+                aura_link::tool_result_as_str(content).to_string()
+            }
             _ => String::new(),
         },
         _ => String::new(),

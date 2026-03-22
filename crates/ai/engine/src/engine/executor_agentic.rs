@@ -57,7 +57,6 @@ pub(crate) fn configure_turn_config(
         max_iterations,
         max_tokens,
         thinking: Some(aura_link::ThinkingConfig {
-            thinking_type: "enabled".to_string(),
             budget_tokens: thinking_budget,
         }),
         stream_timeout: std::time::Duration::from_secs(llm_config.stream_timeout_secs),

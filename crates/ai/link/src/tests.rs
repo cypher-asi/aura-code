@@ -7,9 +7,9 @@ mod tests {
     use tokio::sync::Mutex;
 
     use crate::{
-        AgentRuntime, BuildBaseline, ContentBlock, ImageSource, Message,
-        MessageContent, Role, RuntimeError, ThinkingConfig, ToolCall, ToolCallResult,
-        ToolDefinition, ToolExecutor, TotalUsage, TurnConfig, TurnRequest, TurnResult,
+        AgentRuntime, BuildBaseline, ContentBlock, ImageSource, Message, MessageContent, Role,
+        RuntimeError, ThinkingConfig, ToolCall, ToolCallResult, ToolDefinition, ToolExecutor,
+        ToolResultContent, TotalUsage, TurnConfig, TurnRequest, TurnResult,
     };
 
     // ── Mock implementations ───────────────────────────────────────────
@@ -225,8 +225,8 @@ mod tests {
     fn content_block_tool_result_serde_roundtrip() {
         let block = ContentBlock::ToolResult {
             tool_use_id: "tu1".into(),
-            content: "ok".into(),
-            is_error: Some(false),
+            content: ToolResultContent::Text("ok".into()),
+            is_error: false,
         };
         let json = serde_json::to_string(&block).unwrap();
         let back: ContentBlock = serde_json::from_str(&json).unwrap();
@@ -237,8 +237,8 @@ mod tests {
                 is_error,
             } => {
                 assert_eq!(tool_use_id, "tu1");
-                assert_eq!(content, "ok");
-                assert_eq!(is_error, Some(false));
+                assert!(matches!(content, ToolResultContent::Text(ref s) if s == "ok"));
+                assert!(!is_error);
             }
             _ => panic!("expected ToolResult"),
         }
@@ -274,10 +274,9 @@ mod tests {
 
     #[test]
     fn thinking_config_serde_roundtrip() {
-        let tc = ThinkingConfig::enabled(10_000);
+        let tc = ThinkingConfig { budget_tokens: 10_000 };
         let json = serde_json::to_string(&tc).unwrap();
         let back: ThinkingConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.thinking_type, "enabled");
         assert_eq!(back.budget_tokens, 10_000);
     }
 
@@ -418,7 +417,7 @@ error[E0599]: no method named `bar`
             config: TurnConfig {
                 max_iterations: 10,
                 max_tokens: 8192,
-                thinking: Some(ThinkingConfig::enabled(5000)),
+                thinking: Some(ThinkingConfig { budget_tokens: 5000 }),
                 stream_timeout: Duration::from_secs(60),
                 max_context_tokens: Some(100_000),
                 model_override: Some("fast-model".into()),

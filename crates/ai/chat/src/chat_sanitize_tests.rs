@@ -1,4 +1,5 @@
 use super::*;
+use aura_link::ToolResultContent;
 
 // -------------------------------------------------------------------
 // remove_empty_messages
@@ -52,8 +53,8 @@ fn remove_messages_where_all_blocks_have_empty_content() {
             ContentBlock::Text { text: "".into() },
             ContentBlock::ToolResult {
                 tool_use_id: "t1".into(),
-                content: "".into(),
-                is_error: None,
+                content: ToolResultContent::Text("".into()),
+                is_error: false,
             },
         ]),
     }];
@@ -109,8 +110,8 @@ fn merge_text_and_blocks_different_content_types() {
             role: Role::User,
             content: MessageContent::Blocks(vec![ContentBlock::ToolResult {
                 tool_use_id: "t1".into(),
-                content: "result".into(),
-                is_error: None,
+                content: ToolResultContent::Text("result".into()),
+                is_error: false,
             }]),
         },
     ];
@@ -162,8 +163,8 @@ fn passes_through_matched_tool_use_tool_result_pairs() {
         }]),
         Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
-            content: "file content".into(),
-            is_error: None,
+                content: ToolResultContent::Text("file content".into()),
+                is_error: false,
         }]),
     ];
     let result = sanitize_orphan_tool_results(msgs);
@@ -174,8 +175,8 @@ fn passes_through_matched_tool_use_tool_result_pairs() {
 fn drops_orphan_tool_result_with_no_preceding_assistant() {
     let msgs = vec![Message::tool_results(vec![ContentBlock::ToolResult {
         tool_use_id: "orphan".into(),
-        content: "lost result".into(),
-        is_error: None,
+                content: ToolResultContent::Text("lost result".into()),
+                is_error: false,
     }])];
     let result = sanitize_orphan_tool_results(msgs);
     assert_eq!(result.len(), 1);
@@ -201,13 +202,13 @@ fn drops_tool_result_when_tool_use_id_not_in_previous_assistant() {
         Message::tool_results(vec![
             ContentBlock::ToolResult {
                 tool_use_id: "t1".into(),
-                content: "valid".into(),
-                is_error: None,
+                content: ToolResultContent::Text("valid".into()),
+                is_error: false,
             },
             ContentBlock::ToolResult {
                 tool_use_id: "t_unknown".into(),
-                content: "orphan".into(),
-                is_error: None,
+                content: ToolResultContent::Text("orphan".into()),
+                is_error: false,
             },
         ]),
     ];
@@ -232,8 +233,8 @@ fn converts_fully_orphaned_tool_result_message_to_text() {
         Message::assistant_text("some text"),
         Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "orphan".into(),
-            content: "lost data".into(),
-            is_error: None,
+                content: ToolResultContent::Text("lost data".into()),
+                is_error: false,
         }]),
     ];
     let result = sanitize_orphan_tool_results(msgs);
@@ -259,8 +260,8 @@ fn no_change_when_all_tool_use_have_matching_results() {
         }]),
         Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
-            content: "data".into(),
-            is_error: None,
+            content: ToolResultContent::Text("data".into()),
+            is_error: false,
         }]),
     ];
     let result = sanitize_tool_use_results(msgs.clone());
@@ -283,7 +284,9 @@ fn injects_synthetic_error_result_for_orphaned_tool_use() {
         MessageContent::Blocks(blocks) => blocks.iter().any(|b| match b {
             ContentBlock::ToolResult {
                 content, is_error, ..
-            } => content.contains("interrupted") && *is_error == Some(true),
+            } => {
+                aura_link::tool_result_as_str(content).contains("interrupted") && *is_error
+            }
             _ => false,
         }),
         _ => false,
@@ -309,8 +312,8 @@ fn merges_synthetic_results_with_existing_user_message() {
         ]),
         Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
-            content: "ok".into(),
-            is_error: None,
+            content: ToolResultContent::Text("ok".into()),
+            is_error: false,
         }]),
     ];
     let result = sanitize_tool_use_results(msgs);

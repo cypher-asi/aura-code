@@ -5,8 +5,9 @@
 //! execution backends plug in) and supporting types like [`ToolExecutor`],
 //! [`TurnRequest`], [`TurnResult`], and [`RuntimeEvent`].
 //!
-//! All conversation and tool types are self-contained within this crate so
-//! that consumers do not need to depend on any specific provider crate.
+//! Conversation and tool types are re-exported from the harness crates
+//! (`aura-reasoner`, `aura-agent`) so consumers get the canonical definitions
+//! without pulling in provider crates directly.
 
 mod error;
 mod events;
@@ -23,8 +24,8 @@ pub use link_runtime::LinkRuntime;
 pub use runtime::AgentRuntime;
 pub use turn_types::{TotalUsage, TurnConfig, TurnRequest, TurnResult};
 pub use types::{
-    CacheControl, ContentBlock, ImageSource, Message, MessageContent, Role, ThinkingConfig,
-    ToolCall, ToolDefinition,
+    tool_result_as_str, tool_result_text_mut, CacheControl, ContentBlock, ImageSource, Message,
+    MessageContent, Role, ThinkingConfig, ToolCall, ToolDefinition, ToolResultContent,
 };
 
 #[cfg(test)]

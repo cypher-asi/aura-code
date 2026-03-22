@@ -136,7 +136,6 @@ impl ChatService {
             max_iterations: ChatToolExecutor::max_iterations(),
             max_tokens: self.llm_config.chat_max_tokens,
             thinking: Some(aura_link::ThinkingConfig {
-                thinking_type: "enabled".to_string(),
                 budget_tokens: self.llm_config.thinking_budget,
             }),
             stream_timeout: DEFAULT_STREAM_TIMEOUT,

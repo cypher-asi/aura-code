@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use tracing::warn;
 
-use aura_link::{ContentBlock, Message, MessageContent, Role};
+use aura_link::{ContentBlock, Message, MessageContent, Role, ToolResultContent};
 
 // ── Shared helpers ──────────────────────────────────────────────────
 
@@ -53,7 +53,9 @@ fn rebuild_filtered_message(
         let preview: String = blocks
             .iter()
             .filter_map(|b| match b {
-                ContentBlock::ToolResult { content, .. } => Some(content.as_str()),
+                ContentBlock::ToolResult { content, .. } => {
+                    Some(aura_link::tool_result_as_str(content))
+                }
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -159,8 +161,10 @@ fn inject_missing_tool_results(
         .into_iter()
         .map(|tool_use_id| ContentBlock::ToolResult {
             tool_use_id: tool_use_id.clone(),
-            content: "Tool execution was interrupted or not completed.".to_string(),
-            is_error: Some(true),
+            content: ToolResultContent::Text(
+                "Tool execution was interrupted or not completed.".into(),
+            ),
+            is_error: true,
         })
         .collect();
 
@@ -262,7 +266,9 @@ fn remove_empty_messages(messages: Vec<Message>) -> Vec<Message> {
                     blocks.iter().any(|b| match b {
                         ContentBlock::Text { text } => !text.is_empty(),
                         ContentBlock::ToolUse { .. } => true,
-                        ContentBlock::ToolResult { content, .. } => !content.is_empty(),
+                        ContentBlock::ToolResult { content, .. } => {
+                            !aura_link::tool_result_as_str(content).is_empty()
+                        }
                         _ => true,
                     })
                 }

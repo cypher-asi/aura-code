@@ -1,4 +1,6 @@
-use aura_link::{ContentBlock, ImageSource, Message as LinkMessage, MessageContent, Role};
+use aura_link::{
+    ContentBlock, ImageSource, Message as LinkMessage, MessageContent, Role, ToolResultContent,
+};
 use aura_core::*;
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -29,8 +31,8 @@ fn convert_content_blocks(blocks: &[ChatContentBlock], role: Role) -> Vec<LinkMe
             } => {
                 let block = ContentBlock::ToolResult {
                     tool_use_id: tool_use_id.clone(),
-                    content: content.clone(),
-                    is_error: *is_error,
+                    content: ToolResultContent::Text(content.clone()),
+                    is_error: is_error.unwrap_or(false),
                 };
                 if role == Role::Assistant {
                     tool_result_blocks.push(block);

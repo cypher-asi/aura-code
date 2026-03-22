@@ -152,9 +152,11 @@ pub fn compact_older_tool_results_tiered(
         if let MessageContent::Blocks(blocks) = &mut msg.content {
             for block in blocks.iter_mut() {
                 if let ContentBlock::ToolResult { content, .. } = block {
-                    if content.len() > cfg.threshold {
-                        *content = try_signature_compact(content)
-                            .unwrap_or_else(|| truncate(content, cfg));
+                    if let Some(text) = aura_link::tool_result_text_mut(content) {
+                        if text.len() > cfg.threshold {
+                            *text = try_signature_compact(text)
+                                .unwrap_or_else(|| truncate(text, cfg));
+                        }
                     }
                 }
             }
@@ -209,8 +211,10 @@ pub fn compact_tool_results_in_history(
         if let MessageContent::Blocks(blocks) = &mut msg.content {
             for block in blocks.iter_mut() {
                 if let ContentBlock::ToolResult { content, .. } = block {
-                    if content.len() > HISTORY.threshold {
-                        *content = truncate(content, &HISTORY);
+                    if let Some(text) = aura_link::tool_result_text_mut(content) {
+                        if text.len() > HISTORY.threshold {
+                            *text = truncate(text, &HISTORY);
+                        }
                     }
                 }
             }
