@@ -148,7 +148,7 @@ pub(crate) async fn create_imported_project(
         description,
         linked_folder_path: workspace_root.to_string_lossy().to_string(),
         workspace_source: Some("imported".to_string()),
-        workspace_display_path: Some("Imported workspace snapshot".to_string()),
+        workspace_display_path: Some("Imported project files".to_string()),
         build_command,
         test_command,
         git_repo_url,
