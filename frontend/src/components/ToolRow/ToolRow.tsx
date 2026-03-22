@@ -40,24 +40,6 @@ export function ToolCallBlock({
         </div>
       );
     }
-    if (isFileOp) {
-      return (
-        <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
-          <div className={toolStyles.toolBody}>
-            <FilePreviewCard entry={entry} />
-          </div>
-        </div>
-      );
-    }
-    if (isSpec) {
-      return (
-        <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
-          <div className={toolStyles.toolBody}>
-            <SpecPreviewCard entry={entry} />
-          </div>
-        </div>
-      );
-    }
     if (isTask) {
       return (
         <div className={`${toolStyles.toolBodyWrap} ${toolStyles.noMaxHeight}`}>
@@ -67,8 +49,27 @@ export function ToolCallBlock({
         </div>
       );
     }
+    if (!expanded) return null;
+    if (isFileOp) {
+      return (
+        <div className={`${toolStyles.toolBodyWrap} ${toolStyles.toolBodyExpanded}`}>
+          <div className={toolStyles.toolBody}>
+            <FilePreviewCard entry={entry} />
+          </div>
+        </div>
+      );
+    }
+    if (isSpec) {
+      return (
+        <div className={`${toolStyles.toolBodyWrap} ${toolStyles.toolBodyExpanded}`}>
+          <div className={toolStyles.toolBody}>
+            <SpecPreviewCard entry={entry} />
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className={`${toolStyles.toolBodyWrap} ${expanded ? toolStyles.toolBodyExpanded : ""}`}>
+      <div className={`${toolStyles.toolBodyWrap} ${toolStyles.toolBodyExpanded}`}>
         <div className={toolStyles.toolBody}>
           <div className={toolStyles.section}>
             <div className={toolStyles.sectionLabel}>Input</div>
