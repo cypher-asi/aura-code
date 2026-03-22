@@ -1,6 +1,7 @@
-import { getLastAgent, setLastAgent, clearLastAgentIf } from "./storage";
+import { getLastAgent, setLastAgent, clearLastAgentIf, getLastProject, setLastProject } from "./storage";
 
 const LAST_AGENT_KEY = "aura-last-agent";
+const LAST_PROJECT_KEY = "aura-last-project";
 
 describe("storage", () => {
   let store: Record<string, string>;
@@ -111,6 +112,30 @@ describe("storage", () => {
     it("handles malformed JSON gracefully", () => {
       store[LAST_AGENT_KEY] = "bad-json";
       expect(() => clearLastAgentIf({ projectId: "p1" })).not.toThrow();
+    });
+  });
+
+  describe("getLastProject", () => {
+    it("returns null when no data stored", () => {
+      expect(getLastProject()).toBeNull();
+    });
+
+    it("returns the stored project id", () => {
+      store[LAST_PROJECT_KEY] = "p1";
+      expect(getLastProject()).toBe("p1");
+    });
+  });
+
+  describe("setLastProject", () => {
+    it("stores the project id in localStorage", () => {
+      setLastProject("p1");
+      expect(localStorage.setItem).toHaveBeenCalledWith(LAST_PROJECT_KEY, "p1");
+    });
+
+    it("overwrites the previous value", () => {
+      store[LAST_PROJECT_KEY] = "p1";
+      setLastProject("p2");
+      expect(localStorage.setItem).toHaveBeenCalledWith(LAST_PROJECT_KEY, "p2");
     });
   });
 });
