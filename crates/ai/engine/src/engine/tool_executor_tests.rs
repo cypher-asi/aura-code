@@ -1,5 +1,5 @@
 use super::*;
-use aura_claude::ToolCall;
+use aura_link::ToolCall;
 
 fn make_executor() -> EngineToolLoopExecutor {
     use chrono::Utc;

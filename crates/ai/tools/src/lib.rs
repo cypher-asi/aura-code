@@ -1,4 +1,4 @@
-use aura_provider::ToolDefinition;
+use aura_link::ToolDefinition;
 use std::sync::{Arc, LazyLock};
 
 static AGENT_TOOLS: LazyLock<Arc<[ToolDefinition]>> =

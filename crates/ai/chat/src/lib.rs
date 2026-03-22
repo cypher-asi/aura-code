@@ -23,6 +23,4 @@ pub use chat_streaming::{AgentMessageParams, ChatMessageParams};
 pub use chat_tool_executor::{ChatToolExecutor, ToolExecResult};
 pub use error::ChatError;
 pub use message_metadata::{decode_message_content, encode_message_content, DecodedMessage};
-pub use runtime_conversions::{
-    map_runtime_event_to_chat_event, rich_messages_to_link, tool_defs_to_link,
-};
+pub use runtime_conversions::map_runtime_event_to_chat_event;

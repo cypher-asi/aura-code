@@ -15,7 +15,6 @@ use crate::chat_message_conversion::convert_messages_to_rich;
 use crate::chat_tool_executor::ChatToolExecutor;
 use crate::chat_tool_loop_executor::{ForwardingToolExecutor, MultiProjectResolver};
 use crate::constants::DEFAULT_STREAM_TIMEOUT;
-use crate::runtime_conversions::{rich_messages_to_link, tool_defs_to_link};
 use aura_tools::multi_project_tool_definitions;
 
 fn build_multi_project_system_prompt(agent: &Agent, projects: &[Project]) -> String {
@@ -111,12 +110,7 @@ impl ChatService {
             ChatStreamEvent::Progress("Waiting for response...".to_string()),
         );
 
-        let tools: Arc<[aura_claude::ToolDefinition]> = multi_project_tool_definitions()
-            .iter()
-            .cloned()
-            .map(Into::into)
-            .collect::<Vec<_>>()
-            .into();
+        let tools: Arc<[aura_link::ToolDefinition]> = multi_project_tool_definitions();
 
         let allowed_project_ids: HashSet<String> =
             projects.iter().map(|p| p.project_id.to_string()).collect();
@@ -174,8 +168,8 @@ impl ChatService {
         let adapter: Arc<dyn aura_link::ToolExecutor> = Arc::new(executor);
         let request = aura_link::TurnRequest {
             system_prompt: system.to_string(),
-            messages: rich_messages_to_link(api_messages),
-            tools: tool_defs_to_link(tools),
+            messages: api_messages,
+            tools,
             executor: adapter,
             config,
             event_tx: Some(event_tx),

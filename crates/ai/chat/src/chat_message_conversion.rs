@@ -1,4 +1,4 @@
-use aura_claude::{ContentBlock, ImageSource, MessageContent, RichMessage};
+use aura_link::{ContentBlock, ImageSource, Message as LinkMessage, MessageContent, Role};
 use aura_core::*;
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
@@ -6,17 +6,17 @@ use tracing::warn;
 
 use crate::chat::ChatAttachment;
 
-fn convert_content_blocks(blocks: &[ChatContentBlock], role: &str) -> Vec<RichMessage> {
-    let mut assistant_blocks: Vec<ContentBlock> = Vec::new();
+fn convert_content_blocks(blocks: &[ChatContentBlock], role: Role) -> Vec<LinkMessage> {
+    let mut primary_blocks: Vec<ContentBlock> = Vec::new();
     let mut tool_result_blocks: Vec<ContentBlock> = Vec::new();
 
     for b in blocks {
         match b {
             ChatContentBlock::Text { text } => {
-                assistant_blocks.push(ContentBlock::Text { text: text.clone() });
+                primary_blocks.push(ContentBlock::Text { text: text.clone() });
             }
             ChatContentBlock::ToolUse { id, name, input } => {
-                assistant_blocks.push(ContentBlock::ToolUse {
+                primary_blocks.push(ContentBlock::ToolUse {
                     id: id.clone(),
                     name: name.clone(),
                     input: input.clone(),
@@ -32,14 +32,14 @@ fn convert_content_blocks(blocks: &[ChatContentBlock], role: &str) -> Vec<RichMe
                     content: content.clone(),
                     is_error: *is_error,
                 };
-                if role == "assistant" {
+                if role == Role::Assistant {
                     tool_result_blocks.push(block);
                 } else {
-                    assistant_blocks.push(block);
+                    primary_blocks.push(block);
                 }
             }
             ChatContentBlock::Image { media_type, data } => {
-                assistant_blocks.push(ContentBlock::Image {
+                primary_blocks.push(ContentBlock::Image {
                     source: ImageSource {
                         source_type: "base64".to_string(),
                         media_type: media_type.clone(),
@@ -51,34 +51,34 @@ fn convert_content_blocks(blocks: &[ChatContentBlock], role: &str) -> Vec<RichMe
         }
     }
 
-    let mut result = vec![RichMessage {
-        role: role.to_string(),
-        content: MessageContent::Blocks(assistant_blocks),
+    let mut result = vec![LinkMessage {
+        role,
+        content: MessageContent::Blocks(primary_blocks),
     }];
     if !tool_result_blocks.is_empty() {
-        result.push(RichMessage {
-            role: "user".to_string(),
+        result.push(LinkMessage {
+            role: Role::User,
             content: MessageContent::Blocks(tool_result_blocks),
         });
     }
     result
 }
 
-pub(crate) fn convert_messages_to_rich(messages: &[Message]) -> Vec<RichMessage> {
+pub(crate) fn convert_messages_to_rich(messages: &[Message]) -> Vec<LinkMessage> {
     messages
         .iter()
         .filter(|m| m.role == ChatRole::User || m.role == ChatRole::Assistant)
         .flat_map(|m| {
             let role = match m.role {
-                ChatRole::User => "user",
-                ChatRole::Assistant => "assistant",
-                ChatRole::System => "user",
+                ChatRole::User => Role::User,
+                ChatRole::Assistant => Role::Assistant,
+                ChatRole::System => Role::User,
             };
             if let Some(blocks) = &m.content_blocks {
                 convert_content_blocks(blocks, role)
             } else {
-                vec![RichMessage {
-                    role: role.to_string(),
+                vec![LinkMessage {
+                    role,
                     content: MessageContent::Text(m.content.clone()),
                 }]
             }
@@ -137,7 +137,6 @@ pub(crate) fn build_attachment_blocks(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aura_claude::MessageContent;
     use chrono::Utc;
 
     fn make_message(role: ChatRole, content: &str) -> Message {
@@ -168,8 +167,8 @@ mod tests {
         ];
         let rich = convert_messages_to_rich(&messages);
         assert_eq!(rich.len(), 2);
-        assert_eq!(rich[0].role, "user");
-        assert_eq!(rich[1].role, "assistant");
+        assert_eq!(rich[0].role, Role::User);
+        assert_eq!(rich[1].role, Role::Assistant);
         match &rich[0].content {
             MessageContent::Text(t) => assert_eq!(t, "Hello"),
             _ => panic!("expected Text content"),
@@ -245,8 +244,8 @@ mod tests {
             2,
             "assistant msg with ToolResult should split into 2 messages"
         );
-        assert_eq!(rich[0].role, "assistant");
-        assert_eq!(rich[1].role, "user");
+        assert_eq!(rich[0].role, Role::Assistant);
+        assert_eq!(rich[1].role, Role::User);
         match &rich[0].content {
             MessageContent::Blocks(blocks) => {
                 assert_eq!(blocks.len(), 2);
@@ -274,8 +273,8 @@ mod tests {
         ];
         let rich = convert_messages_to_rich(&messages);
         assert_eq!(rich.len(), 3);
-        assert_eq!(rich[0].role, "user");
-        assert_eq!(rich[1].role, "assistant");
-        assert_eq!(rich[2].role, "user");
+        assert_eq!(rich[0].role, Role::User);
+        assert_eq!(rich[1].role, Role::Assistant);
+        assert_eq!(rich[2].role, Role::User);
     }
 }

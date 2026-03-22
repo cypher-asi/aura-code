@@ -4,8 +4,7 @@ use std::sync::Arc;
 
 use tokio::sync::{mpsc, Mutex};
 
-use aura_chat::{rich_messages_to_link, tool_defs_to_link, ChatToolExecutor};
-use aura_claude::RichMessage;
+use aura_chat::ChatToolExecutor;
 use aura_core::*;
 use aura_link::{RuntimeEvent, TurnConfig, TurnResult};
 use aura_tools::engine_tool_definitions;
@@ -340,18 +339,13 @@ impl DevLoopEngine {
         let (forwarder, event_tx) =
             spawn_runtime_event_forwarder(&self.event_tx, pid, aiid, atp.task.task_id);
 
-        let tools: Arc<[aura_claude::ToolDefinition]> = engine_tool_definitions()
-            .iter()
-            .cloned()
-            .map(Into::into)
-            .collect::<Vec<_>>()
-            .into();
+        let tools: Arc<[aura_link::ToolDefinition]> = engine_tool_definitions();
 
         let adapter: Arc<dyn aura_link::ToolExecutor> = Arc::new(executor);
         let request = aura_link::TurnRequest {
             system_prompt: setup.system_prompt,
-            messages: rich_messages_to_link(vec![RichMessage::user(&setup.task_context)]),
-            tools: tool_defs_to_link(tools),
+            messages: vec![aura_link::Message::user(&setup.task_context)],
+            tools,
             executor: adapter,
             config,
             event_tx: Some(event_tx),

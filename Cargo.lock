@@ -827,7 +827,7 @@ dependencies = [
 name = "aura-tools"
 version = "0.2.0"
 dependencies = [
- "aura-provider",
+ "aura-link",
  "serde_json",
 ]
 

@@ -6,7 +6,6 @@ use crate::chat_message_conversion::build_attachment_blocks;
 use crate::chat_tool_executor::ChatToolExecutor;
 use crate::chat_tool_loop_executor::{ForwardingToolExecutor, SingleProjectResolver};
 use crate::constants::DEFAULT_STREAM_TIMEOUT;
-use crate::runtime_conversions::{rich_messages_to_link, tool_defs_to_link};
 use aura_core::*;
 use aura_link::{RuntimeEvent, TurnConfig, TurnResult};
 use aura_tools::agent_tool_definitions;
@@ -155,17 +154,12 @@ impl ChatService {
         &self,
         _api_key: &str,
         system: &str,
-        api_messages: Vec<aura_claude::RichMessage>,
+        api_messages: Vec<aura_link::Message>,
         executor: ForwardingToolExecutor<SingleProjectResolver>,
         tx: &mpsc::UnboundedSender<ChatStreamEvent>,
         shared_blocks: &ContentBlockAccumulator,
     ) -> TurnResult {
-        let tools: Arc<[aura_claude::ToolDefinition]> = agent_tool_definitions()
-            .iter()
-            .cloned()
-            .map(Into::into)
-            .collect::<Vec<_>>()
-            .into();
+        let tools: Arc<[aura_link::ToolDefinition]> = agent_tool_definitions();
 
         let (event_tx, mut event_rx) = mpsc::unbounded_channel::<RuntimeEvent>();
         let tx_clone = tx.clone();
@@ -186,8 +180,8 @@ impl ChatService {
         let adapter: Arc<dyn aura_link::ToolExecutor> = Arc::new(executor);
         let request = aura_link::TurnRequest {
             system_prompt: system.to_string(),
-            messages: rich_messages_to_link(api_messages),
-            tools: tool_defs_to_link(tools),
+            messages: api_messages,
+            tools,
             executor: adapter,
             config,
             event_tx: Some(event_tx),
@@ -223,7 +217,7 @@ impl ChatService {
         agent_instance_id: &AgentInstanceId,
         agent_instance: &AgentInstance,
         tx: &mpsc::UnboundedSender<ChatStreamEvent>,
-    ) -> Option<(String, String, Vec<aura_claude::RichMessage>, Vec<Message>)> {
+    ) -> Option<(String, String, Vec<aura_link::Message>, Vec<Message>)> {
         let api_key = match self.settings.get_decrypted_api_key() {
             Ok(k) => k,
             Err(e) => {

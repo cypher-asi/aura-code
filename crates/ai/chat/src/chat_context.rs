@@ -1,10 +1,34 @@
 use tracing::{info, warn};
 
 use aura_billing::MeteredCompletionRequest;
-use aura_claude::{self, ContentBlock, MessageContent, RichMessage};
+use aura_link::{ContentBlock, Message, MessageContent, Role};
 use aura_core::*;
 
 use crate::ChatService;
+
+fn estimate_tokens(text: &str) -> u64 {
+    (text.len() as u64).div_ceil(4)
+}
+
+fn estimate_message_tokens(msg: &Message) -> u64 {
+    match &msg.content {
+        MessageContent::Text(t) => estimate_tokens(t) + 4,
+        MessageContent::Blocks(blocks) => {
+            let mut total: u64 = 4;
+            for block in blocks {
+                total += match block {
+                    ContentBlock::Text { text } => estimate_tokens(text),
+                    ContentBlock::Image { source } => 1000 + (source.data.len() as u64 / 4),
+                    ContentBlock::ToolUse { name, input, .. } => {
+                        estimate_tokens(name) + estimate_tokens(&input.to_string()) + 10
+                    }
+                    ContentBlock::ToolResult { content, .. } => estimate_tokens(content) + 10,
+                };
+            }
+            total
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // System prompt builder
@@ -129,17 +153,20 @@ fn append_config_previews(prompt: &mut String, folder: &std::path::Path) {
     }
 }
 
-fn build_summary_input(old_messages: &[RichMessage]) -> String {
+fn build_summary_input(old_messages: &[Message]) -> String {
     let mut input = String::from(
         "Summarize the following conversation concisely, preserving key decisions, \
          tool calls made, and their outcomes. Focus on what was discussed, what was decided, \
          and what actions were taken. Keep it under 500 words.\n\n",
     );
     for msg in old_messages {
-        let role = &msg.role;
+        let role = match msg.role {
+            Role::User => "user",
+            Role::Assistant => "assistant",
+        };
         let text = match &msg.content {
-            aura_claude::MessageContent::Text(t) => t.clone(),
-            aura_claude::MessageContent::Blocks(blocks) => blocks
+            MessageContent::Text(t) => t.clone(),
+            MessageContent::Blocks(blocks) => blocks
                 .iter()
                 .map(|b| match b {
                     ContentBlock::Text { text } => text.clone(),
@@ -164,8 +191,8 @@ fn build_summary_input(old_messages: &[RichMessage]) -> String {
 }
 
 impl ChatService {
-    fn is_tool_results_only(msg: &RichMessage) -> bool {
-        msg.role == "user"
+    fn is_tool_results_only(msg: &Message) -> bool {
+        msg.role == Role::User
             && matches!(
                 &msg.content,
                 MessageContent::Blocks(blocks)
@@ -180,16 +207,14 @@ impl ChatService {
         &self,
         api_key: &str,
         system_prompt: &str,
-        messages: Vec<RichMessage>,
-    ) -> Vec<RichMessage> {
-        use aura_claude::estimate_message_tokens;
-
+        messages: Vec<Message>,
+    ) -> Vec<Message> {
         let max_context_tokens = self.llm_config.max_context_tokens;
         let keep_recent = self.llm_config.keep_recent_messages;
         let target_chat_tokens = self.llm_config.target_chat_tokens;
 
-        let system_tokens = aura_claude::estimate_tokens(system_prompt);
-        let total_msg_tokens: u64 = messages.iter().map(estimate_message_tokens).sum();
+        let system_tokens = estimate_tokens(system_prompt);
+        let total_msg_tokens: u64 = messages.iter().map(|m| estimate_message_tokens(m)).sum();
         let total = system_tokens + total_msg_tokens;
 
         if total <= target_chat_tokens || messages.len() <= 4 {
@@ -234,14 +259,14 @@ impl ChatService {
     async fn apply_compaction(
         &self,
         api_key: &str,
-        messages: &[RichMessage],
+        messages: &[Message],
         keep_recent: usize,
-    ) -> Vec<RichMessage> {
+    ) -> Vec<Message> {
         let split_at = Self::find_safe_split(messages, keep_recent);
         self.summarize_and_keep(api_key, messages, split_at).await
     }
 
-    fn find_safe_split(messages: &[RichMessage], keep_recent: usize) -> usize {
+    fn find_safe_split(messages: &[Message], keep_recent: usize) -> usize {
         let mut split_at = messages.len().saturating_sub(keep_recent);
         while split_at > 0 && Self::is_tool_results_only(&messages[split_at]) {
             split_at -= 1;
@@ -252,9 +277,9 @@ impl ChatService {
     async fn summarize_and_keep(
         &self,
         api_key: &str,
-        messages: &[RichMessage],
+        messages: &[Message],
         split_at: usize,
-    ) -> Vec<RichMessage> {
+    ) -> Vec<Message> {
         let (old_messages, recent_messages) = messages.split_at(split_at);
         let summary_input = build_summary_input(old_messages);
 
@@ -273,10 +298,10 @@ impl ChatService {
         {
             Ok(resp) => {
                 let summary = resp.text;
-                let mut result = vec![RichMessage::user(&format!(
+                let mut result = vec![Message::user(&format!(
                     "Previous conversation summary:\n{summary}"
                 ))];
-                result.push(RichMessage::assistant_text(
+                result.push(Message::assistant_text(
                     "Understood. I have the context from our previous conversation. How can I help?"
                 ));
                 result.extend(recent_messages.to_vec());

@@ -4,9 +4,9 @@ use super::*;
 fn compact_older_message_text_tiered_truncates_old_text_blocks() {
     let long_text = "x".repeat(5000);
     let mut messages = vec![
-        RichMessage::user("initial context"),
-        RichMessage::assistant_text(&long_text),
-        RichMessage::assistant_text("recent"),
+        Message::user("initial context"),
+        Message::assistant_text(&long_text),
+        Message::assistant_text("recent"),
     ];
 
     compact_older_message_text_tiered(&mut messages, 1, &AGGRESSIVE);
@@ -36,7 +36,7 @@ fn compact_older_message_text_tiered_truncates_old_text_blocks() {
 
 #[test]
 fn compact_older_message_text_tiered_skips_tool_result_blocks() {
-    let mut messages = vec![RichMessage::tool_results(vec![ContentBlock::ToolResult {
+    let mut messages = vec![Message::tool_results(vec![ContentBlock::ToolResult {
         tool_use_id: "t1".into(),
         content: "x".repeat(5000),
         is_error: Some(false),
@@ -155,18 +155,18 @@ fn smart_compact_error_large_content_truncated_aggressively() {
 fn compact_older_tool_results_skips_last_n_messages() {
     let big_content = "x".repeat(10_000);
     let mut messages = vec![
-        RichMessage::user("initial context"),
-        RichMessage::tool_results(vec![ContentBlock::ToolResult {
+        Message::user("initial context"),
+        Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
             content: big_content.clone(),
             is_error: None,
         }]),
-        RichMessage::tool_results(vec![ContentBlock::ToolResult {
+        Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t2".into(),
             content: big_content.clone(),
             is_error: None,
         }]),
-        RichMessage::tool_results(vec![ContentBlock::ToolResult {
+        Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t3".into(),
             content: big_content.clone(),
             is_error: None,
@@ -197,8 +197,8 @@ fn compact_older_tool_results_skips_last_n_messages() {
 fn compact_older_tool_results_only_compacts_user_messages() {
     let big_content = "x".repeat(10_000);
     let mut messages = vec![
-        RichMessage::assistant_text(&big_content),
-        RichMessage::tool_results(vec![ContentBlock::ToolResult {
+        Message::assistant_text(&big_content),
+        Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
             content: big_content.clone(),
             is_error: None,
@@ -222,8 +222,8 @@ fn compact_older_tool_results_only_compacts_user_messages() {
 fn compact_older_tool_results_skips_assistant_messages() {
     let big = "y".repeat(10_000);
     let mut messages = vec![
-        RichMessage::assistant_blocks(vec![ContentBlock::Text { text: big.clone() }]),
-        RichMessage::user("recent"),
+        Message::assistant_blocks(vec![ContentBlock::Text { text: big.clone() }]),
+        Message::user("recent"),
     ];
 
     compact_older_tool_results(&mut messages, 1);
@@ -241,7 +241,7 @@ fn compact_older_tool_results_skips_assistant_messages() {
 #[test]
 fn compact_older_tool_results_small_results_untouched() {
     let small = "small content";
-    let mut messages = vec![RichMessage::tool_results(vec![ContentBlock::ToolResult {
+    let mut messages = vec![Message::tool_results(vec![ContentBlock::ToolResult {
         tool_use_id: "t1".into(),
         content: small.into(),
         is_error: None,
@@ -263,13 +263,13 @@ fn compact_older_tool_results_small_results_untouched() {
 fn compact_older_tool_results_tiered_uses_custom_thresholds() {
     let content = "z".repeat(5_000);
     let mut messages = vec![
-        RichMessage::user("initial context"),
-        RichMessage::tool_results(vec![ContentBlock::ToolResult {
+        Message::user("initial context"),
+        Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
             content: content.clone(),
             is_error: None,
         }]),
-        RichMessage::user("recent"),
+        Message::user("recent"),
     ];
 
     compact_older_tool_results_tiered(&mut messages, 1, &AGGRESSIVE);
@@ -291,13 +291,13 @@ fn compact_older_tool_results_tiered_uses_custom_thresholds() {
 fn compact_tool_results_in_history_uses_history_config() {
     let big = "h".repeat(5_000);
     let messages = vec![
-        RichMessage::user("initial context"),
-        RichMessage::tool_results(vec![ContentBlock::ToolResult {
+        Message::user("initial context"),
+        Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
             content: big.clone(),
             is_error: None,
         }]),
-        RichMessage::user("recent"),
+        Message::user("recent"),
     ];
 
     let result = compact_tool_results_in_history(messages, 1);
@@ -319,8 +319,8 @@ fn compact_tool_results_in_history_uses_history_config() {
 #[test]
 fn compact_tool_results_in_history_returns_new_vec() {
     let messages = vec![
-        RichMessage::user("hello"),
-        RichMessage::assistant_text("world"),
+        Message::user("hello"),
+        Message::assistant_text("world"),
     ];
     let result = compact_tool_results_in_history(messages, 0);
     assert_eq!(result.len(), 2);
@@ -329,7 +329,7 @@ fn compact_tool_results_in_history_returns_new_vec() {
 #[test]
 fn compact_tool_results_in_history_preserves_recent() {
     let big = "r".repeat(5_000);
-    let messages = vec![RichMessage::tool_results(vec![ContentBlock::ToolResult {
+    let messages = vec![Message::tool_results(vec![ContentBlock::ToolResult {
         tool_use_id: "t1".into(),
         content: big.clone(),
         is_error: None,

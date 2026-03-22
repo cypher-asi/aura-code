@@ -1,4 +1,4 @@
-use aura_claude::{ContentBlock, MessageContent, RichMessage};
+use aura_link::{ContentBlock, Message, MessageContent, Role};
 
 // ---------------------------------------------------------------------------
 // Configurable head/tail truncation
@@ -130,14 +130,14 @@ fn try_signature_compact(content: &str) -> Option<String> {
 /// Retroactively compact tool results in older messages when the context
 /// window is under pressure. Skips the last `keep_recent` messages to
 /// avoid losing fresh context.  Uses `AGGRESSIVE` thresholds.
-pub fn compact_older_tool_results(messages: &mut [RichMessage], keep_recent: usize) {
+pub fn compact_older_tool_results(messages: &mut [Message], keep_recent: usize) {
     compact_older_tool_results_tiered(messages, keep_recent, &AGGRESSIVE);
 }
 
 /// Like `compact_older_tool_results` but uses a caller-supplied `CompactConfig`
 /// so the compaction aggressiveness can be tuned based on context pressure.
 pub fn compact_older_tool_results_tiered(
-    messages: &mut [RichMessage],
+    messages: &mut [Message],
     keep_recent: usize,
     cfg: &CompactConfig,
 ) {
@@ -146,7 +146,7 @@ pub fn compact_older_tool_results_tiered(
     // Skip messages[0] (initial task context) to preserve the cache anchor.
     let start = 1.min(cutoff);
     for msg in &mut messages[start..cutoff] {
-        if msg.role != "user" {
+        if msg.role != Role::User {
             continue;
         }
         if let MessageContent::Blocks(blocks) = &mut msg.content {
@@ -165,7 +165,7 @@ pub fn compact_older_tool_results_tiered(
 /// Compact plain text content in older messages (not just tool results).
 /// This is used under severe context pressure and during detected stalls.
 pub fn compact_older_message_text_tiered(
-    messages: &mut [RichMessage],
+    messages: &mut [Message],
     keep_recent: usize,
     cfg: &CompactConfig,
 ) {
@@ -196,14 +196,14 @@ pub fn compact_older_message_text_tiered(
 /// Compact tool results in conversation history using the HISTORY config.
 /// Used during context window management before summarization.
 pub fn compact_tool_results_in_history(
-    mut messages: Vec<RichMessage>,
+    mut messages: Vec<Message>,
     keep_recent: usize,
-) -> Vec<RichMessage> {
+) -> Vec<Message> {
     let cutoff = messages.len().saturating_sub(keep_recent);
     // Skip messages[0] (initial task context) to preserve the cache anchor.
     let start = 1.min(cutoff);
     for msg in &mut messages[start..cutoff] {
-        if msg.role != "user" {
+        if msg.role != Role::User {
             continue;
         }
         if let MessageContent::Blocks(blocks) = &mut msg.content {
