@@ -85,6 +85,45 @@ pub(crate) fn forward_tool_loop_event(
     }
 }
 
+/// Flush accumulated text as a `ChatContentBlock::Text` block.
+///
+/// Call before each tool-use block and after the forwarding loop exits
+/// so that the stored `content_blocks` faithfully interleave text and
+/// tool entries — matching the live-stream timeline order.
+pub(crate) fn flush_text_buffer(blocks: &ContentBlockAccumulator, buf: &mut String) {
+    if !buf.is_empty() {
+        if let Ok(mut acc) = blocks.lock() {
+            acc.push(ChatContentBlock::Text { text: buf.clone() });
+        }
+        buf.clear();
+    }
+}
+
+/// Wraps [`forward_tool_loop_event`] with text-segment accumulation.
+///
+/// Text deltas are buffered; when a tool-use event arrives the buffer is
+/// flushed as a `Text` content block *before* the tool block, preserving
+/// the interleaved order that the live-stream timeline captures.
+/// The caller must call [`flush_text_buffer`] once more after the receive
+/// loop exits to commit any trailing text segment.
+pub(crate) fn forward_with_text_accumulation(
+    evt: ToolLoopEvent,
+    tx: &mpsc::UnboundedSender<ChatStreamEvent>,
+    blocks: &ContentBlockAccumulator,
+    text_buffer: &mut String,
+) {
+    match &evt {
+        ToolLoopEvent::Delta(text) => {
+            text_buffer.push_str(text);
+        }
+        ToolLoopEvent::ToolUseStarted { .. } | ToolLoopEvent::ToolUseDetected { .. } => {
+            flush_text_buffer(blocks, text_buffer);
+        }
+        _ => {}
+    }
+    forward_tool_loop_event(evt, tx, blocks);
+}
+
 pub(crate) fn extract_user_text(messages: &[Message]) -> String {
     messages
         .iter()
