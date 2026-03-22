@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 
 use axum::extract::{Path, State};
+use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
 use tokio::sync::mpsc;
@@ -148,10 +149,17 @@ fn spec_stream_event_to_sse(
     }
 }
 
+const SSE_NO_BUFFERING_HEADERS: [(&str, HeaderValue); 1] = [
+    ("X-Accel-Buffering", HeaderValue::from_static("no")),
+];
+
 pub async fn generate_specs_stream(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
-) -> ApiResult<Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>> {
+) -> ApiResult<(
+    [(&'static str, HeaderValue); 1],
+    Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
+)> {
     super::billing::require_credits(&state).await?;
     info!(%project_id, "Streaming spec generation requested");
     send_or_log(&state.event_tx, EngineEvent::SpecGenStarted { project_id });
@@ -165,5 +173,8 @@ pub async fn generate_specs_stream(
     let stream = UnboundedReceiverStream::new(rx).map(move |evt| {
         Ok(spec_stream_event_to_sse(&evt, &event_tx, project_id))
     });
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    Ok((
+        SSE_NO_BUFFERING_HEADERS,
+        Sse::new(stream).keep_alive(KeepAlive::default()),
+    ))
 }

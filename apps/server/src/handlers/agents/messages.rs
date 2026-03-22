@@ -2,6 +2,7 @@ use std::convert::Infallible;
 use std::time::{Duration, Instant};
 
 use axum::extract::{Path, State};
+use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
 use tokio::sync::mpsc;
@@ -23,6 +24,10 @@ use crate::state::AppState;
 use super::conversions::{get_user_id, storage_message_to_message};
 
 const AGENT_MSG_CACHE_TTL: Duration = Duration::from_secs(30);
+
+const SSE_NO_BUFFERING_HEADERS: [(&str, HeaderValue); 1] = [
+    ("X-Accel-Buffering", HeaderValue::from_static("no")),
+];
 
 async fn find_matching_project_agents(
     state: &AppState,
@@ -156,7 +161,10 @@ pub async fn send_agent_message_stream(
     State(state): State<AppState>,
     Path(agent_id): Path<AgentId>,
     Json(body): Json<SendMessageRequest>,
-) -> ApiResult<Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>> {
+) -> ApiResult<(
+    [(&'static str, HeaderValue); 1],
+    Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
+)> {
     super::super::billing::require_credits(&state).await?;
     info!(%agent_id, action = ?body.action, "Agent message stream requested");
 
@@ -210,7 +218,10 @@ pub async fn send_agent_message_stream(
         Ok(super::super::sse::chat_stream_event_to_sse(&evt))
     });
 
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    Ok((
+        SSE_NO_BUFFERING_HEADERS,
+        Sse::new(stream).keep_alive(KeepAlive::default()),
+    ))
 }
 
 async fn resolve_storage_anchor(
@@ -284,7 +295,10 @@ pub async fn send_message_stream(
     State(state): State<AppState>,
     Path((project_id, agent_instance_id)): Path<(ProjectId, AgentInstanceId)>,
     Json(body): Json<SendMessageRequest>,
-) -> ApiResult<Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>> {
+) -> ApiResult<(
+    [(&'static str, HeaderValue); 1],
+    Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
+)> {
     super::super::billing::require_credits(&state).await?;
     info!(%project_id, %agent_instance_id, action = ?body.action, "Message stream requested");
 
@@ -324,7 +338,10 @@ pub async fn send_message_stream(
     });
 
     let stream = map_chat_stream_with_spec_events(rx, state.event_tx.clone(), project_id, is_generate_specs);
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    Ok((
+        SSE_NO_BUFFERING_HEADERS,
+        Sse::new(stream).keep_alive(KeepAlive::default()),
+    ))
 }
 
 fn map_chat_stream_with_spec_events(
