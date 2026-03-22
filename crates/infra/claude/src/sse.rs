@@ -109,6 +109,13 @@ impl SseParserState {
                     "input_json_delta" => {
                         if let Some(json) = delta.get("partial_json").and_then(|t| t.as_str()) {
                             self.current_tool_json.push_str(json);
+                            if let Some(input) = parse_best_effort_json_snapshot(&self.current_tool_json) {
+                                send_or_log(tx, ClaudeStreamEvent::ToolInputSnapshot {
+                                    id: self.current_tool_id.clone(),
+                                    name: self.current_tool_name.clone(),
+                                    input,
+                                });
+                            }
                             send_or_log(tx, ClaudeStreamEvent::ToolInputDelta {
                                 id: self.current_tool_id.clone(),
                                 partial_json: json.to_string(),
@@ -258,6 +265,57 @@ fn parse_frame_fields(frame: &str) -> (String, String) {
         }
     }
     (event_type, data_str)
+}
+
+fn parse_best_effort_json_snapshot(buf: &str) -> Option<serde_json::Value> {
+    let trimmed = buf.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        return Some(value);
+    }
+
+    let mut escaped = false;
+    let mut in_string = false;
+    let mut open_braces = 0usize;
+    let mut open_brackets = 0usize;
+
+    for ch in trimmed.chars() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' => in_string = true,
+            '{' => open_braces += 1,
+            '}' => open_braces = open_braces.saturating_sub(1),
+            '[' => open_brackets += 1,
+            ']' => open_brackets = open_brackets.saturating_sub(1),
+            _ => {}
+        }
+    }
+
+    // Controlled close-heuristics for partial JSON fragments.
+    let mut candidate = String::from(trimmed);
+    if candidate.ends_with(',') {
+        candidate.pop();
+    }
+    if in_string {
+        candidate.push('"');
+    }
+    candidate.push_str(&"]".repeat(open_brackets));
+    candidate.push_str(&"}".repeat(open_braces));
+
+    serde_json::from_str::<serde_json::Value>(&candidate).ok()
 }
 
 /// Standalone SSE frame parser, decoupled from `reqwest::Response` for testability.

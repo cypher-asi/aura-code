@@ -27,6 +27,7 @@ fn map_claude_event(event: ClaudeStreamEvent) -> Vec<StreamEvent> {
         ClaudeStreamEvent::ToolUseStarted { id, name } => {
             vec![StreamEvent::ToolUseStart { id, name }]
         }
+        ClaudeStreamEvent::ToolInputSnapshot { .. } => vec![],
         ClaudeStreamEvent::ToolInputDelta { partial_json, .. } => {
             vec![StreamEvent::InputJsonDelta(partial_json)]
         }

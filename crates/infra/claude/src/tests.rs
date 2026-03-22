@@ -142,6 +142,13 @@ data: {\"type\":\"message_stop\"}\n\
         e,
         ClaudeStreamEvent::ToolUse { name, .. } if name == "read_file"
     )));
+    assert!(events.iter().any(|e| matches!(
+        e,
+        ClaudeStreamEvent::ToolInputSnapshot { id, name, input }
+            if id == "toolu_01"
+                && name == "read_file"
+                && *input == serde_json::json!({"path": "src/main.rs"})
+    )));
 
     assert!(events.iter().any(|e| matches!(
         e,
@@ -150,6 +157,59 @@ data: {\"type\":\"message_stop\"}\n\
             ..
         } if stop_reason == "tool_use"
     )));
+}
+
+#[tokio::test]
+async fn test_parse_tool_use_stream_emits_multiple_input_snapshots() {
+    let raw = "event: message_start\n\
+data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":200}}}\n\
+\n\
+event: content_block_start\n\
+data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01\",\"name\":\"create_spec\"}}\n\
+\n\
+event: content_block_delta\n\
+data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"title\\\":\\\"Spec\\\",\\\"markdown_contents\\\":\\\"Hello\"}}\n\
+\n\
+event: content_block_delta\n\
+data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\" world\\\"}\"}}\n\
+\n\
+event: content_block_stop\n\
+data: {\"type\":\"content_block_stop\",\"index\":0}\n\
+\n\
+event: message_delta\n\
+data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":30}}\n\
+\n\
+event: message_stop\n\
+data: {\"type\":\"message_stop\"}\n\
+\n";
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let _ = sse::parse_sse_events(sse_stream(raw), &tx)
+        .await
+        .expect("parse streaming snapshots");
+    drop(tx);
+    let events = drain_events(&mut rx);
+
+    let snapshots: Vec<serde_json::Value> = events
+        .iter()
+        .filter_map(|e| match e {
+            ClaudeStreamEvent::ToolInputSnapshot { input, .. } => Some(input.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        snapshots.len() >= 2,
+        "expected at least two snapshots while input_json_delta streams, got {}",
+        snapshots.len()
+    );
+    assert!(snapshots.iter().any(|v| *v == serde_json::json!({
+        "title": "Spec",
+        "markdown_contents": "Hello"
+    })));
+    assert!(snapshots.iter().any(|v| *v == serde_json::json!({
+        "title": "Spec",
+        "markdown_contents": "Hello world"
+    })));
 }
 
 #[tokio::test]
