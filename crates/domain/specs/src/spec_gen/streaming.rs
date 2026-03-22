@@ -184,7 +184,20 @@ impl SpecGenerationService {
                     if delta_count.is_multiple_of(20) {
                         send_or_log(tx, SpecStreamEvent::Generating { tokens: token_count });
                     }
-                    for json_obj in parser.feed(&text) {
+                    let completed = parser.feed(&text);
+                    if completed.is_empty() && delta_count % 3 == 0 {
+                        if let Some(partial) = parser.best_effort_partial() {
+                            let markdown = format!(
+                                "## Purpose\n\n{}\n\n{}", partial.purpose, partial.markdown,
+                            );
+                            send_or_log(tx, SpecStreamEvent::SpecDraftPreview {
+                                draft_index: spec_index as usize,
+                                title: if partial.title.is_empty() { None } else { Some(partial.title) },
+                                markdown_preview: markdown,
+                            });
+                        }
+                    }
+                    for json_obj in completed {
                         if let Ok(raw) = serde_json::from_str::<RawSpecOutput>(&json_obj) {
                             let order_index =
                                 order_index_from_spec_title(&raw.title).unwrap_or(spec_index);

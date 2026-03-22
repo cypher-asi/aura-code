@@ -31,6 +31,11 @@ pub enum SpecStreamEvent {
     SpecsSummary(String),
     Delta(String),
     Generating { tokens: usize },
+    SpecDraftPreview {
+        draft_index: usize,
+        title: Option<String>,
+        markdown_preview: String,
+    },
     SpecSaved(Spec),
     TaskSaved(Box<Task>),
     TokenUsage { input_tokens: u64, output_tokens: u64 },
