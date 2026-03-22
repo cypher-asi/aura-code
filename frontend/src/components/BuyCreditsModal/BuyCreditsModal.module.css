@@ -45,8 +45,8 @@
 }
 
 .presetCard:hover:not(:disabled) {
-  border-color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  border-color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-text-primary) 6%, transparent);
 }
 
 .presetCard:disabled {
@@ -55,8 +55,8 @@
 }
 
 .presetSelected {
-  border-color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  border-color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
 }
 
 .presetPrice {
@@ -67,7 +67,7 @@
 }
 
 .presetSelected .presetPrice {
-  color: var(--color-accent);
+  color: var(--color-text-primary);
 }
 
 /* Custom amount row */
