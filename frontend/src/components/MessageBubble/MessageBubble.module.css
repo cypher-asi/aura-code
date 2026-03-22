@@ -7,6 +7,7 @@
 
 .messageUser {
   align-self: flex-end;
+  margin-left: auto;
 }
 
 .messageAssistant {
