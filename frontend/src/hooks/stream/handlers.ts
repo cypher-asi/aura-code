@@ -64,6 +64,7 @@ export function handleThinkingDelta(
   setters: StreamSetters,
   text: string,
 ): void {
+  setters.setProgressText("");
   if (refs.thinkingStart.current === null) {
     refs.thinkingStart.current = Date.now();
   }
@@ -89,6 +90,7 @@ export function handleTextDelta(
   closureThinkingDurationMs: number | null,
   text: string,
 ): void {
+  setters.setProgressText("");
   if (refs.thinkingStart.current !== null && closureThinkingDurationMs === null) {
     setters.setThinkingDurationMs(Date.now() - refs.thinkingStart.current);
   }

@@ -138,7 +138,13 @@ pub(crate) async fn drain_spec_events(
             SpecStreamEvent::Error(msg) => {
                 send_or_log(tx, ChatStreamEvent::Error(msg));
             }
-            SpecStreamEvent::Complete(_) | SpecStreamEvent::Progress(_) | SpecStreamEvent::Generating { .. } => {}
+            SpecStreamEvent::Progress(stage) => {
+                send_or_log(tx, ChatStreamEvent::Progress(stage));
+            }
+            SpecStreamEvent::Generating { .. } => {
+                send_or_log(tx, ChatStreamEvent::Progress("Generating spec...".to_string()));
+            }
+            SpecStreamEvent::Complete(_) => {}
         }
     }
 
