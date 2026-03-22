@@ -3,7 +3,7 @@ use std::collections::HashSet;
 
 use chrono::Utc;
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::info;
 
 use aura_core::*;
 use aura_claude::ThinkingConfig;
@@ -13,7 +13,6 @@ use crate::chat::{ChatService, ChatStreamEvent};
 use crate::chat_message_conversion::convert_messages_to_rich;
 use crate::chat_event_forwarding::{
     ContentBlockAccumulator, forward_with_text_accumulation, flush_text_buffer,
-    build_partial_snapshot_content, PARTIAL_SNAPSHOT_INTERVAL_MS,
 };
 use crate::constants::DEFAULT_STREAM_TIMEOUT;
 use crate::chat_tool_executor::ChatToolExecutor;
@@ -140,87 +139,18 @@ impl ChatService {
             auto_build_cooldown: None,
         };
 
-        let initial_message_id: Option<String> = self
-            .create_initial_assistant_message(
-                anchor_project_id, anchor_instance_id, active_session_id,
-            )
-            .await;
-
         let thinking_start = std::time::Instant::now();
 
         let (loop_tx, mut loop_rx) = mpsc::unbounded_channel::<ToolLoopEvent>();
         let tx_clone = tx.clone();
         let fwd_blocks = Arc::clone(&tool_blocks);
 
-        let storage_for_fwd: Option<Arc<aura_storage::StorageClient>> = self.storage_client.clone();
-        let jwt_for_fwd: Option<String> = self.get_jwt();
-        let msg_id_for_fwd: Option<String> = initial_message_id.clone();
-        let inc_blocks = Arc::clone(&tool_blocks);
-
         let forwarder = tokio::spawn(async move {
             let mut text_buffer = String::new();
-            let mut thinking_buffer = String::new();
-            let mut thinking_start: Option<std::time::Instant> = None;
-            let mut last_snapshot = std::time::Instant::now();
-            let mut pending_saves: Vec<tokio::task::JoinHandle<()>> = Vec::new();
-
             while let Some(evt) = loop_rx.recv().await {
-                if let ToolLoopEvent::ThinkingDelta(ref t) = evt {
-                    if thinking_start.is_none() {
-                        thinking_start = Some(std::time::Instant::now());
-                    }
-                    thinking_buffer.push_str(t);
-                }
-
-                let should_snapshot = match &evt {
-                    ToolLoopEvent::IterationComplete { .. }
-                    | ToolLoopEvent::ToolUseDetected { .. }
-                    | ToolLoopEvent::ToolResult { .. } => true,
-                    ToolLoopEvent::Delta(_) | ToolLoopEvent::ThinkingDelta(_) => {
-                        last_snapshot.elapsed().as_millis() >= PARTIAL_SNAPSHOT_INTERVAL_MS
-                    }
-                    _ => false,
-                };
-
                 forward_with_text_accumulation(evt, &tx_clone, &fwd_blocks, &mut text_buffer);
-
-                if should_snapshot {
-                    if let (Some(ref storage), Some(ref jwt), Some(ref mid)) =
-                        (&storage_for_fwd, &jwt_for_fwd, &msg_id_for_fwd)
-                    {
-                        let thinking = if thinking_buffer.is_empty() {
-                            None
-                        } else {
-                            Some(thinking_buffer.as_str())
-                        };
-                        let thinking_ms =
-                            thinking_start.map(|s| s.elapsed().as_millis() as u64);
-
-                        if let Some(encoded) = build_partial_snapshot_content(
-                            &text_buffer, &inc_blocks, thinking, thinking_ms,
-                        ) {
-                            let req = aura_storage::UpdateMessageRequest {
-                                content: Some(encoded),
-                                input_tokens: None,
-                                output_tokens: None,
-                            };
-                            let storage = Arc::clone(storage);
-                            let jwt = jwt.clone();
-                            let mid = mid.clone();
-                            pending_saves.push(tokio::spawn(async move {
-                                if let Err(e) = storage.update_message(&mid, &jwt, &req).await {
-                                    warn!(error = %e, "Incremental agent message save failed");
-                                }
-                            }));
-                            last_snapshot = std::time::Instant::now();
-                        }
-                    }
-                }
             }
             flush_text_buffer(&fwd_blocks, &mut text_buffer);
-            for h in pending_saves {
-                let _ = h.await;
-            }
         });
 
         let result = run_tool_loop(ToolLoopInput {
@@ -268,25 +198,7 @@ impl ChatService {
             };
             send(ChatStreamEvent::MessageSaved(assistant_msg));
 
-            let encoded_content = crate::message_metadata::encode_message_content(
-                &result.text,
-                content_blocks.as_deref(),
-                thinking.as_deref(),
-                thinking_duration_ms,
-            );
-
-            if let Some(ref mid) = initial_message_id {
-                if let (Some(ref storage), Some(jwt)) = (&self.storage_client, self.get_jwt()) {
-                    let req = aura_storage::UpdateMessageRequest {
-                        content: Some(encoded_content),
-                        input_tokens: Some(result.total_input_tokens),
-                        output_tokens: Some(result.total_output_tokens),
-                    };
-                    if let Err(e) = storage.update_message(mid, &jwt, &req).await {
-                        warn!(error = %e, "Final agent assistant message update failed");
-                    }
-                }
-            } else if active_session_id.is_some() {
+            if active_session_id.is_some() {
                 self.save_message_to_storage(crate::chat_persistence::SaveMessageParams {
                     project_id: anchor_project_id,
                     agent_instance_id: anchor_instance_id,

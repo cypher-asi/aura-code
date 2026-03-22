@@ -112,8 +112,11 @@ async fn persist_task_output_message(
         project_id: entry.project_id.to_string(),
         role: "assistant".to_string(),
         content: live_output.to_string(),
+        content_blocks: None,
         input_tokens,
         output_tokens,
+        thinking: None,
+        thinking_duration_ms: None,
     };
 
     if let Err(e) = storage
@@ -152,8 +155,11 @@ async fn persist_task_steps(
         project_id: entry.project_id.to_string(),
         role: "system".to_string(),
         content: steps_payload.to_string(),
+        content_blocks: None,
         input_tokens: None,
         output_tokens: None,
+        thinking: None,
+        thinking_duration_ms: None,
     };
     if let Err(e) = storage
         .create_message(&entry.session_id.to_string(), jwt, &steps_msg)
