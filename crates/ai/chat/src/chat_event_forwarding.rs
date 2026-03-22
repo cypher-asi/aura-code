@@ -360,6 +360,133 @@ mod tests {
         assert!(blocks.lock().unwrap().is_empty());
     }
 
+    // ── flush_text_buffer ───────────────────────────────────────────
+
+    #[test]
+    fn flush_text_buffer_pushes_text_block() {
+        let blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
+        let mut buf = "some text".to_string();
+        flush_text_buffer(&blocks, &mut buf);
+        assert!(buf.is_empty());
+        let acc = blocks.lock().unwrap();
+        assert_eq!(acc.len(), 1);
+        assert!(matches!(&acc[0], ChatContentBlock::Text { text } if text == "some text"));
+    }
+
+    #[test]
+    fn flush_text_buffer_noop_when_empty() {
+        let blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
+        let mut buf = String::new();
+        flush_text_buffer(&blocks, &mut buf);
+        assert!(blocks.lock().unwrap().is_empty());
+    }
+
+    // ── forward_with_text_accumulation ────────────────────────────
+
+    #[test]
+    fn text_accumulation_interleaves_text_and_tools() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
+        let mut buf = String::new();
+
+        forward_with_text_accumulation(
+            ToolLoopEvent::Delta("hello ".into()), &tx, &blocks, &mut buf,
+        );
+        forward_with_text_accumulation(
+            ToolLoopEvent::Delta("world".into()), &tx, &blocks, &mut buf,
+        );
+        forward_with_text_accumulation(
+            ToolLoopEvent::ToolUseStarted { id: "t1".into(), name: "read_file".into() },
+            &tx, &blocks, &mut buf,
+        );
+        forward_with_text_accumulation(
+            ToolLoopEvent::ToolUseDetected {
+                id: "t1".into(), name: "read_file".into(), input: json!({"path": "a.rs"}),
+            },
+            &tx, &blocks, &mut buf,
+        );
+        forward_with_text_accumulation(
+            ToolLoopEvent::ToolResult {
+                tool_use_id: "t1".into(), tool_name: "read_file".into(),
+                content: "fn main(){}".into(), is_error: false,
+            },
+            &tx, &blocks, &mut buf,
+        );
+        forward_with_text_accumulation(
+            ToolLoopEvent::Delta("done".into()), &tx, &blocks, &mut buf,
+        );
+        flush_text_buffer(&blocks, &mut buf);
+
+        let acc = blocks.lock().unwrap();
+        assert_eq!(acc.len(), 4);
+        assert!(matches!(&acc[0], ChatContentBlock::Text { text } if text == "hello world"));
+        assert!(matches!(&acc[1], ChatContentBlock::ToolUse { id, .. } if id == "t1"));
+        assert!(matches!(&acc[2], ChatContentBlock::ToolResult { tool_use_id, .. } if tool_use_id == "t1"));
+        assert!(matches!(&acc[3], ChatContentBlock::Text { text } if text == "done"));
+    }
+
+    #[test]
+    fn text_accumulation_no_text_before_tool() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
+        let mut buf = String::new();
+
+        forward_with_text_accumulation(
+            ToolLoopEvent::ToolUseStarted { id: "t1".into(), name: "run".into() },
+            &tx, &blocks, &mut buf,
+        );
+        forward_with_text_accumulation(
+            ToolLoopEvent::ToolUseDetected {
+                id: "t1".into(), name: "run".into(), input: json!({}),
+            },
+            &tx, &blocks, &mut buf,
+        );
+        flush_text_buffer(&blocks, &mut buf);
+
+        let acc = blocks.lock().unwrap();
+        assert_eq!(acc.len(), 1);
+        assert!(matches!(&acc[0], ChatContentBlock::ToolUse { .. }));
+    }
+
+    #[test]
+    fn text_accumulation_only_text_no_tools() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
+        let mut buf = String::new();
+
+        forward_with_text_accumulation(
+            ToolLoopEvent::Delta("just text".into()), &tx, &blocks, &mut buf,
+        );
+        flush_text_buffer(&blocks, &mut buf);
+
+        let acc = blocks.lock().unwrap();
+        assert_eq!(acc.len(), 1);
+        assert!(matches!(&acc[0], ChatContentBlock::Text { text } if text == "just text"));
+    }
+
+    #[test]
+    fn text_accumulation_still_forwards_sse_events() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
+        let mut buf = String::new();
+
+        forward_with_text_accumulation(
+            ToolLoopEvent::Delta("hi".into()), &tx, &blocks, &mut buf,
+        );
+        match rx.try_recv().unwrap() {
+            ChatStreamEvent::Delta(t) => assert_eq!(t, "hi"),
+            other => panic!("expected Delta, got {other:?}"),
+        }
+
+        forward_with_text_accumulation(
+            ToolLoopEvent::ThinkingDelta("hmm".into()), &tx, &blocks, &mut buf,
+        );
+        match rx.try_recv().unwrap() {
+            ChatStreamEvent::ThinkingDelta(t) => assert_eq!(t, "hmm"),
+            other => panic!("expected ThinkingDelta, got {other:?}"),
+        }
+    }
+
     // ── extract_user_text ──────────────────────────────────────────
 
     #[test]
