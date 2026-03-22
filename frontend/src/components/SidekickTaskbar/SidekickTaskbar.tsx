@@ -1,7 +1,7 @@
 import { useState, useRef, useLayoutEffect, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Button, Menu } from "@cypher-asi/zui";
-import { Archive, Info, Ellipsis, File, Check, Logs, Gauge, Rows3, Code } from "lucide-react";
+import { Archive, Info, MoreHorizontal, File, Check, ScrollText, Gauge, Rows3, Code } from "lucide-react";
 import { useSidekick, type SidekickTab } from "../../stores/sidekick-store";
 import { useProjectContext } from "../../stores/project-action-store";
 import { useClickOutside } from "../../hooks/use-click-outside";
@@ -12,7 +12,7 @@ import styles from "../Sidekick/Sidekick.module.css";
 const TAB_ICONS: { id: SidekickTab; icon: React.ReactNode; title: string }[] = [
   { id: "specs", icon: <File size={16} />, title: "Specs" },
   { id: "tasks", icon: <Check size={16} />, title: "Tasks" },
-  { id: "log", icon: <Logs size={16} />, title: "Log" },
+  { id: "log", icon: <ScrollText size={16} />, title: "Log" },
   { id: "stats", icon: <Gauge size={16} />, title: "Stats" },
   { id: "sessions", icon: <Rows3 size={16} />, title: "Sessions" },
   { id: "files", icon: <Code size={16} />, title: "Files" },
@@ -73,7 +73,7 @@ export function SidekickTaskbar() {
           variant="ghost"
           size="sm"
           iconOnly
-          icon={<Ellipsis size={16} />}
+          icon={<MoreHorizontal size={16} />}
           onClick={() => setMoreOpen((v) => !v)}
           title="More actions"
           aria-label="More actions"
