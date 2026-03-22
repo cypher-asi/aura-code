@@ -295,14 +295,17 @@ pub async fn delete_project(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
 ) -> ApiResult<StatusCode> {
+    // Verify the project exists locally before attempting remote deletion.
     state
         .project_service
-        .delete_project(&project_id)
+        .get_project(&project_id)
         .map_err(|e| match &e {
             aura_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
             _ => ApiError::internal(e.to_string()),
         })?;
 
+    // Delete remotely first so that a rejection (e.g. project has agent
+    // children) prevents us from removing the local copy.
     if let Some(client) = &state.network_client {
         let jwt = state.get_jwt()?;
         client
@@ -310,6 +313,11 @@ pub async fn delete_project(
             .await
             .map_err(map_network_error)?;
     }
+
+    state
+        .project_service
+        .delete_project(&project_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?;
 
     Ok(StatusCode::NO_CONTENT)
 }
