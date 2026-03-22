@@ -15,7 +15,7 @@ export function ToolCallBlock({
   entry: ToolCallEntry;
   defaultExpanded?: boolean;
 }) {
-  const isSpec = entry.name === "create_spec";
+  const isSpec = entry.name === "create_spec" || entry.name === "update_spec";
   const isTask = entry.name === "create_task";
   const autoExpand = defaultExpanded ?? (isSpec && !entry.started);
   const [expanded, setExpanded] = useState(autoExpand);
