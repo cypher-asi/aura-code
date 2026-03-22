@@ -273,3 +273,83 @@ fn fenced_json_without_lang_tag() {
     let specs = parse_claude_response(input).expect("bare fenced JSON should parse");
     assert_eq!(specs.len(), 1);
 }
+
+// -----------------------------------------------------------------------
+// repair_partial_json
+// -----------------------------------------------------------------------
+
+#[test]
+fn repair_partial_json_complete_object() {
+    let input = r#"{"title":"A","purpose":"p","markdown":"m"}"#;
+    let repaired = repair_partial_json(input);
+    let _: serde_json::Value = serde_json::from_str(&repaired).expect("complete JSON should parse");
+}
+
+#[test]
+fn repair_partial_json_unterminated_string() {
+    let input = r##"{"title":"Auth module","purpose":"Handle auth","markdown":"# Auth\nLogin"##;
+    let repaired = repair_partial_json(input);
+    let v: serde_json::Value = serde_json::from_str(&repaired).expect("repaired JSON should parse");
+    assert_eq!(v["title"].as_str().unwrap(), "Auth module");
+    assert!(v["markdown"].as_str().unwrap().starts_with("# Auth"));
+}
+
+#[test]
+fn repair_partial_json_trailing_comma() {
+    let input = r##"{"title":"A","purpose":"p","markdown":"m","##;
+    let repaired = repair_partial_json(input);
+    let v: serde_json::Value = serde_json::from_str(&repaired).expect("trailing comma should be fixed");
+    assert_eq!(v["title"].as_str().unwrap(), "A");
+}
+
+#[test]
+fn repair_partial_json_empty_returns_empty() {
+    assert_eq!(repair_partial_json(""), "");
+    assert_eq!(repair_partial_json("  "), "");
+}
+
+// -----------------------------------------------------------------------
+// IncrementalSpecParser::best_effort_partial
+// -----------------------------------------------------------------------
+
+#[test]
+fn best_effort_partial_returns_none_when_not_in_object() {
+    let parser = IncrementalSpecParser::new();
+    assert!(parser.best_effort_partial().is_none());
+}
+
+#[test]
+fn best_effort_partial_returns_none_for_short_buffer() {
+    let mut parser = IncrementalSpecParser::new();
+    parser.feed(r##"[{"ti"##);
+    assert!(parser.best_effort_partial().is_none());
+}
+
+#[test]
+fn best_effort_partial_returns_none_when_title_empty() {
+    let mut parser = IncrementalSpecParser::new();
+    parser.feed(r##"[{"title":"","purpose":"p"##);
+    assert!(parser.best_effort_partial().is_none());
+}
+
+#[test]
+fn best_effort_partial_returns_partial_spec_with_title() {
+    let mut parser = IncrementalSpecParser::new();
+    parser.feed(r##"[{"title":"Auth Module","purpose":"Handle login","markdown":"# Auth\nSome content"##);
+    let partial = parser.best_effort_partial().expect("should produce partial");
+    assert_eq!(partial.title, "Auth Module");
+    assert_eq!(partial.purpose, "Handle login");
+    assert!(partial.markdown.contains("# Auth"));
+}
+
+#[test]
+fn best_effort_partial_resets_after_complete_object() {
+    let mut parser = IncrementalSpecParser::new();
+    let completed = parser.feed(
+        r##"[{"title":"A","purpose":"p","markdown":"m"},{"title":"B","purpose":"q","markdown":"# St"##,
+    );
+    assert_eq!(completed.len(), 1);
+    let partial = parser.best_effort_partial().expect("should see partial for second object");
+    assert_eq!(partial.title, "B");
+    assert!(partial.markdown.starts_with("# St"));
+}

@@ -140,6 +140,11 @@ fn spec_stream_event_to_sse(
         SpecStreamEvent::TokenUsage { input_tokens, output_tokens } => {
             Event::default().event("token_usage").json_data(serde_json::json!({ "input_tokens": input_tokens, "output_tokens": output_tokens })).unwrap()
         }
+        SpecStreamEvent::SpecDraftPreview { draft_index, title, markdown_preview } => {
+            Event::default().event("spec_draft_preview").json_data(serde_json::json!({
+                "draft_index": draft_index, "title": title, "markdown_preview": markdown_preview
+            })).unwrap()
+        }
     }
 }
 
