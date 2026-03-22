@@ -103,11 +103,14 @@ pub(crate) async fn run_single_iteration(
                         name: name.clone(),
                     });
                 }
-                ClaudeStreamEvent::ToolInputDelta { id, partial_json } => {
-                    send_or_log(ctx.event_tx, ToolLoopEvent::ToolInputDelta {
-                        id, partial_json,
+                ClaudeStreamEvent::ToolInputSnapshot { id, name, input } => {
+                    send_or_log(ctx.event_tx, ToolLoopEvent::ToolInputSnapshot {
+                        id,
+                        name,
+                        input,
                     });
                 }
+                ClaudeStreamEvent::ToolInputDelta { .. } => {}
                 ClaudeStreamEvent::ToolUse { id, name, input } => {
                     send_or_log(ctx.event_tx, ToolLoopEvent::ToolUseDetected {
                         id: id.clone(),

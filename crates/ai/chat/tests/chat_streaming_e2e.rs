@@ -119,6 +119,7 @@ fn event_name(e: &ChatStreamEvent) -> &'static str {
         ChatStreamEvent::ThinkingDelta(_) => "ThinkingDelta",
         ChatStreamEvent::Progress(_) => "Progress",
         ChatStreamEvent::ToolCallStarted { .. } => "ToolCallStarted",
+        ChatStreamEvent::ToolCallSnapshot { .. } => "ToolCallSnapshot",
         ChatStreamEvent::ToolCall { .. } => "ToolCall",
         ChatStreamEvent::ToolResult { .. } => "ToolResult",
         ChatStreamEvent::SpecSaved(_) => "SpecSaved",

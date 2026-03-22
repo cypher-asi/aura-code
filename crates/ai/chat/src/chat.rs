@@ -32,9 +32,10 @@ pub enum ChatStreamEvent {
         id: String,
         name: String,
     },
-    ToolCallDelta {
+    ToolCallSnapshot {
         id: String,
-        partial_input: String,
+        name: String,
+        input: serde_json::Value,
     },
     ToolCall {
         id: String,

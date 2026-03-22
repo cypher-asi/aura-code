@@ -17,12 +17,14 @@ pub enum RuntimeEvent {
         /// Tool name.
         name: String,
     },
-    /// A chunk of tool input JSON (streamed incrementally).
-    ToolInputDelta {
+    /// Parsed snapshot of tool input JSON (streamed incrementally).
+    ToolInputSnapshot {
         /// Tool use identifier.
         id: String,
-        /// Partial JSON fragment.
-        partial_json: String,
+        /// Tool name.
+        name: String,
+        /// Parsed tool input snapshot.
+        input: serde_json::Value,
     },
     /// A tool invocation is fully parsed (input available).
     ToolUseDetected {

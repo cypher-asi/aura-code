@@ -238,9 +238,10 @@ pub enum ToolLoopEvent {
         id: String,
         name: String,
     },
-    ToolInputDelta {
+    ToolInputSnapshot {
         id: String,
-        partial_json: String,
+        name: String,
+        input: serde_json::Value,
     },
     ToolUseDetected {
         id: String,

@@ -177,8 +177,8 @@ fn map_loop_event(evt: ToolLoopEvent) -> RuntimeEvent {
         ToolLoopEvent::ToolUseStarted { id, name } => {
             RuntimeEvent::ToolUseStarted { id, name }
         }
-        ToolLoopEvent::ToolInputDelta { id, partial_json } => {
-            RuntimeEvent::ToolInputDelta { id, partial_json }
+        ToolLoopEvent::ToolInputSnapshot { id, name, input } => {
+            RuntimeEvent::ToolInputSnapshot { id, name, input }
         }
         ToolLoopEvent::ToolUseDetected { id, name, input } => {
             RuntimeEvent::ToolUseDetected { id, name, input }

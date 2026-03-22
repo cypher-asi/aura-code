@@ -26,9 +26,9 @@ pub fn chat_stream_event_to_sse(evt: &ChatStreamEvent) -> Event {
             .event("tool_call_started")
             .json_data(serde_json::json!({ "id": id, "name": name }))
             .unwrap(),
-        ChatStreamEvent::ToolCallDelta { id, partial_input } => Event::default()
-            .event("tool_call_delta")
-            .json_data(serde_json::json!({ "id": id, "partial_input": partial_input }))
+        ChatStreamEvent::ToolCallSnapshot { id, name, input } => Event::default()
+            .event("tool_call_snapshot")
+            .json_data(serde_json::json!({ "id": id, "name": name, "input": input }))
             .unwrap(),
         ChatStreamEvent::ToolCall { id, name, input } => Event::default()
             .event("tool_call")

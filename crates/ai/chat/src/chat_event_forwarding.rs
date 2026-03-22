@@ -30,10 +30,11 @@ pub(crate) fn forward_tool_loop_event(
         ToolLoopEvent::ToolUseStarted { id, name } => {
             send_or_log(tx, ChatStreamEvent::ToolCallStarted { id, name });
         }
-        ToolLoopEvent::ToolInputDelta { id, partial_json } => {
-            send_or_log(tx, ChatStreamEvent::ToolCallDelta {
+        ToolLoopEvent::ToolInputSnapshot { id, name, input } => {
+            send_or_log(tx, ChatStreamEvent::ToolCallSnapshot {
                 id,
-                partial_input: partial_json,
+                name,
+                input,
             });
         }
         ToolLoopEvent::ToolUseDetected { id, name, input } => {
@@ -295,25 +296,27 @@ mod tests {
     }
 
     #[test]
-    fn forward_tool_input_delta() {
+    fn forward_tool_input_snapshot() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let blocks: ContentBlockAccumulator = Arc::new(Mutex::new(Vec::new()));
 
         forward_tool_loop_event(
-            ToolLoopEvent::ToolInputDelta {
+            ToolLoopEvent::ToolInputSnapshot {
                 id: "t1".into(),
-                partial_json: "{\"title\":".into(),
+                name: "create_spec".into(),
+                input: serde_json::json!({"title": "Spec"}),
             },
             &tx,
             &blocks,
         );
 
         match rx.try_recv().unwrap() {
-            ChatStreamEvent::ToolCallDelta { id, partial_input } => {
+            ChatStreamEvent::ToolCallSnapshot { id, name, input } => {
                 assert_eq!(id, "t1");
-                assert_eq!(partial_input, "{\"title\":");
+                assert_eq!(name, "create_spec");
+                assert_eq!(input, serde_json::json!({"title": "Spec"}));
             }
-            other => panic!("expected ToolCallDelta, got {other:?}"),
+            other => panic!("expected ToolCallSnapshot, got {other:?}"),
         }
         assert!(blocks.lock().unwrap().is_empty());
     }
