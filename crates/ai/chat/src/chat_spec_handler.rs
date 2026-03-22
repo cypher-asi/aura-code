@@ -101,55 +101,13 @@ pub(crate) async fn drain_spec_events(
     let mut input_tokens: u64 = 0;
     let mut output_tokens: u64 = 0;
 
-    let mut current_draft_index: usize = 0;
-    let mut draft_started = false;
-
     while let Some(evt) = spec_rx.recv().await {
         match evt {
             SpecStreamEvent::Delta(text) => {
                 accumulated.push_str(&text);
-            }
-            SpecStreamEvent::SpecDraftPreview { draft_index, title, markdown_preview } => {
-                let id = format!("draft-spec-{draft_index}");
-                if !draft_started || draft_index != current_draft_index {
-                    current_draft_index = draft_index;
-                    draft_started = true;
-                    send_or_log(tx, ChatStreamEvent::ToolCallStarted {
-                        id: id.clone(),
-                        name: "create_spec".into(),
-                    });
-                }
-                let mut input = serde_json::Map::new();
-                if let Some(t) = title {
-                    input.insert("title".into(), serde_json::Value::String(t));
-                }
-                input.insert("markdown_contents".into(), serde_json::Value::String(markdown_preview));
-                send_or_log(tx, ChatStreamEvent::ToolCallSnapshot {
-                    id,
-                    name: "create_spec".into(),
-                    input: serde_json::Value::Object(input),
-                });
+                send_or_log(tx, ChatStreamEvent::Delta(text));
             }
             SpecStreamEvent::SpecSaved(spec) => {
-                if draft_started {
-                    let id = format!("draft-spec-{current_draft_index}");
-                    let input = serde_json::json!({
-                        "title": spec.title,
-                        "markdown_contents": spec.markdown_contents,
-                    });
-                    send_or_log(tx, ChatStreamEvent::ToolCall {
-                        id: id.clone(),
-                        name: "create_spec".into(),
-                        input,
-                    });
-                    send_or_log(tx, ChatStreamEvent::ToolResult {
-                        id,
-                        name: "create_spec".into(),
-                        result: format!("Spec \"{}\" saved", spec.title),
-                        is_error: false,
-                    });
-                    draft_started = false;
-                }
                 content_blocks.push(ChatContentBlock::SpecRef {
                     spec_id: spec.spec_id.to_string(),
                     title: spec.title.clone(),
@@ -237,7 +195,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn drain_spec_events_accumulates_deltas_but_suppresses_forwarding() {
+    async fn drain_spec_events_accumulates_deltas() {
         let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
         let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
 
@@ -258,7 +216,7 @@ mod tests {
                 delta_count += 1;
             }
         }
-        assert_eq!(delta_count, 0, "Raw JSON deltas should be suppressed");
+        assert_eq!(delta_count, 2);
     }
 
     #[tokio::test]
@@ -405,112 +363,5 @@ mod tests {
             }
         }
         assert!(found, "TaskSaved should be forwarded");
-    }
-
-    #[tokio::test]
-    async fn drain_spec_events_draft_preview_emits_tool_call_started_and_snapshot() {
-        let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
-        let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
-
-        spec_tx.send(SpecStreamEvent::SpecDraftPreview {
-            draft_index: 0,
-            title: Some("Auth Module".into()),
-            markdown_preview: "## Purpose\n\nHandle auth".into(),
-        }).unwrap();
-        spec_tx.send(SpecStreamEvent::SpecDraftPreview {
-            draft_index: 0,
-            title: Some("Auth Module".into()),
-            markdown_preview: "## Purpose\n\nHandle auth\n\n# Details".into(),
-        }).unwrap();
-        drop(spec_tx);
-
-        drain_spec_events(&mut spec_rx, &chat_tx).await;
-
-        let mut events = vec![];
-        while let Ok(evt) = chat_rx.try_recv() {
-            events.push(evt);
-        }
-
-        assert!(matches!(&events[0], ChatStreamEvent::ToolCallStarted { id, name }
-            if id == "draft-spec-0" && name == "create_spec"),
-            "First event should be ToolCallStarted");
-
-        assert!(matches!(&events[1], ChatStreamEvent::ToolCallSnapshot { id, name, .. }
-            if id == "draft-spec-0" && name == "create_spec"),
-            "Second event should be ToolCallSnapshot");
-
-        assert!(matches!(&events[2], ChatStreamEvent::ToolCallSnapshot { id, name, .. }
-            if id == "draft-spec-0" && name == "create_spec"),
-            "Third event should be another ToolCallSnapshot (no second ToolCallStarted)");
-
-        assert_eq!(events.len(), 3, "Should be exactly 3 events: 1 started + 2 snapshots");
-    }
-
-    #[tokio::test]
-    async fn drain_spec_events_spec_saved_finalizes_draft() {
-        let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
-        let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
-
-        spec_tx.send(SpecStreamEvent::SpecDraftPreview {
-            draft_index: 0,
-            title: Some("Auth".into()),
-            markdown_preview: "preview".into(),
-        }).unwrap();
-        let spec = make_spec();
-        spec_tx.send(SpecStreamEvent::SpecSaved(spec)).unwrap();
-        drop(spec_tx);
-
-        let (_accumulated, blocks, _it, _ot) = drain_spec_events(&mut spec_rx, &chat_tx).await;
-
-        let mut events = vec![];
-        while let Ok(evt) = chat_rx.try_recv() {
-            events.push(evt);
-        }
-
-        let event_names: Vec<&str> = events.iter().map(|e| match e {
-            ChatStreamEvent::ToolCallStarted { .. } => "started",
-            ChatStreamEvent::ToolCallSnapshot { .. } => "snapshot",
-            ChatStreamEvent::ToolCall { .. } => "call",
-            ChatStreamEvent::ToolResult { .. } => "result",
-            ChatStreamEvent::SpecSaved(_) => "spec_saved",
-            _ => "other",
-        }).collect();
-
-        assert_eq!(event_names, vec!["started", "snapshot", "call", "result", "spec_saved"],
-            "Draft preview → SpecSaved should produce: started, snapshot, call, result, spec_saved");
-
-        assert_eq!(blocks.len(), 1);
-        assert!(matches!(&blocks[0], ChatContentBlock::SpecRef { .. }));
-    }
-
-    #[tokio::test]
-    async fn drain_spec_events_multiple_drafts_get_distinct_ids() {
-        let (spec_tx, mut spec_rx) = mpsc::unbounded_channel();
-        let (chat_tx, mut chat_rx) = mpsc::unbounded_channel();
-
-        spec_tx.send(SpecStreamEvent::SpecDraftPreview {
-            draft_index: 0,
-            title: Some("First".into()),
-            markdown_preview: "md1".into(),
-        }).unwrap();
-        let spec1 = make_spec();
-        spec_tx.send(SpecStreamEvent::SpecSaved(spec1)).unwrap();
-        spec_tx.send(SpecStreamEvent::SpecDraftPreview {
-            draft_index: 1,
-            title: Some("Second".into()),
-            markdown_preview: "md2".into(),
-        }).unwrap();
-        drop(spec_tx);
-
-        drain_spec_events(&mut spec_rx, &chat_tx).await;
-
-        let mut started_ids = vec![];
-        while let Ok(evt) = chat_rx.try_recv() {
-            if let ChatStreamEvent::ToolCallStarted { id, .. } = evt {
-                started_ids.push(id);
-            }
-        }
-        assert_eq!(started_ids, vec!["draft-spec-0", "draft-spec-1"],
-            "Each draft spec should get a distinct synthetic ID");
     }
 }
