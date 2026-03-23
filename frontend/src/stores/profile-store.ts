@@ -27,7 +27,9 @@ export interface ProfileProject {
 interface ProfileState {
   profile: UserProfileData;
   projects: ProfileProject[];
+  projectsStatus: "idle" | "loading" | "ready" | "error";
   liveEvents: FeedEvent[];
+  eventsStatus: "idle" | "loading" | "ready" | "error";
   totalTokenUsage: number;
   selectedProject: string | null;
   selectedEventId: string | null;
@@ -123,6 +125,7 @@ function loadProfileFromNetwork(
   set: ProfileSetter,
   user: ReturnType<typeof useAuthStore.getState>["user"],
 ): void {
+  set({ eventsStatus: "loading" });
   api.users
     .me()
     .then((networkUser) => {
@@ -147,14 +150,20 @@ function loadProfileFromNetwork(
 
       if (networkUser.profile_id) {
         api.feed.getProfilePosts(networkUser.profile_id)
-          .then((netEvents) => set({ liveEvents: netEvents.map(networkEventToFeedEvent) }))
-          .catch(() => {});
+          .then((netEvents) => set({
+            liveEvents: netEvents.map(networkEventToFeedEvent),
+            eventsStatus: "ready",
+          }))
+          .catch(() => set({ eventsStatus: "error" }));
+      } else {
+        set({ eventsStatus: "ready" });
       }
     })
-    .catch(() => {});
+    .catch(() => set({ eventsStatus: "error" }));
 }
 
 function loadProfileProjects(set: ProfileSetter, orgId?: string | null): void {
+  set({ projectsStatus: "loading" });
   api.listProjects(orgId ?? undefined)
     .then((apiProjects) => {
       set({
@@ -164,9 +173,10 @@ function loadProfileProjects(set: ProfileSetter, orgId?: string | null): void {
             : (p.git_repo_url ?? "");
           return { id: p.project_id, name: p.name, repo };
         }),
+        projectsStatus: "ready",
       });
     })
-    .catch(() => {});
+    .catch(() => set({ projectsStatus: "error" }));
 }
 
 export const useProfileStore = create<ProfileState>()((set, get) => {
@@ -186,7 +196,9 @@ export const useProfileStore = create<ProfileState>()((set, get) => {
       handle: zid ? `@${zid}` : "",
     },
     projects: [],
+    projectsStatus: "idle",
     liveEvents: [],
+    eventsStatus: "idle",
     totalTokenUsage: 0,
     selectedProject: null,
     selectedEventId: null,
