@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, Mutex};
-use tracing::info;
+use tracing::{info, warn};
 
 use aura_os_agents::{AgentInstanceService, AgentService};
 use aura_os_auth::AuthService;
@@ -124,6 +124,109 @@ fn init_domain_services(
     }
 }
 
+/// Resolve the directory containing the aura-harness source.
+///
+/// Checks `AURA_HARNESS_DIR` env var first, then common sibling paths
+/// relative to the workspace root (`../../aura-harness` when running from
+/// `apps/aura-os-server`, and `../aura-harness` from the workspace root).
+fn find_harness_dir() -> Option<PathBuf> {
+    if let Some(dir) = env_opt("AURA_HARNESS_DIR") {
+        let p = PathBuf::from(dir);
+        if p.join("Cargo.toml").exists() {
+            return Some(p);
+        }
+    }
+    let candidates = [
+        PathBuf::from("../aura-harness"),
+        PathBuf::from("../../aura-harness"),
+    ];
+    candidates
+        .into_iter()
+        .find(|p| p.join("Cargo.toml").exists())
+}
+
+/// Parse host:port from a URL like `http://127.0.0.1:8080`.
+fn parse_host_port(url: &str) -> Option<String> {
+    url.strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .map(|s| s.trim_end_matches('/').to_string())
+}
+
+/// Try to auto-spawn the local aura-harness process if nothing is listening.
+///
+/// The child process is detached so it outlives the parent if needed.
+/// We wait up to 5 seconds for the `/health` endpoint to respond.
+fn maybe_spawn_local_harness() {
+    let harness_url = std::env::var("LOCAL_HARNESS_URL")
+        .unwrap_or_else(|_| "http://localhost:8080".to_string());
+
+    let Some(host_port) = parse_host_port(&harness_url) else {
+        return;
+    };
+
+    if std::net::TcpStream::connect_timeout(
+        &host_port.parse().unwrap_or_else(|_| {
+            std::net::SocketAddr::from(([127, 0, 0, 1], 8080))
+        }),
+        std::time::Duration::from_millis(200),
+    )
+    .is_ok()
+    {
+        info!("Local harness already running at {harness_url}");
+        return;
+    }
+
+    let Some(harness_dir) = find_harness_dir() else {
+        warn!(
+            "Local harness not running at {harness_url} and aura-harness directory not found. \
+             Set AURA_HARNESS_DIR or start the harness manually."
+        );
+        return;
+    };
+
+    info!(
+        dir = %harness_dir.display(),
+        url = %harness_url,
+        "Local harness not running — spawning from source"
+    );
+
+    let bind_addr = host_port.clone();
+    match std::process::Command::new("cargo")
+        .args(["run", "--release", "--", "run", "--ui", "none"])
+        .current_dir(&harness_dir)
+        .env("BIND_ADDR", &bind_addr)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => {
+            info!(pid = child.id(), "aura-harness child process spawned");
+
+            let health_url = format!("{harness_url}/health");
+            let deadline =
+                std::time::Instant::now() + std::time::Duration::from_secs(60);
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                if std::time::Instant::now() > deadline {
+                    warn!("Timed out waiting for local harness to become ready");
+                    break;
+                }
+                if reqwest::blocking::get(&health_url)
+                    .map(|r| r.status().is_success())
+                    .unwrap_or(false)
+                {
+                    info!("Local harness is ready at {harness_url}");
+                    break;
+                }
+            }
+        }
+        Err(e) => {
+            warn!(error = %e, "Failed to spawn aura-harness child process");
+        }
+    }
+}
+
 pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
     let data_dir = db_path
         .parent()
@@ -132,6 +235,8 @@ pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
     let store = Arc::new(RocksStore::open(db_path)?);
     let network_client = NetworkClient::from_env().map(Arc::new);
     let storage_client = StorageClient::from_env().map(Arc::new);
+
+    maybe_spawn_local_harness();
 
     let core = init_core_services(&store);
     let domain = init_domain_services(&store, &network_client, &storage_client);
