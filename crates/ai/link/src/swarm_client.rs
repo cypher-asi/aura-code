@@ -18,7 +18,7 @@ pub struct SwarmClient {
 
 impl SwarmClient {
     /// Create a new client pointing at `base_url` (e.g. `http://localhost:9800`).
-    pub fn new(base_url: String, auth_token: Option<String>) -> Self {
+    pub fn new(base_url: String, auth_token: Option<String>) -> Result<Self, reqwest::Error> {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         if let Some(ref token) = auth_token {
@@ -29,14 +29,15 @@ impl SwarmClient {
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
-            .build()
-            .expect("failed to build reqwest client");
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(60))
+            .build()?;
 
-        Self {
+        Ok(Self {
             base_url,
             auth_token,
             client,
-        }
+        })
     }
 
     /// Build from environment variables.
@@ -49,7 +50,7 @@ impl SwarmClient {
         let base_url = std::env::var("SWARM_BASE_URL")
             .unwrap_or_else(|_| "http://localhost:9800".to_string());
         let auth_token = std::env::var("SWARM_AUTH_TOKEN").ok();
-        Self::new(base_url, auth_token)
+        Self::new(base_url, auth_token).expect("failed to build swarm http client")
     }
 
     /// Install a new automaton of the given `kind` with `config`.

@@ -227,10 +227,10 @@ pub fn build_test_app_from_store(
         llm_config.max_context_tokens,
     ));
 
-    let swarm_client = Arc::new(SwarmClient::new(
-        "http://localhost:19800".to_string(),
-        None,
-    ));
+    let swarm_client = Arc::new(
+        SwarmClient::new("http://localhost:19800".to_string(), None)
+            .expect("failed to build swarm http client"),
+    );
 
     let (event_broadcast, _) = broadcast::channel::<serde_json::Value>(256);
 

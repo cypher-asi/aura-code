@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use reqwest::Client;
 use tracing::{debug, warn};
 
@@ -16,14 +18,22 @@ impl BillingClient {
         let base_url = std::env::var("Z_BILLING_URL")
             .unwrap_or_else(|_| "https://z-billing.onrender.com".to_string());
         Self {
-            http: Client::new(),
+            http: Client::builder()
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(60))
+                .build()
+                .expect("failed to build billing http client"),
             base_url,
         }
     }
 
     pub fn with_base_url(base_url: String) -> Self {
         Self {
-            http: Client::new(),
+            http: Client::builder()
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(60))
+                .build()
+                .expect("failed to build billing http client"),
             base_url,
         }
     }

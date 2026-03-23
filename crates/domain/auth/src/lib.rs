@@ -2,6 +2,7 @@ mod error;
 pub use error::AuthError;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::Utc;
 use reqwest::Client;
@@ -90,7 +91,11 @@ impl AuthService {
     pub fn new(store: Arc<RocksStore>) -> Self {
         Self {
             store,
-            http: Client::new(),
+            http: Client::builder()
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(60))
+                .build()
+                .expect("failed to build auth http client"),
         }
     }
 
