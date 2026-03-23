@@ -1,5 +1,5 @@
 import { Modal, Input, Textarea, Button, Spinner, Text } from "@cypher-asi/zui";
-import { ImagePlus, X } from "lucide-react";
+import { ImagePlus, X, Monitor, Cloud } from "lucide-react";
 import type { Agent } from "../../types";
 import { useAgentEditorForm } from "./useAgentEditorForm";
 import styles from "./AgentEditorModal.module.css";
@@ -14,7 +14,7 @@ interface AgentEditorModalProps {
 export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEditorModalProps) {
   const {
     name, setName, role, setRole, personality, setPersonality,
-    systemPrompt, setSystemPrompt, icon, setIcon,
+    systemPrompt, setSystemPrompt, icon, setIcon, machineType, setMachineType,
     saving, error, nameError, setNameError,
     nameRef, initialFocusRef, fileInputRef,
     handleSave, handleClose, handleImageSelect,
@@ -88,6 +88,28 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
             onChange={(e) => setRole(e.target.value)}
             placeholder="e.g. Senior Developer"
           />
+        </div>
+
+        <div className={styles.fieldGroup}>
+          <label className={styles.label}>Machine Type</label>
+          <div className={styles.machineTypeToggle}>
+            <button
+              type="button"
+              className={`${styles.machineTypeOption} ${machineType === "local" ? styles.machineTypeActive : ""}`}
+              onClick={() => setMachineType("local")}
+            >
+              <Monitor size={14} />
+              Local
+            </button>
+            <button
+              type="button"
+              className={`${styles.machineTypeOption} ${machineType === "remote" ? styles.machineTypeActive : ""}`}
+              onClick={() => setMachineType("remote")}
+            >
+              <Cloud size={14} />
+              Remote
+            </button>
+          </div>
         </div>
 
         <div className={styles.fieldGroup}>

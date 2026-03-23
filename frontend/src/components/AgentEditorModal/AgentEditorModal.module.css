@@ -84,3 +84,36 @@
   font-size: var(--text-sm);
   color: var(--color-danger);
 }
+
+.machineTypeToggle {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.machineTypeOption {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.machineTypeOption:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text-primary);
+}
+
+.machineTypeActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary-subtle, rgba(var(--color-primary-rgb, 99, 102, 241), 0.1));
+  color: var(--color-primary);
+  font-weight: 500;
+}

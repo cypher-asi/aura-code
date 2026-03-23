@@ -14,6 +14,8 @@ interface AgentEditorFormResult {
   setSystemPrompt: (v: string) => void;
   icon: string;
   setIcon: (v: string) => void;
+  machineType: string;
+  setMachineType: (v: string) => void;
   saving: boolean;
   error: string;
   nameError: string;
@@ -37,6 +39,7 @@ export function useAgentEditorForm(
   const [personality, setPersonality] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [icon, setIcon] = useState("");
+  const [machineType, setMachineType] = useState("local");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [nameError, setNameError] = useState("");
@@ -49,8 +52,10 @@ export function useAgentEditorForm(
       setName(agent.name); setRole(agent.role);
       setPersonality(agent.personality); setSystemPrompt(agent.system_prompt);
       setIcon(agent.icon ?? "");
+      setMachineType(agent.machine_type ?? "local");
     } else {
       setName(""); setRole(""); setPersonality(""); setSystemPrompt(""); setIcon("");
+      setMachineType("local");
     }
     setError(""); setNameError("");
   }, [isOpen, agent]);
@@ -86,6 +91,7 @@ export function useAgentEditorForm(
         name: name.trim(), role: role.trim(),
         personality: personality.trim(), system_prompt: systemPrompt.trim(),
         icon: icon || undefined,
+        machine_type: machineType,
       };
       const saved = agent
         ? await api.agents.update(agent.agent_id, payload)
@@ -94,11 +100,11 @@ export function useAgentEditorForm(
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save agent");
     } finally { setSaving(false); }
-  }, [name, role, personality, systemPrompt, icon, agent, onSaved, onClose]);
+  }, [name, role, personality, systemPrompt, icon, machineType, agent, onSaved, onClose]);
 
   return {
     name, setName, role, setRole, personality, setPersonality,
-    systemPrompt, setSystemPrompt, icon, setIcon,
+    systemPrompt, setSystemPrompt, icon, setIcon, machineType, setMachineType,
     saving, error, nameError, setNameError,
     nameRef, initialFocusRef, fileInputRef,
     handleSave, handleClose, handleImageSelect,
