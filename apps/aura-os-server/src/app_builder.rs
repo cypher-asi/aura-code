@@ -121,7 +121,7 @@ fn init_domain_services(
     }
 }
 
-pub(crate) fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
+pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
     let data_dir = db_path
         .parent()
         .map(Path::to_path_buf)

@@ -10,8 +10,7 @@ pub(crate) use instances::{
     update_agent_instance,
 };
 pub(crate) use messages::{
-    aggregate_agent_messages_from_storage, list_agent_messages, list_messages,
-    send_agent_message_stream, send_message_stream,
+    list_agent_messages, list_messages, send_agent_message_stream, send_message_stream,
 };
 pub(crate) use sessions::{
     get_session, list_project_sessions, list_session_messages, list_session_tasks, list_sessions,

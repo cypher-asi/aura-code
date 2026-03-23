@@ -26,7 +26,7 @@ use crate::error::ApiError;
 pub(crate) type AutomatonRegistry = Arc<Mutex<HashMap<AgentInstanceId, (String, ProjectId)>>>;
 
 #[derive(Clone)]
-pub(crate) struct AppState {
+pub struct AppState {
     pub data_dir: PathBuf,
     pub store: Arc<RocksStore>,
     pub org_service: Arc<OrgService>,
