@@ -183,8 +183,8 @@ pub struct AgentInstance {
     pub skills: Vec<String>,
     #[serde(default)]
     pub icon: Option<String>,
-    #[serde(default)]
-    pub harness: HarnessMode,
+    #[serde(default = "default_machine_type")]
+    pub machine_type: String,
     pub status: AgentStatus,
     pub current_task_id: Option<TaskId>,
     pub current_session_id: Option<SessionId>,
@@ -196,6 +196,12 @@ pub struct AgentInstance {
     pub model: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl AgentInstance {
+    pub fn harness_mode(&self) -> HarnessMode {
+        HarnessMode::from_machine_type(&self.machine_type)
+    }
 }
 
 /// Volatile per-agent-instance state that lives only in memory (lost on restart).
