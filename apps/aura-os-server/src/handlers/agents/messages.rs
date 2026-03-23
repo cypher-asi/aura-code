@@ -194,7 +194,7 @@ pub(crate) async fn send_agent_message_stream(
         ..Default::default()
     };
 
-    open_harness_chat_stream(&state, agent.harness, config, body.content).await
+    open_harness_chat_stream(&state, agent.harness_mode(), config, body.content).await
 }
 
 pub(crate) async fn list_messages(
@@ -240,5 +240,5 @@ pub(crate) async fn send_message_stream(
         ..Default::default()
     };
 
-    open_harness_chat_stream(&state, instance.harness, config, body.content).await
+    open_harness_chat_stream(&state, instance.harness_mode(), config, body.content).await
 }
