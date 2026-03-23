@@ -1,11 +1,11 @@
 [package]
-name = "aura-desktop"
+name = "aura-os-desktop"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aura-server = { path = "../server" }
-aura-ide = { path = "../ide" }
+aura-os-server = { path = "../server" }
+aura-os-ide = { path = "../ide" }
 axum = "0.7"
 wry = "0.54"
 tao = "0.34"
@@ -33,7 +33,7 @@ product-name = "Aura"
 identifier = "com.aura.desktop"
 category = "DeveloperTool"
 icons = ["assets/aura-icon.png"]
-before-packaging-command = "cargo build --release --package aura-desktop"
+before-packaging-command = "cargo build --release --package aura-os-desktop"
 resources = ["../../frontend/dist"]
 
 [package.metadata.packager.nsis]
