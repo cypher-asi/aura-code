@@ -55,10 +55,6 @@ struct ZosProfileSummary {
     first_name: Option<String>,
     #[serde(rename = "lastName")]
     last_name: Option<String>,
-    #[serde(rename = "profileImage")]
-    #[allow(dead_code)]
-    // We no longer use ZOS profile image; avatar comes from aura-network only.
-    profile_image: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
