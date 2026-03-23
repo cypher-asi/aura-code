@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aura-os-server = { path = "../server" }
-aura-os-ide = { path = "../ide" }
+aura-os-server = { path = "../aura-os-server" }
+aura-os-ide = { path = "../aura-os-ide" }
 axum = "0.7"
 wry = "0.54"
 tao = "0.34"

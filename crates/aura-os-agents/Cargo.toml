@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aura-os-core = { path = "../../infra/core" }
-aura-os-network = { path = "../../infra/network" }
-aura-os-store = { path = "../../infra/store" }
-aura-os-storage = { path = "../../infra/storage" }
+aura-os-core = { path = "../aura-os-core" }
+aura-os-network = { path = "../aura-os-network" }
+aura-os-store = { path = "../aura-os-store" }
+aura-os-storage = { path = "../aura-os-storage" }
 chrono = { version = "0.4", features = ["serde"] }
 serde_json = "1"
 thiserror = "1"

@@ -4,21 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aura-os-core = { path = "../../crates/infra/core" }
-aura-os-store = { path = "../../crates/infra/store" }
-aura-os-settings = { path = "../../crates/domain/settings" }
-aura-os-billing = { path = "../../crates/domain/billing" }
-aura-os-orgs = { path = "../../crates/domain/orgs" }
-aura-os-projects = { path = "../../crates/domain/projects" }
-aura-os-agents = { path = "../../crates/domain/agents" }
-aura-os-auth = { path = "../../crates/domain/auth" }
-aura-os-tasks = { path = "../../crates/domain/tasks" }
-aura-os-sessions = { path = "../../crates/domain/sessions" }
-aura-os-link = { path = "../../crates/ai/link" }
-aura-os-terminal = { path = "../../crates/infra/terminal" }
-aura-os-network = { path = "../../crates/infra/network" }
-aura-os-orbit = { path = "../../crates/infra/orbit" }
-aura-os-storage = { path = "../../crates/infra/storage" }
+aura-os-core = { path = "../../crates/aura-os-core" }
+aura-os-store = { path = "../../crates/aura-os-store" }
+aura-os-settings = { path = "../../crates/aura-os-settings" }
+aura-os-billing = { path = "../../crates/aura-os-billing" }
+aura-os-orgs = { path = "../../crates/aura-os-orgs" }
+aura-os-projects = { path = "../../crates/aura-os-projects" }
+aura-os-agents = { path = "../../crates/aura-os-agents" }
+aura-os-auth = { path = "../../crates/aura-os-auth" }
+aura-os-tasks = { path = "../../crates/aura-os-tasks" }
+aura-os-sessions = { path = "../../crates/aura-os-sessions" }
+aura-os-link = { path = "../../crates/aura-os-link" }
+aura-os-terminal = { path = "../../crates/aura-os-terminal" }
+aura-os-network = { path = "../../crates/aura-os-network" }
+aura-os-storage = { path = "../../crates/aura-os-storage" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -43,4 +42,4 @@ tokio = { version = "1", features = ["full", "test-util"] }
 reqwest = { version = "0.11", features = ["json"] }
 tower = { version = "0.5", features = ["util"] }
 uuid = { version = "1", features = ["v4"] }
-aura-os-storage = { path = "../../crates/infra/storage", features = ["test-utils"] }
+aura-os-storage = { path = "../../crates/aura-os-storage", features = ["test-utils"] }
