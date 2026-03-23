@@ -3,7 +3,7 @@ import { useAppStore } from "../../stores/app-store";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import { useProjectContext } from "../../stores/project-action-store";
 import { getMostRecentProject, useProjectsListStore } from "../../stores/projects-list-store";
-import { getLastAgentEntry } from "../../utils/storage";
+import { getLastAgentEntry, getLastProject } from "../../utils/storage";
 import {
   getMobileProjectDestination,
   getMobileShellMode,
@@ -26,11 +26,15 @@ export function useMobileShellState() {
     ?? null;
   const mobileDestination = getMobileProjectDestination(location.pathname);
 
+  const lastProjectId = getLastProject();
+  const storedProjectId = lastProjectId && projects.some((project) => project.project_id === lastProjectId)
+    ? lastProjectId
+    : null;
   const lastAgent = getLastAgentEntry();
   const recentProjectId = lastAgent && projects.some((project) => project.project_id === lastAgent.projectId)
     ? lastAgent.projectId
     : mostRecentProject?.project_id ?? projects[0]?.project_id ?? null;
-  const mobileTargetProjectId = currentProjectId ?? recentProjectId;
+  const mobileTargetProjectId = currentProjectId ?? storedProjectId ?? recentProjectId;
   const mobileTargetProject = projects.find((project) => project.project_id === mobileTargetProjectId) ?? null;
 
   const hasResolvedCurrentProject = Boolean(currentProject);
