@@ -241,7 +241,6 @@ pub fn build_test_app_from_store(
         session_service,
         local_harness,
         swarm_harness,
-        default_harness: HarnessMode::Swarm,
         harness_sessions: Arc::new(Mutex::new(HashMap::new())),
         event_broadcast,
         terminal_manager: Arc::new(aura_os_terminal::TerminalManager::new()),
