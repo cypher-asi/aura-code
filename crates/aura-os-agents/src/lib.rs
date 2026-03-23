@@ -30,6 +30,11 @@ fn network_agent_to_core(net: &NetworkAgent) -> Agent {
         system_prompt: net.system_prompt.clone().unwrap_or_default(),
         skills: net.skills.clone().unwrap_or_default(),
         icon: net.icon.clone(),
+        harness: match net.harness.as_deref() {
+            Some("local") => HarnessMode::Local,
+            _ => HarnessMode::Swarm,
+        },
+        machine_type: net.machine_type.clone().unwrap_or_else(|| "local".to_string()),
         network_agent_id: net.id.parse().ok(),
         profile_id,
         created_at,
@@ -147,6 +152,10 @@ impl AgentInstanceService {
             system_prompt: Some(agent.system_prompt.clone()),
             skills: Some(agent.skills.clone()),
             icon: agent.icon.clone(),
+            harness: Some(match agent.harness {
+                HarnessMode::Local => "local".to_string(),
+                HarnessMode::Swarm => "swarm".to_string(),
+            }),
         };
         let spa = storage
             .create_project_agent(&project_id.to_string(), &jwt, &req)
@@ -349,6 +358,14 @@ pub fn merge_agent_instance(
         icon: agent
             .and_then(|a| a.icon.clone())
             .or_else(|| spa.icon.clone()),
+        harness: agent
+            .map(|a| a.harness)
+            .unwrap_or_else(|| {
+                match spa.harness.as_deref() {
+                    Some("local") => HarnessMode::Local,
+                    _ => HarnessMode::Swarm,
+                }
+            }),
         status: spa
             .status
             .as_deref()

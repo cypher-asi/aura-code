@@ -5,35 +5,36 @@ use serde::Deserialize;
 use tracing::info;
 
 use aura_os_core::{AgentInstanceId, ProjectId, TaskId};
+use aura_os_link::{HarnessInbound, SessionConfig};
 
 use crate::dto::LoopStatusResponse;
 use crate::error::{ApiError, ApiResult};
-use crate::state::AppState;
+use crate::state::{ActiveHarnessSession, AppState};
 
 #[derive(Debug, Deserialize, Default)]
 pub(crate) struct LoopQueryParams {
     pub agent_instance_id: Option<AgentInstanceId>,
 }
 
-async fn forward_automaton_events(state: &AppState, automaton_id: &str) {
-    if let Ok(mut events_rx) = state.swarm_client.events(automaton_id).await {
-        let broadcast_tx = state.event_broadcast.clone();
-        tokio::spawn(async move {
-            while let Some(event) = events_rx.recv().await {
-                let json = serde_json::to_value(&event).unwrap_or_default();
-                let _ = broadcast_tx.send(json);
-            }
-        });
-    }
+fn forward_harness_events(
+    mut events_rx: tokio::sync::mpsc::UnboundedReceiver<aura_os_link::HarnessOutbound>,
+    broadcast_tx: tokio::sync::broadcast::Sender<serde_json::Value>,
+) {
+    tokio::spawn(async move {
+        while let Some(event) = events_rx.recv().await {
+            let json = serde_json::to_value(&event).unwrap_or_default();
+            let _ = broadcast_tx.send(json);
+        }
+    });
 }
 
-async fn active_instances_for_project(
+async fn active_instances_for_project_harness(
     state: &AppState,
     project_id: ProjectId,
 ) -> Vec<AgentInstanceId> {
-    let reg = state.automaton_registry.lock().await;
+    let reg = state.harness_sessions.lock().await;
     reg.iter()
-        .filter(|(_, (_, pid))| *pid == project_id)
+        .filter(|(_, s)| s.project_id == project_id)
         .map(|(aiid, _)| *aiid)
         .collect()
 }
@@ -49,30 +50,41 @@ pub(crate) async fn start_loop(
         .agent_instance_id
         .unwrap_or_else(AgentInstanceId::new);
 
-    let config = serde_json::json!({
-        "project_id": project_id.to_string(),
-        "agent_instance_id": agent_instance_id.to_string(),
-    });
-
-    let resp = state
-        .swarm_client
-        .install("dev-loop", config)
+    let harness = state.harness_for(state.default_harness);
+    let session = harness
+        .open_session(SessionConfig {
+            agent_id: Some(agent_instance_id.to_string()),
+            ..Default::default()
+        })
         .await
-        .map_err(|e| ApiError::internal(format!("installing dev loop agent: {e}")))?;
+        .map_err(|e| ApiError::internal(format!("opening dev loop session: {e}")))?;
+
+    let session_id = session.session_id.clone();
+    let commands_tx = session.commands_tx.clone();
 
     info!(
         %project_id,
         %agent_instance_id,
-        automaton_id = %resp.automaton_id,
-        "Dev loop automaton installed"
+        %session_id,
+        "Dev loop harness session opened"
     );
 
-    forward_automaton_events(&state, &resp.automaton_id).await;
+    commands_tx
+        .send(HarnessInbound::UserMessage {
+            content: format!("Start dev loop for project {project_id}"),
+        })
+        .map_err(|e| ApiError::internal(format!("sending dev loop start: {e}")))?;
+
+    forward_harness_events(session.events_rx, state.event_broadcast.clone());
     {
-        let mut reg = state.automaton_registry.lock().await;
-        reg.insert(agent_instance_id, (resp.automaton_id, project_id));
+        let mut reg = state.harness_sessions.lock().await;
+        reg.insert(agent_instance_id, ActiveHarnessSession {
+            session_id,
+            commands_tx,
+            project_id,
+        });
     }
-    let active_agent_instances = active_instances_for_project(&state, project_id).await;
+    let active_agent_instances = active_instances_for_project_harness(&state, project_id).await;
 
     Ok((
         StatusCode::CREATED,
@@ -91,13 +103,13 @@ pub(crate) async fn pause_loop(
     Path(project_id): Path<ProjectId>,
     Query(params): Query<LoopQueryParams>,
 ) -> ApiResult<Json<LoopStatusResponse>> {
-    let reg = state.automaton_registry.lock().await;
+    let reg = state.harness_sessions.lock().await;
 
-    let targets: Vec<(AgentInstanceId, String)> = reg
+    let targets: Vec<AgentInstanceId> = reg
         .iter()
-        .filter(|(_, (_, pid))| *pid == project_id)
+        .filter(|(_, s)| s.project_id == project_id)
         .filter(|(aiid, _)| params.agent_instance_id.is_none_or(|t| **aiid == t))
-        .map(|(aiid, (auto_id, _))| (*aiid, auto_id.clone()))
+        .map(|(aiid, _)| *aiid)
         .collect();
     drop(reg);
 
@@ -105,21 +117,14 @@ pub(crate) async fn pause_loop(
         return Err(ApiError::bad_request("no matching dev loop is running"));
     }
 
-    for (_, automaton_id) in &targets {
-        state
-            .swarm_client
-            .pause(automaton_id)
-            .await
-            .map_err(|e| ApiError::internal(format!("pausing dev loop: {e}")))?;
+    for aiid in &targets {
+        let reg = state.harness_sessions.lock().await;
+        if let Some(session) = reg.get(aiid) {
+            let _ = session.commands_tx.send(HarnessInbound::Cancel);
+        }
     }
 
-    let active_agent_instances = {
-        let reg = state.automaton_registry.lock().await;
-        reg.iter()
-            .filter(|(_, (_, pid))| *pid == project_id)
-            .map(|(aiid, _)| *aiid)
-            .collect::<Vec<_>>()
-    };
+    let active_agent_instances = active_instances_for_project_harness(&state, project_id).await;
 
     Ok(Json(LoopStatusResponse {
         running: true,
@@ -135,31 +140,28 @@ pub(crate) async fn stop_loop(
     Path(project_id): Path<ProjectId>,
     Query(params): Query<LoopQueryParams>,
 ) -> ApiResult<Json<LoopStatusResponse>> {
-    let mut reg = state.automaton_registry.lock().await;
+    let mut reg = state.harness_sessions.lock().await;
 
-    let targets: Vec<(AgentInstanceId, String)> = reg
+    let targets: Vec<AgentInstanceId> = reg
         .iter()
-        .filter(|(_, (_, pid))| *pid == project_id)
+        .filter(|(_, s)| s.project_id == project_id)
         .filter(|(aiid, _)| params.agent_instance_id.is_none_or(|t| **aiid == t))
-        .map(|(aiid, (auto_id, _))| (*aiid, auto_id.clone()))
+        .map(|(aiid, _)| *aiid)
         .collect();
 
     if targets.is_empty() {
         return Err(ApiError::bad_request("no matching dev loop is running"));
     }
 
-    for (aiid, automaton_id) in &targets {
-        state
-            .swarm_client
-            .stop(automaton_id)
-            .await
-            .map_err(|e| ApiError::internal(format!("stopping dev loop: {e}")))?;
-        reg.remove(aiid);
+    for aiid in &targets {
+        if let Some(session) = reg.remove(aiid) {
+            let _ = session.commands_tx.send(HarnessInbound::Cancel);
+        }
     }
 
     let remaining: Vec<AgentInstanceId> = reg
         .iter()
-        .filter(|(_, (_, pid))| *pid == project_id)
+        .filter(|(_, s)| s.project_id == project_id)
         .map(|(aiid, _)| *aiid)
         .collect();
     drop(reg);
@@ -177,21 +179,12 @@ pub(crate) async fn get_loop_status(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
 ) -> ApiResult<Json<LoopStatusResponse>> {
-    let mut reg = state.automaton_registry.lock().await;
+    let mut reg = state.harness_sessions.lock().await;
 
-    // Prune finished automatons
     let mut to_remove = Vec::new();
-    for (aiid, (automaton_id, pid)) in reg.iter() {
-        if *pid == project_id {
-            match state.swarm_client.status(automaton_id).await {
-                Ok(s) if s.status == "stopped" || s.status == "finished" => {
-                    to_remove.push(*aiid);
-                }
-                Err(_) => {
-                    to_remove.push(*aiid);
-                }
-                _ => {}
-            }
+    for (aiid, session) in reg.iter() {
+        if session.project_id == project_id && session.commands_tx.is_closed() {
+            to_remove.push(*aiid);
         }
     }
     for aiid in &to_remove {
@@ -200,7 +193,7 @@ pub(crate) async fn get_loop_status(
 
     let active: Vec<AgentInstanceId> = reg
         .iter()
-        .filter(|(_, (_, pid))| *pid == project_id)
+        .filter(|(_, s)| s.project_id == project_id)
         .map(|(aiid, _)| *aiid)
         .collect();
     drop(reg);
@@ -221,19 +214,23 @@ pub(crate) async fn run_single_task(
 ) -> ApiResult<StatusCode> {
     super::billing::require_credits(&state).await?;
 
-    let config = serde_json::json!({
-        "project_id": project_id.to_string(),
-        "task_id": task_id.to_string(),
-        "agent_instance_id": params.agent_instance_id.map(|id| id.to_string()),
-    });
-
-    let resp = state
-        .swarm_client
-        .install("task-run", config)
+    let harness = state.harness_for(state.default_harness);
+    let session = harness
+        .open_session(SessionConfig {
+            agent_id: params.agent_instance_id.map(|id| id.to_string()),
+            ..Default::default()
+        })
         .await
-        .map_err(|e| ApiError::internal(format!("installing single task runner: {e}")))?;
+        .map_err(|e| ApiError::internal(format!("opening task runner session: {e}")))?;
 
-    forward_automaton_events(&state, &resp.automaton_id).await;
+    session
+        .commands_tx
+        .send(HarnessInbound::UserMessage {
+            content: format!("Execute task {task_id} in project {project_id}"),
+        })
+        .map_err(|e| ApiError::internal(format!("sending task run command: {e}")))?;
+
+    forward_harness_events(session.events_rx, state.event_broadcast.clone());
 
     Ok(StatusCode::ACCEPTED)
 }

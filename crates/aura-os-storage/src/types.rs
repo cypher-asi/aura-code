@@ -25,6 +25,8 @@ pub struct StorageProjectAgent {
     #[serde(default)]
     pub icon: Option<String>,
     #[serde(default)]
+    pub harness: Option<String>,
+    #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
@@ -53,6 +55,8 @@ pub struct CreateProjectAgentRequest {
     pub skills: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

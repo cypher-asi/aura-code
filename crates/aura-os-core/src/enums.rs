@@ -55,3 +55,11 @@ pub enum OrgRole {
     Admin,
     Member,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessMode {
+    Local,
+    #[default]
+    Swarm,
+}

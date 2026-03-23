@@ -364,6 +364,7 @@ async fn create_project_agent(
         system_prompt: req.system_prompt,
         skills: req.skills,
         icon: req.icon,
+        harness: req.harness,
         status: Some("active".to_string()),
         model: None,
         total_input_tokens: None,

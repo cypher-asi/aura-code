@@ -9,7 +9,8 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
-use aura_os_core::{AgentId, AgentInstanceId, Message, ProjectId};
+use aura_os_core::{AgentId, AgentInstanceId, HarnessMode, Message, ProjectId};
+use aura_os_link::{HarnessInbound, SessionConfig};
 
 use crate::dto::SendMessageRequest;
 use crate::error::{ApiError, ApiResult};
@@ -139,27 +140,30 @@ pub(crate) async fn list_agent_messages(
     Ok(Json(messages))
 }
 
-async fn install_chat_stream(
+async fn open_harness_chat_stream(
     state: &AppState,
-    config: serde_json::Value,
+    harness_mode: HarnessMode,
+    session_config: SessionConfig,
+    user_content: String,
 ) -> ApiResult<(
     [(&'static str, HeaderValue); 1],
     Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
 )> {
-    let resp = state
-        .swarm_client
-        .install("chat", config)
+    let harness = state.harness_for(harness_mode);
+    let session = harness
+        .open_session(session_config)
         .await
-        .map_err(|e| ApiError::internal(format!("installing chat agent: {e}")))?;
+        .map_err(|e| ApiError::internal(format!("opening harness session: {e}")))?;
 
-    let events_rx = state
-        .swarm_client
-        .events(&resp.automaton_id)
-        .await
-        .map_err(|e| ApiError::internal(format!("subscribing to chat events: {e}")))?;
+    session
+        .commands_tx
+        .send(HarnessInbound::UserMessage {
+            content: user_content,
+        })
+        .map_err(|e| ApiError::internal(format!("sending user message: {e}")))?;
 
-    let stream = UnboundedReceiverStream::new(events_rx)
-        .map(|evt| super::super::sse::automaton_event_to_sse(&evt));
+    let stream = UnboundedReceiverStream::new(session.events_rx)
+        .map(|evt| super::super::sse::harness_event_to_sse(&evt));
 
     Ok((
         SSE_NO_BUFFERING_HEADERS,
@@ -178,14 +182,19 @@ pub(crate) async fn send_agent_message_stream(
     super::super::billing::require_credits(&state).await?;
     info!(%agent_id, action = ?body.action, "Agent message stream requested");
 
-    let config = serde_json::json!({
-        "agent_id": agent_id.to_string(),
-        "content": body.content,
-        "action": body.action,
-        "attachments": body.attachments,
-    });
+    let agent = state
+        .agent_service
+        .get_agent_async("", &agent_id)
+        .await
+        .map_err(|e| ApiError::internal(format!("looking up agent: {e}")))?;
 
-    install_chat_stream(&state, config).await
+    let config = SessionConfig {
+        system_prompt: Some(agent.system_prompt.clone()),
+        agent_id: Some(agent_id.to_string()),
+        ..Default::default()
+    };
+
+    open_harness_chat_stream(&state, agent.harness, config, body.content).await
 }
 
 pub(crate) async fn list_messages(
@@ -219,13 +228,17 @@ pub(crate) async fn send_message_stream(
     super::super::billing::require_credits(&state).await?;
     info!(%project_id, %agent_instance_id, action = ?body.action, "Message stream requested");
 
-    let config = serde_json::json!({
-        "project_id": project_id.to_string(),
-        "agent_instance_id": agent_instance_id.to_string(),
-        "content": body.content,
-        "action": body.action,
-        "attachments": body.attachments,
-    });
+    let instance = state
+        .agent_instance_service
+        .get_instance(&project_id, &agent_instance_id)
+        .await
+        .map_err(|e| ApiError::internal(format!("looking up agent instance: {e}")))?;
 
-    install_chat_stream(&state, config).await
+    let config = SessionConfig {
+        system_prompt: Some(instance.system_prompt.clone()),
+        agent_id: Some(instance.agent_id.to_string()),
+        ..Default::default()
+    };
+
+    open_harness_chat_stream(&state, instance.harness, config, body.content).await
 }

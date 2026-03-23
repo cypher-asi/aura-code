@@ -8,7 +8,8 @@ use tracing::info;
 use aura_os_agents::{AgentInstanceService, AgentService};
 use aura_os_auth::AuthService;
 use aura_os_billing::BillingClient;
-use aura_os_link::SwarmClient;
+use aura_os_core::HarnessMode;
+use aura_os_link::{HarnessLink, LocalHarness, SwarmHarness};
 use aura_os_network::NetworkClient;
 use aura_os_orgs::OrgService;
 use aura_os_projects::ProjectService;
@@ -83,7 +84,9 @@ struct DomainServices {
     agent_service: Arc<AgentService>,
     agent_instance_service: Arc<AgentInstanceService>,
     session_service: Arc<SessionService>,
-    swarm_client: Arc<SwarmClient>,
+    local_harness: Arc<dyn HarnessLink>,
+    swarm_harness: Arc<dyn HarnessLink>,
+    default_harness: HarnessMode,
 }
 
 fn init_domain_services(
@@ -109,7 +112,12 @@ fn init_domain_services(
         SessionService::new(store.clone(), 0.8, 200_000)
             .with_storage_client(storage_client.clone()),
     );
-    let swarm_client = Arc::new(SwarmClient::from_env());
+    let swarm_harness: Arc<dyn HarnessLink> = Arc::new(SwarmHarness::from_env());
+    let local_harness: Arc<dyn HarnessLink> = Arc::new(LocalHarness::from_env());
+    let default_harness = match std::env::var("DEFAULT_HARNESS").as_deref() {
+        Ok("local") => HarnessMode::Local,
+        _ => HarnessMode::Swarm,
+    };
 
     DomainServices {
         project_service,
@@ -117,7 +125,9 @@ fn init_domain_services(
         agent_service,
         agent_instance_service,
         session_service,
-        swarm_client,
+        local_harness,
+        swarm_harness,
+        default_harness,
     }
 }
 
@@ -155,8 +165,10 @@ pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
         agent_service: domain.agent_service,
         agent_instance_service: domain.agent_instance_service,
         session_service: domain.session_service,
-        swarm_client: domain.swarm_client,
-        automaton_registry: Arc::new(Mutex::new(HashMap::new())),
+        local_harness: domain.local_harness,
+        swarm_harness: domain.swarm_harness,
+        default_harness: domain.default_harness,
+        harness_sessions: Arc::new(Mutex::new(HashMap::new())),
         terminal_manager: Arc::new(TerminalManager::new()),
         network_client,
         storage_client,

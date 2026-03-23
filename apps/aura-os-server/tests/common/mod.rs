@@ -16,12 +16,11 @@ use aura_os_agents::{AgentInstanceService, AgentService};
 use aura_os_auth::AuthService;
 use aura_os_billing::BillingClient;
 use aura_os_core::*;
-use aura_os_link::SwarmClient;
+use aura_os_link::{HarnessLink, LocalHarness, SwarmHarness};
 use aura_os_network::NetworkClient;
-use aura_os_orbit::OrbitClient;
 use aura_os_orgs::OrgService;
 use aura_os_projects::ProjectService;
-use aura_os_server::state::AppState;
+use aura_os_server::AppState;
 use aura_os_sessions::SessionService;
 use aura_os_storage::StorageClient;
 use aura_os_store::RocksStore;
@@ -219,10 +218,13 @@ pub fn build_test_app_from_store(
     ));
     let session_service = Arc::new(SessionService::new(store.clone(), 0.8, 200_000));
 
-    let swarm_client = Arc::new(
-        SwarmClient::new("http://localhost:19800".to_string(), None)
-            .expect("failed to build swarm http client"),
-    );
+    let swarm_harness: Arc<dyn HarnessLink> = Arc::new(SwarmHarness::new(
+        "http://localhost:19800".to_string(),
+        None,
+    ));
+    let local_harness: Arc<dyn HarnessLink> = Arc::new(LocalHarness::new(
+        "http://localhost:19080".to_string(),
+    ));
 
     let (event_broadcast, _) = broadcast::channel::<serde_json::Value>(256);
 
@@ -237,19 +239,19 @@ pub fn build_test_app_from_store(
         agent_service,
         agent_instance_service,
         session_service,
-        swarm_client,
-        automaton_registry: Arc::new(Mutex::new(HashMap::new())),
+        local_harness,
+        swarm_harness,
+        default_harness: HarnessMode::Swarm,
+        harness_sessions: Arc::new(Mutex::new(HashMap::new())),
         event_broadcast,
         terminal_manager: Arc::new(aura_os_terminal::TerminalManager::new()),
         network_client,
         storage_client,
-        orbit_client: Arc::new(OrbitClient::new()),
-        orbit_base_url: None,
         internal_service_token: None,
         require_zero_pro: false,
     };
 
-    let app = aura_os_server::create_router(state.clone());
+    let app = aura_os_server::create_router_with_frontend(state.clone(), None);
     (app, state)
 }
 

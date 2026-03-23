@@ -24,6 +24,7 @@ pub(crate) async fn create_agent(
         skills: Some(body.skills),
         icon: body.icon,
         machine_type: body.machine_type,
+        harness: body.harness,
         org_id: None,
     };
     let net_agent = client
@@ -71,6 +72,7 @@ pub(crate) async fn update_agent(
         skills: body.skills,
         icon: body.icon.flatten(),
         machine_type: body.machine_type,
+        harness: body.harness,
     };
     let net_agent = client
         .update_agent(&agent_id.to_string(), &jwt, &net_req)

@@ -118,6 +118,7 @@ pub fn make_agent_instance(name: &str) -> AgentInstance {
         system_prompt: String::new(),
         skills: vec![],
         icon: None,
+        harness: crate::HarnessMode::default(),
         status: AgentStatus::Idle,
         current_task_id: None,
         current_session_id: None,

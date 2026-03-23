@@ -2,12 +2,17 @@ use std::convert::Infallible;
 
 use axum::response::sse::Event;
 
-use aura_os_link::AutomatonEvent;
+use aura_os_link::HarnessOutbound;
 
-/// Maps an [`AutomatonEvent`] from the swarm to an SSE [`Event`].
-pub(crate) fn automaton_event_to_sse(evt: &AutomatonEvent) -> Result<Event, Infallible> {
+/// Maps a [`HarnessOutbound`] event to an SSE [`Event`].
+pub(crate) fn harness_event_to_sse(evt: &HarnessOutbound) -> Result<Event, Infallible> {
+    let json = serde_json::to_value(evt).unwrap_or_default();
+    let event_type = json
+        .get("type")
+        .and_then(|t| t.as_str())
+        .unwrap_or("unknown");
     Ok(Event::default()
-        .event(&evt.event_type)
-        .json_data(&evt.data)
+        .event(event_type)
+        .json_data(&json)
         .unwrap_or_else(|_| Event::default().data("{}")))
 }

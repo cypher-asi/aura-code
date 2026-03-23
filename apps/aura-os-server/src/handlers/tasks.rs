@@ -3,6 +3,7 @@ use axum::Json;
 use serde::Serialize;
 
 use aura_os_core::{ProjectId, SpecId, Task, TaskId, TaskStatus};
+use aura_os_link::{HarnessInbound, HarnessOutbound, SessionConfig};
 use aura_os_storage::StorageTask;
 use aura_os_tasks::TaskService;
 
@@ -58,38 +59,41 @@ pub(crate) async fn extract_tasks(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
 ) -> ApiResult<Json<Vec<Task>>> {
-    let config = serde_json::json!({
-        "project_id": project_id.to_string(),
-    });
-
-    let resp = state
-        .swarm_client
-        .install("task-extract", config)
+    let harness = state.harness_for(state.default_harness);
+    let session = harness
+        .open_session(SessionConfig {
+            agent_id: Some(format!("task-extract-{project_id}")),
+            ..Default::default()
+        })
         .await
-        .map_err(|e| ApiError::internal(format!("installing task extraction agent: {e}")))?;
+        .map_err(|e| ApiError::internal(format!("opening task extraction session: {e}")))?;
 
-    let mut rx = state
-        .swarm_client
-        .events(&resp.automaton_id)
-        .await
-        .map_err(|e| ApiError::internal(format!("subscribing to task extraction events: {e}")))?;
+    session
+        .commands_tx
+        .send(HarnessInbound::UserMessage {
+            content: format!("Extract tasks for project {project_id}"),
+        })
+        .map_err(|e| ApiError::internal(format!("sending task extract command: {e}")))?;
 
+    let mut rx = session.events_rx;
     while let Some(event) = rx.recv().await {
-        match event.event_type.as_str() {
-            "complete" => {
-                let tasks: Vec<Task> = serde_json::from_value(
-                    event.data.get("tasks").cloned().unwrap_or_default(),
-                )
-                .unwrap_or_default();
+        match event {
+            HarnessOutbound::AssistantMessageEnd { .. } => {
+                let storage = state.require_storage_client()?;
+                let jwt = state.get_jwt()?;
+                let storage_tasks = storage
+                    .list_tasks(&project_id.to_string(), &jwt)
+                    .await
+                    .map_err(|e| ApiError::internal(format!("listing tasks: {e}")))?;
+                let mut tasks: Vec<Task> = storage_tasks
+                    .into_iter()
+                    .filter_map(|s| storage_task_to_task(s).ok())
+                    .collect();
+                tasks.sort_by_key(|t| t.order_index);
                 return Ok(Json(tasks));
             }
-            "error" => {
-                let msg = event
-                    .data
-                    .get("message")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("task extraction failed");
-                return Err(ApiError::internal(msg.to_string()));
+            HarnessOutbound::Error { message, .. } => {
+                return Err(ApiError::internal(message));
             }
             _ => continue,
         }

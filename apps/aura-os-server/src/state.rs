@@ -9,8 +9,8 @@ use tokio::sync::{broadcast, Mutex};
 use aura_os_agents::{AgentInstanceService, AgentService};
 use aura_os_auth::AuthService;
 use aura_os_billing::BillingClient;
-use aura_os_core::{AgentInstanceId, ProjectId, ZeroAuthSession};
-use aura_os_link::SwarmClient;
+use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, ZeroAuthSession};
+use aura_os_link::{HarnessInbound, HarnessLink};
 use aura_os_network::NetworkClient;
 use aura_os_orgs::OrgService;
 use aura_os_projects::ProjectService;
@@ -22,8 +22,13 @@ use aura_os_terminal::TerminalManager;
 
 use crate::error::ApiError;
 
-/// Tracks running automatons: agent_instance_id → (automaton_id, project_id).
-pub(crate) type AutomatonRegistry = Arc<Mutex<HashMap<AgentInstanceId, (String, ProjectId)>>>;
+/// Active harness sessions: agent_instance_id → (session_id, commands_tx, project_id).
+pub struct ActiveHarnessSession {
+    pub session_id: String,
+    pub commands_tx: tokio::sync::mpsc::UnboundedSender<HarnessInbound>,
+    pub project_id: ProjectId,
+}
+pub(crate) type HarnessSessionRegistry = Arc<Mutex<HashMap<AgentInstanceId, ActiveHarnessSession>>>;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -37,8 +42,10 @@ pub struct AppState {
     pub agent_service: Arc<AgentService>,
     pub agent_instance_service: Arc<AgentInstanceService>,
     pub session_service: Arc<SessionService>,
-    pub swarm_client: Arc<SwarmClient>,
-    pub automaton_registry: AutomatonRegistry,
+    pub local_harness: Arc<dyn HarnessLink>,
+    pub swarm_harness: Arc<dyn HarnessLink>,
+    pub default_harness: HarnessMode,
+    pub harness_sessions: HarnessSessionRegistry,
     pub terminal_manager: Arc<TerminalManager>,
     /// Optional aura-network client. `None` when `AURA_NETWORK_URL` is not set.
     pub network_client: Option<Arc<NetworkClient>>,
@@ -90,5 +97,12 @@ impl AppState {
         self.storage_client
             .as_ref()
             .ok_or_else(|| ApiError::service_unavailable("aura-storage is not configured"))
+    }
+
+    pub(crate) fn harness_for(&self, mode: HarnessMode) -> &dyn HarnessLink {
+        match mode {
+            HarnessMode::Local => self.local_harness.as_ref(),
+            HarnessMode::Swarm => self.swarm_harness.as_ref(),
+        }
     }
 }

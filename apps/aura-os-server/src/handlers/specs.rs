@@ -9,7 +9,7 @@ use tokio_stream::StreamExt;
 use tracing::info;
 
 use aura_os_core::{ProjectId, Spec, SpecId};
-use aura_os_link::AutomatonEvent;
+use aura_os_link::{HarnessInbound, HarnessOutbound, SessionConfig};
 
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
@@ -38,31 +38,28 @@ pub(crate) async fn generate_specs_summary(
 ) -> ApiResult<Json<aura_os_core::Project>> {
     info!(%project_id, "Specs summary regeneration requested");
 
-    let config = serde_json::json!({
-        "project_id": project_id.to_string(),
-    });
-    let resp = state
-        .swarm_client
-        .install("spec-summary", config)
+    let harness = state.harness_for(state.default_harness);
+    let session = harness
+        .open_session(SessionConfig {
+            agent_id: Some(format!("spec-summary-{project_id}")),
+            ..Default::default()
+        })
         .await
-        .map_err(|e| ApiError::internal(format!("installing spec summary agent: {e}")))?;
+        .map_err(|e| ApiError::internal(format!("opening spec summary session: {e}")))?;
 
-    let mut rx = state
-        .swarm_client
-        .events(&resp.automaton_id)
-        .await
-        .map_err(|e| ApiError::internal(format!("subscribing to spec summary events: {e}")))?;
+    session
+        .commands_tx
+        .send(HarnessInbound::UserMessage {
+            content: format!("Generate specs summary for project {project_id}"),
+        })
+        .map_err(|e| ApiError::internal(format!("sending spec summary command: {e}")))?;
 
+    let mut rx = session.events_rx;
     while let Some(event) = rx.recv().await {
-        match event.event_type.as_str() {
-            "complete" | "done" => break,
-            "error" => {
-                let msg = event
-                    .data
-                    .get("message")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("spec summary generation failed");
-                return Err(ApiError::internal(msg.to_string()));
+        match event {
+            HarnessOutbound::AssistantMessageEnd { .. } => break,
+            HarnessOutbound::Error { message, .. } => {
+                return Err(ApiError::internal(message));
             }
             _ => continue,
         }
@@ -99,27 +96,29 @@ pub(crate) async fn get_spec(
 const SSE_NO_BUFFERING_HEADERS: [(&str, HeaderValue); 1] =
     [("X-Accel-Buffering", HeaderValue::from_static("no"))];
 
-async fn install_spec_gen(
+async fn open_spec_gen_session(
     state: &AppState,
     project_id: &ProjectId,
-) -> ApiResult<tokio::sync::mpsc::UnboundedReceiver<AutomatonEvent>> {
+) -> ApiResult<aura_os_link::HarnessSession> {
     super::billing::require_credits(state).await?;
 
-    let config = serde_json::json!({
-        "project_id": project_id.to_string(),
-    });
-
-    let resp = state
-        .swarm_client
-        .install("spec-gen", config)
+    let harness = state.harness_for(state.default_harness);
+    let session = harness
+        .open_session(SessionConfig {
+            agent_id: Some(format!("spec-gen-{project_id}")),
+            ..Default::default()
+        })
         .await
-        .map_err(|e| ApiError::internal(format!("installing spec generation agent: {e}")))?;
+        .map_err(|e| ApiError::internal(format!("opening spec gen session: {e}")))?;
 
-    state
-        .swarm_client
-        .events(&resp.automaton_id)
-        .await
-        .map_err(|e| ApiError::internal(format!("subscribing to spec generation events: {e}")))
+    session
+        .commands_tx
+        .send(HarnessInbound::UserMessage {
+            content: format!("Generate specs for project {project_id}"),
+        })
+        .map_err(|e| ApiError::internal(format!("sending spec gen command: {e}")))?;
+
+    Ok(session)
 }
 
 pub(crate) async fn generate_specs(
@@ -127,26 +126,28 @@ pub(crate) async fn generate_specs(
     Path(project_id): Path<ProjectId>,
 ) -> ApiResult<Json<Vec<Spec>>> {
     info!(%project_id, "Spec generation requested");
-    let mut rx = install_spec_gen(&state, &project_id).await?;
+    let session = open_spec_gen_session(&state, &project_id).await?;
+    let mut rx = session.events_rx;
 
     while let Some(event) = rx.recv().await {
-        match event.event_type.as_str() {
-            "complete" => {
-                let specs: Vec<Spec> = serde_json::from_value(
-                    event.data.get("specs").cloned().unwrap_or_default(),
-                )
-                .unwrap_or_default();
+        match event {
+            HarnessOutbound::AssistantMessageEnd { .. } => {
+                let storage = state.require_storage_client()?;
+                let jwt = state.get_jwt()?;
+                let storage_specs = storage
+                    .list_specs(&project_id.to_string(), &jwt)
+                    .await
+                    .map_err(|e| ApiError::internal(format!("listing specs: {e}")))?;
+                let mut specs: Vec<Spec> = storage_specs
+                    .into_iter()
+                    .filter_map(|s| Spec::try_from(s).ok())
+                    .collect();
+                specs.sort_by_key(|s| s.order_index);
                 info!(%project_id, count = specs.len(), "Spec generation completed");
                 return Ok(Json(specs));
             }
-            "error" => {
-                let reason = event
-                    .data
-                    .get("message")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("spec generation failed")
-                    .to_string();
-                return Err(ApiError::internal(reason));
+            HarnessOutbound::Error { message, .. } => {
+                return Err(ApiError::internal(message));
             }
             _ => continue,
         }
@@ -165,10 +166,10 @@ pub(crate) async fn generate_specs_stream(
     Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
 )> {
     info!(%project_id, "Streaming spec generation requested");
-    let events_rx = install_spec_gen(&state, &project_id).await?;
+    let session = open_spec_gen_session(&state, &project_id).await?;
 
-    let stream = UnboundedReceiverStream::new(events_rx)
-        .map(|evt| super::sse::automaton_event_to_sse(&evt));
+    let stream = UnboundedReceiverStream::new(session.events_rx)
+        .map(|evt| super::sse::harness_event_to_sse(&evt));
 
     Ok((
         SSE_NO_BUFFERING_HEADERS,

@@ -98,6 +98,7 @@ export interface Agent {
   system_prompt: string;
   skills: string[];
   icon: string | null;
+  harness: "local" | "swarm";
   machine_type: string;
   network_agent_id?: string;
   profile_id?: string;
@@ -115,6 +116,7 @@ export interface AgentInstance {
   system_prompt: string;
   skills: string[];
   icon: string | null;
+  harness: "local" | "swarm";
   status: AgentStatus;
   current_task_id: TaskId | null;
   current_session_id: SessionId | null;

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::enums::{AgentStatus, ChatRole, ProjectStatus, SessionStatus, TaskStatus};
+use crate::enums::{AgentStatus, ChatRole, HarnessMode, ProjectStatus, SessionStatus, TaskStatus};
 use crate::ids::{
     AgentId, AgentInstanceId, MessageId, OrgId, ProfileId, ProjectId, SessionId, SpecId, TaskId,
     UserId,
@@ -154,6 +154,8 @@ pub struct Agent {
     pub skills: Vec<String>,
     #[serde(default)]
     pub icon: Option<String>,
+    #[serde(default)]
+    pub harness: HarnessMode,
     #[serde(default = "default_machine_type")]
     pub machine_type: String,
     #[serde(default)]
@@ -177,6 +179,8 @@ pub struct AgentInstance {
     pub skills: Vec<String>,
     #[serde(default)]
     pub icon: Option<String>,
+    #[serde(default)]
+    pub harness: HarnessMode,
     pub status: AgentStatus,
     pub current_task_id: Option<TaskId>,
     pub current_session_id: Option<SessionId>,
