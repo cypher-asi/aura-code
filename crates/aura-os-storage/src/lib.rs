@@ -11,6 +11,7 @@ pub mod testutil;
 pub use client::StorageClient;
 pub use error::StorageError;
 pub use types::{
-    CreateSessionRequest, StorageMessage, StorageSession, StorageSpec, StorageTask,
-    StorageTaskFileChangeSummary, TransitionTaskRequest, UpdateSessionRequest,
+    CreateProjectAgentRequest, CreateSessionRequest, CreateTaskRequest, StorageMessage,
+    StorageProjectAgent, StorageSession, StorageSpec, StorageTask, StorageTaskFileChangeSummary,
+    TransitionTaskRequest, UpdateProjectAgentRequest, UpdateSessionRequest, UpdateTaskRequest,
 };
