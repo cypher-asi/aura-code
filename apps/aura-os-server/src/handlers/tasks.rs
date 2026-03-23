@@ -1,8 +1,8 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use aura_os_core::{ProjectId, SpecId, Task, TaskId, TaskStatus};
+use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, SpecId, Task, TaskId, TaskStatus};
 use aura_os_link::{HarnessInbound, HarnessOutbound, SessionConfig};
 use aura_os_storage::StorageTask;
 use aura_os_tasks::TaskService;
@@ -10,6 +10,11 @@ use aura_os_tasks::TaskService;
 use crate::dto::TransitionTaskRequest;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
+
+#[derive(Debug, Deserialize, Default)]
+pub(crate) struct TaskQueryParams {
+    pub agent_instance_id: Option<AgentInstanceId>,
+}
 
 /// Convert a `StorageTask` into a domain `Task`.
 ///
@@ -58,8 +63,19 @@ pub(crate) async fn list_tasks_by_spec(
 pub(crate) async fn extract_tasks(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
+    Query(params): Query<TaskQueryParams>,
 ) -> ApiResult<Json<Vec<Task>>> {
-    let harness = state.harness_for(state.default_harness);
+    let harness_mode = if let Some(aiid) = params.agent_instance_id {
+        state
+            .agent_instance_service
+            .get_instance(&project_id, &aiid)
+            .await
+            .map(|inst| inst.harness_mode())
+            .unwrap_or(HarnessMode::Local)
+    } else {
+        HarnessMode::Local
+    };
+    let harness = state.harness_for(harness_mode);
     let session = harness
         .open_session(SessionConfig {
             agent_id: Some(format!("task-extract-{project_id}")),

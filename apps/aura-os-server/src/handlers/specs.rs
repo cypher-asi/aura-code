@@ -1,18 +1,37 @@
 use std::convert::Infallible;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
+use serde::Deserialize;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::info;
 
-use aura_os_core::{ProjectId, Spec, SpecId};
+use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, Spec, SpecId};
 use aura_os_link::{HarnessInbound, HarnessOutbound, SessionConfig};
 
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
+
+#[derive(Debug, Deserialize, Default)]
+pub(crate) struct SpecQueryParams {
+    pub agent_instance_id: Option<AgentInstanceId>,
+}
+
+async fn resolve_harness_mode(state: &AppState, project_id: &ProjectId, params: &SpecQueryParams) -> HarnessMode {
+    if let Some(aiid) = params.agent_instance_id {
+        state
+            .agent_instance_service
+            .get_instance(project_id, &aiid)
+            .await
+            .map(|inst| inst.harness_mode())
+            .unwrap_or(HarnessMode::Local)
+    } else {
+        HarnessMode::Local
+    }
+}
 
 pub(crate) async fn list_specs(
     State(state): State<AppState>,
@@ -35,10 +54,12 @@ pub(crate) async fn list_specs(
 pub(crate) async fn generate_specs_summary(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
+    Query(params): Query<SpecQueryParams>,
 ) -> ApiResult<Json<aura_os_core::Project>> {
     info!(%project_id, "Specs summary regeneration requested");
 
-    let harness = state.harness_for(state.default_harness);
+    let mode = resolve_harness_mode(&state, &project_id, &params).await;
+    let harness = state.harness_for(mode);
     let session = harness
         .open_session(SessionConfig {
             agent_id: Some(format!("spec-summary-{project_id}")),
@@ -99,10 +120,11 @@ const SSE_NO_BUFFERING_HEADERS: [(&str, HeaderValue); 1] =
 async fn open_spec_gen_session(
     state: &AppState,
     project_id: &ProjectId,
+    harness_mode: HarnessMode,
 ) -> ApiResult<aura_os_link::HarnessSession> {
     super::billing::require_credits(state).await?;
 
-    let harness = state.harness_for(state.default_harness);
+    let harness = state.harness_for(harness_mode);
     let session = harness
         .open_session(SessionConfig {
             agent_id: Some(format!("spec-gen-{project_id}")),
@@ -124,9 +146,11 @@ async fn open_spec_gen_session(
 pub(crate) async fn generate_specs(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
+    Query(params): Query<SpecQueryParams>,
 ) -> ApiResult<Json<Vec<Spec>>> {
     info!(%project_id, "Spec generation requested");
-    let session = open_spec_gen_session(&state, &project_id).await?;
+    let mode = resolve_harness_mode(&state, &project_id, &params).await;
+    let session = open_spec_gen_session(&state, &project_id, mode).await?;
     let mut rx = session.events_rx;
 
     while let Some(event) = rx.recv().await {
@@ -161,12 +185,14 @@ pub(crate) async fn generate_specs(
 pub(crate) async fn generate_specs_stream(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
+    Query(params): Query<SpecQueryParams>,
 ) -> ApiResult<(
     [(&'static str, HeaderValue); 1],
     Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
 )> {
     info!(%project_id, "Streaming spec generation requested");
-    let session = open_spec_gen_session(&state, &project_id).await?;
+    let mode = resolve_harness_mode(&state, &project_id, &params).await;
+    let session = open_spec_gen_session(&state, &project_id, mode).await?;
 
     let stream = UnboundedReceiverStream::new(session.events_rx)
         .map(|evt| super::sse::harness_event_to_sse(&evt));
