@@ -8,7 +8,6 @@ use crate::ws_bridge::spawn_ws_bridge;
 #[derive(Debug, Clone)]
 pub struct SwarmHarness {
     base_url: String,
-    auth_token: Option<String>,
     client: reqwest::Client,
 }
 
@@ -29,11 +28,7 @@ impl SwarmHarness {
             .build()
             .expect("failed to build HTTP client");
 
-        Self {
-            base_url,
-            auth_token,
-            client,
-        }
+        Self { base_url, client }
     }
 
     pub fn from_env() -> Self {
@@ -107,11 +102,11 @@ impl HarnessLink for SwarmHarness {
         let (ws_stream, _) = tokio_tungstenite::connect_async(&ws_url).await?;
 
         // 4. Spawn bridge
-        let (events_rx, commands_tx) = spawn_ws_bridge(ws_stream);
+        let (events_tx, commands_tx) = spawn_ws_bridge(ws_stream);
 
         Ok(HarnessSession {
             session_id: session_resp.session_id,
-            events_rx,
+            events_tx,
             commands_tx,
         })
     }

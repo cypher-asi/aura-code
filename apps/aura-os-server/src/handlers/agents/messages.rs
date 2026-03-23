@@ -5,7 +5,6 @@ use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
 use futures_util::future::join_all;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
@@ -15,7 +14,7 @@ use aura_os_link::{HarnessInbound, SessionConfig, UserMessage};
 use crate::dto::SendMessageRequest;
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::projects;
-use crate::state::AppState;
+use crate::state::{AppState, ChatSession};
 
 use super::conversions::storage_message_to_message;
 
@@ -140,8 +139,46 @@ pub(crate) async fn list_agent_messages(
     Ok(Json(messages))
 }
 
+async fn get_or_create_chat_session(
+    state: &AppState,
+    key: &str,
+    harness_mode: HarnessMode,
+    session_config: SessionConfig,
+) -> ApiResult<(bool, tokio::sync::broadcast::Receiver<aura_os_link::HarnessOutbound>, tokio::sync::mpsc::UnboundedSender<HarnessInbound>)> {
+    {
+        let reg = state.chat_sessions.lock().await;
+        if let Some(session) = reg.get(key) {
+            if session.is_alive() {
+                let rx = session.events_tx.subscribe();
+                return Ok((false, rx, session.commands_tx.clone()));
+            }
+        }
+    }
+
+    let harness = state.harness_for(harness_mode);
+    let session = harness
+        .open_session(session_config)
+        .await
+        .map_err(|e| ApiError::internal(format!("opening harness session: {e}")))?;
+
+    let rx = session.events_tx.subscribe();
+    let commands_tx = session.commands_tx.clone();
+
+    {
+        let mut reg = state.chat_sessions.lock().await;
+        reg.insert(key.to_string(), ChatSession {
+            session_id: session.session_id,
+            commands_tx: session.commands_tx,
+            events_tx: session.events_tx,
+        });
+    }
+
+    Ok((true, rx, commands_tx))
+}
+
 async fn open_harness_chat_stream(
     state: &AppState,
+    session_key: &str,
     harness_mode: HarnessMode,
     session_config: SessionConfig,
     user_content: String,
@@ -149,24 +186,30 @@ async fn open_harness_chat_stream(
     [(&'static str, HeaderValue); 1],
     Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
 )> {
-    let harness = state.harness_for(harness_mode);
-    let session = harness
-        .open_session(session_config)
-        .await
-        .map_err(|e| ApiError::internal(format!("opening harness session: {e}")))?;
+    let (is_new, rx, commands_tx) =
+        get_or_create_chat_session(state, session_key, harness_mode, session_config).await?;
 
-    session
-        .commands_tx
+    commands_tx
         .send(HarnessInbound::UserMessage(UserMessage {
             content: user_content,
         }))
         .map_err(|e| ApiError::internal(format!("sending user message: {e}")))?;
 
-    let commands_tx = session.commands_tx;
-    let stream = UnboundedReceiverStream::new(session.events_rx).map(move |evt| {
-        let _ = &commands_tx;
-        super::super::sse::harness_event_to_sse(&evt)
-    });
+    let prefix: Vec<Result<Event, Infallible>> = if is_new {
+        let progress_event = Event::default()
+            .event("progress")
+            .json_data(&serde_json::json!({"type":"progress","stage":"connecting"}))
+            .unwrap();
+        vec![Ok(progress_event)]
+    } else {
+        vec![]
+    };
+
+    let broadcast_stream = tokio_stream::wrappers::BroadcastStream::new(rx)
+        .filter_map(|r| r.ok())
+        .map(|evt| super::super::sse::harness_event_to_sse(&evt));
+
+    let stream = futures_util::stream::iter(prefix).chain(broadcast_stream);
 
     Ok((
         SSE_NO_BUFFERING_HEADERS,
@@ -199,7 +242,8 @@ pub(crate) async fn send_agent_message_stream(
         ..Default::default()
     };
 
-    open_harness_chat_stream(&state, agent.harness_mode(), config, body.content).await
+    let session_key = format!("agent:{agent_id}");
+    open_harness_chat_stream(&state, &session_key, agent.harness_mode(), config, body.content).await
 }
 
 pub(crate) async fn list_messages(
@@ -247,5 +291,6 @@ pub(crate) async fn send_message_stream(
         ..Default::default()
     };
 
-    open_harness_chat_stream(&state, instance.harness_mode(), config, body.content).await
+    let session_key = format!("instance:{agent_instance_id}");
+    open_harness_chat_stream(&state, &session_key, instance.harness_mode(), config, body.content).await
 }

@@ -1,16 +1,17 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::http::StatusCode;
 use axum::Json;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{broadcast, mpsc, Mutex};
 
 use aura_os_agents::{AgentInstanceService, AgentService};
 use aura_os_auth::AuthService;
 use aura_os_billing::BillingClient;
 use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, ZeroAuthSession};
-use aura_os_link::{HarnessInbound, HarnessLink};
+use aura_os_link::{HarnessInbound, HarnessLink, HarnessOutbound};
 use aura_os_network::NetworkClient;
 use aura_os_orgs::OrgService;
 use aura_os_projects::ProjectService;
@@ -29,6 +30,29 @@ pub struct ActiveHarnessSession {
     pub project_id: ProjectId,
 }
 pub(crate) type HarnessSessionRegistry = Arc<Mutex<HashMap<AgentInstanceId, ActiveHarnessSession>>>;
+
+/// Reusable chat session for agent / instance chat endpoints.
+pub(crate) struct ChatSession {
+    #[allow(dead_code)]
+    pub session_id: String,
+    pub commands_tx: mpsc::UnboundedSender<HarnessInbound>,
+    pub events_tx: broadcast::Sender<HarnessOutbound>,
+}
+
+impl ChatSession {
+    pub fn is_alive(&self) -> bool {
+        !self.commands_tx.is_closed()
+    }
+}
+
+pub(crate) type ChatSessionRegistry = Arc<Mutex<HashMap<String, ChatSession>>>;
+
+/// Simple time-based cache for billing credit checks.
+pub(crate) struct CreditCache {
+    pub last_check: Instant,
+    pub has_credits: bool,
+}
+pub(crate) type CreditCacheRef = Arc<Mutex<Option<CreditCache>>>;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -56,6 +80,10 @@ pub struct AppState {
     pub event_broadcast: broadcast::Sender<serde_json::Value>,
     /// When true, non-Pro users are blocked from API access.
     pub require_zero_pro: bool,
+    /// Reusable chat sessions keyed by agent_id or agent_instance_id.
+    pub(crate) chat_sessions: ChatSessionRegistry,
+    /// Cached billing credit check result.
+    pub(crate) credit_cache: CreditCacheRef,
 }
 
 impl AppState {

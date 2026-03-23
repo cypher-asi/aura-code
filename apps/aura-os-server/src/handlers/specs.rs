@@ -5,7 +5,6 @@ use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
 use serde::Deserialize;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::info;
 
@@ -75,8 +74,8 @@ pub(crate) async fn generate_specs_summary(
         }))
         .map_err(|e| ApiError::internal(format!("sending spec summary command: {e}")))?;
 
-    let mut rx = session.events_rx;
-    while let Some(event) = rx.recv().await {
+    let mut rx = session.events_tx.subscribe();
+    while let Ok(event) = rx.recv().await {
         match event {
             HarnessOutbound::AssistantMessageEnd(_) => break,
             HarnessOutbound::Error(err) => {
@@ -151,9 +150,9 @@ pub(crate) async fn generate_specs(
     info!(%project_id, "Spec generation requested");
     let mode = resolve_harness_mode(&state, &project_id, &params).await;
     let session = open_spec_gen_session(&state, &project_id, mode).await?;
-    let mut rx = session.events_rx;
+    let mut rx = session.events_tx.subscribe();
 
-    while let Some(event) = rx.recv().await {
+    while let Ok(event) = rx.recv().await {
         match event {
             HarnessOutbound::AssistantMessageEnd(_) => {
                 let storage = state.require_storage_client()?;
@@ -194,7 +193,8 @@ pub(crate) async fn generate_specs_stream(
     let mode = resolve_harness_mode(&state, &project_id, &params).await;
     let session = open_spec_gen_session(&state, &project_id, mode).await?;
 
-    let stream = UnboundedReceiverStream::new(session.events_rx)
+    let stream = tokio_stream::wrappers::BroadcastStream::new(session.events_tx.subscribe())
+        .filter_map(|r| r.ok())
         .map(|evt| super::sse::harness_event_to_sse(&evt));
 
     Ok((

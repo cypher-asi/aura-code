@@ -1,5 +1,5 @@
 use futures_util::{SinkExt, StreamExt};
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tracing::{debug, warn};
 
@@ -8,7 +8,7 @@ use aura_protocol::{InboundMessage, OutboundMessage};
 pub(crate) fn spawn_ws_bridge<S>(
     ws_stream: S,
 ) -> (
-    mpsc::UnboundedReceiver<OutboundMessage>,
+    broadcast::Sender<OutboundMessage>,
     mpsc::UnboundedSender<InboundMessage>,
 )
 where
@@ -18,7 +18,7 @@ where
         + 'static,
     <S as futures_util::Sink<WsMessage>>::Error: std::fmt::Display + Send,
 {
-    let (outbound_tx, outbound_rx) = mpsc::unbounded_channel::<OutboundMessage>();
+    let (outbound_tx, _) = broadcast::channel::<OutboundMessage>(256);
     let (inbound_tx, mut inbound_rx) = mpsc::unbounded_channel::<InboundMessage>();
 
     let (mut ws_sink, mut ws_stream_read) = ws_stream.split();
@@ -32,9 +32,9 @@ where
                     match serde_json::from_str::<OutboundMessage>(&text) {
                         Ok(event) => {
                             debug!(?event, "Parsed harness event");
-                            if reader_tx.send(event).is_err() {
-                                break;
-                            }
+                            // broadcast::send fails only when there are no receivers;
+                            // that's fine — events before anyone subscribes are dropped.
+                            let _ = reader_tx.send(event);
                         }
                         Err(e) => {
                             warn!(raw = %text, "Failed to deserialize harness message: {e}");
@@ -67,5 +67,5 @@ where
         let _ = ws_sink.close().await;
     });
 
-    (outbound_rx, inbound_tx)
+    (outbound_tx, inbound_tx)
 }

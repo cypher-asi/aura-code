@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 
 use aura_protocol::{InboundMessage, OutboundMessage};
 
@@ -29,7 +29,7 @@ impl Default for SessionConfig {
 
 pub struct HarnessSession {
     pub session_id: String,
-    pub events_rx: mpsc::UnboundedReceiver<OutboundMessage>,
+    pub events_tx: broadcast::Sender<OutboundMessage>,
     pub commands_tx: mpsc::UnboundedSender<InboundMessage>,
 }
 

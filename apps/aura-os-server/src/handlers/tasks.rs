@@ -91,8 +91,8 @@ pub(crate) async fn extract_tasks(
         }))
         .map_err(|e| ApiError::internal(format!("sending task extract command: {e}")))?;
 
-    let mut rx = session.events_rx;
-    while let Some(event) = rx.recv().await {
+    let mut rx = session.events_tx.subscribe();
+    while let Ok(event) = rx.recv().await {
         match event {
             HarnessOutbound::AssistantMessageEnd(_) => {
                 let storage = state.require_storage_client()?;

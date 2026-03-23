@@ -35,7 +35,7 @@ impl HarnessLink for LocalHarness {
     async fn open_session(&self, config: SessionConfig) -> anyhow::Result<HarnessSession> {
         let (ws_stream, _) = tokio_tungstenite::connect_async(&self.ws_url()).await?;
 
-        let (mut events_rx, commands_tx) = spawn_ws_bridge(ws_stream);
+        let (events_tx, commands_tx) = spawn_ws_bridge(ws_stream);
 
         commands_tx.send(InboundMessage::SessionInit(SessionInit {
             system_prompt: config.system_prompt,
@@ -48,19 +48,20 @@ impl HarnessLink for LocalHarness {
             token: config.token,
         }))?;
 
+        let mut rx = events_tx.subscribe();
         let session_id = loop {
-            match events_rx.recv().await {
-                Some(OutboundMessage::SessionReady(ready)) => {
+            match rx.recv().await {
+                Ok(OutboundMessage::SessionReady(ready)) => {
                     break ready.session_id;
                 }
-                Some(OutboundMessage::Error(err)) => {
+                Ok(OutboundMessage::Error(err)) => {
                     anyhow::bail!(
                         "Harness error during init ({}): {}",
                         err.code,
                         err.message
                     );
                 }
-                None => {
+                Err(_) => {
                     anyhow::bail!("Connection closed before session_ready");
                 }
                 _ => continue,
@@ -71,7 +72,7 @@ impl HarnessLink for LocalHarness {
 
         Ok(HarnessSession {
             session_id,
-            events_rx,
+            events_tx,
             commands_tx,
         })
     }

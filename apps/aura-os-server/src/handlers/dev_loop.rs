@@ -17,11 +17,12 @@ pub(crate) struct LoopQueryParams {
 }
 
 fn forward_harness_events(
-    mut events_rx: tokio::sync::mpsc::UnboundedReceiver<aura_os_link::HarnessOutbound>,
+    events_tx: &tokio::sync::broadcast::Sender<aura_os_link::HarnessOutbound>,
     broadcast_tx: tokio::sync::broadcast::Sender<serde_json::Value>,
 ) {
+    let mut rx = events_tx.subscribe();
     tokio::spawn(async move {
-        while let Some(event) = events_rx.recv().await {
+        while let Ok(event) = rx.recv().await {
             let json = serde_json::to_value(&event).unwrap_or_default();
             let _ = broadcast_tx.send(json);
         }
@@ -85,7 +86,7 @@ pub(crate) async fn start_loop(
         }))
         .map_err(|e| ApiError::internal(format!("sending dev loop start: {e}")))?;
 
-    forward_harness_events(session.events_rx, state.event_broadcast.clone());
+    forward_harness_events(&session.events_tx, state.event_broadcast.clone());
     {
         let mut reg = state.harness_sessions.lock().await;
         reg.insert(agent_instance_id, ActiveHarnessSession {
@@ -250,7 +251,7 @@ pub(crate) async fn run_single_task(
         }))
         .map_err(|e| ApiError::internal(format!("sending task run command: {e}")))?;
 
-    forward_harness_events(session.events_rx, state.event_broadcast.clone());
+    forward_harness_events(&session.events_tx, state.event_broadcast.clone());
 
     Ok(StatusCode::ACCEPTED)
 }

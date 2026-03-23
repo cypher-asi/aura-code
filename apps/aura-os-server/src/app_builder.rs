@@ -265,6 +265,8 @@ pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
         local_harness: domain.local_harness,
         swarm_harness: domain.swarm_harness,
         harness_sessions: Arc::new(Mutex::new(HashMap::new())),
+        chat_sessions: Arc::new(Mutex::new(HashMap::new())),
+        credit_cache: Arc::new(Mutex::new(None)),
         terminal_manager: Arc::new(TerminalManager::new()),
         network_client,
         storage_client,
