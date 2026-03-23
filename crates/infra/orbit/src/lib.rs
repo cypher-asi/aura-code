@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 //! Orbit REST client for Aura–Orbit integration.
 //!
 //! All requests use the same zero-auth JWT as aura-network (`Authorization: Bearer <jwt>`).
