@@ -154,8 +154,8 @@ fn parse_host_port(url: &str) -> Option<String> {
 
 /// Try to auto-spawn the local aura-harness process if nothing is listening.
 ///
-/// The child process is detached so it outlives the parent if needed.
-/// We wait up to 5 seconds for the `/health` endpoint to respond.
+/// Spawns the child process and polls for readiness in a background thread
+/// so it never blocks the caller.
 fn maybe_spawn_local_harness() {
     let harness_url = std::env::var("LOCAL_HARNESS_URL")
         .unwrap_or_else(|_| "http://localhost:8080".to_string());
@@ -164,14 +164,11 @@ fn maybe_spawn_local_harness() {
         return;
     };
 
-    if std::net::TcpStream::connect_timeout(
-        &host_port.parse().unwrap_or_else(|_| {
-            std::net::SocketAddr::from(([127, 0, 0, 1], 8080))
-        }),
-        std::time::Duration::from_millis(200),
-    )
-    .is_ok()
-    {
+    let addr: std::net::SocketAddr = host_port
+        .parse()
+        .unwrap_or_else(|_| std::net::SocketAddr::from(([127, 0, 0, 1], 8080)));
+
+    if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(200)).is_ok() {
         info!("Local harness already running at {harness_url}");
         return;
     }
@@ -190,10 +187,6 @@ fn maybe_spawn_local_harness() {
         "Local harness not running — spawning from source"
     );
 
-    let addr: std::net::SocketAddr = host_port
-        .parse()
-        .unwrap_or_else(|_| std::net::SocketAddr::from(([127, 0, 0, 1], 8080)));
-
     match std::process::Command::new("cargo")
         .args(["run", "--release", "--", "run", "--ui", "none"])
         .current_dir(&harness_dir)
@@ -204,26 +197,28 @@ fn maybe_spawn_local_harness() {
         .spawn()
     {
         Ok(child) => {
-            info!(pid = child.id(), "aura-harness child process spawned");
+            info!(pid = child.id(), "aura-harness child process spawned (building in background)");
 
-            let deadline =
-                std::time::Instant::now() + std::time::Duration::from_secs(60);
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                if std::time::Instant::now() > deadline {
-                    warn!("Timed out waiting for local harness to become ready");
-                    break;
+            std::thread::spawn(move || {
+                let deadline =
+                    std::time::Instant::now() + std::time::Duration::from_secs(120);
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(1000));
+                    if std::time::Instant::now() > deadline {
+                        tracing::warn!("Timed out waiting for local harness to become ready");
+                        break;
+                    }
+                    if std::net::TcpStream::connect_timeout(
+                        &addr,
+                        std::time::Duration::from_millis(200),
+                    )
+                    .is_ok()
+                    {
+                        tracing::info!("Local harness is ready at {harness_url}");
+                        break;
+                    }
                 }
-                if std::net::TcpStream::connect_timeout(
-                    &addr,
-                    std::time::Duration::from_millis(200),
-                )
-                .is_ok()
-                {
-                    info!("Local harness is ready at {harness_url}");
-                    break;
-                }
-            }
+            });
         }
         Err(e) => {
             warn!(error = %e, "Failed to spawn aura-harness child process");
