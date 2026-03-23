@@ -141,10 +141,6 @@ export interface Session {
   ended_at: string | null;
 }
 
-export interface ApiKeyInfo {
-  configured: boolean;
-}
-
 export type ChatContentBlock =
   | { type: "text"; text: string }
   | { type: "image"; media_type: string; data: string }

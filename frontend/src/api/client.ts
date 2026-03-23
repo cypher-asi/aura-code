@@ -22,7 +22,7 @@ export type {
 export type { DirEntry } from "./desktop";
 export type { LoopStatusResponse } from "./loop";
 
-import { authApi, settingsApi } from "./auth";
+import { authApi } from "./auth";
 import { projectsApi } from "./projects";
 import { tasksApi } from "./tasks";
 import { agentTemplatesApi, agentInstancesApi, sessionsApi } from "./agents";
@@ -33,7 +33,6 @@ import { followsApi, usersApi, profilesApi, feedApi, leaderboardApi, platformSta
 
 export const api = {
   auth: authApi,
-  ...settingsApi,
   orgs: orgsApi,
   ...projectsApi,
   ...tasksApi,

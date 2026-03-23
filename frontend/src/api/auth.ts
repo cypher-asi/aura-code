@@ -1,4 +1,4 @@
-import type { AuthSession, ApiKeyInfo } from "../types";
+import type { AuthSession } from "../types";
 import { apiFetch } from "./core";
 
 export const authApi = {
@@ -17,17 +17,4 @@ export const authApi = {
     apiFetch<AuthSession>("/api/auth/validate", { method: "POST" }),
   logout: () =>
     apiFetch<void>("/api/auth/logout", { method: "POST" }),
-};
-
-export const settingsApi = {
-  getApiKeyInfo: () => apiFetch<ApiKeyInfo>("/api/settings/api-key"),
-  getFeeSchedule: () =>
-    apiFetch<{ model: string; input_cost_per_million: number; output_cost_per_million: number; effective_date: string }[]>(
-      "/api/settings/fee-schedule",
-    ),
-  putFeeSchedule: (entries: { model: string; input_cost_per_million: number; output_cost_per_million: number; effective_date: string }[]) =>
-    apiFetch<{ model: string; input_cost_per_million: number; output_cost_per_million: number; effective_date: string }[]>(
-      "/api/settings/fee-schedule",
-      { method: "PUT", body: JSON.stringify(entries) },
-    ),
 };
