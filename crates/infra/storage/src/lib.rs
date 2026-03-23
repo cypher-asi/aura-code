@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 pub mod client;
 mod conversions;
 pub mod error;
@@ -8,4 +10,7 @@ pub mod testutil;
 
 pub use client::StorageClient;
 pub use error::StorageError;
-pub use types::*;
+pub use types::{
+    CreateSessionRequest, StorageMessage, StorageSession, StorageSpec, StorageTask,
+    StorageTaskFileChangeSummary, TransitionTaskRequest, UpdateSessionRequest,
+};
