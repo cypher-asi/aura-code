@@ -8,6 +8,9 @@ mod client;
 mod error;
 mod types;
 
-pub use client::{CreateRepoInternalParams, OrbitClient};
+pub use client::{
+    AddCollaboratorParams, CreateRepoInternalParams, CreateRepoParams, OrbitClient,
+    RemoveCollaboratorParams, RepoRef,
+};
 pub use error::OrbitError;
 pub use types::{CreateRepoResponse, OrbitCollaborator, OrbitRepo, OrbitRepoApiResponse};

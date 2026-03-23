@@ -3,7 +3,9 @@ mod common;
 use std::sync::Arc;
 
 use aura_os_core::*;
-use aura_os_sessions::SessionService;
+use aura_os_sessions::{
+    CreateSessionParams, RolloverSessionParams, SessionService, UpdateContextUsageParams,
+};
 
 use common::*;
 
@@ -83,7 +85,14 @@ async fn rollover_session_marks_old_and_creates_new() {
     let aid = AgentInstanceId::new();
 
     let original = svc
-        .create_session(&aid, &pid, None, String::new(), None, None)
+        .create_session(CreateSessionParams {
+            agent_instance_id: aid,
+            project_id: pid,
+            active_task_id: None,
+            summary: String::new(),
+            user_id: None,
+            model: None,
+        })
         .await
         .expect("create_session should succeed");
 
@@ -91,13 +100,13 @@ async fn rollover_session_marks_old_and_creates_new() {
     assert_eq!(original.context_usage_estimate, 0.0);
 
     let new_session = svc
-        .rollover_session(
-            &pid,
-            &aid,
-            &original.session_id,
-            "Summary of previous work".into(),
-            None,
-        )
+        .rollover_session(RolloverSessionParams {
+            project_id: pid,
+            agent_instance_id: aid,
+            session_id: original.session_id,
+            summary: "Summary of previous work".into(),
+            next_task_id: None,
+        })
         .await
         .expect("rollover_session should succeed");
 
@@ -134,17 +143,36 @@ async fn rollover_chain_creates_linked_sessions() {
     let aid = AgentInstanceId::new();
 
     let s1 = svc
-        .create_session(&aid, &pid, None, String::new(), None, None)
+        .create_session(CreateSessionParams {
+            agent_instance_id: aid,
+            project_id: pid,
+            active_task_id: None,
+            summary: String::new(),
+            user_id: None,
+            model: None,
+        })
         .await
         .expect("session creation should succeed");
 
     let s2 = svc
-        .rollover_session(&pid, &aid, &s1.session_id, "work from s1".into(), None)
+        .rollover_session(RolloverSessionParams {
+            project_id: pid,
+            agent_instance_id: aid,
+            session_id: s1.session_id,
+            summary: "work from s1".into(),
+            next_task_id: None,
+        })
         .await
         .expect("rollover should succeed");
 
     let s3 = svc
-        .rollover_session(&pid, &aid, &s2.session_id, "work from s1 + s2".into(), None)
+        .rollover_session(RolloverSessionParams {
+            project_id: pid,
+            agent_instance_id: aid,
+            session_id: s2.session_id,
+            summary: "work from s1 + s2".into(),
+            next_task_id: None,
+        })
         .await
         .expect("rollover should succeed");
 
@@ -179,13 +207,26 @@ async fn update_context_usage_accumulates() {
     let aid = AgentInstanceId::new();
 
     let session = svc
-        .create_session(&aid, &pid, None, String::new(), None, None)
+        .create_session(CreateSessionParams {
+            agent_instance_id: aid,
+            project_id: pid,
+            active_task_id: None,
+            summary: String::new(),
+            user_id: None,
+            model: None,
+        })
         .await
         .expect("session creation should succeed");
 
     // 40k tokens out of 200k context window = 0.2 usage
     let updated = svc
-        .update_context_usage(&pid, &aid, &session.session_id, 20_000, 20_000)
+        .update_context_usage(UpdateContextUsageParams {
+            project_id: pid,
+            agent_instance_id: aid,
+            session_id: session.session_id,
+            input_tokens: 20_000,
+            output_tokens: 20_000,
+        })
         .await
         .expect("context usage update should succeed");
 
@@ -198,7 +239,13 @@ async fn update_context_usage_accumulates() {
 
     // Another 80k tokens -> total 120k/200k = 0.6
     let updated2 = svc
-        .update_context_usage(&pid, &aid, &session.session_id, 40_000, 40_000)
+        .update_context_usage(UpdateContextUsageParams {
+            project_id: pid,
+            agent_instance_id: aid,
+            session_id: session.session_id,
+            input_tokens: 40_000,
+            output_tokens: 40_000,
+        })
         .await
         .expect("context usage update should succeed");
 
@@ -223,13 +270,26 @@ async fn context_usage_caps_at_one() {
     let aid = AgentInstanceId::new();
 
     let session = svc
-        .create_session(&aid, &pid, None, String::new(), None, None)
+        .create_session(CreateSessionParams {
+            agent_instance_id: aid,
+            project_id: pid,
+            active_task_id: None,
+            summary: String::new(),
+            user_id: None,
+            model: None,
+        })
         .await
         .expect("session creation should succeed");
 
     // 500k tokens on a 200k window -> usage would be 2.5, should cap at 1.0
     let updated = svc
-        .update_context_usage(&pid, &aid, &session.session_id, 250_000, 250_000)
+        .update_context_usage(UpdateContextUsageParams {
+            project_id: pid,
+            agent_instance_id: aid,
+            session_id: session.session_id,
+            input_tokens: 250_000,
+            output_tokens: 250_000,
+        })
         .await
         .expect("context usage update should succeed");
 
@@ -253,14 +313,27 @@ async fn end_to_end_usage_triggers_rollover() {
     let aid = AgentInstanceId::new();
 
     let session = svc
-        .create_session(&aid, &pid, None, String::new(), None, None)
+        .create_session(CreateSessionParams {
+            agent_instance_id: aid,
+            project_id: pid,
+            active_task_id: None,
+            summary: String::new(),
+            user_id: None,
+            model: None,
+        })
         .await
         .expect("session creation should succeed");
 
     // Push usage to 0.3 -> below threshold
-    svc.update_context_usage(&pid, &aid, &session.session_id, 30_000, 30_000)
-        .await
-        .expect("context usage update should succeed");
+    svc.update_context_usage(UpdateContextUsageParams {
+        project_id: pid,
+        agent_instance_id: aid,
+        session_id: session.session_id,
+        input_tokens: 30_000,
+        output_tokens: 30_000,
+    })
+    .await
+    .expect("context usage update should succeed");
 
     let current = svc
         .get_session(&pid, &aid, &session.session_id)
@@ -272,9 +345,15 @@ async fn end_to_end_usage_triggers_rollover() {
     );
 
     // Push usage to 0.6 -> above threshold
-    svc.update_context_usage(&pid, &aid, &session.session_id, 30_000, 30_000)
-        .await
-        .expect("context usage update should succeed");
+    svc.update_context_usage(UpdateContextUsageParams {
+        project_id: pid,
+        agent_instance_id: aid,
+        session_id: session.session_id,
+        input_tokens: 30_000,
+        output_tokens: 30_000,
+    })
+    .await
+    .expect("context usage update should succeed");
 
     let current = svc
         .get_session(&pid, &aid, &session.session_id)
@@ -287,13 +366,13 @@ async fn end_to_end_usage_triggers_rollover() {
 
     // Perform rollover
     let new_session = svc
-        .rollover_session(
-            &pid,
-            &aid,
-            &session.session_id,
-            "Completed auth module".into(),
-            None,
-        )
+        .rollover_session(RolloverSessionParams {
+            project_id: pid,
+            agent_instance_id: aid,
+            session_id: session.session_id,
+            summary: "Completed auth module".into(),
+            next_task_id: None,
+        })
         .await
         .expect("rollover should succeed");
 
@@ -327,7 +406,14 @@ async fn record_task_worked_persists_count() {
     let aid = AgentInstanceId::new();
 
     let session = svc
-        .create_session(&aid, &pid, None, String::new(), None, None)
+        .create_session(CreateSessionParams {
+            agent_instance_id: aid,
+            project_id: pid,
+            active_task_id: None,
+            summary: String::new(),
+            user_id: None,
+            model: None,
+        })
         .await
         .expect("session creation should succeed");
 
@@ -364,7 +450,14 @@ async fn tasks_worked_count_survives_reload_from_storage() {
     let aid = AgentInstanceId::new();
 
     let session = svc
-        .create_session(&aid, &pid, None, String::new(), None, None)
+        .create_session(CreateSessionParams {
+            agent_instance_id: aid,
+            project_id: pid,
+            active_task_id: None,
+            summary: String::new(),
+            user_id: None,
+            model: None,
+        })
         .await
         .expect("session creation should succeed");
 

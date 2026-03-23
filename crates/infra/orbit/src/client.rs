@@ -9,6 +9,37 @@ use crate::types::{CreateRepoResponse, OrbitCollaborator, OrbitRepo, OrbitRepoAp
 /// Default timeout for Orbit API calls (e.g. create_repo can be slow if Orbit's DB is busy).
 const ORBIT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
+#[derive(Debug, Clone)]
+pub struct RepoRef<'a> {
+    pub base_url: &'a str,
+    pub owner: &'a str,
+    pub repo: &'a str,
+    pub jwt: &'a str,
+}
+
+#[derive(Debug)]
+pub struct CreateRepoParams<'a> {
+    pub base_url: &'a str,
+    pub org_id: &'a str,
+    pub project_id: &'a str,
+    pub repo: &'a str,
+    pub description: Option<&'a str>,
+    pub jwt: &'a str,
+}
+
+#[derive(Debug)]
+pub struct AddCollaboratorParams<'a> {
+    pub repo_ref: RepoRef<'a>,
+    pub collaborator_id: &'a str,
+    pub role: &'a str,
+}
+
+#[derive(Debug)]
+pub struct RemoveCollaboratorParams<'a> {
+    pub repo_ref: RepoRef<'a>,
+    pub collaborator_id: &'a str,
+}
+
 pub struct CreateRepoInternalParams<'a> {
     pub base_url: &'a str,
     pub internal_token: &'a str,
@@ -41,13 +72,16 @@ impl OrbitClient {
     /// `org_id` and `project_id` link back to aura-network entities.
     pub async fn create_repo(
         &self,
-        base_url: &str,
-        org_id: &str,
-        project_id: &str,
-        repo: &str,
-        description: Option<&str>,
-        jwt: &str,
+        params: &CreateRepoParams<'_>,
     ) -> Result<CreateRepoResponse, OrbitError> {
+        let CreateRepoParams {
+            base_url,
+            org_id,
+            project_id,
+            repo,
+            description,
+            jwt,
+        } = params;
         let url = format!("{}/repos", base_url.trim_end_matches('/'));
         debug!(%url, org_id, project_id, repo, "Orbit create_repo");
 
@@ -137,19 +171,16 @@ impl OrbitClient {
     /// Repo owner and users with owner role can add people.
     pub async fn list_collaborators(
         &self,
-        base_url: &str,
-        owner: &str,
-        repo: &str,
-        jwt: &str,
+        repo_ref: &RepoRef<'_>,
     ) -> Result<Vec<OrbitCollaborator>, OrbitError> {
-        let base = base_url.trim_end_matches('/');
-        let url = format!("{}/repos/{}/{}/collaborators", base, owner, repo);
+        let base = repo_ref.base_url.trim_end_matches('/');
+        let url = format!("{}/repos/{}/{}/collaborators", base, repo_ref.owner, repo_ref.repo);
         debug!(%url, "Orbit list_collaborators");
 
         let resp = self
             .http
             .get(&url)
-            .header("Authorization", format!("Bearer {}", jwt))
+            .header("Authorization", format!("Bearer {}", repo_ref.jwt))
             .send()
             .await?;
 
@@ -170,29 +201,24 @@ impl OrbitClient {
     /// orbit_username or user_id (UUID) depending on Orbit API. Role: owner, writer, reader.
     pub async fn add_collaborator(
         &self,
-        base_url: &str,
-        owner: &str,
-        repo: &str,
-        collaborator_id: &str,
-        role: &str,
-        jwt: &str,
+        params: &AddCollaboratorParams<'_>,
     ) -> Result<(), OrbitError> {
-        let base = base_url.trim_end_matches('/');
+        let base = params.repo_ref.base_url.trim_end_matches('/');
         let url = format!(
             "{}/repos/{}/{}/collaborators/{}",
             base,
-            owner,
-            repo,
-            urlencoding::encode(collaborator_id),
+            params.repo_ref.owner,
+            params.repo_ref.repo,
+            urlencoding::encode(params.collaborator_id),
         );
-        debug!(%url, role, "Orbit add_collaborator");
+        debug!(%url, role = params.role, "Orbit add_collaborator");
 
-        let body = serde_json::json!({ "role": role });
+        let body = serde_json::json!({ "role": params.role });
 
         let resp = self
             .http
             .put(&url)
-            .header("Authorization", format!("Bearer {}", jwt))
+            .header("Authorization", format!("Bearer {}", params.repo_ref.jwt))
             .json(&body)
             .send()
             .await?;
@@ -212,26 +238,22 @@ impl OrbitClient {
     /// Remove a collaborator. Collaborator_id is orbit_username or user_id (UUID).
     pub async fn remove_collaborator(
         &self,
-        base_url: &str,
-        owner: &str,
-        repo: &str,
-        collaborator_id: &str,
-        jwt: &str,
+        params: &RemoveCollaboratorParams<'_>,
     ) -> Result<(), OrbitError> {
-        let base = base_url.trim_end_matches('/');
+        let base = params.repo_ref.base_url.trim_end_matches('/');
         let url = format!(
             "{}/repos/{}/{}/collaborators/{}",
             base,
-            owner,
-            repo,
-            urlencoding::encode(collaborator_id),
+            params.repo_ref.owner,
+            params.repo_ref.repo,
+            urlencoding::encode(params.collaborator_id),
         );
         debug!(%url, "Orbit remove_collaborator");
 
         let resp = self
             .http
             .delete(&url)
-            .header("Authorization", format!("Bearer {}", jwt))
+            .header("Authorization", format!("Bearer {}", params.repo_ref.jwt))
             .send()
             .await?;
 

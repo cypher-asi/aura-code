@@ -4,6 +4,7 @@ mod error;
 mod task_service;
 
 pub use error::TaskError;
+pub use task_service::{AssignTaskParams, CompleteTaskParams};
 
 use std::collections::HashMap;
 use std::sync::Arc;

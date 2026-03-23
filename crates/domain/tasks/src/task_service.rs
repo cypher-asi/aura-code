@@ -6,6 +6,24 @@ use aura_os_storage::TransitionTaskRequest as StorageTransitionReq;
 use crate::error::TaskError;
 use crate::TaskService;
 
+#[derive(Debug, Clone, Copy)]
+pub struct AssignTaskParams {
+    pub project_id: ProjectId,
+    pub spec_id: SpecId,
+    pub task_id: TaskId,
+    pub agent_instance_id: AgentInstanceId,
+    pub session_id: Option<SessionId>,
+}
+
+#[derive(Debug)]
+pub struct CompleteTaskParams {
+    pub project_id: ProjectId,
+    pub spec_id: SpecId,
+    pub task_id: TaskId,
+    pub notes: String,
+    pub files_changed: Vec<FileChangeSummary>,
+}
+
 fn task_status_str(s: TaskStatus) -> String {
     serde_json::to_value(s)
         .ok()
@@ -99,18 +117,18 @@ impl TaskService {
         Ok(reset)
     }
 
-    pub async fn assign_task(
-        &self,
-        project_id: &ProjectId,
-        spec_id: &SpecId,
-        task_id: &TaskId,
-        agent_instance_id: &AgentInstanceId,
-        session_id: Option<SessionId>,
-    ) -> Result<Task, TaskError> {
+    pub async fn assign_task(&self, params: AssignTaskParams) -> Result<Task, TaskError> {
+        let AssignTaskParams {
+            project_id,
+            spec_id,
+            task_id,
+            agent_instance_id,
+            session_id,
+        } = params;
         let mut task = self
-            .transition_task(project_id, spec_id, task_id, TaskStatus::InProgress)
+            .transition_task(&project_id, &spec_id, &task_id, TaskStatus::InProgress)
             .await?;
-        task.assigned_agent_instance_id = Some(*agent_instance_id);
+        task.assigned_agent_instance_id = Some(agent_instance_id);
         task.session_id = session_id;
 
         if let Ok(storage) = self.require_storage() {
@@ -144,19 +162,19 @@ impl TaskService {
         Ok(task)
     }
 
-    pub async fn complete_task(
-        &self,
-        project_id: &ProjectId,
-        spec_id: &SpecId,
-        task_id: &TaskId,
-        notes: &str,
-        files_changed: Vec<FileChangeSummary>,
-    ) -> Result<Task, TaskError> {
+    pub async fn complete_task(&self, params: CompleteTaskParams) -> Result<Task, TaskError> {
+        let CompleteTaskParams {
+            project_id,
+            spec_id,
+            task_id,
+            notes,
+            files_changed,
+        } = params;
         let mut task = self
-            .transition_task(project_id, spec_id, task_id, TaskStatus::Done)
+            .transition_task(&project_id, &spec_id, &task_id, TaskStatus::Done)
             .await?;
         task.completed_by_agent_instance_id = task.assigned_agent_instance_id;
-        task.execution_notes = notes.to_string();
+        task.execution_notes = notes;
         task.files_changed = files_changed;
         Ok(task)
     }
@@ -368,13 +386,13 @@ impl TaskService {
         match task {
             Some(t) => {
                 let assigned = self
-                    .assign_task(
-                        project_id,
-                        &t.spec_id,
-                        &t.task_id,
-                        agent_instance_id,
+                    .assign_task(AssignTaskParams {
+                        project_id: *project_id,
+                        spec_id: t.spec_id,
+                        task_id: t.task_id,
+                        agent_instance_id: *agent_instance_id,
                         session_id,
-                    )
+                    })
                     .await?;
                 Ok(Some(assigned))
             }

@@ -5,6 +5,8 @@ mod projects;
 mod social;
 mod users;
 
+pub use social::CreatePostParams;
+
 use std::env;
 
 use reqwest::Client;

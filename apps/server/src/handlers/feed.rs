@@ -122,13 +122,13 @@ pub async fn create_post(
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
     let post = client
-        .create_post(
-            &req.title,
-            req.summary.as_deref(),
-            req.post_type.as_deref(),
-            req.metadata.clone(),
-            &jwt,
-        )
+        .create_post(&aura_os_network::client::CreatePostParams {
+            title: &req.title,
+            summary: req.summary.as_deref(),
+            post_type: req.post_type.as_deref(),
+            metadata: req.metadata.clone(),
+            jwt: &jwt,
+        })
         .await
         .map_err(map_network_error)?;
     Ok((StatusCode::CREATED, Json(FeedEventResponse::from(post))))

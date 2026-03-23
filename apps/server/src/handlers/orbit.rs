@@ -78,7 +78,12 @@ pub async fn get_project_orbit_collaborators(
 
     let collaborators = state
         .orbit_client
-        .list_collaborators(base_url, owner, repo, &jwt)
+        .list_collaborators(&aura_os_orbit::RepoRef {
+            base_url,
+            owner,
+            repo,
+            jwt: &jwt,
+        })
         .await
         .map_err(|e| ApiError::internal(format!("listing orbit collaborators: {e}")))?;
 

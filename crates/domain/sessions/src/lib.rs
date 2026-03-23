@@ -13,6 +13,34 @@ use aura_os_core::*;
 use aura_os_storage::StorageClient;
 use aura_os_store::RocksStore;
 
+#[derive(Debug)]
+pub struct CreateSessionParams {
+    pub agent_instance_id: AgentInstanceId,
+    pub project_id: ProjectId,
+    pub active_task_id: Option<TaskId>,
+    pub summary: String,
+    pub user_id: Option<String>,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct UpdateContextUsageParams {
+    pub project_id: ProjectId,
+    pub agent_instance_id: AgentInstanceId,
+    pub session_id: SessionId,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
+#[derive(Debug)]
+pub struct RolloverSessionParams {
+    pub project_id: ProjectId,
+    pub agent_instance_id: AgentInstanceId,
+    pub session_id: SessionId,
+    pub summary: String,
+    pub next_task_id: Option<TaskId>,
+}
+
 pub struct SessionService {
     store: Arc<RocksStore>,
     storage_client: Option<Arc<StorageClient>>,
@@ -65,13 +93,16 @@ impl SessionService {
 
     pub async fn create_session(
         &self,
-        agent_instance_id: &AgentInstanceId,
-        project_id: &ProjectId,
-        active_task_id: Option<TaskId>,
-        summary: String,
-        user_id: Option<String>,
-        model: Option<String>,
+        params: CreateSessionParams,
     ) -> Result<Session, SessionError> {
+        let CreateSessionParams {
+            agent_instance_id,
+            project_id,
+            active_task_id,
+            summary,
+            user_id,
+            model,
+        } = params;
         if let Some(ref storage) = self.storage_client {
             let jwt = self.get_jwt()?;
             let req = aura_os_storage::CreateSessionRequest {
@@ -98,8 +129,8 @@ impl SessionService {
         let now = Utc::now();
         Ok(Session {
             session_id: SessionId::new(),
-            agent_instance_id: *agent_instance_id,
-            project_id: *project_id,
+            agent_instance_id,
+            project_id,
             active_task_id,
             tasks_worked: Vec::new(),
             context_usage_estimate: 0.0,
@@ -121,14 +152,17 @@ impl SessionService {
     /// `StorageSession` does not carry per-session token counts.
     pub async fn update_context_usage(
         &self,
-        project_id: &ProjectId,
-        agent_instance_id: &AgentInstanceId,
-        session_id: &SessionId,
-        input_tokens: u64,
-        output_tokens: u64,
+        params: UpdateContextUsageParams,
     ) -> Result<Session, SessionError> {
+        let UpdateContextUsageParams {
+            project_id,
+            agent_instance_id,
+            session_id,
+            input_tokens,
+            output_tokens,
+        } = params;
         let mut session = self
-            .get_session(project_id, agent_instance_id, session_id)
+            .get_session(&project_id, &agent_instance_id, &session_id)
             .await?;
         let turn_usage = (input_tokens + output_tokens) as f64 / self.model_context_window as f64;
         session.context_usage_estimate = (session.context_usage_estimate + turn_usage).min(1.0);
@@ -158,14 +192,17 @@ impl SessionService {
 
     pub async fn rollover_session(
         &self,
-        project_id: &ProjectId,
-        agent_instance_id: &AgentInstanceId,
-        session_id: &SessionId,
-        summary: String,
-        next_task_id: Option<TaskId>,
+        params: RolloverSessionParams,
     ) -> Result<Session, SessionError> {
+        let RolloverSessionParams {
+            project_id,
+            agent_instance_id,
+            session_id,
+            summary,
+            next_task_id,
+        } = params;
         let old_session = self
-            .get_session(project_id, agent_instance_id, session_id)
+            .get_session(&project_id, &agent_instance_id, &session_id)
             .await?;
         let user_id = old_session.user_id.clone();
         let model = old_session.model.clone();
@@ -183,14 +220,14 @@ impl SessionService {
                 .await?;
         }
 
-        self.create_session(
+        self.create_session(CreateSessionParams {
             agent_instance_id,
             project_id,
-            next_task_id,
+            active_task_id: next_task_id,
             summary,
             user_id,
             model,
-        )
+        })
         .await
     }
 
@@ -422,7 +459,14 @@ mod tests {
         let pid = ProjectId::new();
         let aid = AgentInstanceId::new();
         let session = svc
-            .create_session(&aid, &pid, None, "initial context".into(), None, None)
+            .create_session(CreateSessionParams {
+                agent_instance_id: aid,
+                project_id: pid,
+                active_task_id: None,
+                summary: "initial context".into(),
+                user_id: None,
+                model: None,
+            })
             .await
             .expect("session creation should succeed");
 

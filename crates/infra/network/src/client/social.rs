@@ -3,6 +3,15 @@ use crate::types::*;
 
 use super::NetworkClient;
 
+#[derive(Debug)]
+pub struct CreatePostParams<'a> {
+    pub title: &'a str,
+    pub summary: Option<&'a str>,
+    pub post_type: Option<&'a str>,
+    pub metadata: Option<serde_json::Value>,
+    pub jwt: &'a str,
+}
+
 impl NetworkClient {
     // -----------------------------------------------------------------------
     // Follows
@@ -66,23 +75,19 @@ impl NetworkClient {
 
     pub async fn create_post(
         &self,
-        title: &str,
-        summary: Option<&str>,
-        post_type: Option<&str>,
-        metadata: Option<serde_json::Value>,
-        jwt: &str,
+        params: &CreatePostParams<'_>,
     ) -> Result<NetworkFeedEvent, NetworkError> {
-        let mut body = serde_json::json!({ "title": title });
-        if let Some(summary_val) = summary {
+        let mut body = serde_json::json!({ "title": params.title });
+        if let Some(summary_val) = params.summary {
             body["summary"] = serde_json::Value::String(summary_val.to_string());
         }
-        if let Some(pt) = post_type {
+        if let Some(pt) = params.post_type {
             body["postType"] = serde_json::Value::String(pt.to_string());
         }
-        if let Some(meta) = metadata {
-            body["metadata"] = meta;
+        if let Some(ref meta) = params.metadata {
+            body["metadata"] = meta.clone();
         }
-        self.post_authed(&format!("{}/api/posts", self.base_url), jwt, &body)
+        self.post_authed(&format!("{}/api/posts", self.base_url), params.jwt, &body)
             .await
     }
 
