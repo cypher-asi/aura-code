@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Text, Badge, Button, Modal } from "@cypher-asi/zui";
-import { Bot, Loader2, Calendar } from "lucide-react";
+import { Bot, Loader2, Calendar, Monitor, Cloud } from "lucide-react";
 import { EmptyState } from "../../../components/EmptyState";
 import { EntityCard } from "../../../components/EntityCard";
 import { FollowEditButton } from "../../../components/FollowEditButton";
@@ -102,6 +102,16 @@ export function AgentInfoPanel() {
         )}
 
         <div className={styles.metaGrid}>
+          <div className={styles.metaRow}>
+            {a.machine_type === "remote" ? (
+              <Cloud size={13} className={styles.metaIcon} />
+            ) : (
+              <Monitor size={13} className={styles.metaIcon} />
+            )}
+            <span className={styles.metaValue}>
+              {a.machine_type === "remote" ? "Remote Machine" : "Local Machine"}
+            </span>
+          </div>
           <div className={styles.metaRow}>
             <Calendar size={13} className={styles.metaIcon} />
             <span className={styles.metaValue}>
