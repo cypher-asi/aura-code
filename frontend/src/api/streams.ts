@@ -66,11 +66,11 @@ export interface StreamEventHandler {
 function createSSEHandler<E extends string>(
   handlers: Partial<Record<E, (data: Record<string, unknown>) => void>>,
   onError: (message: string) => void,
-) {
+): SSECallbacks<string> {
   return {
-    onEvent(eventType: E, data: unknown) {
+    onEvent(eventType: string, data: unknown) {
       const d = data as Record<string, unknown>;
-      const handler = handlers[eventType];
+      const handler = handlers[eventType as E];
       if (handler) handler(d);
     },
     onError(err: Error) {
