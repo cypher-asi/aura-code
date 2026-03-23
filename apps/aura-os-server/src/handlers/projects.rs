@@ -11,7 +11,7 @@ use crate::state::AppState;
 
 use super::projects_helpers::{
     build_local_shadow, ensure_local_shadow, folder_name_from_path, project_from_network,
-    resolve_orbit_repo, to_project_input, write_imported_files, ListProjectsQuery,
+    to_project_input, write_imported_files, ListProjectsQuery,
 };
 
 pub(crate) async fn list_all_projects_from_network(state: &AppState) -> ApiResult<Vec<Project>> {
@@ -40,7 +40,7 @@ pub(crate) async fn list_all_projects_from_network(state: &AppState) -> ApiResul
 
 /// Shared implementation for both `create_project` and `create_imported_project`.
 ///
-/// Handles the network -> Orbit -> local-shadow flow that both endpoints share.
+/// Handles the network -> local-shadow flow that both endpoints share.
 /// `network_folder` controls what goes into the network request's `folder` field
 /// (directory basename for regular projects, `None` for imported).
 async fn create_project_impl(
@@ -49,17 +49,6 @@ async fn create_project_impl(
     network_folder: Option<String>,
 ) -> ApiResult<(StatusCode, Json<Project>)> {
     if let Some(client) = &state.network_client {
-        let has_existing_repo = req
-            .git_repo_url
-            .as_ref()
-            .is_some_and(|u| !u.trim().is_empty());
-        let has_new_repo = req.orbit_owner.is_some() && req.orbit_repo.is_some();
-        if !has_existing_repo && !has_new_repo {
-            return Err(ApiError::bad_request(
-                "An Orbit repo is required: provide orbit_owner and orbit_repo to create a new repo, or git_repo_url to use an existing one",
-            ));
-        }
-
         let jwt = state.get_jwt()?;
 
         let net_req = aura_os_network::CreateProjectRequest {
@@ -78,15 +67,13 @@ async fn create_project_impl(
             .await
             .map_err(map_network_error)?;
 
-        let orbit = resolve_orbit_repo(state, req, &net_project, &jwt).await?;
-
         let project_id = net_project.id.parse::<ProjectId>().map_err(|e| {
             ApiError::internal(format!(
                 "unparseable network project id '{}': {e}",
                 net_project.id
             ))
         })?;
-        let local_shadow = build_local_shadow(project_id, req, orbit);
+        let local_shadow = build_local_shadow(project_id, req);
         let project = project_from_network(&net_project, Some(&local_shadow))?;
         ensure_local_shadow(state, &project);
         return Ok((StatusCode::CREATED, Json(project)));

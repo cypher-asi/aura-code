@@ -12,7 +12,6 @@ use aura_os_billing::{BillingClient, PricingService};
 use aura_os_core::{AgentInstanceId, ProjectId, ZeroAuthSession};
 use aura_os_link::SwarmClient;
 use aura_os_network::NetworkClient;
-use aura_os_orbit::OrbitClient;
 use aura_os_orgs::OrgService;
 use aura_os_projects::ProjectService;
 use aura_os_sessions::SessionService;
@@ -48,10 +47,6 @@ pub(crate) struct AppState {
     pub network_client: Option<Arc<NetworkClient>>,
     /// Optional aura-storage client. `None` when `AURA_STORAGE_URL` is not set.
     pub storage_client: Option<Arc<StorageClient>>,
-    /// Orbit REST client (always present).
-    pub orbit_client: Arc<OrbitClient>,
-    /// URL of the standalone Orbit service; `None` when `ORBIT_BASE_URL` is not set.
-    pub orbit_base_url: Option<String>,
     /// Shared internal token used for service-to-service calls.
     pub internal_service_token: Option<String>,
     /// Broadcast channel for network/social events (JSON payloads).

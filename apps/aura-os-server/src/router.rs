@@ -10,7 +10,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::handlers::{
-    agents, auth, billing, dev_loop, feed, files, follows, leaderboard, log, orbit, orgs, pricing,
+    agents, auth, billing, dev_loop, feed, files, follows, leaderboard, log, orgs, pricing,
     projects, settings, specs, tasks, terminal, users, ws,
 };
 use crate::state::AppState;
@@ -144,11 +144,6 @@ fn project_routes() -> Router<AppState> {
             post(projects::archive_project),
         )
         .route("/api/list-directory", post(files::list_directory))
-        .route("/api/orbit/repos", get(orbit::list_orbit_repos))
-        .route(
-            "/api/projects/:project_id/orbit-collaborators",
-            get(orbit::get_project_orbit_collaborators),
-        )
 }
 
 fn spec_routes() -> Router<AppState> {

@@ -10,7 +10,6 @@ use aura_os_auth::AuthService;
 use aura_os_billing::{BillingClient, PricingService};
 use aura_os_link::SwarmClient;
 use aura_os_network::NetworkClient;
-use aura_os_orbit::OrbitClient;
 use aura_os_orgs::OrgService;
 use aura_os_projects::ProjectService;
 use aura_os_sessions::SessionService;
@@ -173,8 +172,6 @@ pub(crate) fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
         terminal_manager: Arc::new(TerminalManager::new()),
         network_client,
         storage_client,
-        orbit_client: Arc::new(OrbitClient::new()),
-        orbit_base_url: env_opt("ORBIT_BASE_URL").map(|s| s.trim_end_matches('/').to_string()),
         internal_service_token: env_opt("INTERNAL_SERVICE_TOKEN"),
         event_broadcast,
         require_zero_pro: std::env::var("REQUIRE_ZERO_PRO")

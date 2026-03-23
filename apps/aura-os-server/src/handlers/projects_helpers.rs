@@ -119,34 +119,6 @@ pub(crate) fn folder_name_from_path(path: &str) -> Option<String> {
         .map(|name| name.to_string())
 }
 
-fn orbit_create_repo_url(
-    base_url: &str,
-    owner: &str,
-    repo: &str,
-    resp: &aura_os_orbit::CreateRepoResponse,
-) -> String {
-    resp.clone_url
-        .clone()
-        .or_else(|| resp.git_url.clone())
-        .unwrap_or_else(|| {
-            let base = base_url.trim_end_matches('/');
-            format!("{}/{}/{}.git", base, owner, repo)
-        })
-}
-
-pub(super) fn should_create_new_orbit_repo(
-    git_repo_url: &Option<String>,
-    orbit_owner: &Option<String>,
-    orbit_repo: &Option<String>,
-) -> bool {
-    orbit_owner.is_some()
-        && orbit_repo.is_some()
-        && git_repo_url
-            .as_ref()
-            .map(|value| value.trim().is_empty())
-            .unwrap_or(true)
-}
-
 pub(super) fn to_project_input(req: &CreateProjectRequest) -> CreateProjectInput {
     CreateProjectInput {
         org_id: req.org_id,
@@ -226,7 +198,6 @@ pub(super) async fn write_imported_files(
 pub(super) fn build_local_shadow(
     project_id: ProjectId,
     req: &CreateProjectRequest,
-    orbit: OrbitRepoFields,
 ) -> Project {
     Project {
         project_id,
@@ -244,64 +215,10 @@ pub(super) fn build_local_shadow(
         specs_title: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
-        git_repo_url: orbit.git_repo_url,
-        git_branch: orbit.git_branch,
-        orbit_base_url: orbit.orbit_base_url,
-        orbit_owner: orbit.orbit_owner,
-        orbit_repo: orbit.orbit_repo,
+        git_repo_url: req.git_repo_url.clone(),
+        git_branch: req.git_branch.clone(),
+        orbit_base_url: req.orbit_base_url.clone(),
+        orbit_owner: req.orbit_owner.clone(),
+        orbit_repo: req.orbit_repo.clone(),
     }
-}
-
-pub(super) struct OrbitRepoFields {
-    pub git_repo_url: Option<String>,
-    pub git_branch: Option<String>,
-    pub orbit_base_url: Option<String>,
-    pub orbit_owner: Option<String>,
-    pub orbit_repo: Option<String>,
-}
-
-pub(super) async fn resolve_orbit_repo(
-    state: &AppState,
-    req: &CreateProjectRequest,
-    net_project: &aura_os_network::NetworkProject,
-    jwt: &str,
-) -> ApiResult<OrbitRepoFields> {
-    if !should_create_new_orbit_repo(&req.git_repo_url, &req.orbit_owner, &req.orbit_repo) {
-        return Ok(OrbitRepoFields {
-            git_repo_url: req.git_repo_url.clone(),
-            git_branch: req.git_branch.clone(),
-            orbit_base_url: req.orbit_base_url.clone(),
-            orbit_owner: req.orbit_owner.clone(),
-            orbit_repo: req.orbit_repo.clone(),
-        });
-    }
-    let base_url = state.orbit_base_url.as_deref().ok_or_else(|| {
-        ApiError::service_unavailable("Orbit repo creation is not configured (ORBIT_BASE_URL)")
-    })?;
-    let owner = req.orbit_owner.as_deref().unwrap_or(&net_project.org_id);
-    let repo_name = req.orbit_repo.as_deref().unwrap_or(&req.name);
-    let created = state
-        .orbit_client
-        .create_repo(&aura_os_orbit::CreateRepoParams {
-            base_url,
-            org_id: &net_project.org_id,
-            project_id: &net_project.id,
-            repo: repo_name,
-            description: (!req.description.trim().is_empty()).then_some(req.description.as_str()),
-            jwt,
-        })
-        .await
-        .map_err(|err| ApiError::internal(err.message_for_api()))?;
-    Ok(OrbitRepoFields {
-        git_repo_url: Some(orbit_create_repo_url(
-            base_url,
-            owner,
-            &created.name,
-            &created,
-        )),
-        git_branch: req.git_branch.clone().or_else(|| Some("main".into())),
-        orbit_base_url: Some(base_url.to_string()),
-        orbit_owner: Some(owner.to_string()),
-        orbit_repo: Some(created.name),
-    })
 }
