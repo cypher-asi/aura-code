@@ -138,6 +138,10 @@ pub struct Task {
     pub updated_at: DateTime<Utc>,
 }
 
+fn default_machine_type() -> String {
+    "local".to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Agent {
     pub agent_id: AgentId,
@@ -150,6 +154,8 @@ pub struct Agent {
     pub skills: Vec<String>,
     #[serde(default)]
     pub icon: Option<String>,
+    #[serde(default = "default_machine_type")]
+    pub machine_type: String,
     #[serde(default)]
     pub network_agent_id: Option<AgentId>,
     #[serde(default)]
