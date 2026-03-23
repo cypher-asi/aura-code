@@ -5,7 +5,6 @@ pub(crate) mod error;
 pub(crate) mod handlers;
 mod network_bridge;
 pub(crate) mod router;
-pub(crate) mod session_init;
 pub(crate) mod state;
 
 pub use app_builder::build_app_state;

@@ -106,10 +106,6 @@ pub(crate) struct CreateAgentInstanceRequest {
 #[derive(Debug, Deserialize)]
 pub(crate) struct UpdateAgentInstanceRequest {
     pub status: Option<String>,
-    pub name: Option<String>,
-    pub role: Option<String>,
-    pub personality: Option<String>,
-    pub system_prompt: Option<String>,
 }
 
 // -- Message DTOs --

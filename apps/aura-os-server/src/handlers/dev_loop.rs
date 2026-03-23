@@ -13,7 +13,6 @@ use crate::state::AppState;
 #[derive(Debug, Deserialize, Default)]
 pub(crate) struct LoopQueryParams {
     pub agent_instance_id: Option<AgentInstanceId>,
-    pub agent_name: Option<String>,
 }
 
 async fn forward_automaton_events(state: &AppState, automaton_id: &str) {
