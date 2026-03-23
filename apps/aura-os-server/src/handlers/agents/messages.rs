@@ -10,7 +10,7 @@ use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
 use aura_os_core::{AgentId, AgentInstanceId, HarnessMode, Message, ProjectId};
-use aura_os_link::{HarnessInbound, SessionConfig};
+use aura_os_link::{HarnessInbound, SessionConfig, UserMessage};
 
 use crate::dto::SendMessageRequest;
 use crate::error::{ApiError, ApiResult};
@@ -157,9 +157,9 @@ async fn open_harness_chat_stream(
 
     session
         .commands_tx
-        .send(HarnessInbound::UserMessage {
+        .send(HarnessInbound::UserMessage(UserMessage {
             content: user_content,
-        })
+        }))
         .map_err(|e| ApiError::internal(format!("sending user message: {e}")))?;
 
     let commands_tx = session.commands_tx;

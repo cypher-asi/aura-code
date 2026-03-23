@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
-use crate::harness_protocol::{HarnessInbound, HarnessOutbound, WorkspaceConfig};
+use aura_protocol::{InboundMessage, OutboundMessage};
 
 pub struct SessionConfig {
     pub system_prompt: Option<String>,
     pub model: Option<String>,
     pub max_tokens: Option<u32>,
     pub max_turns: Option<u32>,
-    pub workspace: Option<WorkspaceConfig>,
+    pub workspace: Option<String>,
     pub agent_id: Option<String>,
     pub token: Option<String>,
 }
@@ -29,8 +29,8 @@ impl Default for SessionConfig {
 
 pub struct HarnessSession {
     pub session_id: String,
-    pub events_rx: mpsc::UnboundedReceiver<HarnessOutbound>,
-    pub commands_tx: mpsc::UnboundedSender<HarnessInbound>,
+    pub events_rx: mpsc::UnboundedReceiver<OutboundMessage>,
+    pub commands_tx: mpsc::UnboundedSender<InboundMessage>,
 }
 
 #[async_trait]

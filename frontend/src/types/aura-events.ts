@@ -1,4 +1,12 @@
 import type { AgentInstance, Message, Spec, Task } from "./entities";
+import type {
+  SessionReady as HarnessSessionReady,
+  AssistantMessageStart as HarnessAssistantMessageStart,
+  AssistantMessageEnd as HarnessAssistantMessageEnd,
+  TextDelta as HarnessTextDelta,
+  ToolUseStart as HarnessToolUseStart,
+  ErrorMsg as HarnessErrorMsg,
+} from "./harness-protocol";
 
 /* ── PhaseTimingEntry ─────────────────────────────────────────────── */
 
@@ -372,25 +380,12 @@ export type AuraEvent = AuraEventBase & (
       commits?: { sha: string; message: string }[];
     } }
 
-  // ── Harness protocol ─────────────────────────────────────────
-  | { type: EventType.SessionReady; content: {
-      session_id: string;
-    } }
-  | { type: EventType.AssistantMessageStart; content: {
-      message_id: string;
-    } }
-  | { type: EventType.AssistantMessageEnd; content: {
-      message_id: string;
-      stop_reason: string;
-      usage?: { input_tokens: number; output_tokens: number };
-    } }
-  | { type: EventType.TextDelta; content: {
-      text: string;
-    } }
-  | { type: EventType.ToolUseStart; content: {
-      id: string;
-      name: string;
-    } }
+  // ── Harness protocol (canonical types from aura-protocol) ────
+  | { type: EventType.SessionReady; content: HarnessSessionReady }
+  | { type: EventType.AssistantMessageStart; content: HarnessAssistantMessageStart }
+  | { type: EventType.AssistantMessageEnd; content: HarnessAssistantMessageEnd }
+  | { type: EventType.TextDelta; content: HarnessTextDelta }
+  | { type: EventType.ToolUseStart; content: HarnessToolUseStart }
 
   // ── Other ──────────────────────────────────────────────────
   | { type: EventType.LogLine; content: {

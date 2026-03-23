@@ -5,7 +5,7 @@ use serde::Deserialize;
 use tracing::info;
 
 use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, TaskId};
-use aura_os_link::{HarnessInbound, SessionConfig};
+use aura_os_link::{HarnessInbound, SessionConfig, UserMessage};
 
 use crate::dto::LoopStatusResponse;
 use crate::error::{ApiError, ApiResult};
@@ -80,9 +80,9 @@ pub(crate) async fn start_loop(
     );
 
     commands_tx
-        .send(HarnessInbound::UserMessage {
+        .send(HarnessInbound::UserMessage(UserMessage {
             content: format!("Start dev loop for project {project_id}"),
-        })
+        }))
         .map_err(|e| ApiError::internal(format!("sending dev loop start: {e}")))?;
 
     forward_harness_events(session.events_rx, state.event_broadcast.clone());
@@ -245,9 +245,9 @@ pub(crate) async fn run_single_task(
 
     session
         .commands_tx
-        .send(HarnessInbound::UserMessage {
+        .send(HarnessInbound::UserMessage(UserMessage {
             content: format!("Execute task {task_id} in project {project_id}"),
-        })
+        }))
         .map_err(|e| ApiError::internal(format!("sending task run command: {e}")))?;
 
     forward_harness_events(session.events_rx, state.event_broadcast.clone());

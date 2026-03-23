@@ -10,7 +10,7 @@ use tokio_stream::StreamExt;
 use tracing::info;
 
 use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, Spec, SpecId};
-use aura_os_link::{HarnessInbound, HarnessOutbound, SessionConfig};
+use aura_os_link::{HarnessInbound, HarnessOutbound, SessionConfig, UserMessage};
 
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
@@ -70,17 +70,17 @@ pub(crate) async fn generate_specs_summary(
 
     session
         .commands_tx
-        .send(HarnessInbound::UserMessage {
+        .send(HarnessInbound::UserMessage(UserMessage {
             content: format!("Generate specs summary for project {project_id}"),
-        })
+        }))
         .map_err(|e| ApiError::internal(format!("sending spec summary command: {e}")))?;
 
     let mut rx = session.events_rx;
     while let Some(event) = rx.recv().await {
         match event {
-            HarnessOutbound::AssistantMessageEnd { .. } => break,
-            HarnessOutbound::Error { message, .. } => {
-                return Err(ApiError::internal(message));
+            HarnessOutbound::AssistantMessageEnd(_) => break,
+            HarnessOutbound::Error(err) => {
+                return Err(ApiError::internal(err.message));
             }
             _ => continue,
         }
@@ -135,9 +135,9 @@ async fn open_spec_gen_session(
 
     session
         .commands_tx
-        .send(HarnessInbound::UserMessage {
+        .send(HarnessInbound::UserMessage(UserMessage {
             content: format!("Generate specs for project {project_id}"),
-        })
+        }))
         .map_err(|e| ApiError::internal(format!("sending spec gen command: {e}")))?;
 
     Ok(session)
@@ -155,7 +155,7 @@ pub(crate) async fn generate_specs(
 
     while let Some(event) = rx.recv().await {
         match event {
-            HarnessOutbound::AssistantMessageEnd { .. } => {
+            HarnessOutbound::AssistantMessageEnd(_) => {
                 let storage = state.require_storage_client()?;
                 let jwt = state.get_jwt()?;
                 let storage_specs = storage
@@ -170,8 +170,8 @@ pub(crate) async fn generate_specs(
                 info!(%project_id, count = specs.len(), "Spec generation completed");
                 return Ok(Json(specs));
             }
-            HarnessOutbound::Error { message, .. } => {
-                return Err(ApiError::internal(message));
+            HarnessOutbound::Error(err) => {
+                return Err(ApiError::internal(err.message));
             }
             _ => continue,
         }

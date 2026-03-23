@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use tracing::info;
 
+use aura_protocol::{InboundMessage, OutboundMessage, SessionInit};
 use crate::harness::{HarnessLink, HarnessSession, SessionConfig};
-use crate::harness_protocol::{HarnessInbound, HarnessOutbound};
 use crate::ws_bridge::spawn_ws_bridge;
 
 #[derive(Debug, Clone)]
@@ -33,33 +33,32 @@ impl LocalHarness {
 #[async_trait]
 impl HarnessLink for LocalHarness {
     async fn open_session(&self, config: SessionConfig) -> anyhow::Result<HarnessSession> {
-        // 1. Open WebSocket
         let (ws_stream, _) = tokio_tungstenite::connect_async(&self.ws_url()).await?;
 
-        // 2. Spawn bridge
         let (mut events_rx, commands_tx) = spawn_ws_bridge(ws_stream);
 
-        // 3. Send session_init
-        commands_tx.send(HarnessInbound::SessionInit {
+        commands_tx.send(InboundMessage::SessionInit(SessionInit {
             system_prompt: config.system_prompt,
             model: config.model,
             max_tokens: config.max_tokens,
+            temperature: None,
             max_turns: config.max_turns,
+            installed_tools: None,
             workspace: config.workspace,
             token: config.token,
-            external_tools: vec![],
-        })?;
+        }))?;
 
-        // 4. Wait for session_ready
         let session_id = loop {
             match events_rx.recv().await {
-                Some(HarnessOutbound::SessionReady { session_id, .. }) => {
-                    break session_id;
+                Some(OutboundMessage::SessionReady(ready)) => {
+                    break ready.session_id;
                 }
-                Some(HarnessOutbound::Error {
-                    message, code, ..
-                }) => {
-                    anyhow::bail!("Harness error during init ({code}): {message}");
+                Some(OutboundMessage::Error(err)) => {
+                    anyhow::bail!(
+                        "Harness error during init ({}): {}",
+                        err.code,
+                        err.message
+                    );
                 }
                 None => {
                     anyhow::bail!("Connection closed before session_ready");

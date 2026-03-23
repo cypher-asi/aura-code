@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "codegen:protocol": "cd ../../aura-harness && cargo test -p aura-protocol --features typescript export_typescript_bindings -- --nocapture && cp crates/aura-protocol/bindings/*.ts ../aura-app/frontend/src/types/harness-protocol.ts"
   },
   "dependencies": {
     "@cypher-asi/zui": "file:../../zui",

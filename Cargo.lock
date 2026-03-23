@@ -386,6 +386,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "aura-protocol",
  "bytes",
  "futures-core",
  "futures-util",
@@ -555,6 +556,14 @@ dependencies = [
  "tracing",
  "uuid",
  "which",
+]
+
+[[package]]
+name = "aura-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

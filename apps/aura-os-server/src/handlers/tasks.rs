@@ -3,7 +3,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, SpecId, Task, TaskId, TaskStatus};
-use aura_os_link::{HarnessInbound, HarnessOutbound, SessionConfig};
+use aura_os_link::{HarnessInbound, HarnessOutbound, SessionConfig, UserMessage};
 use aura_os_storage::StorageTask;
 use aura_os_tasks::TaskService;
 
@@ -86,15 +86,15 @@ pub(crate) async fn extract_tasks(
 
     session
         .commands_tx
-        .send(HarnessInbound::UserMessage {
+        .send(HarnessInbound::UserMessage(UserMessage {
             content: format!("Extract tasks for project {project_id}"),
-        })
+        }))
         .map_err(|e| ApiError::internal(format!("sending task extract command: {e}")))?;
 
     let mut rx = session.events_rx;
     while let Some(event) = rx.recv().await {
         match event {
-            HarnessOutbound::AssistantMessageEnd { .. } => {
+            HarnessOutbound::AssistantMessageEnd(_) => {
                 let storage = state.require_storage_client()?;
                 let jwt = state.get_jwt()?;
                 let storage_tasks = storage
@@ -108,8 +108,8 @@ pub(crate) async fn extract_tasks(
                 tasks.sort_by_key(|t| t.order_index);
                 return Ok(Json(tasks));
             }
-            HarnessOutbound::Error { message, .. } => {
-                return Err(ApiError::internal(message));
+            HarnessOutbound::Error(err) => {
+                return Err(ApiError::internal(err.message));
             }
             _ => continue,
         }
@@ -300,6 +300,7 @@ mod tests {
         StorageTask {
             id: uuid::Uuid::new_v4().to_string(),
             project_id: Some(uuid::Uuid::new_v4().to_string()),
+            org_id: None,
             spec_id: Some(uuid::Uuid::new_v4().to_string()),
             title: Some("Test task".into()),
             description: Some("A test description".into()),
