@@ -1,11 +1,12 @@
 import { useEffect, useMemo } from "react";
-import { GitCommitVertical } from "lucide-react";
+import { GitCommitVertical, Loader2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { Lane } from "../../../components/Lane";
 import { CommitGrid } from "../../../components/CommitGrid";
 import { ActivityCard } from "../../../components/ActivityCard";
 import { EmptyState } from "../../../components/EmptyState";
 import { useAuraCapabilities } from "../../../hooks/use-aura-capabilities";
+import { useDelayedLoading } from "../../../hooks/use-delayed-loading";
 import {
   buildFilteredProfileEvents,
   buildProfileCommitActivity,
@@ -21,22 +22,28 @@ export function ProfileMainPanel() {
   const { isMobileLayout } = useAuraCapabilities();
   const {
     projects,
+    projectsStatus,
     selectedProject,
     setSelectedProject,
     selectedEventId,
     selectEvent,
     comments,
+    eventsStatus,
   } = useProfileStore(
     useShallow((state) => ({
       projects: state.projects,
+      projectsStatus: state.projectsStatus,
       selectedProject: state.selectedProject,
       setSelectedProject: state.setSelectedProject,
       selectedEventId: state.selectedEventId,
       selectEvent: state.selectEvent,
       comments: state.comments,
+      eventsStatus: state.eventsStatus,
     })),
   );
   const events = useProfileEvents();
+  const isLoadingActivity = eventsStatus === "idle" || eventsStatus === "loading" || projectsStatus === "idle" || projectsStatus === "loading";
+  const showLoading = useDelayedLoading(isLoadingActivity);
   const filteredEvents = useMemo(
     () => buildFilteredProfileEvents(events, projects, selectedProject),
     [events, projects, selectedProject],
@@ -76,7 +83,13 @@ export function ProfileMainPanel() {
               })}
             </div>
           ) : null}
-          {filteredEvents.length === 0 ? (
+          {showLoading ? (
+            <div className={styles.emptyWrapper}>
+              <EmptyState icon={<Loader2 size={32} className={styles.spinAnimation} />}>
+                Loading activity...
+              </EmptyState>
+            </div>
+          ) : filteredEvents.length === 0 ? (
             <div className={styles.emptyWrapper}>
               <EmptyState icon={<GitCommitVertical size={32} />}>No activity yet</EmptyState>
             </div>
