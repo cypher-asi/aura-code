@@ -3,8 +3,8 @@ use axum::http::StatusCode;
 use axum::Json;
 use chrono::{DateTime, Utc};
 
-use aura_core::*;
-use aura_network::NetworkFollow;
+use aura_os_core::*;
+use aura_os_network::NetworkFollow;
 
 use crate::dto::{FollowCheckResponse, FollowRequest};
 use crate::error::{map_network_error, ApiResult};
@@ -40,7 +40,7 @@ pub async fn follow(
 ) -> ApiResult<(StatusCode, Json<Follow>)> {
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
-    let net_req = aura_network::FollowRequest {
+    let net_req = aura_os_network::FollowRequest {
         target_profile_id: req.target_profile_id,
     };
     let net_follow = client

@@ -1,12 +1,12 @@
-use aura_core::ProjectId;
-use aura_store::StoreError;
+use aura_os_core::ProjectId;
+use aura_os_store::StoreError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
     #[error("store error: {0}")]
     Store(#[from] StoreError),
     #[error("network error: {0}")]
-    Network(#[from] aura_network::NetworkError),
+    Network(#[from] aura_os_network::NetworkError),
     #[error("project not found: {0}")]
     NotFound(ProjectId),
     #[error("invalid input: {0}")]

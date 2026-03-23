@@ -4,7 +4,7 @@ use axum::Json;
 use serde::Deserialize;
 use tracing::info;
 
-use aura_core::{AgentInstanceId, ProjectId, TaskId};
+use aura_os_core::{AgentInstanceId, ProjectId, TaskId};
 
 use crate::dto::LoopStatusResponse;
 use crate::error::{ApiError, ApiResult};

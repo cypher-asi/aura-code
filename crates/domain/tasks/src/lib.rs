@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use aura_core::*;
-use aura_storage::{StorageClient, StorageTask};
-use aura_store::RocksStore;
+use aura_os_core::*;
+use aura_os_storage::{StorageClient, StorageTask};
+use aura_os_store::RocksStore;
 
 pub struct TaskService {
     store: Arc<RocksStore>,
@@ -99,7 +99,7 @@ impl TaskService {
 
 /// Convert a `StorageTask` into a domain `Task`.
 ///
-/// Delegates to the canonical `TryFrom<StorageTask>` impl in `aura_storage`.
+/// Delegates to the canonical `TryFrom<StorageTask>` impl in `aura_os_storage`.
 pub fn storage_task_to_task(s: StorageTask) -> Result<Task, String> {
     Task::try_from(s)
 }

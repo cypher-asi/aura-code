@@ -1,4 +1,4 @@
-use aura_core::{ProfileId, UserId};
+use aura_os_core::{ProfileId, UserId};
 use serde::{Deserialize, Serialize};
 
 /// Health check response from aura-network `GET /health`.

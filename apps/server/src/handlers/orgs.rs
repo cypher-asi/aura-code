@@ -3,8 +3,8 @@ use axum::http::StatusCode;
 use axum::Json;
 use serde::Serialize;
 
-use aura_core::*;
-use aura_network::{NetworkOrg, NetworkOrgInvite, NetworkOrgMember};
+use aura_os_core::*;
+use aura_os_network::{NetworkOrg, NetworkOrgInvite, NetworkOrgMember};
 
 use crate::dto::SetBillingRequest;
 use crate::error::{map_network_error, ApiError, ApiResult};
@@ -109,9 +109,9 @@ impl From<NetworkOrgInvite> for InviteResponse {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn map_org_err(e: aura_orgs::OrgError) -> (StatusCode, Json<ApiError>) {
+fn map_org_err(e: aura_os_orgs::OrgError) -> (StatusCode, Json<ApiError>) {
     match &e {
-        aura_orgs::OrgError::NotFound(_) => ApiError::not_found("org not found"),
+        aura_os_orgs::OrgError::NotFound(_) => ApiError::not_found("org not found"),
         _ => ApiError::internal(e.to_string()),
     }
 }
@@ -147,7 +147,7 @@ pub async fn create_org(
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
 
-    let net_req = aura_network::CreateOrgRequest {
+    let net_req = aura_os_network::CreateOrgRequest {
         name: req.name,
         description: None,
         avatar_url: None,
@@ -192,7 +192,7 @@ pub async fn update_org(
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
     let org_id_str = org_id.to_string();
-    let net_req = aura_network::UpdateOrgRequest {
+    let net_req = aura_os_network::UpdateOrgRequest {
         name: Some(req.name),
         description: None,
         avatar_url: None,
@@ -236,7 +236,7 @@ fn looks_like_uuid(s: &str) -> bool {
 async fn enrich_member_display_names(
     responses: &mut [MemberResponse],
     session: &ZeroAuthSession,
-    client: &aura_network::NetworkClient,
+    client: &aura_os_network::NetworkClient,
     jwt: &str,
 ) {
     let current_network_id = session.network_user_id.map(|id| id.to_string());
@@ -270,7 +270,7 @@ fn try_fill_from_session(
 
 async fn try_fill_from_network(
     resp: &mut MemberResponse,
-    client: &aura_network::NetworkClient,
+    client: &aura_os_network::NetworkClient,
     jwt: &str,
 ) {
     if let Ok(user) = client.get_user(&resp.user_id, jwt).await {
@@ -294,7 +294,7 @@ pub async fn update_member_role(
     let jwt = state.get_jwt()?;
     let org_id_str = org_id.to_string();
     let role_str = format!("{:?}", req.role).to_lowercase();
-    let net_req = aura_network::UpdateMemberRequest {
+    let net_req = aura_os_network::UpdateMemberRequest {
         role: Some(role_str.clone()),
         credit_budget: None,
     };
@@ -332,7 +332,7 @@ pub async fn create_invite(
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
     let org_id_str = org_id.to_string();
-    let net_req = aura_network::CreateInviteRequest {
+    let net_req = aura_os_network::CreateInviteRequest {
         email: None,
         role: None,
     };

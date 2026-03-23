@@ -1,6 +1,6 @@
-use aura_core::TaskStatus;
-use aura_storage::StorageError;
-use aura_store::StoreError;
+use aura_os_core::TaskStatus;
+use aura_os_storage::StorageError;
+use aura_os_store::StoreError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TaskError {

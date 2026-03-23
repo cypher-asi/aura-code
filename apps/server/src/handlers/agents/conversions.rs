@@ -5,13 +5,13 @@ use chrono::{DateTime, Utc};
 use axum::http::StatusCode;
 use axum::Json;
 
-use aura_core::parse_dt;
-use aura_core::{
+use aura_os_core::parse_dt;
+use aura_os_core::{
     Agent, AgentId, AgentInstanceId, ChatContentBlock, ChatRole, Message, MessageId, ProfileId,
     ProjectId, ZeroAuthSession,
 };
-use aura_network::NetworkAgent;
-use aura_storage::StorageMessage;
+use aura_os_network::NetworkAgent;
+use aura_os_storage::StorageMessage;
 
 use crate::error::ApiError;
 use crate::state::AppState;

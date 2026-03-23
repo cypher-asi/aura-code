@@ -1,5 +1,5 @@
-use aura_core::OrgId;
-use aura_store::StoreError;
+use aura_os_core::OrgId;
+use aura_os_store::StoreError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum OrgError {

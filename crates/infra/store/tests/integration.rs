@@ -1,4 +1,4 @@
-use aura_store::*;
+use aura_os_store::*;
 use tempfile::TempDir;
 
 fn open_temp_store() -> (RocksStore, TempDir) {

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use aura_terminal::TerminalId;
+use aura_os_terminal::TerminalId;
 
 use crate::state::AppState;
 

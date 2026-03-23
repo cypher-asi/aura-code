@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use aura_core::{AgentInstanceId, ProjectId, TaskId};
+use aura_os_core::{AgentInstanceId, ProjectId, TaskId};
 use aura_engine::EngineEvent;
 use chrono::Utc;
 use serde::Serialize;

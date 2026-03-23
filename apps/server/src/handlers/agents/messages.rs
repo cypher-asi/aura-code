@@ -9,7 +9,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
-use aura_core::{AgentId, AgentInstanceId, Message, ProjectId};
+use aura_os_core::{AgentId, AgentInstanceId, Message, ProjectId};
 
 use crate::dto::SendMessageRequest;
 use crate::error::{ApiError, ApiResult};
@@ -23,10 +23,10 @@ const SSE_NO_BUFFERING_HEADERS: [(&str, HeaderValue); 1] =
 
 async fn find_matching_project_agents(
     state: &AppState,
-    storage: &aura_storage::StorageClient,
+    storage: &aura_os_storage::StorageClient,
     jwt: &str,
     agent_id_str: &str,
-) -> Vec<aura_storage::StorageProjectAgent> {
+) -> Vec<aura_os_storage::StorageProjectAgent> {
     let all_projects = match projects::list_all_projects_from_network(state).await {
         Ok(p) => p,
         Err((status, body)) => {
@@ -61,16 +61,16 @@ async fn find_matching_project_agents(
 }
 
 async fn collect_session_messages(
-    storage: &aura_storage::StorageClient,
+    storage: &aura_os_storage::StorageClient,
     jwt: &str,
-    agents: &[aura_storage::StorageProjectAgent],
+    agents: &[aura_os_storage::StorageProjectAgent],
 ) -> Vec<Message> {
     let all_sessions = fetch_all_sessions(storage, jwt, agents).await;
     let msg_futs: Vec<_> = all_sessions
         .iter()
         .map(|s| storage.list_messages(&s.id, jwt, None, None))
         .collect();
-    let msg_results: Vec<Result<Vec<aura_storage::StorageMessage>, _>> = join_all(msg_futs).await;
+    let msg_results: Vec<Result<Vec<aura_os_storage::StorageMessage>, _>> = join_all(msg_futs).await;
     let mut messages = Vec::new();
     for (i, result) in msg_results.into_iter().enumerate() {
         match result {
@@ -91,15 +91,15 @@ async fn collect_session_messages(
 }
 
 async fn fetch_all_sessions(
-    storage: &aura_storage::StorageClient,
+    storage: &aura_os_storage::StorageClient,
     jwt: &str,
-    agents: &[aura_storage::StorageProjectAgent],
-) -> Vec<aura_storage::StorageSession> {
+    agents: &[aura_os_storage::StorageProjectAgent],
+) -> Vec<aura_os_storage::StorageSession> {
     let futs: Vec<_> = agents
         .iter()
         .map(|pa| storage.list_sessions(&pa.id, jwt))
         .collect();
-    let results: Vec<Result<Vec<aura_storage::StorageSession>, _>> = join_all(futs).await;
+    let results: Vec<Result<Vec<aura_os_storage::StorageSession>, _>> = join_all(futs).await;
     results
         .into_iter()
         .enumerate()

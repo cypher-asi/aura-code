@@ -5,20 +5,20 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 use tracing::info;
 
-use aura_agents::{AgentInstanceService, AgentService};
-use aura_auth::AuthService;
-use aura_billing::{BillingClient, PricingService};
-use aura_link::SwarmClient;
-use aura_network::NetworkClient;
-use aura_orbit::OrbitClient;
-use aura_orgs::OrgService;
-use aura_projects::ProjectService;
-use aura_sessions::SessionService;
-use aura_settings::SettingsService;
-use aura_storage::StorageClient;
-use aura_store::RocksStore;
-use aura_tasks::TaskService;
-use aura_terminal::TerminalManager;
+use aura_os_agents::{AgentInstanceService, AgentService};
+use aura_os_auth::AuthService;
+use aura_os_billing::{BillingClient, PricingService};
+use aura_os_link::SwarmClient;
+use aura_os_network::NetworkClient;
+use aura_os_orbit::OrbitClient;
+use aura_os_orgs::OrgService;
+use aura_os_projects::ProjectService;
+use aura_os_sessions::SessionService;
+use aura_os_settings::SettingsService;
+use aura_os_storage::StorageClient;
+use aura_os_store::RocksStore;
+use aura_os_tasks::TaskService;
+use aura_os_terminal::TerminalManager;
 
 use crate::state::AppState;
 
@@ -88,7 +88,7 @@ pub fn build_app_state(db_path: &Path) -> AppState {
     ));
     let task_service = Arc::new(TaskService::new(store.clone(), storage_client.clone()));
     let agent_service = Arc::new(AgentService::new(store.clone(), network_client.clone()));
-    let runtime_agent_state: aura_agents::RuntimeAgentStateMap =
+    let runtime_agent_state: aura_os_agents::RuntimeAgentStateMap =
         Arc::new(Mutex::new(HashMap::new()));
     let agent_instance_service = Arc::new(AgentInstanceService::new(
         store.clone(),
@@ -96,7 +96,7 @@ pub fn build_app_state(db_path: &Path) -> AppState {
         runtime_agent_state,
         network_client.clone(),
     ));
-    let llm_config = aura_core::LlmConfig::from_env();
+    let llm_config = aura_os_core::LlmConfig::from_env();
     let session_service = Arc::new(
         SessionService::new(
             store.clone(),

@@ -2,8 +2,8 @@ use axum::extract::{Path, State};
 use axum::Json;
 use tracing::warn;
 
-use aura_core::{AgentInstanceId, Message, ProjectId, Session, SessionId, Task};
-use aura_sessions::storage_session_to_session;
+use aura_os_core::{AgentInstanceId, Message, ProjectId, Session, SessionId, Task};
+use aura_os_sessions::storage_session_to_session;
 
 use crate::error::{map_storage_error, ApiError, ApiResult};
 use crate::state::AppState;
@@ -75,7 +75,7 @@ pub async fn get_session(
         .get_session(&session_id.to_string(), &jwt)
         .await
         .map_err(|e| match &e {
-            aura_storage::StorageError::Server { status: 404, .. } => {
+            aura_os_storage::StorageError::Server { status: 404, .. } => {
                 ApiError::not_found("session not found")
             }
             _ => map_storage_error(e),
@@ -99,7 +99,7 @@ pub async fn list_session_tasks(
         .get_session(&session_id.to_string(), &jwt)
         .await
         .map_err(|e| match &e {
-            aura_storage::StorageError::Server { status: 404, .. } => {
+            aura_os_storage::StorageError::Server { status: 404, .. } => {
                 ApiError::not_found("session not found")
             }
             _ => map_storage_error(e),

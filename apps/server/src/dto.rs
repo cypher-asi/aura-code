@@ -1,4 +1,4 @@
-use aura_core::*;
+use aura_os_core::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -165,7 +165,7 @@ pub struct UpdateOrgRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateMemberRoleRequest {
-    pub role: aura_core::OrgRole,
+    pub role: aura_os_core::OrgRole,
 }
 
 #[derive(Debug, Deserialize)]

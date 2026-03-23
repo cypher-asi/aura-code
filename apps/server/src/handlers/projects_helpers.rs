@@ -5,9 +5,9 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use tracing::{debug, warn};
 
-use aura_core::{OrgId, Project, ProjectId, ProjectStatus};
-use aura_network::NetworkProject;
-use aura_projects::CreateProjectInput;
+use aura_os_core::{OrgId, Project, ProjectId, ProjectStatus};
+use aura_os_network::NetworkProject;
+use aura_os_projects::CreateProjectInput;
 
 use crate::dto::{CreateProjectRequest, ImportedProjectFile};
 use crate::error::{ApiError, ApiResult};
@@ -128,7 +128,7 @@ fn orbit_create_repo_url(
     base_url: &str,
     owner: &str,
     repo: &str,
-    resp: &aura_orbit::CreateRepoResponse,
+    resp: &aura_os_orbit::CreateRepoResponse,
 ) -> String {
     resp.clone_url
         .clone()
@@ -268,7 +268,7 @@ pub(super) struct OrbitRepoFields {
 pub(super) async fn resolve_orbit_repo(
     state: &AppState,
     req: &CreateProjectRequest,
-    net_project: &aura_network::NetworkProject,
+    net_project: &aura_os_network::NetworkProject,
     jwt: &str,
 ) -> ApiResult<OrbitRepoFields> {
     if !should_create_new_orbit_repo(&req.git_repo_url, &req.orbit_owner, &req.orbit_repo) {

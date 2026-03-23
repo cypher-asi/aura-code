@@ -1,14 +1,14 @@
-use aura_core::AgentStatus;
-use aura_store::StoreError;
+use aura_os_core::AgentStatus;
+use aura_os_store::StoreError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
     #[error("store error: {0}")]
     Store(#[from] StoreError),
     #[error("network error: {0}")]
-    Network(#[from] aura_network::NetworkError),
+    Network(#[from] aura_os_network::NetworkError),
     #[error("storage service error: {0}")]
-    Storage(#[from] aura_storage::StorageError),
+    Storage(#[from] aura_os_storage::StorageError),
     #[error("illegal agent transition from {current:?} to {target:?}")]
     IllegalTransition {
         current: AgentStatus,

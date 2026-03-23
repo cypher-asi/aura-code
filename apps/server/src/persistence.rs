@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use aura_engine::EngineEvent;
-use aura_storage::StorageClient;
+use aura_os_storage::StorageClient;
 
 use crate::TaskSessionEntry;
 
@@ -26,9 +26,9 @@ pub(crate) async fn persist_task_to_storage(
             model,
             ..
         } => {
-            let files_changed: Vec<aura_storage::StorageTaskFileChangeSummary> = file_changes
+            let files_changed: Vec<aura_os_storage::StorageTaskFileChangeSummary> = file_changes
                 .iter()
-                .map(|f| aura_storage::StorageTaskFileChangeSummary {
+                .map(|f| aura_os_storage::StorageTaskFileChangeSummary {
                     op: f.op.clone(),
                     path: f.path.clone(),
                     lines_added: f.lines_added,
@@ -36,7 +36,7 @@ pub(crate) async fn persist_task_to_storage(
                 })
                 .collect();
 
-            let update = aura_storage::UpdateTaskRequest {
+            let update = aura_os_storage::UpdateTaskRequest {
                 title: None,
                 description: None,
                 order_index: None,
@@ -65,7 +65,7 @@ pub(crate) async fn persist_task_to_storage(
             model,
             ..
         } => {
-            let update = aura_storage::UpdateTaskRequest {
+            let update = aura_os_storage::UpdateTaskRequest {
                 title: None,
                 description: None,
                 order_index: None,
@@ -120,7 +120,7 @@ async fn persist_task_output_message(
         _ => (None, None),
     };
 
-    let msg_req = aura_storage::CreateMessageRequest {
+    let msg_req = aura_os_storage::CreateMessageRequest {
         project_agent_id: entry.agent_instance_id.to_string(),
         project_id: entry.project_id.to_string(),
         role: "assistant".to_string(),
@@ -166,7 +166,7 @@ async fn persist_task_steps(
         "build_steps": build_steps,
         "test_steps": test_steps,
     });
-    let steps_msg = aura_storage::CreateMessageRequest {
+    let steps_msg = aura_os_storage::CreateMessageRequest {
         project_agent_id: entry.agent_instance_id.to_string(),
         project_id: entry.project_id.to_string(),
         role: "system".to_string(),
@@ -190,18 +190,18 @@ async fn persist_task_steps(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aura_core::*;
+    use aura_os_core::*;
     use aura_engine::EngineEvent;
-    use aura_storage::StorageClient;
+    use aura_os_storage::StorageClient;
     use std::sync::Arc;
 
-    async fn setup_mock() -> (Arc<StorageClient>, aura_storage::testutil::SharedDb) {
-        let (url, db) = aura_storage::testutil::start_mock_storage().await;
+    async fn setup_mock() -> (Arc<StorageClient>, aura_os_storage::testutil::SharedDb) {
+        let (url, db) = aura_os_storage::testutil::start_mock_storage().await;
         let client = Arc::new(StorageClient::with_base_url(&url));
         let task_id = uuid::Uuid::new_v4().to_string();
         {
             let mut guard = db.lock().await;
-            guard.tasks.push(aura_storage::StorageTask {
+            guard.tasks.push(aura_os_storage::StorageTask {
                 id: task_id.clone(),
                 project_id: Some(uuid::Uuid::new_v4().to_string()),
                 spec_id: Some(uuid::Uuid::new_v4().to_string()),

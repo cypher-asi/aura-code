@@ -3,7 +3,7 @@ use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
-use aura_network::{NetworkComment, NetworkFeedEvent};
+use aura_os_network::{NetworkComment, NetworkFeedEvent};
 
 use crate::error::{map_network_error, ApiResult};
 use crate::state::AppState;

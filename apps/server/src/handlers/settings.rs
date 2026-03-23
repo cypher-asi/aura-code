@@ -1,7 +1,7 @@
 use axum::extract::State;
 use axum::Json;
 
-use aura_core::ApiKeyInfo;
+use aura_os_core::ApiKeyInfo;
 
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;

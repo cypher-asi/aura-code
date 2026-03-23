@@ -8,8 +8,8 @@ use reqwest::Client;
 use serde::Deserialize;
 use tracing::{debug, error, warn};
 
-use aura_core::ZeroAuthSession;
-use aura_store::RocksStore;
+use aura_os_core::ZeroAuthSession;
+use aura_os_store::RocksStore;
 
 const ZOS_API_URL: &str = "https://zosapi.zero.tech";
 const AUTH_SESSION_KEY: &str = "zero_auth_session";
@@ -144,7 +144,7 @@ impl AuthService {
                 let session: ZeroAuthSession = serde_json::from_slice(&bytes)?;
                 Ok(Some(session))
             }
-            Err(aura_store::StoreError::NotFound(_)) => Ok(None),
+            Err(aura_os_store::StoreError::NotFound(_)) => Ok(None),
             Err(e) => Err(AuthError::Store(e)),
         }
     }

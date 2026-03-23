@@ -1,5 +1,5 @@
-use aura_core::*;
-use aura_tasks::TaskService;
+use aura_os_core::*;
+use aura_os_tasks::TaskService;
 use chrono::Utc;
 
 // ---------------------------------------------------------------------------
@@ -105,10 +105,10 @@ fn cycle_detection_catches_circular_deps() {
 mod integration {
     use std::sync::Arc;
 
-    use aura_core::*;
-    use aura_storage::StorageClient;
-    use aura_store::RocksStore;
-    use aura_tasks::TaskService;
+    use aura_os_core::*;
+    use aura_os_storage::StorageClient;
+    use aura_os_store::RocksStore;
+    use aura_os_tasks::TaskService;
 
     struct TestCtx {
         task_service: Arc<TaskService>,
@@ -122,9 +122,9 @@ mod integration {
     async fn setup() -> TestCtx {
         let tmp = tempfile::TempDir::new().expect("temp dir creation should succeed");
         let store = Arc::new(RocksStore::open(tmp.path()).expect("RocksStore should open"));
-        aura_billing::testutil::store_zero_auth_session(&store);
+        aura_os_billing::testutil::store_zero_auth_session(&store);
 
-        let (storage_url, _db) = aura_storage::testutil::start_mock_storage().await;
+        let (storage_url, _db) = aura_os_storage::testutil::start_mock_storage().await;
         let storage_client = Arc::new(StorageClient::with_base_url(&storage_url));
         let task_service = Arc::new(TaskService::new(
             store.clone(),
@@ -139,7 +139,7 @@ mod integration {
             .create_spec(
                 &pid,
                 &jwt,
-                &aura_storage::CreateSpecRequest {
+                &aura_os_storage::CreateSpecRequest {
                     title: "Spec A".into(),
                     order_index: Some(0),
                     markdown_contents: None,
@@ -176,7 +176,7 @@ mod integration {
             .create_task(
                 params.pid,
                 &jwt,
-                &aura_storage::CreateTaskRequest {
+                &aura_os_storage::CreateTaskRequest {
                     spec_id: params.spec_id.into(),
                     title: params.title.into(),
                     description: Some(format!("Desc for {}", params.title)),
@@ -274,9 +274,9 @@ mod integration {
     async fn claim_ordering_multi_spec() {
         let tmp = tempfile::TempDir::new().expect("temp dir should be created");
         let store = Arc::new(RocksStore::open(tmp.path()).expect("RocksStore should open"));
-        aura_billing::testutil::store_zero_auth_session(&store);
+        aura_os_billing::testutil::store_zero_auth_session(&store);
 
-        let (storage_url, _db) = aura_storage::testutil::start_mock_storage().await;
+        let (storage_url, _db) = aura_os_storage::testutil::start_mock_storage().await;
         let sc = Arc::new(StorageClient::with_base_url(&storage_url));
         let svc = Arc::new(TaskService::new(store.clone(), Some(sc.clone())));
 
@@ -288,7 +288,7 @@ mod integration {
             .create_spec(
                 &pid_str,
                 &jwt,
-                &aura_storage::CreateSpecRequest {
+                &aura_os_storage::CreateSpecRequest {
                     title: "Spec B".into(),
                     order_index: Some(1),
                     markdown_contents: None,
@@ -300,7 +300,7 @@ mod integration {
             .create_spec(
                 &pid_str,
                 &jwt,
-                &aura_storage::CreateSpecRequest {
+                &aura_os_storage::CreateSpecRequest {
                     title: "Spec A".into(),
                     order_index: Some(0),
                     markdown_contents: None,
@@ -359,9 +359,9 @@ mod integration {
     async fn dependency_promotion_on_completion() {
         let tmp = tempfile::TempDir::new().expect("temp dir should be created");
         let store = Arc::new(RocksStore::open(tmp.path()).expect("RocksStore should open"));
-        aura_billing::testutil::store_zero_auth_session(&store);
+        aura_os_billing::testutil::store_zero_auth_session(&store);
 
-        let (storage_url, _db) = aura_storage::testutil::start_mock_storage().await;
+        let (storage_url, _db) = aura_os_storage::testutil::start_mock_storage().await;
         let sc = Arc::new(StorageClient::with_base_url(&storage_url));
         let svc = Arc::new(TaskService::new(store.clone(), Some(sc.clone())));
 
@@ -373,7 +373,7 @@ mod integration {
             .create_spec(
                 &pid_str,
                 &jwt,
-                &aura_storage::CreateSpecRequest {
+                &aura_os_storage::CreateSpecRequest {
                     title: "Spec".into(),
                     order_index: Some(0),
                     markdown_contents: None,
@@ -484,9 +484,9 @@ mod integration {
     async fn initial_readiness_promotes_all_satisfiable() {
         let tmp = tempfile::TempDir::new().expect("temp dir should be created");
         let store = Arc::new(RocksStore::open(tmp.path()).expect("RocksStore should open"));
-        aura_billing::testutil::store_zero_auth_session(&store);
+        aura_os_billing::testutil::store_zero_auth_session(&store);
 
-        let (storage_url, _db) = aura_storage::testutil::start_mock_storage().await;
+        let (storage_url, _db) = aura_os_storage::testutil::start_mock_storage().await;
         let sc = Arc::new(StorageClient::with_base_url(&storage_url));
         let svc = Arc::new(TaskService::new(store.clone(), Some(sc.clone())));
 
@@ -498,7 +498,7 @@ mod integration {
             .create_spec(
                 &pid_str,
                 &jwt,
-                &aura_storage::CreateSpecRequest {
+                &aura_os_storage::CreateSpecRequest {
                     title: "Spec".into(),
                     order_index: Some(0),
                     markdown_contents: None,
@@ -576,9 +576,9 @@ mod integration {
     async fn concurrent_claims_produce_different_tasks() {
         let tmp = tempfile::TempDir::new().expect("temp dir should be created");
         let store = Arc::new(RocksStore::open(tmp.path()).expect("RocksStore should open"));
-        aura_billing::testutil::store_zero_auth_session(&store);
+        aura_os_billing::testutil::store_zero_auth_session(&store);
 
-        let (storage_url, _db) = aura_storage::testutil::start_mock_storage().await;
+        let (storage_url, _db) = aura_os_storage::testutil::start_mock_storage().await;
         let sc = Arc::new(StorageClient::with_base_url(&storage_url));
         let svc = Arc::new(TaskService::new(store.clone(), Some(sc.clone())));
 
@@ -590,7 +590,7 @@ mod integration {
             .create_spec(
                 &pid_str,
                 &jwt,
-                &aura_storage::CreateSpecRequest {
+                &aura_os_storage::CreateSpecRequest {
                     title: "Spec".into(),
                     order_index: Some(0),
                     markdown_contents: None,

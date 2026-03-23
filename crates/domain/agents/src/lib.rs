@@ -7,11 +7,11 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use tokio::sync::Mutex;
 
-use aura_core::parse_dt;
-use aura_core::*;
-use aura_network::NetworkAgent;
-use aura_storage::StorageClient;
-use aura_store::RocksStore;
+use aura_os_core::parse_dt;
+use aura_os_core::*;
+use aura_os_network::NetworkAgent;
+use aura_os_storage::StorageClient;
+use aura_os_store::RocksStore;
 
 pub type RuntimeAgentStateMap = Arc<Mutex<HashMap<AgentInstanceId, RuntimeAgentState>>>;
 
@@ -54,13 +54,13 @@ fn network_agent_to_core(net: &NetworkAgent) -> Agent {
 
 pub struct AgentService {
     store: Arc<RocksStore>,
-    network_client: Option<Arc<aura_network::NetworkClient>>,
+    network_client: Option<Arc<aura_os_network::NetworkClient>>,
 }
 
 impl AgentService {
     pub fn new(
         store: Arc<RocksStore>,
-        network_client: Option<Arc<aura_network::NetworkClient>>,
+        network_client: Option<Arc<aura_os_network::NetworkClient>>,
     ) -> Self {
         Self {
             store,
@@ -87,7 +87,7 @@ impl AgentService {
             .get_agent(&agent_id.to_string(), &jwt)
             .await
             .map_err(|e| match &e {
-                aura_network::NetworkError::Server { status: 404, .. } => AgentError::NotFound,
+                aura_os_network::NetworkError::Server { status: 404, .. } => AgentError::NotFound,
                 _ => AgentError::Network(e),
             })?;
         Ok(network_agent_to_core(&net))
@@ -106,7 +106,7 @@ impl AgentService {
 pub struct AgentInstanceService {
     store: Arc<RocksStore>,
     storage_client: Option<Arc<StorageClient>>,
-    network_client: Option<Arc<aura_network::NetworkClient>>,
+    network_client: Option<Arc<aura_os_network::NetworkClient>>,
     runtime_state: RuntimeAgentStateMap,
 }
 
@@ -115,7 +115,7 @@ impl AgentInstanceService {
         store: Arc<RocksStore>,
         storage_client: Option<Arc<StorageClient>>,
         runtime_state: RuntimeAgentStateMap,
-        network_client: Option<Arc<aura_network::NetworkClient>>,
+        network_client: Option<Arc<aura_os_network::NetworkClient>>,
     ) -> Self {
         Self {
             store,
@@ -150,7 +150,7 @@ impl AgentInstanceService {
     ) -> Result<AgentInstance, AgentError> {
         let storage = self.require_storage()?;
         let jwt = self.get_jwt()?;
-        let req = aura_storage::CreateProjectAgentRequest {
+        let req = aura_os_storage::CreateProjectAgentRequest {
             agent_id: agent.agent_id.to_string(),
             name: agent.name.clone(),
             role: Some(agent.role.clone()),
@@ -176,7 +176,7 @@ impl AgentInstanceService {
             .get_project_agent(&agent_instance_id.to_string(), &jwt)
             .await
             .map_err(|e| match &e {
-                aura_storage::StorageError::Server { status: 404, .. } => AgentError::NotFound,
+                aura_os_storage::StorageError::Server { status: 404, .. } => AgentError::NotFound,
                 _ => AgentError::Storage(e),
             })?;
         let agent = match spa.agent_id.as_deref() {
@@ -225,7 +225,7 @@ impl AgentInstanceService {
             AgentStatus::Stopped => "stopped",
             AgentStatus::Error => "error",
         };
-        let req = aura_storage::UpdateProjectAgentRequest {
+        let req = aura_os_storage::UpdateProjectAgentRequest {
             status: status_str.to_string(),
         };
         storage
@@ -244,7 +244,7 @@ impl AgentInstanceService {
             .delete_project_agent(&agent_instance_id.to_string(), &jwt)
             .await
             .map_err(|e| match &e {
-                aura_storage::StorageError::Server { status: 404, .. } => AgentError::NotFound,
+                aura_os_storage::StorageError::Server { status: 404, .. } => AgentError::NotFound,
                 _ => AgentError::Storage(e),
             })?;
         self.runtime_state.lock().await.remove(agent_instance_id);
@@ -326,7 +326,7 @@ pub fn parse_agent_status(s: &str) -> AgentStatus {
 ///   otherwise falls back to storage project-agent fields.
 /// - `runtime`: volatile in-memory state (current_task_id, current_session_id)
 pub fn merge_agent_instance(
-    spa: &aura_storage::StorageProjectAgent,
+    spa: &aura_os_storage::StorageProjectAgent,
     agent: Option<&Agent>,
     runtime: Option<&RuntimeAgentState>,
 ) -> AgentInstance {

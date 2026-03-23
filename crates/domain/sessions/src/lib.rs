@@ -6,10 +6,10 @@ use std::sync::Arc;
 use chrono::Utc;
 use tracing::warn;
 
-pub use aura_core::parse_dt;
-use aura_core::*;
-use aura_storage::StorageClient;
-use aura_store::RocksStore;
+pub use aura_os_core::parse_dt;
+use aura_os_core::*;
+use aura_os_storage::StorageClient;
+use aura_os_store::RocksStore;
 
 pub struct SessionService {
     store: Arc<RocksStore>,
@@ -25,7 +25,7 @@ pub struct SessionService {
 /// `user_id`, `model`) are defaulted; `tasks_worked` is reconstructed from the
 /// persisted `tasks_worked_count`.
 pub fn storage_session_to_session(
-    s: aura_storage::StorageSession,
+    s: aura_os_storage::StorageSession,
     local_overrides: Option<&Session>,
 ) -> Result<Session, String> {
     let mut session = Session::try_from(s)?;
@@ -72,7 +72,7 @@ impl SessionService {
     ) -> Result<Session, SessionError> {
         if let Some(ref storage) = self.storage_client {
             let jwt = self.get_jwt()?;
-            let req = aura_storage::CreateSessionRequest {
+            let req = aura_os_storage::CreateSessionRequest {
                 project_id: project_id.to_string(),
                 status: Some("active".to_string()),
                 context_usage_estimate: Some(0.0),
@@ -135,7 +135,7 @@ impl SessionService {
 
         if let Some(ref storage) = self.storage_client {
             let jwt = self.get_jwt()?;
-            let req = aura_storage::UpdateSessionRequest {
+            let req = aura_os_storage::UpdateSessionRequest {
                 status: None,
                 context_usage_estimate: Some(session.context_usage_estimate),
                 tasks_worked_count: None,
@@ -170,7 +170,7 @@ impl SessionService {
 
         if let Some(ref storage) = self.storage_client {
             let jwt = self.get_jwt()?;
-            let req = aura_storage::UpdateSessionRequest {
+            let req = aura_os_storage::UpdateSessionRequest {
                 status: Some("rolled_over".to_string()),
                 context_usage_estimate: None,
                 tasks_worked_count: None,
@@ -211,7 +211,7 @@ impl SessionService {
                 .ok()
                 .and_then(|v| v.as_str().map(String::from))
                 .unwrap_or_else(|| "completed".to_string());
-            let req = aura_storage::UpdateSessionRequest {
+            let req = aura_os_storage::UpdateSessionRequest {
                 status: Some(status_str),
                 context_usage_estimate: None,
                 tasks_worked_count: None,
@@ -243,7 +243,7 @@ impl SessionService {
                 Ok(ss) => {
                     return storage_session_to_session(ss, None).map_err(SessionError::Parse);
                 }
-                Err(aura_storage::StorageError::Server { status: 404, .. }) => {
+                Err(aura_os_storage::StorageError::Server { status: 404, .. }) => {
                     return Err(SessionError::NotFound);
                 }
                 Err(e) => return Err(SessionError::Storage(e)),
@@ -286,7 +286,7 @@ impl SessionService {
             let jwt = self.get_jwt()?;
             let current = storage.get_session(&session_id.to_string(), &jwt).await?;
             let new_count = current.tasks_worked_count.unwrap_or(0) + 1;
-            let req = aura_storage::UpdateSessionRequest {
+            let req = aura_os_storage::UpdateSessionRequest {
                 status: None,
                 context_usage_estimate: None,
                 tasks_worked_count: Some(new_count),
@@ -333,7 +333,7 @@ impl SessionService {
             let sessions = storage.list_sessions(aid, &jwt).await?;
             for ss in sessions {
                 if ss.status.as_deref() == Some("active") {
-                    let req = aura_storage::UpdateSessionRequest {
+                    let req = aura_os_storage::UpdateSessionRequest {
                         status: Some("completed".to_string()),
                         context_usage_estimate: None,
                         tasks_worked_count: None,
@@ -376,7 +376,7 @@ mod tests {
     async fn should_rollover_at_threshold() {
         let tmp = tempfile::TempDir::new().expect("temp dir should be created");
         let store =
-            Arc::new(aura_store::RocksStore::open(tmp.path()).expect("RocksStore should open"));
+            Arc::new(aura_os_store::RocksStore::open(tmp.path()).expect("RocksStore should open"));
         let svc = SessionService::new(store, 0.8, 150_000);
 
         let below = Session {
@@ -414,7 +414,7 @@ mod tests {
     async fn create_session_returns_active_session() {
         let tmp = tempfile::TempDir::new().expect("temp dir should be created");
         let store =
-            Arc::new(aura_store::RocksStore::open(tmp.path()).expect("RocksStore should open"));
+            Arc::new(aura_os_store::RocksStore::open(tmp.path()).expect("RocksStore should open"));
         let svc = SessionService::new(store, 0.8, 150_000);
 
         let pid = ProjectId::new();

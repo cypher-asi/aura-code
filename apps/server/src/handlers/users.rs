@@ -3,8 +3,8 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use aura_core::ZeroAuthSession;
-use aura_network::{NetworkProfile, NetworkUser};
+use aura_os_core::ZeroAuthSession;
+use aura_os_network::{NetworkProfile, NetworkUser};
 
 use crate::error::{map_network_error, ApiResult};
 use crate::state::AppState;
@@ -121,7 +121,7 @@ pub async fn update_me(
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
 
-    let network_req = aura_network::UpdateUserRequest {
+    let network_req = aura_os_network::UpdateUserRequest {
         display_name: req.display_name,
         avatar_url: req.avatar_url,
         bio: req.bio,
@@ -192,7 +192,7 @@ pub async fn sync_user_to_network(state: &AppState, session: &mut ZeroAuthSessio
                     && (remote_name.is_empty() || is_uuid);
 
                 if should_push {
-                    let update = aura_network::UpdateUserRequest {
+                    let update = aura_os_network::UpdateUserRequest {
                         display_name: Some(local_name.clone()),
                         avatar_url: None,
                         bio: None,

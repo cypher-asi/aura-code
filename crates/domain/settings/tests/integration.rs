@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use aura_settings::SettingsService;
-use aura_store::RocksStore;
+use aura_os_settings::SettingsService;
+use aura_os_store::RocksStore;
 use tempfile::TempDir;
 
 fn setup() -> (Arc<RocksStore>, TempDir) {

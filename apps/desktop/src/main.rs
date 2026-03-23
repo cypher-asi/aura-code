@@ -116,7 +116,7 @@ fn init_logging() {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
             EnvFilter::new(
-                "aura_desktop=debug,aura_server=debug,aura_engine=debug,tower_http=debug,info",
+                "aura_os_desktop=debug,aura_os_server=debug,aura_engine=debug,tower_http=debug,info",
             )
         }))
         .init();
@@ -163,8 +163,8 @@ fn spawn_server(
         rt.block_on(async move {
             let update_state = UpdateState::new(UpdateChannel::Stable);
 
-            let app_state = aura_server::build_app_state(&db_path);
-            let app = aura_server::create_router_with_frontend(app_state, frontend_dir)
+            let app_state = aura_os_server::build_app_state(&db_path);
+            let app = aura_os_server::create_router_with_frontend(app_state, frontend_dir)
                 .route("/api/pick-folder", axum_post(handlers::pick_folder))
                 .route("/api/pick-file", axum_post(handlers::pick_file))
                 .route("/api/open-path", axum_post(handlers::open_path))
@@ -417,7 +417,7 @@ fn main() {
                     root_path,
                 } => {
                     let p = proxy.clone();
-                    let (win, wv) = aura_ide::open_ide_window(
+                    let (win, wv) = aura_os_ide::open_ide_window(
                         elwt,
                         &base_url,
                         &file_path,

@@ -113,9 +113,9 @@ impl ApiError {
 }
 
 /// Map a `NetworkError` to an API error response.
-pub fn map_network_error(e: aura_network::NetworkError) -> (StatusCode, Json<ApiError>) {
+pub fn map_network_error(e: aura_os_network::NetworkError) -> (StatusCode, Json<ApiError>) {
     match &e {
-        aura_network::NetworkError::Server { status, body } => {
+        aura_os_network::NetworkError::Server { status, body } => {
             let code = StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY);
             (
                 code,
@@ -131,9 +131,9 @@ pub fn map_network_error(e: aura_network::NetworkError) -> (StatusCode, Json<Api
 }
 
 /// Map a `StorageError` to an API error response, preserving the upstream HTTP status.
-pub fn map_storage_error(e: aura_storage::StorageError) -> (StatusCode, Json<ApiError>) {
+pub fn map_storage_error(e: aura_os_storage::StorageError) -> (StatusCode, Json<ApiError>) {
     match &e {
-        aura_storage::StorageError::Server { status, body } => {
+        aura_os_storage::StorageError::Server { status, body } => {
             let code = StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY);
             (
                 code,

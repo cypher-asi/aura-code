@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use aura_core::FeeScheduleEntry;
-use aura_store::RocksStore;
+use aura_os_core::FeeScheduleEntry;
+use aura_os_store::RocksStore;
 
 const FEE_SCHEDULE_KEY: &str = "fee_schedule";
 
@@ -87,7 +87,7 @@ impl PricingService {
     }
 }
 
-impl aura_core::CostCalculator for PricingService {
+impl aura_os_core::CostCalculator for PricingService {
     fn compute_task_cost(&self, model: &str, input_tokens: u64, output_tokens: u64) -> f64 {
         self.compute_cost(model, input_tokens, output_tokens)
     }
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn set_fee_schedule_rejects_negative_costs() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        let store = Arc::new(aura_os_store::RocksStore::open(tmp.path()).unwrap());
         let svc = PricingService::new(store);
         let result = svc.set_fee_schedule(vec![FeeScheduleEntry {
             model: "test".into(),
@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn set_fee_schedule_rejects_empty_model() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        let store = Arc::new(aura_os_store::RocksStore::open(tmp.path()).unwrap());
         let svc = PricingService::new(store);
         let result = svc.set_fee_schedule(vec![FeeScheduleEntry {
             model: String::new(),
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn schedule_persistence_round_trip() {
         let tmp = tempfile::TempDir::new().unwrap();
-        let store = Arc::new(aura_store::RocksStore::open(tmp.path()).unwrap());
+        let store = Arc::new(aura_os_store::RocksStore::open(tmp.path()).unwrap());
         let svc = PricingService::new(store);
         let entries = vec![FeeScheduleEntry {
             model: "custom-model".into(),

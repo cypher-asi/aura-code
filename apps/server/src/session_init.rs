@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use aura_core::Project;
+use aura_os_core::Project;
 
 /// Workspace config for session_init. When present, the runtime clones the repo into its workspace.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,7 +68,7 @@ pub fn build_session_init_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aura_core::{OrgId, ProjectId, ProjectStatus};
+    use aura_os_core::{OrgId, ProjectId, ProjectStatus};
     use chrono::Utc;
 
     fn project_without_git() -> Project {

@@ -1,8 +1,8 @@
 use axum::extract::{Path, State};
 use axum::Json;
 
-use aura_agents::{merge_agent_instance, AgentInstanceService};
-use aura_core::{AgentInstance, AgentInstanceId, AgentStatus, ProjectId};
+use aura_os_agents::{merge_agent_instance, AgentInstanceService};
+use aura_os_core::{AgentInstance, AgentInstanceId, AgentStatus, ProjectId};
 
 use crate::dto::{CreateAgentInstanceRequest, UpdateAgentInstanceRequest};
 use crate::error::{map_storage_error, ApiError, ApiResult};
@@ -23,11 +23,11 @@ pub async fn create_agent_instance(
         .get_agent_async(&user_id, &body.agent_id)
         .await
         .map_err(|e| match &e {
-            aura_agents::AgentError::NotFound => ApiError::not_found("agent template not found"),
+            aura_os_agents::AgentError::NotFound => ApiError::not_found("agent template not found"),
             _ => ApiError::internal(e.to_string()),
         })?;
 
-    let req = aura_storage::CreateProjectAgentRequest {
+    let req = aura_os_storage::CreateProjectAgentRequest {
         agent_id: body.agent_id.to_string(),
         name: agent.name.clone(),
         role: Some(agent.role.clone()),
@@ -79,7 +79,7 @@ pub async fn get_agent_instance(
         .get_project_agent(&agent_instance_id.to_string(), &jwt)
         .await
         .map_err(|e| match &e {
-            aura_storage::StorageError::Server { status: 404, .. } => {
+            aura_os_storage::StorageError::Server { status: 404, .. } => {
                 ApiError::not_found("agent instance not found")
             }
             _ => map_storage_error(e),
@@ -103,7 +103,7 @@ pub async fn update_agent_instance(
     let jwt = state.get_jwt()?;
 
     if let Some(ref status_str) = body.status {
-        let target = aura_agents::parse_agent_status(status_str);
+        let target = aura_os_agents::parse_agent_status(status_str);
 
         let current_spa = storage
             .get_project_agent(&agent_instance_id.to_string(), &jwt)
@@ -112,13 +112,13 @@ pub async fn update_agent_instance(
         let current = current_spa
             .status
             .as_deref()
-            .map(aura_agents::parse_agent_status)
+            .map(aura_os_agents::parse_agent_status)
             .unwrap_or(AgentStatus::Idle);
 
         AgentInstanceService::validate_transition(current, target)
             .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-        let req = aura_storage::UpdateProjectAgentRequest {
+        let req = aura_os_storage::UpdateProjectAgentRequest {
             status: status_str.clone(),
         };
         storage
@@ -151,7 +151,7 @@ pub async fn delete_agent_instance(
         .delete_project_agent(&agent_instance_id.to_string(), &jwt)
         .await
         .map_err(|e| {
-            if let aura_storage::StorageError::Server { status, body } = &e {
+            if let aura_os_storage::StorageError::Server { status, body } = &e {
                 let url = format!(
                     "{}/api/project-agents/{}",
                     storage.base_url(),
@@ -165,7 +165,7 @@ pub async fn delete_agent_instance(
                 );
             }
             match &e {
-                aura_storage::StorageError::Server { status: 404, .. } => {
+                aura_os_storage::StorageError::Server { status: 404, .. } => {
                     ApiError::not_found("agent instance not found")
                 }
                 _ => map_storage_error(e),

@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use aura_core::*;
+use aura_os_core::*;
 use chrono::Utc;
 
 // ---------------------------------------------------------------------------

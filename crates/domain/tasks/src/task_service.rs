@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use aura_core::*;
-use aura_storage::TransitionTaskRequest as StorageTransitionReq;
+use aura_os_core::*;
+use aura_os_storage::TransitionTaskRequest as StorageTransitionReq;
 
 use crate::error::TaskError;
 use crate::TaskService;
@@ -115,7 +115,7 @@ impl TaskService {
 
         if let Ok(storage) = self.require_storage() {
             if let Ok(jwt) = self.get_jwt() {
-                let update = aura_storage::UpdateTaskRequest {
+                let update = aura_os_storage::UpdateTaskRequest {
                     title: None,
                     description: None,
                     order_index: None,
@@ -411,7 +411,7 @@ impl TaskService {
         };
         let dep_ids: Vec<String> = dependency_ids.iter().map(|d| d.to_string()).collect();
 
-        let req = aura_storage::CreateTaskRequest {
+        let req = aura_os_storage::CreateTaskRequest {
             spec_id: originating_task.spec_id.to_string(),
             title: title.clone(),
             description: Some(description),

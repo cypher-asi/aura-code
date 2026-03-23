@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use aura_core::ZeroAuthSession;
+use aura_os_core::ZeroAuthSession;
 
 use crate::error::{StoreError, StoreResult};
 use crate::store::RocksStore;

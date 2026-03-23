@@ -12,21 +12,21 @@ use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, Mutex};
 
-use aura_agents::{AgentInstanceService, AgentService};
-use aura_auth::AuthService;
-use aura_billing::{BillingClient, PricingService};
-use aura_core::*;
-use aura_link::SwarmClient;
-use aura_network::NetworkClient;
-use aura_orbit::OrbitClient;
-use aura_orgs::OrgService;
-use aura_projects::ProjectService;
-use aura_server::state::AppState;
-use aura_sessions::SessionService;
-use aura_settings::SettingsService;
-use aura_storage::StorageClient;
-use aura_store::RocksStore;
-use aura_tasks::TaskService;
+use aura_os_agents::{AgentInstanceService, AgentService};
+use aura_os_auth::AuthService;
+use aura_os_billing::{BillingClient, PricingService};
+use aura_os_core::*;
+use aura_os_link::SwarmClient;
+use aura_os_network::NetworkClient;
+use aura_os_orbit::OrbitClient;
+use aura_os_orgs::OrgService;
+use aura_os_projects::ProjectService;
+use aura_os_server::state::AppState;
+use aura_os_sessions::SessionService;
+use aura_os_settings::SettingsService;
+use aura_os_storage::StorageClient;
+use aura_os_store::RocksStore;
+use aura_os_tasks::TaskService;
 
 pub fn store_zero_auth_session(store: &RocksStore) {
     let session = serde_json::to_vec(&ZeroAuthSession {
@@ -212,7 +212,7 @@ pub fn build_test_app_from_store(
     let pricing_service = Arc::new(PricingService::new(store.clone()));
     let task_service = Arc::new(TaskService::new(store.clone(), storage_client.clone()));
     let agent_service = Arc::new(AgentService::new(store.clone(), network_client.clone()));
-    let runtime_agent_state: aura_agents::RuntimeAgentStateMap =
+    let runtime_agent_state: aura_os_agents::RuntimeAgentStateMap =
         Arc::new(Mutex::new(HashMap::new()));
     let agent_instance_service = Arc::new(AgentInstanceService::new(
         store.clone(),
@@ -250,7 +250,7 @@ pub fn build_test_app_from_store(
         swarm_client,
         automaton_registry: Arc::new(Mutex::new(HashMap::new())),
         event_broadcast,
-        terminal_manager: Arc::new(aura_terminal::TerminalManager::new()),
+        terminal_manager: Arc::new(aura_os_terminal::TerminalManager::new()),
         network_client,
         storage_client,
         orbit_client: Arc::new(OrbitClient::new()),
@@ -259,7 +259,7 @@ pub fn build_test_app_from_store(
         require_zero_pro: false,
     };
 
-    let app = aura_server::create_router(state.clone());
+    let app = aura_os_server::create_router(state.clone());
     (app, state)
 }
 

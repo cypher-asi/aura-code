@@ -2,8 +2,8 @@ use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
-use aura_core::OrgId;
-use aura_network::{LeaderboardEntry, MemberUsageStats, PlatformStats, UsageStats};
+use aura_os_core::OrgId;
+use aura_os_network::{LeaderboardEntry, MemberUsageStats, PlatformStats, UsageStats};
 
 use crate::error::{map_network_error, ApiResult};
 use crate::state::AppState;

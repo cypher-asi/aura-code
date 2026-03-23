@@ -1,4 +1,4 @@
-use aura_storage::StorageError;
+use aura_os_storage::StorageError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {

@@ -7,9 +7,9 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use tracing::debug;
 
-use aura_core::*;
-use aura_network::NetworkClient;
-use aura_store::RocksStore;
+use aura_os_core::*;
+use aura_os_network::NetworkClient;
+use aura_os_store::RocksStore;
 
 fn parse_rfc3339_or_now(raw: Option<&str>) -> DateTime<Utc> {
     raw.and_then(|v| DateTime::parse_from_rfc3339(v).ok())
@@ -27,7 +27,7 @@ fn net_or_local<T: Clone>(
         .or_else(|| local.and_then(|p| field(p).clone()))
 }
 
-fn network_project_to_core(net: &aura_network::NetworkProject, local: Option<&Project>) -> Project {
+fn network_project_to_core(net: &aura_os_network::NetworkProject, local: Option<&Project>) -> Project {
     let project_id = net
         .id
         .parse::<ProjectId>()
@@ -207,7 +207,7 @@ impl ProjectService {
             .store
             .get_setting(&Self::project_key(project_id))
             .map_err(|err| match err {
-                aura_store::StoreError::NotFound(_) => ProjectError::NotFound(*project_id),
+                aura_os_store::StoreError::NotFound(_) => ProjectError::NotFound(*project_id),
                 other => ProjectError::Store(other),
             })?;
         serde_json::from_slice(&bytes).map_err(|err| ProjectError::InvalidInput(err.to_string()))
@@ -390,7 +390,7 @@ impl ProjectService {
             .get_project(&id.to_string(), &jwt)
             .await
             .map_err(|e| match &e {
-                aura_network::NetworkError::Server { status: 404, .. } => {
+                aura_os_network::NetworkError::Server { status: 404, .. } => {
                     ProjectError::NotFound(*id)
                 }
                 _ => ProjectError::Network(e),
@@ -422,7 +422,7 @@ impl ProjectService {
             .clone()
             .filter(|path| !path.is_empty());
 
-        let net_req = aura_network::UpdateProjectRequest {
+        let net_req = aura_os_network::UpdateProjectRequest {
             name: input.name.clone(),
             description: input.description.clone(),
             folder,

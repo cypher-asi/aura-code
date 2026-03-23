@@ -20,7 +20,7 @@ pub struct PersistedLogEntry {
 }
 
 async fn aggregate_storage_logs(
-    storage: &aura_storage::StorageClient,
+    storage: &aura_os_storage::StorageClient,
     jwt: &str,
     project_ids: &[String],
 ) -> Vec<PersistedLogEntry> {

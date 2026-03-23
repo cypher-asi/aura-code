@@ -1,7 +1,7 @@
 use axum::extract::State;
 use axum::Json;
 
-use aura_core::FeeScheduleEntry;
+use aura_os_core::FeeScheduleEntry;
 
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;

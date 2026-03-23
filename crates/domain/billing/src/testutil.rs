@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use aura_core::ZeroAuthSession;
-use aura_store::RocksStore;
+use aura_os_core::ZeroAuthSession;
+use aura_os_store::RocksStore;
 
 use crate::client::BillingClient;
 

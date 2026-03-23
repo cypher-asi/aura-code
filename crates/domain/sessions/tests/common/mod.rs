@@ -9,9 +9,9 @@ use chrono::Utc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
-use aura_core::*;
-use aura_sessions::SessionService;
-use aura_storage::{CreateSessionRequest, StorageClient, StorageSession, UpdateSessionRequest};
+use aura_os_core::*;
+use aura_os_sessions::SessionService;
+use aura_os_storage::{CreateSessionRequest, StorageClient, StorageSession, UpdateSessionRequest};
 
 pub type SessionDb = Arc<Mutex<Vec<StorageSession>>>;
 
@@ -111,7 +111,7 @@ pub async fn start_mock_storage() -> (String, SessionDb) {
 }
 
 pub fn make_session_service(
-    store: &Arc<aura_store::RocksStore>,
+    store: &Arc<aura_os_store::RocksStore>,
     storage_url: &str,
     rollover_threshold: f64,
 ) -> SessionService {
@@ -120,7 +120,7 @@ pub fn make_session_service(
         .with_storage_client(Some(storage))
 }
 
-pub fn store_test_jwt(store: &aura_store::RocksStore) {
+pub fn store_test_jwt(store: &aura_os_store::RocksStore) {
     let session = serde_json::to_vec(&ZeroAuthSession {
         user_id: "u1".into(),
         network_user_id: None,

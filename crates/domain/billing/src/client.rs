@@ -1,7 +1,7 @@
 use reqwest::Client;
 use tracing::{debug, warn};
 
-use aura_core::{BillingAccount, CheckoutSessionResponse, CreditBalance, TransactionsResponse};
+use aura_os_core::{BillingAccount, CheckoutSessionResponse, CreditBalance, TransactionsResponse};
 
 use crate::error::BillingError;
 
@@ -398,7 +398,7 @@ mod tests {
             "description": "LLM opus call",
             "created_at": "2026-03-20T10:00:00Z"
         }"#;
-        let tx: aura_core::CreditTransaction = serde_json::from_str(json).unwrap();
+        let tx: aura_os_core::CreditTransaction = serde_json::from_str(json).unwrap();
         assert_eq!(tx.id, "tx-99");
         assert_eq!(tx.amount_cents, -1500);
         assert_eq!(tx.transaction_type, "usage");

@@ -2,9 +2,9 @@ use axum::extract::{Path, State};
 use axum::Json;
 use serde::Serialize;
 
-use aura_core::{ProjectId, SpecId, Task, TaskId, TaskStatus};
-use aura_storage::StorageTask;
-use aura_tasks::TaskService;
+use aura_os_core::{ProjectId, SpecId, Task, TaskId, TaskStatus};
+use aura_os_storage::StorageTask;
+use aura_os_tasks::TaskService;
 
 use crate::dto::TransitionTaskRequest;
 use crate::error::{ApiError, ApiResult};
@@ -12,7 +12,7 @@ use crate::state::AppState;
 
 /// Convert a `StorageTask` into a domain `Task`.
 ///
-/// Delegates to the canonical `TryFrom<StorageTask>` impl in `aura_storage`.
+/// Delegates to the canonical `TryFrom<StorageTask>` impl in `aura_os_storage`.
 pub(crate) fn storage_task_to_task(s: StorageTask) -> Result<Task, String> {
     Task::try_from(s)
 }
@@ -110,7 +110,7 @@ pub async fn transition_task(
         .get_task(&task_id.to_string(), &jwt)
         .await
         .map_err(|e| match &e {
-            aura_storage::StorageError::Server { status: 404, .. } => {
+            aura_os_storage::StorageError::Server { status: 404, .. } => {
                 ApiError::not_found("task not found")
             }
             _ => ApiError::internal(e.to_string()),
@@ -129,14 +129,14 @@ pub async fn transition_task(
         .transition_task(
             &task_id.to_string(),
             &jwt,
-            &aura_storage::TransitionTaskRequest { status: status_str },
+            &aura_os_storage::TransitionTaskRequest { status: status_str },
         )
         .await
         .map_err(|e| match &e {
-            aura_storage::StorageError::Server { status: 404, .. } => {
+            aura_os_storage::StorageError::Server { status: 404, .. } => {
                 ApiError::not_found("task not found")
             }
-            aura_storage::StorageError::Server { status: 400, body } => {
+            aura_os_storage::StorageError::Server { status: 400, body } => {
                 ApiError::bad_request(body.clone())
             }
             _ => ApiError::internal(e.to_string()),
@@ -161,7 +161,7 @@ pub async fn retry_task(
         .get_task(&task_id.to_string(), &jwt)
         .await
         .map_err(|e| match &e {
-            aura_storage::StorageError::Server { status: 404, .. } => {
+            aura_os_storage::StorageError::Server { status: 404, .. } => {
                 ApiError::not_found("task not found")
             }
             _ => ApiError::internal(e.to_string()),
@@ -174,16 +174,16 @@ pub async fn retry_task(
         .transition_task(
             &task_id.to_string(),
             &jwt,
-            &aura_storage::TransitionTaskRequest {
+            &aura_os_storage::TransitionTaskRequest {
                 status: "ready".to_string(),
             },
         )
         .await
         .map_err(|e| match &e {
-            aura_storage::StorageError::Server { status: 404, .. } => {
+            aura_os_storage::StorageError::Server { status: 404, .. } => {
                 ApiError::not_found("task not found")
             }
-            aura_storage::StorageError::Server { status: 400, body } => {
+            aura_os_storage::StorageError::Server { status: 400, body } => {
                 ApiError::bad_request(body.clone())
             }
             _ => ApiError::internal(e.to_string()),
@@ -207,7 +207,7 @@ pub struct TaskOutputResponse {
 }
 
 async fn fetch_task_output_from_storage(
-    storage: &aura_storage::StorageClient,
+    storage: &aura_os_storage::StorageClient,
     jwt: &str,
     task_id: &TaskId,
 ) -> Option<TaskOutputResponse> {
@@ -274,7 +274,7 @@ pub async fn get_task_output(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aura_storage::StorageTask;
+    use aura_os_storage::StorageTask;
 
     fn make_valid_storage_task() -> StorageTask {
         StorageTask {

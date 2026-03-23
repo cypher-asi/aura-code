@@ -2,8 +2,8 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 
-use aura_core::{Project, ProjectId};
-use aura_projects::UpdateProjectInput;
+use aura_os_core::{Project, ProjectId};
+use aura_os_projects::UpdateProjectInput;
 
 use crate::dto::{CreateImportedProjectRequest, CreateProjectRequest, UpdateProjectRequest};
 use crate::error::{map_network_error, ApiError, ApiResult};
@@ -62,7 +62,7 @@ async fn create_project_impl(
 
         let jwt = state.get_jwt()?;
 
-        let net_req = aura_network::CreateProjectRequest {
+        let net_req = aura_os_network::CreateProjectRequest {
             name: req.name.clone(),
             org_id: req.org_id.to_string(),
             description: Some(req.description.clone()),
@@ -97,7 +97,7 @@ async fn create_project_impl(
         .project_service
         .create_project(input)
         .map_err(|e| match &e {
-            aura_projects::ProjectError::InvalidInput(msg) => ApiError::bad_request(msg.clone()),
+            aura_os_projects::ProjectError::InvalidInput(msg) => ApiError::bad_request(msg.clone()),
             _ => ApiError::internal(e.to_string()),
         })?;
     Ok((StatusCode::CREATED, Json(project)))
@@ -235,7 +235,7 @@ pub async fn get_project(
         .project_service
         .get_project(&project_id)
         .map_err(|e| match &e {
-            aura_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
+            aura_os_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
             _ => ApiError::internal(e.to_string()),
         })?;
     Ok(Json(project))
@@ -259,8 +259,8 @@ pub async fn update_project(
         .project_service
         .update_project(&project_id, input)
         .map_err(|e| match &e {
-            aura_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
-            aura_projects::ProjectError::InvalidInput(msg) => ApiError::bad_request(msg.clone()),
+            aura_os_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
+            aura_os_projects::ProjectError::InvalidInput(msg) => ApiError::bad_request(msg.clone()),
             _ => ApiError::internal(e.to_string()),
         })?;
 
@@ -270,7 +270,7 @@ pub async fn update_project(
             .linked_folder_path
             .as_deref()
             .and_then(folder_name_from_path);
-        let net_req = aura_network::UpdateProjectRequest {
+        let net_req = aura_os_network::UpdateProjectRequest {
             name: req.name.clone(),
             description: req.description.clone(),
             folder,
@@ -301,7 +301,7 @@ pub async fn delete_project(
         .project_service
         .get_project(&project_id)
         .map_err(|e| match &e {
-            aura_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
+            aura_os_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
             _ => ApiError::internal(e.to_string()),
         })?;
 
@@ -331,7 +331,7 @@ pub async fn archive_project(
         .project_service
         .archive_project(&project_id)
         .map_err(|e| match &e {
-            aura_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
+            aura_os_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
             _ => ApiError::internal(e.to_string()),
         })?;
     Ok(Json(project))

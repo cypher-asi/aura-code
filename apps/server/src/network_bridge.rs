@@ -7,8 +7,8 @@ use tracing::{debug, info, warn};
 use futures_util::StreamExt;
 use tokio_tungstenite::tungstenite;
 
-use aura_network::NetworkClient;
-use aura_store::RocksStore;
+use aura_os_network::NetworkClient;
+use aura_os_store::RocksStore;
 
 /// Connects to the aura-network WebSocket and rebroadcasts social events
 /// (feed activity, follows, usage updates) on the local event_broadcast channel.

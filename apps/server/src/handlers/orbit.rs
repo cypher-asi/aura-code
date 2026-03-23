@@ -1,7 +1,7 @@
 use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 
-use aura_core::ProjectId;
+use aura_os_core::ProjectId;
 
 use crate::error::{map_network_error, ApiError, ApiResult};
 use crate::state::AppState;
@@ -17,7 +17,7 @@ pub struct ListOrbitReposQuery {
 pub async fn list_orbit_repos(
     State(state): State<AppState>,
     Query(query): Query<ListOrbitReposQuery>,
-) -> ApiResult<axum::Json<Vec<aura_orbit::OrbitRepo>>> {
+) -> ApiResult<axum::Json<Vec<aura_os_orbit::OrbitRepo>>> {
     let base_url = state
         .orbit_base_url
         .as_deref()
@@ -30,11 +30,11 @@ pub async fn list_orbit_repos(
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
 
-    let repos_with_url: Vec<aura_orbit::OrbitRepo> = repos
+    let repos_with_url: Vec<aura_os_orbit::OrbitRepo> = repos
         .into_iter()
         .map(|r| {
             let clone_url = Some(r.clone_url_or(base_url));
-            aura_orbit::OrbitRepo {
+            aura_os_orbit::OrbitRepo {
                 id: r.id,
                 name: r.name,
                 owner: r.owner,
@@ -54,7 +54,7 @@ pub async fn list_orbit_repos(
 pub async fn get_project_orbit_collaborators(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
-) -> ApiResult<axum::Json<Vec<aura_orbit::OrbitCollaborator>>> {
+) -> ApiResult<axum::Json<Vec<aura_os_orbit::OrbitCollaborator>>> {
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
     let net_project = client

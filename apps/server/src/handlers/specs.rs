@@ -8,7 +8,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::info;
 
-use aura_core::{ProjectId, Spec, SpecId};
+use aura_os_core::{ProjectId, Spec, SpecId};
 
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
@@ -34,7 +34,7 @@ pub async fn list_specs(
 pub async fn generate_specs_summary(
     State(state): State<AppState>,
     Path(project_id): Path<ProjectId>,
-) -> ApiResult<Json<aura_core::Project>> {
+) -> ApiResult<Json<aura_os_core::Project>> {
     info!(%project_id, "Specs summary regeneration requested");
 
     let config = serde_json::json!({
@@ -86,7 +86,7 @@ pub async fn get_spec(
             .get_spec(&spec_id.to_string(), &jwt)
             .await
             .map_err(|e| match &e {
-                aura_storage::StorageError::Server { status: 404, .. } => {
+                aura_os_storage::StorageError::Server { status: 404, .. } => {
                     ApiError::not_found("spec not found")
                 }
                 _ => ApiError::internal(e.to_string()),

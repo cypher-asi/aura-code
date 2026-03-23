@@ -6,21 +6,21 @@ use axum::http::StatusCode;
 use axum::Json;
 use tokio::sync::{broadcast, Mutex};
 
-use aura_agents::{AgentInstanceService, AgentService};
-use aura_auth::AuthService;
-use aura_billing::{BillingClient, PricingService};
-use aura_core::{AgentInstanceId, ProjectId, ZeroAuthSession};
-use aura_link::SwarmClient;
-use aura_network::NetworkClient;
-use aura_orbit::OrbitClient;
-use aura_orgs::OrgService;
-use aura_projects::ProjectService;
-use aura_sessions::SessionService;
-use aura_settings::SettingsService;
-use aura_storage::StorageClient;
-use aura_store::RocksStore;
-use aura_tasks::TaskService;
-use aura_terminal::TerminalManager;
+use aura_os_agents::{AgentInstanceService, AgentService};
+use aura_os_auth::AuthService;
+use aura_os_billing::{BillingClient, PricingService};
+use aura_os_core::{AgentInstanceId, ProjectId, ZeroAuthSession};
+use aura_os_link::SwarmClient;
+use aura_os_network::NetworkClient;
+use aura_os_orbit::OrbitClient;
+use aura_os_orgs::OrgService;
+use aura_os_projects::ProjectService;
+use aura_os_sessions::SessionService;
+use aura_os_settings::SettingsService;
+use aura_os_storage::StorageClient;
+use aura_os_store::RocksStore;
+use aura_os_tasks::TaskService;
+use aura_os_terminal::TerminalManager;
 
 use crate::error::ApiError;
 

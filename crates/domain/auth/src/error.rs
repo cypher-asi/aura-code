@@ -1,4 +1,4 @@
-use aura_store::StoreError;
+use aura_os_store::StoreError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {

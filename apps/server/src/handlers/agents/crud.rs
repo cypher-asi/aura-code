@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::Json;
 
-use aura_core::{Agent, AgentId};
+use aura_os_core::{Agent, AgentId};
 
 use crate::dto::{CreateAgentRequest, UpdateAgentRequest};
 use crate::error::{map_network_error, ApiError, ApiResult};
@@ -16,7 +16,7 @@ pub async fn create_agent(
 ) -> ApiResult<Json<Agent>> {
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
-    let net_req = aura_network::CreateAgentRequest {
+    let net_req = aura_os_network::CreateAgentRequest {
         name: body.name,
         role: Some(body.role),
         personality: Some(body.personality),
@@ -62,7 +62,7 @@ pub async fn update_agent(
 ) -> ApiResult<Json<Agent>> {
     let client = state.require_network_client()?;
     let jwt = state.get_jwt()?;
-    let net_req = aura_network::UpdateAgentRequest {
+    let net_req = aura_os_network::UpdateAgentRequest {
         name: body.name,
         role: body.role,
         personality: body.personality,

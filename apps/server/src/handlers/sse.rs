@@ -1,6 +1,6 @@
 use axum::response::sse::Event;
 
-use aura_link::AutomatonEvent;
+use aura_os_link::AutomatonEvent;
 
 /// Maps an [`AutomatonEvent`] from the swarm to an SSE [`Event`].
 pub fn automaton_event_to_sse(evt: &AutomatonEvent) -> Event {

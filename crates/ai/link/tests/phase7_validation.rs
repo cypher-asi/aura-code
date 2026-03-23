@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use aura_link::{
+use aura_os_link::{
     AutoBuildResult, BuildBaseline, CacheControl, ContentBlock, ImageSource, LinkRuntime, Message,
     MessageContent, Role, RuntimeError, RuntimeEvent, ThinkingConfig, ToolCall, ToolCallResult,
     ToolDefinition, ToolExecutor, ToolResultContent, TotalUsage, TurnConfig, TurnRequest,

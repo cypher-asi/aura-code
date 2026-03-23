@@ -27,7 +27,7 @@ async fn main() {
 
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            EnvFilter::new("aura_server=debug,aura_services=debug,tower_http=debug,info")
+            EnvFilter::new("aura_os_server=debug,aura_services=debug,tower_http=debug,info")
         }))
         .init();
 
@@ -35,7 +35,7 @@ async fn main() {
     std::fs::create_dir_all(&data_dir).expect("failed to create data directory");
 
     let db_path = data_dir.join("db");
-    let state = aura_server::build_app_state(&db_path);
+    let state = aura_os_server::build_app_state(&db_path);
 
     let frontend_dir = find_frontend_dir();
     if let Some(ref dir) = frontend_dir {
@@ -44,7 +44,7 @@ async fn main() {
         warn!("No frontend dist found; API-only mode (connect frontend dev server to port 3100)");
     }
 
-    let app = aura_server::create_router_with_frontend(state, frontend_dir);
+    let app = aura_os_server::create_router_with_frontend(state, frontend_dir);
 
     let port: u16 = std::env::var("AURA_SERVER_PORT")
         .ok()

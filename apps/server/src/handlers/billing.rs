@@ -2,7 +2,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 
-use aura_core::{BillingAccount, OrgId, TransactionsResponse, ZeroAuthSession};
+use aura_os_core::{BillingAccount, OrgId, TransactionsResponse, ZeroAuthSession};
 
 use crate::dto::CreateCreditCheckoutRequest;
 use crate::error::{ApiError, ApiResult};
@@ -16,14 +16,14 @@ fn get_auth_session(state: &AppState) -> Result<ZeroAuthSession, (StatusCode, Js
     serde_json::from_slice(&bytes).map_err(|e| ApiError::internal(e.to_string()))
 }
 
-fn billing_err(e: aura_billing::BillingError) -> (StatusCode, Json<ApiError>) {
+fn billing_err(e: aura_os_billing::BillingError) -> (StatusCode, Json<ApiError>) {
     match e {
-        aura_billing::BillingError::InsufficientCredits { balance_cents } => {
+        aura_os_billing::BillingError::InsufficientCredits { balance_cents } => {
             ApiError::payment_required(format!(
                 "Insufficient credits (balance: {balance_cents} cents). Please purchase credits to continue."
             ))
         }
-        aura_billing::BillingError::ServerError { status, body } => {
+        aura_os_billing::BillingError::ServerError { status, body } => {
             let (sc, code, msg) = match status {
                 401 => (StatusCode::UNAUTHORIZED, "unauthorized", "billing token expired or invalid"),
                 403 => (StatusCode::FORBIDDEN, "forbidden", "billing server rejected the request"),
@@ -31,7 +31,7 @@ fn billing_err(e: aura_billing::BillingError) -> (StatusCode, Json<ApiError>) {
             };
             (sc, Json(ApiError { error: msg.to_string(), code: code.to_string(), details: Some(body) }))
         }
-        aura_billing::BillingError::Request(_) => {
+        aura_os_billing::BillingError::Request(_) => {
             (StatusCode::BAD_GATEWAY, Json(ApiError {
                 error: "unable to reach billing server".to_string(),
                 code: "billing_unreachable".to_string(),

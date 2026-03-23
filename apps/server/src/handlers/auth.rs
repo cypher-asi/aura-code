@@ -4,8 +4,8 @@ use axum::Json;
 use base64::Engine;
 use serde::Serialize;
 
-use aura_auth::AuthError;
-use aura_core::ZeroAuthSession;
+use aura_os_auth::AuthError;
+use aura_os_core::ZeroAuthSession;
 
 use crate::dto::{AuthLoginRequest, AuthRegisterRequest, AuthSessionResponse};
 use crate::error::{ApiError, ApiResult};

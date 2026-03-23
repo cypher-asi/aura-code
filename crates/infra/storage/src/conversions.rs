@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-use aura_core::{
+use aura_os_core::{
     parse_dt, FileChangeSummary, Session, SessionStatus, Spec, Task, TaskId, TaskStatus,
 };
 
