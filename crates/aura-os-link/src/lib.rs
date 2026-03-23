@@ -1,4 +1,3 @@
-#![warn(missing_docs)]
 //! Agentic execution link — [`SwarmClient`] HTTP client for the
 //! automaton management API.
 //!

@@ -1,5 +1,3 @@
-#![warn(missing_docs)]
-
 pub mod batch;
 pub mod error;
 pub mod store;

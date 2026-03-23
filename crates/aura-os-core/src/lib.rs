@@ -1,5 +1,3 @@
-#![warn(missing_docs)]
-
 pub mod entities;
 pub mod enums;
 pub mod helpers;

@@ -1,5 +1,3 @@
-#![warn(missing_docs)]
-
 pub mod client;
 mod conversions;
 pub mod error;

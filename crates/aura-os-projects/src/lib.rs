@@ -1,5 +1,3 @@
-#![warn(missing_docs)]
-
 mod error;
 pub use error::ProjectError;
 
