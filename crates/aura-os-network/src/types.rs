@@ -214,6 +214,8 @@ pub struct NetworkAgent {
     pub skills: Option<Vec<String>>,
     #[serde(default)]
     pub icon: Option<String>,
+    #[serde(default)]
+    pub machine_type: Option<String>,
     #[serde(alias = "ownerId")]
     pub user_id: String,
     #[serde(default)]
@@ -251,6 +253,8 @@ pub struct CreateAgentRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub machine_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub org_id: Option<String>,
 }
 
@@ -269,6 +273,8 @@ pub struct UpdateAgentRequest {
     pub skills: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub machine_type: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
