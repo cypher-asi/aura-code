@@ -63,3 +63,12 @@ pub enum HarnessMode {
     #[default]
     Swarm,
 }
+
+impl HarnessMode {
+    pub fn from_machine_type(mt: &str) -> Self {
+        match mt {
+            "local" => Self::Local,
+            _ => Self::Swarm,
+        }
+    }
+}
