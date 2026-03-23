@@ -191,9 +191,11 @@ pub(crate) async fn send_agent_message_stream(
         .await
         .map_err(|e| ApiError::internal(format!("looking up agent: {e}")))?;
 
+    let jwt = state.get_jwt().ok();
     let config = SessionConfig {
         system_prompt: Some(agent.system_prompt.clone()),
         agent_id: Some(agent_id.to_string()),
+        token: jwt,
         ..Default::default()
     };
 
@@ -237,9 +239,11 @@ pub(crate) async fn send_message_stream(
         .await
         .map_err(|e| ApiError::internal(format!("looking up agent instance: {e}")))?;
 
+    let jwt = state.get_jwt().ok();
     let config = SessionConfig {
         system_prompt: Some(instance.system_prompt.clone()),
         agent_id: Some(instance.agent_id.to_string()),
+        token: jwt,
         ..Default::default()
     };
 

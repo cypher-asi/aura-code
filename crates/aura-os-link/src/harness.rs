@@ -10,6 +10,7 @@ pub struct SessionConfig {
     pub max_turns: Option<u32>,
     pub workspace: Option<WorkspaceConfig>,
     pub agent_id: Option<String>,
+    pub token: Option<String>,
 }
 
 impl Default for SessionConfig {
@@ -21,6 +22,7 @@ impl Default for SessionConfig {
             max_turns: None,
             workspace: None,
             agent_id: None,
+            token: None,
         }
     }
 }

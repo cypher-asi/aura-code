@@ -46,7 +46,7 @@ impl HarnessLink for LocalHarness {
             max_tokens: config.max_tokens,
             max_turns: config.max_turns,
             workspace: config.workspace,
-            token: None,
+            token: config.token,
             external_tools: vec![],
         })?;
 
