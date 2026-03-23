@@ -8,7 +8,6 @@ use tracing::info;
 use aura_os_agents::{AgentInstanceService, AgentService};
 use aura_os_auth::AuthService;
 use aura_os_billing::BillingClient;
-use aura_os_core::HarnessMode;
 use aura_os_link::{HarnessLink, LocalHarness, SwarmHarness};
 use aura_os_network::NetworkClient;
 use aura_os_orgs::OrgService;
@@ -86,7 +85,6 @@ struct DomainServices {
     session_service: Arc<SessionService>,
     local_harness: Arc<dyn HarnessLink>,
     swarm_harness: Arc<dyn HarnessLink>,
-    default_harness: HarnessMode,
 }
 
 fn init_domain_services(
@@ -114,10 +112,6 @@ fn init_domain_services(
     );
     let swarm_harness: Arc<dyn HarnessLink> = Arc::new(SwarmHarness::from_env());
     let local_harness: Arc<dyn HarnessLink> = Arc::new(LocalHarness::from_env());
-    let default_harness = match std::env::var("DEFAULT_HARNESS").as_deref() {
-        Ok("local") => HarnessMode::Local,
-        _ => HarnessMode::Swarm,
-    };
 
     DomainServices {
         project_service,
@@ -127,7 +121,6 @@ fn init_domain_services(
         session_service,
         local_harness,
         swarm_harness,
-        default_harness,
     }
 }
 
@@ -167,7 +160,6 @@ pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
         session_service: domain.session_service,
         local_harness: domain.local_harness,
         swarm_harness: domain.swarm_harness,
-        default_harness: domain.default_harness,
         harness_sessions: Arc::new(Mutex::new(HashMap::new())),
         terminal_manager: Arc::new(TerminalManager::new()),
         network_client,

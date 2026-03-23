@@ -44,7 +44,6 @@ pub struct AppState {
     pub session_service: Arc<SessionService>,
     pub local_harness: Arc<dyn HarnessLink>,
     pub swarm_harness: Arc<dyn HarnessLink>,
-    pub default_harness: HarnessMode,
     pub harness_sessions: HarnessSessionRegistry,
     pub terminal_manager: Arc<TerminalManager>,
     /// Optional aura-network client. `None` when `AURA_NETWORK_URL` is not set.
