@@ -70,8 +70,8 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" apps/desktop/Cargo.toml
-          rm -f apps/desktop/Cargo.toml.bak
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" apps/aura-os-desktop/Cargo.toml
+          rm -f apps/aura-os-desktop/Cargo.toml.bak
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked

@@ -58,7 +58,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          BASE=$(grep '^version' apps/desktop/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          BASE=$(grep '^version' apps/aura-os-desktop/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
           SHORT_SHA=$(git rev-parse --short HEAD)
           NIGHTLY="${BASE}-nightly.${SHORT_SHA}"
           echo "version=${NIGHTLY}" >> "$GITHUB_OUTPUT"
@@ -68,8 +68,8 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" apps/desktop/Cargo.toml
-          rm -f apps/desktop/Cargo.toml.bak
+          sed -i.bak "s/^version = \".*\"/version = \"${VERSION}\"/" apps/aura-os-desktop/Cargo.toml
+          rm -f apps/aura-os-desktop/Cargo.toml.bak
 
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
@@ -118,7 +118,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          BASE=$(grep '^version' apps/desktop/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          BASE=$(grep '^version' apps/aura-os-desktop/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
           SHORT_SHA=$(git rev-parse --short HEAD)
           echo "version=${BASE}-nightly.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
@@ -157,7 +157,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          BASE=$(grep '^version' apps/desktop/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          BASE=$(grep '^version' apps/aura-os-desktop/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
           SHORT_SHA=$(git rev-parse --short HEAD)
           echo "version=${BASE}-nightly.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
