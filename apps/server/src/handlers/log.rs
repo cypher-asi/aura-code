@@ -31,7 +31,7 @@ async fn aggregate_storage_logs(
     let log_results = futures_util::future::join_all(log_futs).await;
 
     let mut entries = Vec::new();
-    for (i, result) in log_results.into_iter().enumerate() {
+    for (result, project_id) in log_results.into_iter().zip(project_ids.iter()) {
         match result {
             Ok(storage_logs) => {
                 for sl in &storage_logs {
@@ -55,7 +55,7 @@ async fn aggregate_storage_logs(
             }
             Err(e) => {
                 tracing::warn!(
-                    project_id = %project_ids[i], error = %e,
+                    project_id = %project_id, error = %e,
                     "Failed to list log entries from storage"
                 );
             }

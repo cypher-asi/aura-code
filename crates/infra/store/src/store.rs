@@ -93,7 +93,7 @@ impl RocksStore {
                 Ok(v) => results.push(v),
                 Err(e) => {
                     let key_str = String::from_utf8_lossy(&key);
-                    tracing::warn!("Skipping unreadable entry {key_str}: {e}");
+                    tracing::warn!(key = %key_str, error = %e, "Skipping unreadable entry");
                 }
             }
         }

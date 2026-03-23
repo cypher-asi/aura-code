@@ -6,7 +6,6 @@ pub use error::AgentError;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
 use tokio::sync::Mutex;
 
 use aura_os_core::parse_dt;
@@ -21,18 +20,8 @@ pub type RuntimeAgentStateMap = Arc<Mutex<HashMap<AgentInstanceId, RuntimeAgentS
 fn network_agent_to_core(net: &NetworkAgent) -> Agent {
     let agent_id = net.id.parse::<AgentId>().unwrap_or_else(|_| AgentId::new());
     let profile_id: Option<ProfileId> = net.profile_id.as_ref().and_then(|s| s.parse().ok());
-    let created_at = net
-        .created_at
-        .as_deref()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(Utc::now);
-    let updated_at = net
-        .updated_at
-        .as_deref()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(Utc::now);
+    let created_at = parse_dt(&net.created_at);
+    let updated_at = parse_dt(&net.updated_at);
 
     Agent {
         agent_id,

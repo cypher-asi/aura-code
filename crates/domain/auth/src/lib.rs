@@ -43,6 +43,7 @@ fn parse_zos_error(status: u16, body: &str) -> AuthError {
 struct ZosLoginResponse {
     #[serde(rename = "accessToken")]
     access_token: String,
+    // Stored for future token refresh support
     #[allow(dead_code)]
     #[serde(rename = "identityToken")]
     identity_token: String,
@@ -102,7 +103,7 @@ impl AuthService {
     }
 
     pub async fn login(&self, email: &str, password: &str) -> Result<ZeroAuthSession, AuthError> {
-        debug!(email, "Logging in via zOS-api");
+        debug!("Logging in via zOS-api");
         let res = self
             .http
             .post(format!("{ZOS_API_URL}/api/v2/accounts/login"))
@@ -126,7 +127,7 @@ impl AuthService {
         email: &str,
         password: &str,
     ) -> Result<ZeroAuthSession, AuthError> {
-        debug!(email, "Registering via zOS-api");
+        debug!("Registering via zOS-api");
         let res = self
             .http
             .post(format!("{ZOS_API_URL}/api/v2/accounts/createAndAuthorize"))

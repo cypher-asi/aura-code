@@ -288,9 +288,9 @@ mod tests {
     #[test]
     fn test_terminal_id_display() {
         let id = TerminalId::new();
-        let s = format!("{id}");
-        assert!(!s.is_empty());
-        assert!(s.contains('-'), "UUID should contain dashes: {s}");
+        let id_str = format!("{id}");
+        assert!(!id_str.is_empty());
+        assert!(id_str.contains('-'), "UUID should contain dashes: {id_str}");
     }
 
     #[test]

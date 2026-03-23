@@ -39,7 +39,7 @@ async fn main() {
 
     let frontend_dir = find_frontend_dir();
     if let Some(ref dir) = frontend_dir {
-        info!("Serving frontend from {}", dir.display());
+        info!(path = %dir.display(), "Serving frontend");
     } else {
         warn!("No frontend dist found; API-only mode (connect frontend dev server to port 3100)");
     }
@@ -55,7 +55,7 @@ async fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(IpAddr::from([127, 0, 0, 1]));
     let addr = SocketAddr::from((host, port));
-    info!("Aura server listening on http://{addr}");
+    info!(%addr, "Aura server listening");
 
     let listener = TcpListener::bind(addr).await.expect("failed to bind");
     axum::serve(listener, app).await.expect("server error");

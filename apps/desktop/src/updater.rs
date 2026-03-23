@@ -124,7 +124,7 @@ async fn fetch_manifest(channel: UpdateChannel) -> Result<Option<UpdateManifest>
         .map_err(|e| format!("invalid manifest: {e}"))?;
 
     if manifest.version == current_version {
-        info!("already up-to-date at v{current_version}");
+        info!(%current_version, "already up-to-date");
         return Ok(None);
     }
 

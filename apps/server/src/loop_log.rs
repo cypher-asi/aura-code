@@ -50,11 +50,7 @@ impl LoopLogWriter {
         );
         let run_dir = self.base_dir.join(project_id.to_string()).join(&run_id);
         if let Err(e) = fs::create_dir_all(&run_dir).await {
-            debug!(
-                "loop_log: failed to create run dir {}: {}",
-                run_dir.display(),
-                e
-            );
+            debug!(path = %run_dir.display(), error = %e, "loop_log: failed to create run dir");
             return;
         }
         let mut state = self.run_state.lock().await;
@@ -86,7 +82,7 @@ impl LoopLogWriter {
         }) {
             Ok(s) => s + "\n",
             Err(e) => {
-                debug!("loop_log: failed to serialize event: {}", e);
+                debug!(error = %e, "loop_log: failed to serialize event");
                 return;
             }
         };
@@ -97,7 +93,7 @@ impl LoopLogWriter {
                 let path = run.run_dir.join("events.jsonl");
                 drop(state);
                 if let Err(e) = append_line(&path, &line).await {
-                    debug!("loop_log: failed to append run event: {}", e);
+                    debug!(error = %e, "loop_log: failed to append run event");
                 }
                 return;
             }
@@ -107,14 +103,14 @@ impl LoopLogWriter {
             let project_dir = self.base_dir.join(project_id.to_string());
             let path = project_dir.join("project_events.jsonl");
             if let Err(e) = create_dir_and_append(&project_dir, &path, &line).await {
-                debug!("loop_log: failed to append project event: {}", e);
+                debug!(error = %e, "loop_log: failed to append project event");
             }
             return;
         }
 
         let path = self.base_dir.join("global_events.jsonl");
         if let Err(e) = append_line(&path, &line).await {
-            debug!("loop_log: failed to append global event: {}", e);
+            debug!(error = %e, "loop_log: failed to append global event");
         }
     }
 
@@ -132,11 +128,7 @@ impl LoopLogWriter {
         if let Some(run_dir) = run_dir {
             let path = run_dir.join(format!("task_{}.output.txt", task_id));
             if let Err(e) = fs::write(&path, output).await {
-                debug!(
-                    "loop_log: failed to write task output {}: {}",
-                    path.display(),
-                    e
-                );
+                debug!(path = %path.display(), error = %e, "loop_log: failed to write task output");
             }
         }
         let mut map = self.task_to_run.lock().await;

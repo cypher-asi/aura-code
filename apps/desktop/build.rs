@@ -28,7 +28,11 @@ fn main() {
     let dist_dir = frontend_dir.join("dist");
 
     if !frontend_dir.join("package.json").exists() {
-        panic!("frontend directory not found at {}", frontend_dir.display());
+        eprintln!(
+            "error: frontend directory not found at {}",
+            frontend_dir.display()
+        );
+        std::process::exit(1);
     }
 
     if !frontend_dir.join("node_modules").exists() {

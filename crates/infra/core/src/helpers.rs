@@ -35,25 +35,23 @@ pub fn fuzzy_search_replace(content: &str, search: &str, replace: &str) -> Optio
     }
 
     let content_lines: Vec<&str> = content.lines().collect();
-    let mut match_positions: Vec<usize> = Vec::new();
-
-    'outer: for start in 0..content_lines.len() {
-        if start + search_lines.len() > content_lines.len() {
-            break;
-        }
-        for (j, search_line) in search_lines.iter().enumerate() {
-            if content_lines[start + j].trim() != *search_line {
-                continue 'outer;
-            }
-        }
-        match_positions.push(start);
-    }
+    let match_positions: Vec<usize> = content_lines
+        .windows(search_lines.len())
+        .enumerate()
+        .filter(|(_, window)| {
+            window
+                .iter()
+                .zip(search_lines.iter())
+                .all(|(cl, sl)| cl.trim() == *sl)
+        })
+        .map(|(i, _)| i)
+        .collect();
 
     if match_positions.len() != 1 {
         return None;
     }
 
-    let match_start = match_positions[0];
+    let match_start = *match_positions.first()?;
     let match_end = match_start + search_lines.len();
 
     let mut result = String::with_capacity(content.len());

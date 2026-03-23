@@ -72,6 +72,7 @@ pub enum StopReason {
 
 impl StopReason {
     /// Parse a stop reason from a provider string.
+    // Returns Self directly (infallible); FromStr requires Result with an error type.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
