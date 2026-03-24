@@ -17,6 +17,16 @@ function sessionToUser(session: AuthSession): ZeroUser {
   };
 }
 
+function getZeroProRefreshError(session: AuthSession): string | null {
+  return session.zero_pro_refresh_error ?? null;
+}
+
+function formatZeroProRefreshError(err: unknown): string {
+  return err instanceof Error
+    ? err.message
+    : "Unable to verify ZERO Pro status right now.";
+}
+
 interface AuthState {
   user: ZeroUser | null;
   isLoading: boolean;
@@ -38,14 +48,18 @@ export const useAuthStore = create<AuthState>()((set) => ({
       const session = await api.auth.getSession();
       try {
         const validated = await api.auth.validate();
-        set({ user: sessionToUser(validated), zeroProRefreshError: null });
+        set({
+          user: sessionToUser(validated),
+          zeroProRefreshError: getZeroProRefreshError(validated),
+        });
       } catch (err) {
+        if (err instanceof ApiClientError && err.status === 401) {
+          set({ user: null, zeroProRefreshError: null });
+          return;
+        }
         set({
           user: sessionToUser(session),
-          zeroProRefreshError:
-            err instanceof Error
-              ? err.message
-              : "Unable to verify ZERO Pro status right now.",
+          zeroProRefreshError: formatZeroProRefreshError(err),
         });
       }
     } catch (err) {
@@ -61,17 +75,18 @@ export const useAuthStore = create<AuthState>()((set) => ({
     set({ isLoading: true, zeroProRefreshError: null });
     try {
       const validated = await api.auth.validate();
-      set({ user: sessionToUser(validated), zeroProRefreshError: null });
+      set({
+        user: sessionToUser(validated),
+        zeroProRefreshError: getZeroProRefreshError(validated),
+      });
       return validated;
     } catch (err) {
       if (err instanceof ApiClientError && err.status === 401) {
-        set({ user: null });
+        set({ user: null, zeroProRefreshError: null });
+        throw err;
       }
       set({
-        zeroProRefreshError:
-          err instanceof Error
-            ? err.message
-            : "Unable to verify ZERO Pro status right now.",
+        zeroProRefreshError: formatZeroProRefreshError(err),
       });
       throw err;
     } finally {
@@ -81,12 +96,18 @@ export const useAuthStore = create<AuthState>()((set) => ({
 
   login: async (email: string, password: string) => {
     const session = await api.auth.login(email, password);
-    set({ user: sessionToUser(session), zeroProRefreshError: null });
+    set({
+      user: sessionToUser(session),
+      zeroProRefreshError: getZeroProRefreshError(session),
+    });
   },
 
   register: async (email: string, password: string) => {
     const session = await api.auth.register(email, password);
-    set({ user: sessionToUser(session), zeroProRefreshError: null });
+    set({
+      user: sessionToUser(session),
+      zeroProRefreshError: getZeroProRefreshError(session),
+    });
   },
 
   logout: async () => {
