@@ -51,33 +51,56 @@ export function ChatPanel({
   useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
 
   // Prevent scroll-jank: keep the message area at opacity 0 until
-  // useAutoScroll has scrolled to the bottom AND the virtualizer has had
-  // a frame to render items at the correct position.
+  // useAutoScroll has scrolled to the bottom AND the virtualizer's
+  // measure → render cascade has settled (scrollHeight stable).
   const messages = useStreamMessages(streamKey);
   const hasMessages = messages.length > 0;
   const hasMessagesRef = useRef(hasMessages);
-  useEffect(() => { hasMessagesRef.current = hasMessages; }, [hasMessages]);
+  hasMessagesRef.current = hasMessages;
 
   const [contentVisible, setContentVisible] = useState(false);
   const contentVisibleRef = useRef(false);
   useEffect(() => { contentVisibleRef.current = contentVisible; }, [contentVisible]);
 
   const revealRafRef = useRef(0);
+  const lastRevealHeightRef = useRef(0);
+  const stableFramesRef = useRef(0);
   useEffect(() => () => cancelAnimationFrame(revealRafRef.current), []);
+
+  const STABLE_FRAMES_REQUIRED = 2;
 
   const onScrollApplied = useCallback(() => {
     if (!hasMessagesRef.current || contentVisibleRef.current) return;
-    // Double-RAF: the outer frame lets the virtualizer process the scroll
-    // event and re-render items at the new offset.  If that triggers
-    // measurement corrections (ResizeObserver → scheduleScroll →
-    // onScrollApplied again), the pending inner RAF is cancelled and the
-    // cycle restarts, so the reveal always follows the *last* adjustment.
+
+    // A new scroll correction just landed — reset the stability counter
+    // and (re)start the polling loop.
+    stableFramesRef.current = 0;
     cancelAnimationFrame(revealRafRef.current);
-    revealRafRef.current = requestAnimationFrame(() => {
-      revealRafRef.current = requestAnimationFrame(() => {
+
+    const el = messageAreaRef.current;
+    if (!el) return;
+    lastRevealHeightRef.current = el.scrollHeight;
+
+    // Poll until scrollHeight is unchanged for STABLE_FRAMES_REQUIRED
+    // consecutive frames. This adapts to the virtualizer's deferred
+    // measurement pipeline (mount items → measureElement → batch state
+    // update → re-render) which can take 2-3+ frames for very tall items.
+    const poll = () => {
+      if (contentVisibleRef.current) return;
+      const h = messageAreaRef.current?.scrollHeight ?? 0;
+      if (h === lastRevealHeightRef.current) {
+        stableFramesRef.current++;
+      } else {
+        stableFramesRef.current = 0;
+        lastRevealHeightRef.current = h;
+      }
+      if (stableFramesRef.current >= STABLE_FRAMES_REQUIRED) {
         setContentVisible(true);
-      });
-    });
+      } else {
+        revealRafRef.current = requestAnimationFrame(poll);
+      }
+    };
+    revealRafRef.current = requestAnimationFrame(poll);
   }, []);
 
   const { handleScroll, scrollToBottom } = useAutoScroll(

@@ -74,7 +74,10 @@ export function useAutoScroll(
         pendingTargetRef.current = null;
         if (nextTarget == null) return;
         if (autoScrollRef.current) {
-          guardedScroll(el, nextTarget, programmaticScrollRef);
+          // Always read the live scrollHeight — the value captured by the
+          // observer may be stale if the virtualizer measured a very tall
+          // item between the observer fire and this RAF execution.
+          guardedScroll(el, el.scrollHeight, programmaticScrollRef);
         }
         syncHeight();
         onScrollAppliedRef.current?.();
