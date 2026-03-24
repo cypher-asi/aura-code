@@ -227,11 +227,28 @@ export function handleToolResult(
   setters: StreamSetters,
   info: ToolResultInfo,
 ): void {
-  refs.toolCalls.current = refs.toolCalls.current.map((tc) =>
-    tc.id === info.id
-      ? { ...tc, result: info.result, isError: info.is_error, pending: false }
-      : tc,
-  );
+  let targetIndex = -1;
+  if (info.id) {
+    targetIndex = refs.toolCalls.current.findIndex((tc) => tc.id === info.id);
+  } else {
+    // Harness protocol may omit tool-use ids on tool_result; in that case,
+    // resolve the most recent pending call with the same tool name.
+    for (let i = refs.toolCalls.current.length - 1; i >= 0; i--) {
+      const tc = refs.toolCalls.current[i];
+      if (tc.pending && tc.name === info.name) {
+        targetIndex = i;
+        break;
+      }
+    }
+  }
+
+  if (targetIndex !== -1) {
+    refs.toolCalls.current = refs.toolCalls.current.map((tc, idx) =>
+      idx === targetIndex
+        ? { ...tc, result: info.result, isError: info.is_error, pending: false, started: false }
+        : tc,
+    );
+  }
   setters.setActiveToolCalls([...refs.toolCalls.current]);
   refs.needsSeparator.current = true;
 }
@@ -280,6 +297,16 @@ export function handleMessageSaved(
   resetStreamBuffers(refs, setters);
 }
 
+function failPendingToolCalls(refs: StreamRefs, reason: string): void {
+  const hasPending = refs.toolCalls.current.some((tc) => tc.pending);
+  if (!hasPending) return;
+  refs.toolCalls.current = refs.toolCalls.current.map((tc) =>
+    tc.pending
+      ? { ...tc, pending: false, started: false, isError: true, result: reason }
+      : tc,
+  );
+}
+
 export function handleStreamError(
   refs: StreamRefs,
   setters: StreamSetters,
@@ -289,6 +316,9 @@ export function handleStreamError(
   if (isInsufficientCreditsError(message)) {
     dispatchInsufficientCredits();
   }
+  failPendingToolCalls(refs, `Stream error: ${message}`);
+  setters.setActiveToolCalls([...refs.toolCalls.current]);
+
   const { savedThinking, savedThinkingDuration } = snapshotThinking(refs);
   const prefix = refs.streamBuffer.current
     ? refs.streamBuffer.current + "\n\n"
@@ -314,6 +344,9 @@ export function finalizeStream(
   abortRef: MutableRefObject<AbortController | null>,
   closureIsStreaming: boolean,
 ): void {
+  failPendingToolCalls(refs, "Connection lost before result was received");
+  setters.setActiveToolCalls([...refs.toolCalls.current]);
+
   const hasBuffer = !!refs.streamBuffer.current;
 
   if (hasBuffer && !closureIsStreaming) {
