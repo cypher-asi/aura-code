@@ -43,9 +43,10 @@ impl HarnessLink for LocalHarness {
             max_tokens: config.max_tokens,
             temperature: None,
             max_turns: config.max_turns,
-            installed_tools: config.installed_tools,
+            installed_tools: None,
             workspace: config.workspace,
             token: config.token,
+            project_id: config.project_id,
             conversation_messages: config.conversation_messages,
         }))?;
 

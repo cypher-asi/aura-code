@@ -76,15 +76,12 @@ impl HarnessLink for SwarmHarness {
         let agent_id = &agent_resp.id;
 
         // 2. Create session
-        let mut session_body = serde_json::json!({
+        let session_body = serde_json::json!({
             "model": config.model,
             "max_tokens": config.max_tokens,
             "max_turns": config.max_turns,
             "workspace": config.workspace,
         });
-        if let Some(ref pid) = config.project_id {
-            session_body["project_id"] = serde_json::Value::String(pid.clone());
-        }
         let session_resp: CreateSessionResponse = self
             .client
             .post(format!("{}/v1/agents/{agent_id}/sessions", self.base_url))

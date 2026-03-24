@@ -14,5 +14,5 @@ pub use aura_protocol::{
     UserMessage, SessionInit, ApprovalResponse, ConversationMessage,
     SessionReady, AssistantMessageStart, TextDelta, ThinkingDelta,
     ToolUseStart, ToolResultMsg, AssistantMessageEnd, ErrorMsg,
-    SessionUsage, FilesChanged, FileOp, ToolInfo, InstalledTool, ToolAuth,
+    SessionUsage, FilesChanged, FileOp, ToolInfo,
 };
