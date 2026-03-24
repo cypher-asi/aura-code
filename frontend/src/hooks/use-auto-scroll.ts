@@ -25,8 +25,10 @@ function guardedScroll(
 /**
  * Auto-scrolls a container to the bottom whenever its content changes,
  * but only if the user is already near the bottom. Uses MutationObserver
- * to detect DOM changes and ResizeObserver to compensate for content
- * reflow when the container width changes (e.g. lane resize).
+ * to detect DOM changes, a content ResizeObserver to catch virtualizer
+ * measurement corrections (height changes that don't alter DOM structure),
+ * and a container ResizeObserver to compensate for content reflow when
+ * the container width changes (e.g. lane resize).
  */
 export function useAutoScroll(
   ref: React.RefObject<HTMLElement | null>,
@@ -118,6 +120,25 @@ export function useAutoScroll(
     });
     resizeObs.observe(el);
 
+    // Observe direct children of the scroll container for height changes.
+    // The MutationObserver misses virtualizer measurement corrections
+    // because they only change inline style attributes (height/transform),
+    // not the DOM structure. A ResizeObserver on the content element catches
+    // these, ensuring auto-scroll adjusts to the corrected scrollHeight.
+    const contentObs = new ResizeObserver(() => {
+      const oldSH = prevScrollHeightRef.current;
+      const newSH = el.scrollHeight;
+      if (newSH === oldSH) return;
+      if (autoScrollRef.current && newSH > oldSH) {
+        scheduleScroll(newSH);
+        return;
+      }
+      syncHeight();
+    });
+    for (const child of Array.from(el.children)) {
+      contentObs.observe(child);
+    }
+
     scrollIfNeeded();
     syncHeight();
 
@@ -131,6 +152,7 @@ export function useAutoScroll(
       }
       mutationObs.disconnect();
       resizeObs.disconnect();
+      contentObs.disconnect();
     };
   }, [ref, resetKey]);
 
