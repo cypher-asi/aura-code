@@ -157,8 +157,8 @@ fn parse_host_port(url: &str) -> Option<String> {
 /// Spawns the child process and polls for readiness in a background thread
 /// so it never blocks the caller.
 fn maybe_spawn_local_harness() {
-    let harness_url = std::env::var("LOCAL_HARNESS_URL")
-        .unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let harness_url =
+        std::env::var("LOCAL_HARNESS_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
     let Some(host_port) = parse_host_port(&harness_url) else {
         return;
@@ -220,11 +220,13 @@ fn maybe_spawn_local_harness() {
 
     match cmd.spawn() {
         Ok(child) => {
-            info!(pid = child.id(), "aura-harness child process spawned (building in background)");
+            info!(
+                pid = child.id(),
+                "aura-harness child process spawned (building in background)"
+            );
 
             std::thread::spawn(move || {
-                let deadline =
-                    std::time::Instant::now() + std::time::Duration::from_secs(120);
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(1000));
                     if std::time::Instant::now() > deadline {
@@ -293,6 +295,7 @@ pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
         terminal_manager: Arc::new(TerminalManager::new()),
         network_client,
         storage_client,
+        internal_service_token: env_opt("INTERNAL_SERVICE_TOKEN"),
         event_broadcast,
         require_zero_pro: std::env::var("REQUIRE_ZERO_PRO")
             .map(|v| v != "false" && v != "0")
