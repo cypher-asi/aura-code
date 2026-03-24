@@ -15,5 +15,6 @@ pub(crate) mod specs;
 pub(crate) mod sse;
 pub(crate) mod tasks;
 pub(crate) mod terminal;
+pub(crate) mod tool_callbacks;
 pub(crate) mod users;
 pub(crate) mod ws;

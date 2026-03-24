@@ -11,7 +11,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::handlers::{
     agents, auth, billing, dev_loop, feed, files, follows, leaderboard, log, orgs, project_stats,
-    projects, specs, tasks, terminal, users, ws,
+    projects, specs, tasks, terminal, tool_callbacks, users, ws,
 };
 use crate::state::AppState;
 
@@ -30,6 +30,7 @@ pub fn create_router_with_frontend(state: AppState, frontend_dir: Option<PathBuf
         .merge(spec_routes())
         .merge(task_routes())
         .merge(agent_routes())
+        .merge(tool_callback_routes())
         .merge(social_routes())
         .merge(system_routes())
         .layer(cors)
@@ -249,6 +250,13 @@ fn agent_routes() -> Router<AppState> {
             "/api/projects/:project_id/sessions",
             get(agents::list_project_sessions),
         )
+}
+
+fn tool_callback_routes() -> Router<AppState> {
+    Router::new().route(
+        "/api/tool-callbacks/:project_id/:tool_name",
+        post(tool_callbacks::handle_tool_callback),
+    )
 }
 
 fn social_routes() -> Router<AppState> {

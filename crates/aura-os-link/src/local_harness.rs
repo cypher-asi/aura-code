@@ -43,7 +43,7 @@ impl HarnessLink for LocalHarness {
             max_tokens: config.max_tokens,
             temperature: None,
             max_turns: config.max_turns,
-            installed_tools: None,
+            installed_tools: config.installed_tools,
             workspace: config.workspace,
             token: config.token,
             conversation_messages: config.conversation_messages,
@@ -53,6 +53,15 @@ impl HarnessLink for LocalHarness {
         let session_id = loop {
             match rx.recv().await {
                 Ok(OutboundMessage::SessionReady(ready)) => {
+                    // #region agent log
+                    let tool_names: Vec<&str> = ready.tools.iter().map(|t| t.name.as_str()).collect();
+                    info!(
+                        session_id = %ready.session_id,
+                        tool_count = ready.tools.len(),
+                        tools = ?tool_names,
+                        "SessionReady tools reported by harness"
+                    );
+                    // #endregion
                     break ready.session_id;
                 }
                 Ok(OutboundMessage::Error(err)) => {

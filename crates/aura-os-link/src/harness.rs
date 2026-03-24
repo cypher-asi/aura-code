@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use tokio::sync::{broadcast, mpsc};
 
-use aura_protocol::{ConversationMessage, InboundMessage, OutboundMessage};
+use aura_protocol::{ConversationMessage, InboundMessage, InstalledTool, OutboundMessage};
 
 pub struct SessionConfig {
     pub system_prompt: Option<String>,
@@ -12,6 +12,8 @@ pub struct SessionConfig {
     pub agent_id: Option<String>,
     pub token: Option<String>,
     pub conversation_messages: Option<Vec<ConversationMessage>>,
+    pub project_id: Option<String>,
+    pub installed_tools: Option<Vec<InstalledTool>>,
 }
 
 impl Default for SessionConfig {
@@ -25,6 +27,8 @@ impl Default for SessionConfig {
             agent_id: None,
             token: None,
             conversation_messages: None,
+            project_id: None,
+            installed_tools: None,
         }
     }
 }

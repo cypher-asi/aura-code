@@ -40,13 +40,17 @@ async fn resolve_chat_session(
     project_id: &str,
 ) -> Option<String> {
     if let Ok(sessions) = storage.list_sessions(project_agent_id, jwt).await {
-        // Walk backwards to find the most recent session that still exists in
-        // storage.  Sessions whose messages endpoint returns 404 are stale
-        // (purged upstream) and must be skipped.
+        // Walk backwards to find the most recent session whose messages
+        // endpoint is still functional.  Sessions that return 404 on
+        // list_messages have been purged upstream and must be skipped —
+        // get_session may still return 200 for the record itself.
         for session in sessions.iter().rev() {
-            match storage.get_session(&session.id, jwt).await {
+            match storage.list_messages(&session.id, jwt, Some(1), None).await {
                 Ok(_) => return Some(session.id.clone()),
                 Err(e) => {
+                    // #region agent log
+                    { use std::io::Write; if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug-23e999.log") { let _ = writeln!(f, r#"{{"sessionId":"23e999","hypothesisId":"H-F","location":"messages.rs:resolve_chat_session","message":"skipping stale session","data":{{"session_id":"{}","error":"{}"}},"timestamp":{}}}"#, session.id, e, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()); } }
+                    // #endregion
                     tracing::debug!(
                         session_id = %session.id,
                         error = %e,
@@ -64,7 +68,12 @@ async fn resolve_chat_session(
         summary_of_previous_context: None,
     };
     match storage.create_session(project_agent_id, jwt, &req).await {
-        Ok(session) => Some(session.id),
+        Ok(session) => {
+            // #region agent log
+            { use std::io::Write; if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug-23e999.log") { let _ = writeln!(f, r#"{{"sessionId":"23e999","hypothesisId":"H-F","location":"messages.rs:resolve_new_session","message":"created fresh session","data":{{"session_id":"{}","project_agent_id":"{}"}},"timestamp":{}}}"#, session.id, project_agent_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()); } }
+            // #endregion
+            Some(session.id)
+        }
         Err(e) => {
             warn!(error = %e, "Failed to create chat session in storage");
             None
@@ -420,11 +429,18 @@ async fn aggregate_agent_messages_from_storage_result(
     agent_id: &AgentId,
 ) -> Result<Vec<Message>, aura_os_storage::StorageError> {
     let (Some(ref storage), Ok(jwt)) = (&state.storage_client, state.get_jwt()) else {
+        // #region agent log
+        { use std::io::Write; if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug-23e999.log") { let _ = writeln!(f, r#"{{"sessionId":"23e999","hypothesisId":"H-E","location":"messages.rs:aggregate_early_return","message":"no storage or jwt","data":{{"agent_id":"{}"}},"timestamp":{}}}"#, agent_id, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()); } }
+        // #endregion
         return Ok(Vec::new());
     };
     let agent_id_str = agent_id.to_string();
     let matching = find_matching_project_agents(state, storage, &jwt, &agent_id_str).await;
     let sessions_outcome = fetch_all_sessions(storage, &jwt, &matching).await;
+
+    // #region agent log
+    { use std::io::Write; if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug-23e999.log") { let _ = writeln!(f, r#"{{"sessionId":"23e999","hypothesisId":"H-A","location":"messages.rs:aggregate_sessions","message":"session fetch done","data":{{"agent_id":"{}","matching_agents":{},"total_sessions":{},"failed_agents":{},"all_failed":{}}},"timestamp":{}}}"#, agent_id, matching.len(), sessions_outcome.sessions.len(), sessions_outcome.failed_agents, sessions_outcome.all_failed(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()); } }
+    // #endregion
 
     if sessions_outcome.all_failed() {
         if let Some(err) = sessions_outcome.first_error {
@@ -433,6 +449,11 @@ async fn aggregate_agent_messages_from_storage_result(
     }
 
     let mut message_outcome = collect_session_messages(storage, &jwt, &sessions_outcome.sessions).await;
+
+    // #region agent log
+    { use std::io::Write; if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("debug-23e999.log") { let _ = writeln!(f, r#"{{"sessionId":"23e999","hypothesisId":"H-A","location":"messages.rs:aggregate_messages","message":"message collect done","data":{{"agent_id":"{}","total_sessions":{},"failed_sessions":{},"messages_count":{},"all_failed":{}}},"timestamp":{}}}"#, agent_id, message_outcome.total_sessions, message_outcome.failed_sessions, message_outcome.messages.len(), message_outcome.all_failed(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()); } }
+    // #endregion
+
     if message_outcome.all_failed() {
         if let Some(err) = message_outcome.first_error {
             return Err(err);
@@ -670,13 +691,58 @@ pub(crate) async fn send_message_stream(
     };
 
     let jwt = state.get_jwt().ok();
+    let pid_str = project_id.to_string();
+
+    let system_prompt = build_project_system_prompt(&state, &project_id, &instance.system_prompt);
+
+    let installed_tools = super::super::tool_callbacks::build_installed_tools(
+        &pid_str,
+        jwt.as_deref(),
+    );
+
     let config = SessionConfig {
-        system_prompt: Some(instance.system_prompt.clone()),
+        system_prompt: Some(system_prompt),
         agent_id: Some(instance.agent_id.to_string()),
         token: jwt,
         conversation_messages,
+        project_id: Some(pid_str),
+        installed_tools: Some(installed_tools),
         ..Default::default()
     };
 
     open_harness_chat_stream(&state, &session_key, instance.harness_mode(), config, body.content, persist_ctx).await
+}
+
+fn build_project_system_prompt(
+    state: &AppState,
+    project_id: &ProjectId,
+    agent_prompt: &str,
+) -> String {
+    let project_ctx = match state.project_service.get_project(project_id) {
+        Ok(p) => {
+            let desc: &str = &p.description;
+            let folder: &str = &p.linked_folder_path;
+            let mut ctx = format!(
+                "<project_context>\nproject_id: {}\nproject_name: {}\n",
+                project_id, p.name,
+            );
+            if !desc.is_empty() {
+                ctx.push_str(&format!("description: {}\n", desc));
+            }
+            if !folder.is_empty() {
+                ctx.push_str(&format!("workspace: {}\n", folder));
+            }
+            ctx.push_str("</project_context>\n\n");
+            ctx.push_str("IMPORTANT: When calling tools that accept a project_id parameter, always use the project_id from the project_context above.\n\n");
+            ctx
+        }
+        Err(_) => {
+            format!(
+                "<project_context>\nproject_id: {}\n</project_context>\n\n\
+                 IMPORTANT: When calling tools that accept a project_id parameter, always use the project_id above.\n\n",
+                project_id,
+            )
+        }
+    };
+    format!("{}{}", project_ctx, agent_prompt)
 }
