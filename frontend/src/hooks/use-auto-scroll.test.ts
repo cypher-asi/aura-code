@@ -606,6 +606,32 @@ describe("useAutoScroll", () => {
     expect(el.scrollTop).toBe(1300);
   });
 
+  it("scrolls to bottom after resetKey change even with a pending RAF from old observers", () => {
+    const el = makeEl();
+    const ref = { current: el };
+    const { rerender } = renderHook(
+      ({ key }: { key: string }) => useAutoScroll(ref, key),
+      { initialProps: { key: "a" } },
+    );
+    flushRafs();
+
+    // Simulate what happens in the browser: DOM changes (chat switch)
+    // trigger the PREVIOUS MutationObserver before React runs effect cleanup.
+    // This schedules a RAF via scheduleScroll, setting scrollRafRef.
+    (el as any).scrollHeight = 1500;
+    act(() => MockMutationObserver.instances[0].trigger());
+    // Don't flush — leave the RAF pending.
+
+    // Now switch conversations. The effect cleanup cancels the pending RAF.
+    // Without the fix, scrollRafRef stays stale and blocks the new scroll.
+    (el as any).scrollTop = 0;
+    (el as any).scrollHeight = 2000;
+    rerender({ key: "b" });
+    flushRafs();
+
+    expect(el.scrollTop).toBe(2000);
+  });
+
   // ---------------------------------------------------------------------------
   // Cleanup
   // ---------------------------------------------------------------------------

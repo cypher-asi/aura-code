@@ -145,7 +145,9 @@ export function useAutoScroll(
     return () => {
       if (scrollRafRef.current !== null) {
         cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
       }
+      pendingTargetRef.current = null;
       if (settleTimerRef.current !== null) {
         clearTimeout(settleTimerRef.current);
         settleTimerRef.current = null;
