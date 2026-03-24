@@ -330,6 +330,8 @@ export function handleAssistantTurnBoundary(
     setters.setThinkingDurationMs(null);
     refs.needsSeparator.current = false;
   }
+  refs.timeline.current = [];
+  setters.setTimeline([]);
 }
 
 function failPendingToolCalls(refs: StreamRefs, reason: string): void {

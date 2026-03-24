@@ -329,12 +329,19 @@ function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
       case EventType.MessageEnd:
         handleMessageSaved(refs, setters, event.content.message);
         break;
-      case EventType.AssistantMessageEnd:
+      case EventType.AssistantMessageEnd: {
         // #region agent log
         console.warn('[DEBUG-ec05ef] assistant_message_end', { pendingTools: refs.toolCalls.current.filter((t: { pending: boolean }) => t.pending).map((t: { name: string }) => t.name) });
         // #endregion
         handleAssistantTurnBoundary(refs, setters);
+        const stopReason = (event.content as { stop_reason?: string }).stop_reason;
+        if (stopReason !== "tool_use") {
+          resetStreamBuffers(refs, setters);
+          setters.setIsStreaming(false);
+          sidekickRef.current.setStreamingAgentInstanceId(null);
+        }
         break;
+      }
       case EventType.AgentInstanceUpdated:
         sidekickRef.current.notifyAgentInstanceUpdate(event.content.agent_instance);
         break;
