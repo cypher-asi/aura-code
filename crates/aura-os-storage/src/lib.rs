@@ -11,7 +11,7 @@ pub use error::StorageError;
 pub use types::{
     CreateLogEntryRequest, CreateMessageRequest, CreateProjectAgentRequest,
     CreateSessionEventRequest, CreateSessionRequest, CreateSpecRequest, CreateTaskRequest,
-    StorageLogEntry, StorageMessage, StorageProjectAgent, StorageSession, StorageSessionEvent,
-    StorageSpec, StorageTask, StorageTaskFileChangeSummary, TransitionTaskRequest,
-    UpdateProjectAgentRequest, UpdateSessionRequest, UpdateTaskRequest,
+    ProjectStats, StorageLogEntry, StorageMessage, StorageProjectAgent, StorageSession,
+    StorageSessionEvent, StorageSpec, StorageTask, StorageTaskFileChangeSummary,
+    TransitionTaskRequest, UpdateProjectAgentRequest, UpdateSessionRequest, UpdateTaskRequest,
 };

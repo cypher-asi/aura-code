@@ -1,6 +1,47 @@
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
+// Project Stats
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectStats {
+    #[serde(default)]
+    pub total_tasks: u64,
+    #[serde(default)]
+    pub tasks_pending: u64,
+    #[serde(default)]
+    pub tasks_ready: u64,
+    #[serde(default)]
+    pub tasks_in_progress: u64,
+    #[serde(default)]
+    pub tasks_blocked: u64,
+    #[serde(default)]
+    pub tasks_done: u64,
+    #[serde(default)]
+    pub tasks_failed: u64,
+    #[serde(default)]
+    pub completion_percentage: f64,
+    #[serde(default)]
+    pub total_tokens: u64,
+    #[serde(default)]
+    pub total_events: u64,
+    #[serde(default)]
+    pub total_agents: u64,
+    #[serde(default)]
+    pub total_sessions: u64,
+    #[serde(default)]
+    pub total_time_seconds: f64,
+    #[serde(default)]
+    pub lines_changed: u64,
+    #[serde(default)]
+    pub total_specs: u64,
+    #[serde(default)]
+    pub contributors: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Project Agent types
 // ---------------------------------------------------------------------------
 

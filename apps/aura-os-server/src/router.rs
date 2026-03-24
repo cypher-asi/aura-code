@@ -10,8 +10,8 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::handlers::{
-    agents, auth, billing, dev_loop, feed, files, follows, leaderboard, log, orgs, projects,
-    specs, tasks, terminal, users, ws,
+    agents, auth, billing, dev_loop, feed, files, follows, leaderboard, log, orgs, project_stats,
+    projects, specs, tasks, terminal, users, ws,
 };
 use crate::state::AppState;
 
@@ -133,6 +133,10 @@ fn project_routes() -> Router<AppState> {
         .route(
             "/api/projects/:project_id/archive",
             post(projects::archive_project),
+        )
+        .route(
+            "/api/projects/:project_id/stats",
+            get(project_stats::get_project_stats),
         )
         .route("/api/list-directory", post(files::list_directory))
 }

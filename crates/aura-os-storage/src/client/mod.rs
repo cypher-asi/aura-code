@@ -4,6 +4,7 @@ mod messages;
 mod project_agents;
 mod sessions;
 mod specs;
+mod stats;
 mod tasks;
 
 use std::env;
