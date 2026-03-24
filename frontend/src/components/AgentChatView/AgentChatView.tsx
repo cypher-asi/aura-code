@@ -80,7 +80,7 @@ export function AgentChatView() {
     resetEvents,
     invalidateBeforeFetch: mode === "agent",
     onSwitch: mode === "project" ? onProjectSwitch : onAgentSwitch,
-    onClear: mode === "project" ? onClear : () => resetEvents([], { allowWhileStreaming: true }),
+    onClear,
   });
 
   const wrappedSend = useMemo(
