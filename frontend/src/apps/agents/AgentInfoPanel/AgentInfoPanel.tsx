@@ -151,9 +151,10 @@ export function AgentInfoPanel() {
 
       <AgentEditorModal
         isOpen={showEditor}
-        agent={selectedAgent}
+        agent={selectedAgent ?? undefined}
         onClose={() => setShowEditor(false)}
         onSaved={(updated) => {
+          useAgentStore.getState().patchAgent(updated);
           setSelectedAgent(updated.agent_id);
           useAgentStore.getState().fetchAgents();
         }}
