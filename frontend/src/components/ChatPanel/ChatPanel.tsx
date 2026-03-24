@@ -10,6 +10,7 @@ import { MessageQueue } from "../MessageQueue";
 import { useMessageQueueStore, useMessageQueue } from "../../stores/message-queue-store";
 import type { QueuedMessage } from "../../stores/message-queue-store";
 import type { ChatAttachment } from "../../api/streams";
+import { loadPersistedModel, persistModel } from "../../constants/models";
 import styles from "../ChatView/ChatView.module.css";
 
 export interface ChatPanelProps {
@@ -44,6 +45,7 @@ export function ChatPanel({
   scrollResetKey,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
+  const [selectedModel, setSelectedModel] = useState(loadPersistedModel);
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const inputBarRef = useRef<ChatInputBarHandle>(null);
@@ -64,6 +66,11 @@ export function ChatPanel({
   useEffect(() => {
     requestAnimationFrame(() => inputBarRef.current?.focus());
   }, [scrollResetKey]);
+
+  const handleModelChange = useCallback((modelId: string) => {
+    setSelectedModel(modelId);
+    persistModel(modelId);
+  }, []);
 
   const handleRemoveAttachment = useCallback(
     (id: string) => setAttachments((prev) => prev.filter((a) => a.id !== id)),
@@ -98,11 +105,11 @@ export function ChatPanel({
           attachments: apiAttachments,
         });
       } else {
-        onSend(content, action ?? null, null, apiAttachments);
+        onSend(content, action ?? null, selectedModel, apiAttachments);
       }
       scrollToBottom();
     },
-    [onSend, scrollToBottom, isStreaming, streamKey, buildApiAttachments],
+    [onSend, scrollToBottom, isStreaming, streamKey, buildApiAttachments, selectedModel],
   );
 
   // Auto-send next queued message when streaming stops
@@ -110,11 +117,14 @@ export function ChatPanel({
   const onSendRef = useRef(onSend);
   useEffect(() => { onSendRef.current = onSend; }, [onSend]);
 
+  const selectedModelRef = useRef(selectedModel);
+  useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
+
   useEffect(() => {
     if (prevStreamingRef.current && !isStreaming) {
       const next = useMessageQueueStore.getState().dequeue(streamKey);
       if (next) {
-        onSendRef.current(next.content, next.action, null, next.attachments);
+        onSendRef.current(next.content, next.action, selectedModelRef.current, next.attachments);
         scrollToBottom();
       }
     }
@@ -202,6 +212,8 @@ export function ChatPanel({
           onSend={handleSend}
           onStop={onStop}
           streamKey={streamKey}
+          selectedModel={selectedModel}
+          onModelChange={handleModelChange}
           agentName={agentName}
           attachments={attachments}
           onAttachmentsChange={setAttachments}

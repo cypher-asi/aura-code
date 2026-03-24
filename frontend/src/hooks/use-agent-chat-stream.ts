@@ -55,7 +55,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
     async (
       content: string,
       action: string | null = null,
-      _selectedModel?: string | null,
+      selectedModel?: string | null,
       attachments?: ChatAttachment[],
     ) => {
       if (!agentId || getIsStreaming(core.key)) return;
@@ -145,7 +145,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
           agentId,
           userMsg.content,
           action,
-          null,
+          selectedModel,
           attachments,
           handler,
           controller.signal,

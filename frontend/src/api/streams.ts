@@ -128,12 +128,13 @@ export function sendAgentEventStream(
   agentId: string,
   content: string,
   action: string | null,
-  _model?: string | null,
+  model?: string | null,
   attachments?: ChatAttachment[],
   handler: StreamEventHandler = { onEvent: () => {}, onError: () => {} },
   signal?: AbortSignal,
 ) {
   const body: Record<string, unknown> = { content, action };
+  if (model) body.model = model;
   if (attachments && attachments.length > 0) {
     body.attachments = attachments;
   }
@@ -154,12 +155,13 @@ export function sendEventStream(
   agentInstanceId: string,
   content: string,
   action: string | null,
-  _model?: string | null,
+  model?: string | null,
   attachments?: ChatAttachment[],
   handler: StreamEventHandler = { onEvent: () => {}, onError: () => {} },
   signal?: AbortSignal,
 ) {
   const body: Record<string, unknown> = { content, action };
+  if (model) body.model = model;
   if (attachments && attachments.length > 0) {
     body.attachments = attachments;
   }

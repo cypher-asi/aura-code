@@ -37,6 +37,7 @@ pub struct ChatSession {
     pub session_id: String,
     pub commands_tx: mpsc::UnboundedSender<HarnessInbound>,
     pub events_tx: broadcast::Sender<HarnessOutbound>,
+    pub model: Option<String>,
 }
 
 impl ChatSession {
