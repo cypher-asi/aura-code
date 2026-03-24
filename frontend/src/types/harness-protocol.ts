@@ -45,6 +45,7 @@ export interface SessionInit {
   installed_tools?: InstalledTool[] | null;
   workspace?: string | null;
   token?: string | null;
+  project_id?: string | null;
   conversation_messages?: ConversationMessage[] | null;
 }
 

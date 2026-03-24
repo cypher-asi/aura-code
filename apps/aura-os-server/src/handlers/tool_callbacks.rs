@@ -1,3 +1,9 @@
+// NOTE: When the harness has a DomainToolExecutor (INTERNAL_SERVICE_TOKEN set)
+// and the session carries a JWT, domain tools (specs, tasks, project) are
+// handled natively by the harness — it calls aura-storage directly with the
+// user's JWT. These callback endpoints are only reached when the harness
+// uses installed/external tools instead (e.g. no DomainToolExecutor configured).
+
 use axum::extract::{Path, State};
 use axum::Json;
 use tracing::{info, warn};
