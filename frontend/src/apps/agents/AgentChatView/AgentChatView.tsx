@@ -5,6 +5,7 @@ import { useAgentChatStream } from "../../../hooks/use-agent-chat-stream";
 import { useIsStreaming } from "../../../hooks/stream/hooks";
 import { ChatPanel } from "../../../components/ChatPanel";
 import { useChatHistoryStore, useChatHistory, agentHistoryKey } from "../../../stores/chat-history-store";
+import { useShallow } from "zustand/react/shallow";
 import { getStreamEntry } from "../../../hooks/stream/store";
 import { useSelectedAgent, LAST_AGENT_ID_KEY } from "../stores";
 
@@ -82,7 +83,17 @@ export function AgentChatView() {
     [sendMessage, historyKey],
   );
 
-  const historyResolved = historyStatus === "ready" || historyStatus === "error";
+  // After invalidateHistory the entry keeps status "ready" with fetchedAt=0
+  // while the background re-fetch is in flight. Treat this as unresolved so
+  // the scroll hook waits for fresh data instead of revealing stale content.
+  const isFetchStale = useChatHistoryStore(
+    useShallow((s) => {
+      if (!historyKey) return false;
+      const e = s.entries[historyKey];
+      return e?.status === "ready" && e.fetchedAt === 0;
+    }),
+  );
+  const historyResolved = (historyStatus === "ready" || historyStatus === "error") && !isFetchStale;
 
   if (!agentId) return null;
 
@@ -93,7 +104,7 @@ export function AgentChatView() {
       onSend={wrappedSend}
       onStop={stopStreaming}
       agentName={selectedAgent?.name}
-      isLoading={showHistoryLoading}
+      isLoading={showHistoryLoading || isFetchStale}
       historyResolved={historyResolved}
       errorMessage={historyStatus === "error" ? (historyError ?? "Failed to load conversation") : null}
       emptyMessage="Send a message"
