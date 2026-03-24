@@ -10,6 +10,7 @@ use aura_os_link::{InstalledTool, ToolAuth};
 use crate::error::{map_storage_error, ApiError, ApiResult};
 use crate::state::AppState;
 
+#[allow(dead_code)]
 fn callback_base_url() -> String {
     let port: u16 = std::env::var("AURA_SERVER_PORT")
         .ok()
@@ -19,6 +20,7 @@ fn callback_base_url() -> String {
     format!("http://{}:{}", host, port)
 }
 
+#[allow(dead_code)]
 fn tool(name: &str, description: &str, schema: serde_json::Value, endpoint: &str, token: Option<&str>) -> InstalledTool {
     InstalledTool {
         name: name.to_string(),
@@ -35,6 +37,7 @@ fn tool(name: &str, description: &str, schema: serde_json::Value, endpoint: &str
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn build_installed_tools(
     project_id: &str,
     token: Option<&str>,

@@ -675,18 +675,12 @@ pub(crate) async fn send_message_stream(
 
     let system_prompt = build_project_system_prompt(&state, &project_id, &instance.system_prompt);
 
-    let installed_tools = super::super::tool_callbacks::build_installed_tools(
-        &pid_str,
-        jwt.as_deref(),
-    );
-
     let config = SessionConfig {
         system_prompt: Some(system_prompt),
         agent_id: Some(instance.agent_id.to_string()),
         token: jwt,
         conversation_messages,
         project_id: Some(pid_str),
-        installed_tools: Some(installed_tools),
         ..Default::default()
     };
 
