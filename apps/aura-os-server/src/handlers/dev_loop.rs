@@ -5,7 +5,7 @@ use serde::Deserialize;
 use tracing::info;
 
 use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, TaskId};
-use aura_os_link::{HarnessInbound, SessionConfig, UserMessage};
+use aura_os_link::{HarnessInbound, HarnessOutbound, SessionConfig, UserMessage};
 
 use crate::dto::LoopStatusResponse;
 use crate::error::{ApiError, ApiResult};
@@ -16,15 +16,97 @@ pub(crate) struct LoopQueryParams {
     pub agent_instance_id: Option<AgentInstanceId>,
 }
 
-fn forward_harness_events(
-    events_tx: &tokio::sync::broadcast::Sender<aura_os_link::HarnessOutbound>,
-    broadcast_tx: tokio::sync::broadcast::Sender<serde_json::Value>,
+/// Broadcast a synthetic domain event as JSON on the global event channel.
+fn emit_domain_event(
+    broadcast_tx: &tokio::sync::broadcast::Sender<serde_json::Value>,
+    event_type: &str,
+    project_id: ProjectId,
+    agent_instance_id: AgentInstanceId,
+    extra: serde_json::Value,
 ) {
-    let mut rx = events_tx.subscribe();
+    let mut event = serde_json::json!({
+        "type": event_type,
+        "project_id": project_id.to_string(),
+        "agent_instance_id": agent_instance_id.to_string(),
+    });
+    if let (Some(base), Some(ext)) = (event.as_object_mut(), extra.as_object()) {
+        for (k, v) in ext {
+            base.insert(k.clone(), v.clone());
+        }
+    }
+    let _ = broadcast_tx.send(event);
+}
+
+/// Forward typed harness events to the global broadcast, enriching each with
+/// project/agent context. Also emits synthetic domain events:
+/// - `task_started` on the first `AssistantMessageStart`
+/// - `loop_finished` when the harness session closes
+fn forward_harness_events(
+    events_tx: &tokio::sync::broadcast::Sender<HarnessOutbound>,
+    raw_events_tx: &tokio::sync::broadcast::Sender<serde_json::Value>,
+    broadcast_tx: tokio::sync::broadcast::Sender<serde_json::Value>,
+    project_id: ProjectId,
+    agent_instance_id: AgentInstanceId,
+) {
+    let mut typed_rx = events_tx.subscribe();
+    let mut raw_rx = raw_events_tx.subscribe();
+    let bc = broadcast_tx.clone();
+    let pid = project_id.to_string();
+    let aiid = agent_instance_id.to_string();
+
     tokio::spawn(async move {
-        while let Ok(event) = rx.recv().await {
-            let json = serde_json::to_value(&event).unwrap_or_default();
-            let _ = broadcast_tx.send(json);
+        let mut first_message_seen = false;
+        loop {
+            tokio::select! {
+                result = typed_rx.recv() => {
+                    match result {
+                        Ok(event) => {
+                            if !first_message_seen {
+                                if matches!(event, HarnessOutbound::AssistantMessageStart(_)) {
+                                    first_message_seen = true;
+                                    emit_domain_event(
+                                        &bc,
+                                        "task_started",
+                                        project_id,
+                                        agent_instance_id,
+                                        serde_json::json!({}),
+                                    );
+                                }
+                            }
+                            let mut json = serde_json::to_value(&event).unwrap_or_default();
+                            if let Some(obj) = json.as_object_mut() {
+                                obj.insert("project_id".into(), serde_json::Value::String(pid.clone()));
+                                obj.insert("agent_instance_id".into(), serde_json::Value::String(aiid.clone()));
+                            }
+                            let _ = bc.send(json);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            emit_domain_event(
+                                &bc,
+                                "loop_finished",
+                                project_id,
+                                agent_instance_id,
+                                serde_json::json!({}),
+                            );
+                            break;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    }
+                }
+                result = raw_rx.recv() => {
+                    match result {
+                        Ok(mut value) => {
+                            if let Some(obj) = value.as_object_mut() {
+                                obj.entry("project_id").or_insert_with(|| serde_json::Value::String(pid.clone()));
+                                obj.entry("agent_instance_id").or_insert_with(|| serde_json::Value::String(aiid.clone()));
+                            }
+                            let _ = bc.send(value);
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    }
+                }
+            }
         }
     });
 }
@@ -86,7 +168,20 @@ pub(crate) async fn start_loop(
         }))
         .map_err(|e| ApiError::internal(format!("sending dev loop start: {e}")))?;
 
-    forward_harness_events(&session.events_tx, state.event_broadcast.clone());
+    emit_domain_event(
+        &state.event_broadcast,
+        "loop_started",
+        project_id,
+        agent_instance_id,
+        serde_json::json!({}),
+    );
+    forward_harness_events(
+        &session.events_tx,
+        &session.raw_events_tx,
+        state.event_broadcast.clone(),
+        project_id,
+        agent_instance_id,
+    );
     {
         let mut reg = state.harness_sessions.lock().await;
         reg.insert(agent_instance_id, ActiveHarnessSession {
@@ -133,6 +228,13 @@ pub(crate) async fn pause_loop(
         if let Some(session) = reg.get(aiid) {
             let _ = session.commands_tx.send(HarnessInbound::Cancel);
         }
+        emit_domain_event(
+            &state.event_broadcast,
+            "loop_paused",
+            project_id,
+            *aiid,
+            serde_json::json!({}),
+        );
     }
 
     let active_agent_instances = active_instances_for_project_harness(&state, project_id).await;
@@ -168,6 +270,13 @@ pub(crate) async fn stop_loop(
         if let Some(session) = reg.remove(aiid) {
             let _ = session.commands_tx.send(HarnessInbound::Cancel);
         }
+        emit_domain_event(
+            &state.event_broadcast,
+            "loop_stopped",
+            project_id,
+            *aiid,
+            serde_json::json!({}),
+        );
     }
 
     let remaining: Vec<AgentInstanceId> = reg
@@ -244,6 +353,10 @@ pub(crate) async fn run_single_task(
         .await
         .map_err(|e| ApiError::internal(format!("opening task runner session: {e}")))?;
 
+    let agent_instance_id = params
+        .agent_instance_id
+        .unwrap_or_else(AgentInstanceId::new);
+
     session
         .commands_tx
         .send(HarnessInbound::UserMessage(UserMessage {
@@ -251,7 +364,13 @@ pub(crate) async fn run_single_task(
         }))
         .map_err(|e| ApiError::internal(format!("sending task run command: {e}")))?;
 
-    forward_harness_events(&session.events_tx, state.event_broadcast.clone());
+    forward_harness_events(
+        &session.events_tx,
+        &session.raw_events_tx,
+        state.event_broadcast.clone(),
+        project_id,
+        agent_instance_id,
+    );
 
     Ok(StatusCode::ACCEPTED)
 }
