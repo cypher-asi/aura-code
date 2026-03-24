@@ -65,6 +65,7 @@ export function ChatPanel({
   const revealRafRef = useRef(0);
   const lastRevealHeightRef = useRef(0);
   const stableFramesRef = useRef(0);
+  const revealPollingRef = useRef(false);
   useEffect(() => () => cancelAnimationFrame(revealRafRef.current), []);
 
   const STABLE_FRAMES_REQUIRED = 2;
@@ -72,19 +73,16 @@ export function ChatPanel({
   const onScrollApplied = useCallback(() => {
     if (!hasMessagesRef.current || contentVisibleRef.current) return;
 
-    // A new scroll correction just landed — reset the stability counter
-    // and (re)start the polling loop.
-    stableFramesRef.current = 0;
-    cancelAnimationFrame(revealRafRef.current);
+    // Only start the polling loop once. Subsequent scroll corrections
+    // while polling is active are absorbed by the height-change check
+    // inside the poll loop — no need to restart from scratch.
+    if (revealPollingRef.current) return;
+    revealPollingRef.current = true;
 
     const el = messageAreaRef.current;
     if (!el) return;
     lastRevealHeightRef.current = el.scrollHeight;
 
-    // Poll until scrollHeight is unchanged for STABLE_FRAMES_REQUIRED
-    // consecutive frames. This adapts to the virtualizer's deferred
-    // measurement pipeline (mount items → measureElement → batch state
-    // update → re-render) which can take 2-3+ frames for very tall items.
     const poll = () => {
       if (contentVisibleRef.current) return;
       const h = messageAreaRef.current?.scrollHeight ?? 0;

@@ -5,6 +5,7 @@ import { useAgentChatStream } from "../../../hooks/use-agent-chat-stream";
 import { useIsStreaming } from "../../../hooks/stream/hooks";
 import { ChatPanel } from "../../../components/ChatPanel";
 import { useChatHistoryStore, useChatHistory, agentHistoryKey } from "../../../stores/chat-history-store";
+import { getStreamEntry } from "../../../hooks/stream/store";
 import { useSelectedAgent, LAST_AGENT_ID_KEY } from "../stores";
 
 export function AgentChatView() {
@@ -56,10 +57,18 @@ export function AgentChatView() {
   }, [agentId, setSelectedAgent]);
 
   // Sync fetched history into the stream store for rendering.
+  // Skip syncing stale (invalidated) history when the stream store already
+  // holds events — those are more current. A background re-fetch will
+  // trigger a proper sync with fresh data shortly.
   useEffect(() => {
-    if (historyStatus !== "ready") return;
+    if (historyStatus !== "ready" || !historyKey) return;
+    const histEntry = useChatHistoryStore.getState().entries[historyKey];
+    if (histEntry && histEntry.fetchedAt === 0) {
+      const sEntry = getStreamEntry(streamKey);
+      if (sEntry && sEntry.events.length > 0) return;
+    }
     resetEventsRef.current(historyMessages, { allowWhileStreaming: true });
-  }, [historyMessages, historyStatus]);
+  }, [historyMessages, historyStatus, historyKey, streamKey]);
 
   // Invalidate cache before sending so navigating away mid-stream and back
   // forces a fresh fetch (mirrors ChatView.wrappedSend pattern).

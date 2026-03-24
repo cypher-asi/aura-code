@@ -7,6 +7,7 @@ import { useDelayedLoading } from "../../hooks/use-delayed-loading";
 import { setLastAgent, setLastProject } from "../../utils/storage";
 import { ChatPanel } from "../ChatPanel";
 import { useChatHistoryStore, useChatHistory, projectChatHistoryKey } from "../../stores/chat-history-store";
+import { getStreamEntry } from "../../hooks/stream/store";
 
 export function ChatView() {
   const { projectId, agentInstanceId } = useParams<{
@@ -106,11 +107,20 @@ export function ChatView() {
     );
   }, [projectId, agentInstanceId]);
 
-  // Sync history messages to stream store
+  // Sync history messages to stream store.
+  // Guard: when history was invalidated (fetchedAt === 0) and the stream
+  // store already holds events for this chat, skip the sync — the stream
+  // store's events are more current than the stale cache. The background
+  // re-fetch will complete shortly and trigger a proper sync with fresh data.
   useEffect(() => {
-    if (historyStatus !== "ready") return;
+    if (historyStatus !== "ready" || !historyKey) return;
+    const histEntry = useChatHistoryStore.getState().entries[historyKey];
+    if (histEntry && histEntry.fetchedAt === 0) {
+      const sEntry = getStreamEntry(streamKey);
+      if (sEntry && sEntry.events.length > 0) return;
+    }
     resetEventsRef.current(historyMessages, { allowWhileStreaming: true });
-  }, [historyMessages, historyStatus]);
+  }, [historyMessages, historyStatus, historyKey, streamKey]);
 
   const wrappedSend = useCallback(
     (...args: Parameters<typeof sendMessage>) => {
