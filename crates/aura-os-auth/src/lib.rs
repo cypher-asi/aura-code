@@ -79,6 +79,15 @@ struct ZosProfileResponse {
     is_zero_pro: bool,
 }
 
+pub struct AuthSessionResult {
+    pub session: ZeroAuthSession,
+    pub zero_pro_refresh_error: Option<String>,
+}
+
+fn zero_pro_refresh_error_message() -> String {
+    "Unable to verify ZERO Pro status right now.".to_string()
+}
+
 pub struct AuthService {
     store: Arc<RocksStore>,
     http: Client,
@@ -96,7 +105,7 @@ impl AuthService {
         }
     }
 
-    pub async fn login(&self, email: &str, password: &str) -> Result<ZeroAuthSession, AuthError> {
+    pub async fn login(&self, email: &str, password: &str) -> Result<AuthSessionResult, AuthError> {
         debug!("Logging in via zOS-api");
         let res = self
             .http
@@ -120,7 +129,7 @@ impl AuthService {
         &self,
         email: &str,
         password: &str,
-    ) -> Result<ZeroAuthSession, AuthError> {
+    ) -> Result<AuthSessionResult, AuthError> {
         debug!("Registering via zOS-api");
         let res = self
             .http
@@ -151,7 +160,7 @@ impl AuthService {
         }
     }
 
-    pub async fn validate(&self) -> Result<Option<ZeroAuthSession>, AuthError> {
+    pub async fn validate(&self) -> Result<Option<AuthSessionResult>, AuthError> {
         let session = match self.get_session().await? {
             Some(s) => s,
             None => return Ok(None),
@@ -185,11 +194,13 @@ impl AuthService {
                     validated_at: now,
                 };
 
+                let mut zero_pro_refresh_error = None;
                 match self.fetch_is_zero_pro(&updated.access_token).await {
                     Ok(is_zero_pro) => {
                         updated.is_zero_pro = is_zero_pro;
                     }
                     Err(err) => {
+                        zero_pro_refresh_error = Some(zero_pro_refresh_error_message());
                         warn!(
                             error = %err,
                             user_id = %updated.user_id,
@@ -200,7 +211,10 @@ impl AuthService {
 
                 let bytes = serde_json::to_vec(&updated)?;
                 self.store.put_setting(AUTH_SESSION_KEY, &bytes)?;
-                Ok(Some(updated))
+                Ok(Some(AuthSessionResult {
+                    session: updated,
+                    zero_pro_refresh_error,
+                }))
             }
             Err(AuthError::ZosApi { status: 401, .. }) => {
                 warn!("Stored auth token is invalid/expired, clearing session");
@@ -267,7 +281,7 @@ impl AuthService {
     async fn fetch_and_store_session(
         &self,
         access_token: &str,
-    ) -> Result<ZeroAuthSession, AuthError> {
+    ) -> Result<AuthSessionResult, AuthError> {
         let user = self.fetch_user_info(access_token).await?;
         let now = Utc::now();
         let mut session = ZeroAuthSession {
@@ -289,12 +303,14 @@ impl AuthService {
             created_at: now,
             validated_at: now,
         };
+        let mut zero_pro_refresh_error = None;
 
         match self.fetch_is_zero_pro(access_token).await {
             Ok(is_zero_pro) => {
                 session.is_zero_pro = is_zero_pro;
             }
             Err(err) => {
+                zero_pro_refresh_error = Some(zero_pro_refresh_error_message());
                 warn!(
                     error = %err,
                     user_id = %session.user_id,
@@ -305,7 +321,10 @@ impl AuthService {
 
         let bytes = serde_json::to_vec(&session)?;
         self.store.put_setting(AUTH_SESSION_KEY, &bytes)?;
-        Ok(session)
+        Ok(AuthSessionResult {
+            session,
+            zero_pro_refresh_error,
+        })
     }
 }
 

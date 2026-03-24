@@ -59,6 +59,7 @@ async fn refresh_session(
         .validate()
         .await
         .map_err(map_auth_error)?
+        .map(|result| result.session)
         .ok_or_else(|| ApiError::unauthorized("session expired or invalid"))
 }
 
@@ -143,10 +144,7 @@ mod tests {
     use aura_os_core::ZeroAuthSession;
     use chrono::{Duration, Utc};
 
-    fn session(
-        is_zero_pro: bool,
-        validated_at: chrono::DateTime<Utc>,
-    ) -> ZeroAuthSession {
+    fn session(is_zero_pro: bool, validated_at: chrono::DateTime<Utc>) -> ZeroAuthSession {
         ZeroAuthSession {
             user_id: "u1".into(),
             network_user_id: None,
