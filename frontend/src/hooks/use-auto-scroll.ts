@@ -33,6 +33,7 @@ function guardedScroll(
 export function useAutoScroll(
   ref: React.RefObject<HTMLElement | null>,
   resetKey?: unknown,
+  onScrollApplied?: () => void,
 ): { handleScroll: () => void; scrollToBottom: () => void } {
   const autoScrollRef = useRef(true);
   const settlingRef = useRef(false);
@@ -42,6 +43,8 @@ export function useAutoScroll(
   const programmaticScrollRef = useRef(false);
   const scrollRafRef = useRef<number | null>(null);
   const pendingTargetRef = useRef<number | null>(null);
+  const onScrollAppliedRef = useRef(onScrollApplied);
+  useEffect(() => { onScrollAppliedRef.current = onScrollApplied; }, [onScrollApplied]);
 
   useEffect(() => {
     const el = ref.current;
@@ -74,6 +77,7 @@ export function useAutoScroll(
           guardedScroll(el, nextTarget, programmaticScrollRef);
         }
         syncHeight();
+        onScrollAppliedRef.current?.();
       });
     };
 

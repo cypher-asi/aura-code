@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { MessageSquare, AlertCircle } from "lucide-react";
 import { Text } from "@cypher-asi/zui";
 import { useAutoScroll } from "../../hooks/use-auto-scroll";
@@ -49,22 +49,33 @@ export function ChatPanel({
   const inputBarRef = useRef<ChatInputBarHandle>(null);
   const attachmentsRef = useRef(attachments);
   useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
-  const { handleScroll, scrollToBottom } = useAutoScroll(messageAreaRef, scrollResetKey);
 
-  // Prevent scroll-jank: keep the message area at opacity 0 until we have
-  // scrolled to the bottom.  useLayoutEffect fires *before* the browser
-  // paints, so we can set scrollTop and flip visibility in the same
-  // commit — the user never sees the un-scrolled intermediate frame.
+  // Prevent scroll-jank: keep the message area at opacity 0 until
+  // useAutoScroll has scrolled to the bottom AND the virtualizer has had
+  // a frame to render items at the correct position.
   const messages = useStreamMessages(streamKey);
   const hasMessages = messages.length > 0;
-  const [contentVisible, setContentVisible] = useState(false);
+  const hasMessagesRef = useRef(hasMessages);
+  useEffect(() => { hasMessagesRef.current = hasMessages; }, [hasMessages]);
 
-  useLayoutEffect(() => {
-    if (contentVisible || !hasMessages) return;
-    const el = messageAreaRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-    setContentVisible(true);
-  }, [hasMessages, contentVisible]);
+  const [contentVisible, setContentVisible] = useState(false);
+  const contentVisibleRef = useRef(false);
+  useEffect(() => { contentVisibleRef.current = contentVisible; }, [contentVisible]);
+
+  const revealRafRef = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(revealRafRef.current), []);
+
+  const onScrollApplied = useCallback(() => {
+    if (!hasMessagesRef.current || contentVisibleRef.current) return;
+    cancelAnimationFrame(revealRafRef.current);
+    revealRafRef.current = requestAnimationFrame(() => {
+      setContentVisible(true);
+    });
+  }, []);
+
+  const { handleScroll, scrollToBottom } = useAutoScroll(
+    messageAreaRef, scrollResetKey, onScrollApplied,
+  );
 
   // Fallback: reveal for empty conversations once history resolves.
   useEffect(() => {
