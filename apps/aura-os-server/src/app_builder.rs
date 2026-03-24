@@ -194,20 +194,19 @@ fn maybe_spawn_local_harness() {
         .env("BIND_PORT", addr.port().to_string())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        // Do not pipe stderr unless we actively consume it; otherwise the
-        // child can block once the pipe buffer fills, which stalls tool calls.
         .stderr(std::process::Stdio::null());
 
-    // Load default installed tools (create_spec, list_specs, create_task, etc.)
-    // when spawning harness from source so session_ready advertises project tools.
-    let tools_config = harness_dir.join("tools.toml");
-    if tools_config.exists() {
-        cmd.env("TOOLS_CONFIG", tools_config);
-    } else {
-        warn!(
-            dir = %harness_dir.display(),
-            "tools.toml not found; harness will start without installed project tools"
-        );
+    // Clear empty env vars that would shadow the harness's own .env values.
+    // dotenvy does not override existing vars, so inherited empty values from
+    // the parent process would prevent the harness from loading its own config.
+    for key in &[
+        "INTERNAL_SERVICE_TOKEN",
+        "AURA_NETWORK_INTERNAL_TOKEN",
+        "AURA_ROUTER_JWT",
+    ] {
+        if std::env::var(key).map_or(false, |v| v.trim().is_empty()) {
+            cmd.env_remove(key);
+        }
     }
 
     match cmd.spawn() {
