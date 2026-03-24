@@ -14,7 +14,7 @@ use aura_os_link::{ConversationMessage, HarnessInbound, HarnessOutbound, Session
 use aura_os_storage::StorageClient;
 
 use crate::dto::SendMessageRequest;
-use crate::error::{map_storage_error, ApiError, ApiResult};
+use crate::error::{ApiError, ApiResult};
 use crate::handlers::projects;
 use crate::state::{AppState, ChatSession};
 
@@ -40,8 +40,20 @@ async fn resolve_chat_session(
     project_id: &str,
 ) -> Option<String> {
     if let Ok(sessions) = storage.list_sessions(project_agent_id, jwt).await {
-        if let Some(session) = sessions.last() {
-            return Some(session.id.clone());
+        // Walk backwards to find the most recent session that still exists in
+        // storage.  Sessions whose messages endpoint returns 404 are stale
+        // (purged upstream) and must be skipped.
+        for session in sessions.iter().rev() {
+            match storage.get_session(&session.id, jwt).await {
+                Ok(_) => return Some(session.id.clone()),
+                Err(e) => {
+                    tracing::debug!(
+                        session_id = %session.id,
+                        error = %e,
+                        "Skipping stale session during resolution"
+                    );
+                }
+            }
         }
     }
     let req = aura_os_storage::CreateSessionRequest {
@@ -469,9 +481,7 @@ pub(crate) async fn list_agent_messages(
 ) -> ApiResult<Json<Vec<Message>>> {
     let _ = state.require_storage_client()?;
     let _ = state.get_jwt()?;
-    let messages = aggregate_agent_messages_from_storage_result(&state, &agent_id)
-        .await
-        .map_err(map_storage_error)?;
+    let messages = aggregate_agent_messages_from_storage(&state, &agent_id).await;
     Ok(Json(messages))
 }
 
@@ -619,15 +629,12 @@ pub(crate) async fn list_messages(
     let sessions = storage
         .list_sessions(&agent_instance_id.to_string(), &jwt)
         .await
-        .map_err(map_storage_error)?;
+        .unwrap_or_else(|e| {
+            warn!(agent_instance_id = %agent_instance_id, error = %e, "failed to list sessions");
+            Vec::new()
+        });
 
     let mut outcome = collect_session_messages(&storage, &jwt, &sessions).await;
-    if outcome.all_failed() {
-        if let Some(err) = outcome.first_error {
-            return Err(map_storage_error(err));
-        }
-    }
-
     outcome
         .messages
         .sort_by(|a, b| a.created_at.cmp(&b.created_at));
