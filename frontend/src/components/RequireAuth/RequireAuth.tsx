@@ -32,7 +32,7 @@ export function RequireAuth() {
             onClick={() => logout()}
             style={{
               padding: "10px 24px",
-              background: "var(--color-accent, #7c3aed)",
+              background: "var(--color-accent, #ffffff)",
               color: "#fff",
               borderRadius: 8,
               border: "none",
