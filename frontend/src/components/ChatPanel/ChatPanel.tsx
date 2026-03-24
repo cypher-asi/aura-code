@@ -150,10 +150,11 @@ export function ChatPanel({
       const next = useMessageQueueStore.getState().dequeue(streamKey);
       if (next) {
         onSendRef.current(next.content, next.action, null, next.attachments);
+        scrollToBottom();
       }
     }
     prevStreamingRef.current = isStreaming;
-  }, [isStreaming, streamKey]);
+  }, [isStreaming, streamKey, scrollToBottom]);
 
   const handleQueueEdit = useCallback(
     (item: QueuedMessage) => {
