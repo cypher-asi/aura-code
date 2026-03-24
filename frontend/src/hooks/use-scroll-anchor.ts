@@ -4,6 +4,7 @@ const BOTTOM_THRESHOLD_PX = 40;
 const USER_SCROLL_ESCAPE_PX = 80;
 const STABLE_FRAMES_REQUIRED = 3;
 const SETTLE_TIMEOUT_MS = 2000;
+const MAX_WAIT_FRAMES = 10;
 
 /**
  * Sets `el.scrollTop` and guards the next scroll event so it isn't
@@ -80,8 +81,10 @@ export function useScrollAnchor(
 
     lastScrollTopRef.current = el.scrollTop;
 
-    let prevHeight = 0;
+    let prevHeight = el.scrollHeight;
     let stableFrames = 0;
+    let heightChanged = false;
+    let waitingFrames = 0;
     let raf = 0;
     let correctionRaf = 0;
 
@@ -113,14 +116,21 @@ export function useScrollAnchor(
 
       const h = el.scrollHeight;
       if (h !== prevHeight) {
+        heightChanged = true;
         stableFrames = 0;
         prevHeight = h;
         el.scrollTop = el.scrollHeight;
-      } else {
+      } else if (heightChanged) {
         stableFrames++;
+      } else {
+        waitingFrames++;
       }
 
       if (stableFrames >= STABLE_FRAMES_REQUIRED) {
+        reveal();
+        return;
+      }
+      if (!heightChanged && waitingFrames >= MAX_WAIT_FRAMES) {
         reveal();
         return;
       }
