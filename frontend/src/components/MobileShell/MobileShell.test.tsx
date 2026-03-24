@@ -6,6 +6,7 @@ vi.mock("@cypher-asi/zui", () => ({
   Topbar: ({ title, actions, icon }: { title?: React.ReactNode; actions?: React.ReactNode; icon?: React.ReactNode; className?: string }) => (
     <header data-testid="topbar">{icon}{title}{actions}</header>
   ),
+  Text: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
   Button: ({ children, onClick, icon, ...rest }: Record<string, unknown>) => (
     <button
       onClick={onClick as () => void}
@@ -95,10 +96,30 @@ vi.mock("../../apps/projects/useProjectsList", () => ({
   }),
 }));
 
+vi.mock("../../stores/projects-list-store", () => ({
+  useProjectsListStore: (selector: (state: {
+    projects: typeof demoProject[];
+    agentsByProject: Record<string, Array<{ agent_instance_id: string; name: string; role?: string }>>;
+    loadingAgentsByProject: Record<string, boolean>;
+    openNewProjectModal: () => void;
+    refreshProjectAgents: (projectId: string) => Promise<Array<{ agent_instance_id: string; name: string; role?: string }>>;
+  }) => unknown) => selector({
+    projects: [demoProject],
+    agentsByProject: {
+      "proj-1": [{ agent_instance_id: "agent-inst-1", name: "Project agent", role: "Build with me" }],
+    },
+    loadingAgentsByProject: {},
+    openNewProjectModal: vi.fn(),
+    refreshProjectAgents: async () => [{ agent_instance_id: "agent-inst-1", name: "Project agent", role: "Build with me" }],
+  }),
+  getRecentProjects: (projects: typeof demoProject[]) => projects,
+  getMostRecentProject: (projects: typeof demoProject[]) => projects[0] ?? null,
+}));
+
 vi.mock("../../utils/storage", () => ({
   getLastProject: () => null,
   getLastAgentEntry: () => null,
-  getLastAgent: () => ({ projectId: "proj-1", agentInstanceId: "agent-inst-1" }),
+  getLastAgent: () => "agent-inst-1",
 }));
 
 vi.mock("../../utils/mobileNavigation", () => ({
@@ -132,6 +153,9 @@ vi.mock("../PanelSearch", () => ({
 }));
 vi.mock("../HostSettingsModal", () => ({
   HostSettingsModal: () => null,
+}));
+vi.mock("../../stores/sidekick-store", () => ({
+  useSidekick: () => ({ closePreview: vi.fn() }),
 }));
 
 vi.mock("../AppShell/AppShell.module.css", () => ({
