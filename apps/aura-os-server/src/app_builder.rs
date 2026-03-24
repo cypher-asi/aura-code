@@ -196,16 +196,25 @@ fn maybe_spawn_local_harness() {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
 
-    // Clear empty env vars that would shadow the harness's own .env values.
-    // dotenvy does not override existing vars, so inherited empty values from
-    // the parent process would prevent the harness from loading its own config.
-    for key in &[
-        "INTERNAL_SERVICE_TOKEN",
-        "AURA_NETWORK_INTERNAL_TOKEN",
-        "AURA_ROUTER_JWT",
-    ] {
-        if std::env::var(key).map_or(false, |v| v.trim().is_empty()) {
-            cmd.env_remove(key);
+    // Load the harness's own .env so the child gets its configured values
+    // (INTERNAL_SERVICE_TOKEN, service URLs, etc.) regardless of what the
+    // parent process has in its environment.
+    let harness_env_file = harness_dir.join(".env");
+    if harness_env_file.exists() {
+        if let Ok(contents) = std::fs::read_to_string(&harness_env_file) {
+            for line in contents.lines() {
+                let line = line.trim();
+                if line.starts_with('#') || line.is_empty() {
+                    continue;
+                }
+                if let Some((key, val)) = line.split_once('=') {
+                    let key = key.trim();
+                    let val = val.trim();
+                    if !val.is_empty() {
+                        cmd.env(key, val);
+                    }
+                }
+            }
         }
     }
 
@@ -284,7 +293,6 @@ pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
         terminal_manager: Arc::new(TerminalManager::new()),
         network_client,
         storage_client,
-        internal_service_token: env_opt("INTERNAL_SERVICE_TOKEN"),
         event_broadcast,
         require_zero_pro: std::env::var("REQUIRE_ZERO_PRO")
             .map(|v| v != "false" && v != "0")
