@@ -115,7 +115,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
               handleMessageSaved(refs, setters, event.content.message);
               break;
             case EventType.AssistantMessageEnd:
-              finalizeStream(refs, setters, abortRef, getIsStreaming(core.key));
+              finalizeStream(refs, setters, abortRef, false);
               break;
             case EventType.AssistantMessageStart:
             case EventType.SessionReady:
@@ -125,12 +125,12 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
               handleStreamError(refs, setters, event.content.message);
               break;
             case EventType.Done:
-              finalizeStream(refs, setters, abortRef, getIsStreaming(core.key));
+              finalizeStream(refs, setters, abortRef, false);
               break;
           }
         },
         onError: (message) => handleStreamError(refs, setters, message),
-        onDone: () => finalizeStream(refs, setters, abortRef, getIsStreaming(core.key)),
+        onDone: () => finalizeStream(refs, setters, abortRef, false),
       };
 
       try {

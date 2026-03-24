@@ -244,7 +244,7 @@ function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
         handleMessageSaved(refs, setters, event.content.message);
         break;
       case EventType.AssistantMessageEnd:
-        finalizeStream(refs, setters, abortRef, getIsStreaming(coreKey));
+        finalizeStream(refs, setters, abortRef, false);
         sidekickRef.current.setStreamingAgentInstanceId(null);
         break;
       case EventType.AgentInstanceUpdated:
@@ -258,7 +258,7 @@ function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
         handleStreamError(refs, setters, event.content.message);
         break;
       case EventType.Done:
-        finalizeStream(refs, setters, abortRef, getIsStreaming(coreKey));
+        finalizeStream(refs, setters, abortRef, false);
         sidekickRef.current.setStreamingAgentInstanceId(null);
         break;
     }
@@ -268,7 +268,7 @@ function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
     onEvent,
     onError: (message) => handleStreamError(refs, setters, message),
     onDone: () => {
-      finalizeStream(refs, setters, abortRef, getIsStreaming(coreKey));
+      finalizeStream(refs, setters, abortRef, false);
       sidekickRef.current.setStreamingAgentInstanceId(null);
     },
   };

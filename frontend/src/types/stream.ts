@@ -63,7 +63,6 @@ export interface StreamRefs {
   raf: MutableRefObject<number | null>;
   thinkingRaf: MutableRefObject<number | null>;
   timeline: MutableRefObject<TimelineItem[]>;
-  finalized: MutableRefObject<boolean>;
 }
 
 export interface StreamSetters {

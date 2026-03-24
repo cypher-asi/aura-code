@@ -53,7 +53,6 @@ export function resetStreamBuffers(refs: StreamRefs, setters: StreamSetters): vo
   refs.timeline.current = [];
   setters.setTimeline([]);
   setters.setProgressText("");
-  refs.finalized.current = false;
 }
 
 let _tlId = 0;
@@ -315,9 +314,6 @@ export function finalizeStream(
   abortRef: MutableRefObject<AbortController | null>,
   closureIsStreaming: boolean,
 ): void {
-  if (refs.finalized.current) return;
-  refs.finalized.current = true;
-
   const hasBuffer = !!refs.streamBuffer.current;
 
   if (hasBuffer && !closureIsStreaming) {
