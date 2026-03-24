@@ -121,7 +121,7 @@ describe("sendAgentEventStream", () => {
     await sendAgentEventStream("a1", "hello", "chat", undefined, undefined, handler);
 
     const [url, init] = streamSSE.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/api/agents/a1/messages/stream");
+    expect(url).toBe("/api/agents/a1/events/stream");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({ content: "hello", action: "chat" });
   });
@@ -188,7 +188,7 @@ describe("sendEventStream", () => {
     await sendEventStream("p1" as string, "ai1", "msg", "plan", undefined, undefined, handler);
 
     const [url, init] = streamSSE.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/api/projects/p1/agents/ai1/messages/stream");
+    expect(url).toBe("/api/projects/p1/agents/ai1/events/stream");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({ content: "msg", action: "plan" });
   });

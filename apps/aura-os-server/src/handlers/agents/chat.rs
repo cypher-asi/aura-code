@@ -306,7 +306,7 @@ fn has_live_session(state: &AppState, key: &str) -> bool {
     false
 }
 
-fn session_events_to_conversation_history(events: &[SessionEvent]) -> Vec<ConversationMessage> {
+pub fn session_events_to_conversation_history(events: &[SessionEvent]) -> Vec<ConversationMessage> {
     events
         .iter()
         .filter_map(|m| {
