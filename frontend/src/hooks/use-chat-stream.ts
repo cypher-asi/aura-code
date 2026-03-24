@@ -267,9 +267,6 @@ function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
         break;
       case EventType.ToolCallStarted:
       case EventType.ToolUseStart:
-        // #region agent log
-        console.warn('[DEBUG-ec05ef] tool_use_start', { id: (event.content as Record<string, unknown>).id, name: (event.content as Record<string, unknown>).name });
-        // #endregion
         handleToolCallStarted(refs, setters, event.content as { id: string; name: string });
         break;
       case EventType.ToolCallSnapshot:
@@ -284,9 +281,6 @@ function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
       }
       case EventType.ToolResult: {
         const c = event.content as { id: string; name: string; result: string; is_error: boolean };
-        // #region agent log
-        console.warn('[DEBUG-ec05ef] tool_result', { name: c.name, is_error: c.is_error, result: c.result?.slice(0, 200) });
-        // #endregion
         coreHandleToolResult(refs, setters, c);
         if (c.name === "create_spec") {
           if (c.is_error) removePendingArtifact(c.id, pendingSpecIdsRef, (id) => sidekickRef.current.removeSpec(id));
@@ -330,9 +324,6 @@ function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
         handleMessageSaved(refs, setters, event.content.message);
         break;
       case EventType.AssistantMessageEnd: {
-        // #region agent log
-        console.warn('[DEBUG-ec05ef] assistant_message_end', { pendingTools: refs.toolCalls.current.filter((t: { pending: boolean }) => t.pending).map((t: { name: string }) => t.name) });
-        // #endregion
         handleAssistantTurnBoundary(refs, setters);
         const stopReason = (event.content as { stop_reason?: string }).stop_reason;
         if (stopReason !== "tool_use") {
@@ -348,9 +339,6 @@ function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
       case EventType.AssistantMessageStart:
         break;
       case EventType.SessionReady:
-        // #region agent log
-        console.warn('[DEBUG-ec05ef] session_ready', { tools: (event.content as unknown as Record<string, unknown>).tools, session_id: (event.content as unknown as Record<string, unknown>).session_id });
-        // #endregion
         break;
       case EventType.TokenUsage:
         break;
@@ -368,9 +356,6 @@ function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
     onEvent,
     onError: (message) => handleStreamError(refs, setters, message),
     onDone: () => {
-      // #region agent log
-      console.warn('[DEBUG-ec05ef] onDone', { pendingTools: refs.toolCalls.current.filter((t: { pending: boolean }) => t.pending).length, totalTools: refs.toolCalls.current.length });
-      // #endregion
       finalizeStream(refs, setters, abortRef, false);
       sidekickRef.current.setStreamingAgentInstanceId(null);
     },

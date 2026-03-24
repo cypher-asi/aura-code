@@ -54,15 +54,6 @@ impl HarnessLink for LocalHarness {
         let session_id = loop {
             match rx.recv().await {
                 Ok(OutboundMessage::SessionReady(ready)) => {
-                    // #region agent log
-                    let tool_names: Vec<&str> = ready.tools.iter().map(|t| t.name.as_str()).collect();
-                    info!(
-                        session_id = %ready.session_id,
-                        tool_count = ready.tools.len(),
-                        tools = ?tool_names,
-                        "SessionReady tools reported by harness"
-                    );
-                    // #endregion
                     break ready.session_id;
                 }
                 Ok(OutboundMessage::Error(err)) => {
