@@ -123,6 +123,7 @@ export function AgentChatView() {
       onStop={stopStreaming}
       agentName={displayName}
       machineType={resolvedMachineType}
+      agentId={entityId}
       isLoading={deferredLoading}
       historyResolved={historyResolved}
       errorMessage={historyError ? historyError : null}

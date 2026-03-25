@@ -30,6 +30,7 @@ interface Props {
   onModelChange?: (model: string) => void;
   agentName?: string;
   machineType?: "local" | "remote";
+  agentId?: string;
   attachments?: AttachmentItem[];
   onAttachmentsChange?: (items: AttachmentItem[]) => void;
   onRemoveAttachment?: (id: string) => void;
@@ -52,7 +53,7 @@ function AttachmentPreviews({ attachments, onRemove }: { attachments: Attachment
 
 export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function ChatInputBar({
   input, onInputChange, onSend, onStop, streamKey,
-  selectedModel, onModelChange, machineType,
+  selectedModel, onModelChange, machineType, agentId,
   attachments = [], onAttachmentsChange, onRemoveAttachment,
 }, ref) {
   const isStreaming = useIsStreaming(streamKey);
@@ -111,7 +112,7 @@ export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function 
         </div>
       </div>
       <div className={styles.inputInfoBar}>
-        {machineType && <><AgentEnvironment machineType={machineType} /><span className={styles.infoText} style={{ marginRight: 2 }}>·</span></>}
+        {machineType && <><AgentEnvironment machineType={machineType} agentId={agentId} /><span className={styles.infoText} style={{ marginRight: 2 }}>·</span></>}
         <span className={styles.infoText}>/ for commands</span>
         <div className={styles.modelMenuWrap} ref={modelMenuRef}>
           <button type="button" className={styles.modelButton} onClick={() => setModelMenuOpen((v) => !v)}>

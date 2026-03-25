@@ -292,6 +292,14 @@ export interface EnvironmentInfo {
   cwd: string;
 }
 
+export interface RemoteVmState {
+  state: string
+  uptime_seconds: number
+  active_sessions: number
+  last_heartbeat_at?: string
+  error_message?: string
+}
+
 export interface ApiError {
   error: string;
   code: string;

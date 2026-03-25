@@ -1,0 +1,1 @@
+export { VmStatusBadge } from "./VmStatusBadge"

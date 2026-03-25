@@ -1,30 +1,69 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useEnvironmentInfo } from "../../hooks/use-environment-info";
-import styles from "./AgentEnvironment.module.css";
+import { useState, useRef, useEffect, useCallback } from "react"
+import { useEnvironmentInfo } from "../../hooks/use-environment-info"
+import { api } from "../../api/client"
+import type { RemoteVmState } from "../../types"
+import { VmStatusBadge } from "../VmStatusBadge"
+import styles from "./AgentEnvironment.module.css"
 
 interface AgentEnvironmentProps {
-  machineType: "local" | "remote";
+  machineType: "local" | "remote"
+  agentId?: string
 }
 
-export function AgentEnvironment({ machineType }: AgentEnvironmentProps) {
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const { data } = useEnvironmentInfo();
-  const isLocal = machineType === "local";
+function formatUptime(seconds: number): string {
+  if (seconds < 60) return `${Math.floor(seconds)}s`
+  const m = Math.floor(seconds / 60) % 60
+  const h = Math.floor(seconds / 3600)
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m`
+}
 
-  const handleMouseEnter = useCallback(() => setOpen(true), []);
-  const handleMouseLeave = useCallback(() => setOpen(false), []);
+const POLL_INTERVAL = 15_000
+
+export function AgentEnvironment({ machineType, agentId }: AgentEnvironmentProps) {
+  const [open, setOpen] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const { data } = useEnvironmentInfo()
+  const isLocal = machineType === "local"
+  const isRemote = machineType === "remote" && !!agentId
+
+  const [vmState, setVmState] = useState<RemoteVmState | null>(null)
 
   useEffect(() => {
-    if (!open) return;
+    if (!isRemote) return
+
+    let cancelled = false
+
+    const fetchState = () => {
+      api.swarm
+        .getRemoteAgentState(agentId!)
+        .then((state) => {
+          if (!cancelled) setVmState(state)
+        })
+        .catch(() => {})
+    }
+
+    fetchState()
+    const interval = setInterval(fetchState, POLL_INTERVAL)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [isRemote, agentId])
+
+  const handleMouseEnter = useCallback(() => setOpen(true), [])
+  const handleMouseLeave = useCallback(() => setOpen(false), [])
+
+  useEffect(() => {
+    if (!open) return
     const onClickOutside = (e: MouseEvent) => {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false);
+        setOpen(false)
       }
-    };
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, [open]);
+    }
+    document.addEventListener("mousedown", onClickOutside)
+    return () => document.removeEventListener("mousedown", onClickOutside)
+  }, [open])
 
   return (
     <div
@@ -40,26 +79,53 @@ export function AgentEnvironment({ machineType }: AgentEnvironmentProps) {
 
       {open && (
         <div className={styles.statusCard}>
-          <div className={styles.statusRow}>
-            <span className={styles.statusLabel}>Status</span>
-            <span className={styles.statusValue}>{isLocal ? "Running locally" : "Remote agent"}</span>
-          </div>
-          <div className={styles.statusRow}>
-            <span className={styles.statusLabel}>IP</span>
-            <span className={styles.statusValue}>{data?.ip ?? "—"}</span>
-          </div>
-          <div className={styles.statusRow}>
-            <span className={styles.statusLabel}>File Path</span>
-            <span className={styles.statusValue}>{data?.cwd ?? "—"}</span>
-          </div>
-          <div className={styles.statusRow}>
-            <span className={styles.statusLabel}>OS</span>
-            <span className={styles.statusValue}>
-              {data ? `${data.os} (${data.architecture})` : "—"}
-            </span>
-          </div>
+          {isRemote && vmState ? (
+            <>
+              <div className={styles.statusRow}>
+                <span className={styles.statusLabel}>Status</span>
+                <span className={styles.statusValue}>
+                  <VmStatusBadge state={vmState.state} />
+                </span>
+              </div>
+              <div className={styles.statusRow}>
+                <span className={styles.statusLabel}>Uptime</span>
+                <span className={styles.statusValue}>{formatUptime(vmState.uptime_seconds)}</span>
+              </div>
+              <div className={styles.statusRow}>
+                <span className={styles.statusLabel}>Sessions</span>
+                <span className={styles.statusValue}>{vmState.active_sessions}</span>
+              </div>
+              {vmState.error_message && (
+                <div className={styles.statusRow}>
+                  <span className={styles.statusLabel}>Error</span>
+                  <span className={styles.statusValue}>{vmState.error_message}</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className={styles.statusRow}>
+                <span className={styles.statusLabel}>Status</span>
+                <span className={styles.statusValue}>{isLocal ? "Running locally" : "Remote agent"}</span>
+              </div>
+              <div className={styles.statusRow}>
+                <span className={styles.statusLabel}>IP</span>
+                <span className={styles.statusValue}>{data?.ip ?? "—"}</span>
+              </div>
+              <div className={styles.statusRow}>
+                <span className={styles.statusLabel}>File Path</span>
+                <span className={styles.statusValue}>{data?.cwd ?? "—"}</span>
+              </div>
+              <div className={styles.statusRow}>
+                <span className={styles.statusLabel}>OS</span>
+                <span className={styles.statusValue}>
+                  {data ? `${data.os} (${data.architecture})` : "—"}
+                </span>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
-  );
+  )
 }

@@ -25,6 +25,7 @@ export interface ChatPanelProps {
   onStop: () => void;
   agentName?: string;
   machineType?: "local" | "remote";
+  agentId?: string;
   isLoading?: boolean;
   historyResolved?: boolean;
   errorMessage?: string | null;
@@ -38,6 +39,7 @@ export function ChatPanel({
   onStop,
   agentName,
   machineType,
+  agentId,
   isLoading,
   historyResolved = true,
   errorMessage,
@@ -222,6 +224,7 @@ export function ChatPanel({
           onModelChange={handleModelChange}
           agentName={agentName}
           machineType={machineType}
+          agentId={agentId}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
           onRemoveAttachment={handleRemoveAttachment}

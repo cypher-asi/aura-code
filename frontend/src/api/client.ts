@@ -31,6 +31,7 @@ import { desktopApi } from "./desktop";
 import { loopApi } from "./loop";
 import { followsApi, usersApi, profilesApi, feedApi, leaderboardApi, platformStatsApi, usageApi, activityApi } from "./social";
 import { environmentApi } from "./environment";
+import { swarmApi } from "./swarm";
 
 export const api = {
   auth: authApi,
@@ -51,4 +52,5 @@ export const api = {
   usage: usageApi,
   activity: activityApi,
   environment: environmentApi,
+  swarm: swarmApi,
 };
