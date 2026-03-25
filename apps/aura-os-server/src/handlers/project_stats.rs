@@ -26,6 +26,7 @@ pub(crate) struct ProjectStatsResponse {
     pub lines_changed: u64,
     pub total_specs: u64,
     pub contributors: u64,
+    pub estimated_cost_usd: f64,
 }
 
 impl From<ProjectStats> for ProjectStatsResponse {
@@ -47,6 +48,7 @@ impl From<ProjectStats> for ProjectStatsResponse {
             lines_changed: s.lines_changed,
             total_specs: s.total_specs,
             contributors: s.contributors,
+            estimated_cost_usd: s.estimated_cost_usd,
         }
     }
 }

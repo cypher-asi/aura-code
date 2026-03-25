@@ -364,7 +364,8 @@
 
 .statCardLabel {
   color: var(--color-text-muted);
-  font-size: 10px;
+  font-size: 9px;
+  white-space: nowrap;
 }
 
 /* TaskFeed & LogPanel shared */

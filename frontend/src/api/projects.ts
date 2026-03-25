@@ -81,6 +81,7 @@ export interface ProjectStatsData {
   lines_changed: number;
   total_specs: number;
   contributors: number;
+  estimated_cost_usd: number;
 }
 
 export const projectsApi = {

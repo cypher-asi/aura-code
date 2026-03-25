@@ -39,6 +39,7 @@ pub struct ProjectStats {
     pub total_specs: u64,
     #[serde(default)]
     pub contributors: u64,
+    pub estimated_cost_usd: f64,
 }
 
 // ---------------------------------------------------------------------------

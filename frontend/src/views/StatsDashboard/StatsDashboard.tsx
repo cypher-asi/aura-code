@@ -5,6 +5,13 @@ import { formatCompact } from "../../utils/format";
 import { useStatsDashboardData } from "./useStatsDashboardData";
 import styles from "../aura.module.css";
 
+function formatCost(usd: number): string {
+  if (usd < 0.01) return "$0";
+  if (usd < 1) return `$${usd.toFixed(2)}`;
+  if (usd < 100) return `$${usd.toFixed(1)}`;
+  return `$${Math.round(usd)}`;
+}
+
 function formatSeconds(s: number): string {
   if (s < 60) return `${Math.round(s)}s`;
   const mins = Math.floor(s / 60);
@@ -52,7 +59,7 @@ export function StatsDashboard() {
       <div className={styles.statsGrid}>
         <StatCard value={stats.pending_tasks} label="Pending" />
         <StatCard value={stats.ready_tasks} label="Ready" />
-        <StatCard value={stats.in_progress_tasks} label="In Progress" />
+        <StatCard value={stats.in_progress_tasks} label="Active" />
         <StatCard value={stats.blocked_tasks} label="Blocked" />
         <StatCard value={stats.done_tasks} label="Done" />
         <StatCard value={stats.failed_tasks} label="Failed" />
@@ -61,18 +68,19 @@ export function StatsDashboard() {
       {/* Overview */}
       <div className={styles.sectionMarginTop}>
         <Text variant="muted" size="xs" className={styles.uppercaseLabel}>
-          Overview
+          Code
         </Text>
       </div>
       <div className={styles.statsGrid}>
+        <StatCard value={stats.estimated_cost_usd} label="Cost" fmtFn={formatCost} />
         <StatCard value={stats.total_tokens} label="Tokens" fmt />
         <StatCard value={stats.total_events} label="Events" fmt />
         <StatCard value={stats.total_agents} label="Agents" />
         <StatCard value={stats.total_sessions} label="Sessions" />
-        <StatCard value={stats.total_time_seconds} label="Time Spent" fmtFn={formatSeconds} />
-        <StatCard value={stats.lines_changed} label="Lines Changed" fmt />
+        <StatCard value={stats.total_time_seconds} label="Time" fmtFn={formatSeconds} />
+        <StatCard value={stats.lines_changed} label="Lines" fmt />
         <StatCard value={stats.total_specs} label="Specs" />
-        <StatCard value={stats.contributors} label="Contributors" />
+        <StatCard value={stats.contributors} label="Coders" />
       </div>
     </div>
   );
