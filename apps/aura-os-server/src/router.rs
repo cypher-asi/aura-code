@@ -148,6 +148,8 @@ fn project_routes() -> Router<AppState> {
             get(project_stats::get_project_stats),
         )
         .route("/api/list-directory", post(files::list_directory))
+        .route("/api/read-file", post(files::read_file))
+        .route("/api/file-preview", get(files::preview_file))
 }
 
 fn spec_routes() -> Router<AppState> {

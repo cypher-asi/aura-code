@@ -3,6 +3,7 @@ import { MessageSquare, AlertCircle } from "lucide-react";
 import { Text } from "@cypher-asi/zui";
 import { useScrollAnchor } from "../../hooks/use-scroll-anchor";
 import { useIsStreaming } from "../../hooks/stream/hooks";
+import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import { ChatMessageList } from "../ChatMessageList";
 import { ChatInputBar } from "../ChatInputBar";
 import type { ChatInputBarHandle, AttachmentItem } from "../ChatInputBar";
@@ -24,7 +25,6 @@ export interface ChatPanelProps {
   onStop: () => void;
   agentName?: string;
   isLoading?: boolean;
-  /** When false, suppresses the empty-state text so it doesn't flash before history arrives. */
   historyResolved?: boolean;
   errorMessage?: string | null;
   emptyMessage?: string;
@@ -49,23 +49,24 @@ export function ChatPanel({
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const inputBarRef = useRef<ChatInputBarHandle>(null);
+  const { isMobileLayout } = useAuraCapabilities();
   const attachmentsRef = useRef(attachments);
-  useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
 
-  const { handleScroll, scrollToBottom, isReady } = useScrollAnchor(
-    messageAreaRef,
-    {
-      resetKey: scrollResetKey,
-      contentReady: historyResolved,
-    },
-  );
+  const { handleScroll, scrollToBottom, isReady } = useScrollAnchor(messageAreaRef, {
+    resetKey: scrollResetKey,
+    contentReady: historyResolved,
+  });
 
   const isStreaming = useIsStreaming(streamKey);
   const queue = useMessageQueue(streamKey);
 
   useEffect(() => {
+    if (isMobileLayout) return;
     requestAnimationFrame(() => inputBarRef.current?.focus());
-  }, [scrollResetKey]);
+  }, [isMobileLayout, scrollResetKey]);
 
   const handleModelChange = useCallback((modelId: string) => {
     setSelectedModel(modelId);
@@ -77,20 +78,17 @@ export function ChatPanel({
     [],
   );
 
-  const buildApiAttachments = useCallback(
-    (atts?: AttachmentItem[]): ChatAttachment[] | undefined => {
-      const toSend = atts ?? attachmentsRef.current;
-      return toSend.length > 0
-        ? toSend.map((a) => ({
-            type: a.attachmentType,
-            media_type: a.mediaType,
-            data: a.data,
-            name: a.name,
-          }))
-        : undefined;
-    },
-    [],
-  );
+  const buildApiAttachments = useCallback((atts?: AttachmentItem[]): ChatAttachment[] | undefined => {
+    const toSend = atts ?? attachmentsRef.current;
+    return toSend.length > 0
+      ? toSend.map((a) => ({
+          type: a.attachmentType,
+          media_type: a.mediaType,
+          data: a.data,
+          name: a.name,
+        }))
+      : undefined;
+  }, []);
 
   const handleSend = useCallback(
     (content: string, action?: string, atts?: AttachmentItem[]) => {
@@ -109,16 +107,19 @@ export function ChatPanel({
       }
       scrollToBottom();
     },
-    [onSend, scrollToBottom, isStreaming, streamKey, buildApiAttachments, selectedModel],
+    [buildApiAttachments, isStreaming, onSend, scrollToBottom, selectedModel, streamKey],
   );
 
-  // Auto-send next queued message when streaming stops
   const prevStreamingRef = useRef(false);
   const onSendRef = useRef(onSend);
-  useEffect(() => { onSendRef.current = onSend; }, [onSend]);
+  useEffect(() => {
+    onSendRef.current = onSend;
+  }, [onSend]);
 
   const selectedModelRef = useRef(selectedModel);
-  useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
+  useEffect(() => {
+    selectedModelRef.current = selectedModel;
+  }, [selectedModel]);
 
   useEffect(() => {
     if (prevStreamingRef.current && !isStreaming) {
@@ -129,7 +130,7 @@ export function ChatPanel({
       }
     }
     prevStreamingRef.current = isStreaming;
-  }, [isStreaming, streamKey, scrollToBottom]);
+  }, [isStreaming, scrollToBottom, streamKey]);
 
   const handleQueueEdit = useCallback(
     (item: QueuedMessage) => {

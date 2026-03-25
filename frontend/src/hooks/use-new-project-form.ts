@@ -205,10 +205,11 @@ export function useNewProjectForm(
   const activeOrg = useOrgStore((s) => s.activeOrg);
   const orgLoading = useOrgStore((s) => s.isLoading);
   const { user, isAuthenticated } = useAuth();
-  const { projects } = useProjectsList();
+  const { projects, loadingProjects, refreshProjects } = useProjectsList();
   const { features } = useAuraCapabilities();
+  const defaultWorkspaceMode: WorkspaceMode = features.linkedWorkspace ? "linked" : "imported";
 
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("linked");
+  const [workspaceModeState, setWorkspaceModeState] = useState<WorkspaceMode>(defaultWorkspaceMode);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [folderPath, setFolderPath] = useState("");
@@ -221,6 +222,10 @@ export function useNewProjectForm(
   const [nameError, setNameError] = useState("");
   const importFolderInputRef = useRef<DirectoryInput>(null);
   const importFilesInputRef = useRef<HTMLInputElement>(null);
+  const workspaceMode: WorkspaceMode = features.linkedWorkspace ? workspaceModeState : "imported";
+  const setWorkspaceMode = useCallback((mode: WorkspaceMode) => {
+    setWorkspaceModeState(features.linkedWorkspace ? mode : "imported");
+  }, [features.linkedWorkspace]);
 
   const { storedDraft, clearDraft } = useNewProjectDraft(isOpen, { workspaceMode, name, description, folderPath });
   const { orbitRepos, orbitReposLoading, resetOrbitRepos } = useOrbitRepos(isOpen, orbitRepoMode, isAuthenticated);
@@ -231,7 +236,7 @@ export function useNewProjectForm(
   useEffect(() => {
     if (draftAppliedRef.current || !storedDraft) return;
     draftAppliedRef.current = true;
-    setWorkspaceMode(storedDraft.workspaceMode === "linked" && features.linkedWorkspace ? "linked" : "imported");
+    setWorkspaceModeState(storedDraft.workspaceMode === "linked" && features.linkedWorkspace ? "linked" : "imported");
     if (storedDraft.name) setName(storedDraft.name);
     if (storedDraft.description) setDescription(storedDraft.description);
     if (storedDraft.folderPath) setFolderPath(storedDraft.folderPath);
@@ -243,6 +248,11 @@ export function useNewProjectForm(
   const resolvedOrgId = activeOrg?.org_id ?? projects[0]?.org_id ?? null;
 
   useEffect(() => {
+    if (!isOpen || activeOrg || projects.length > 0) return;
+    void refreshProjects();
+  }, [activeOrg, isOpen, projects.length, refreshProjects]);
+
+  useEffect(() => {
     if (importFolderInputRef.current) {
       importFolderInputRef.current.webkitdirectory = true;
       importFolderInputRef.current.directory = true;
@@ -252,7 +262,7 @@ export function useNewProjectForm(
   }, []);
 
   const reset = useCallback(() => {
-    setWorkspaceMode(features.linkedWorkspace ? "linked" : "imported");
+    setWorkspaceModeState(features.linkedWorkspace ? "linked" : "imported");
     setName(""); setDescription(""); setFolderPath("");
     setImportCandidates([]); setOrbitRepoName(""); setOrbitRepoMode("default");
     resetOrbitRepos(); setSelectedOrbitRepo(null);
@@ -314,7 +324,7 @@ export function useNewProjectForm(
   const needsLinkedFolder = workspaceMode === "linked" && !folderPath.trim();
 
   const submitBlocker = useMemo(() => {
-    if (orgLoading) return "Loading your team...";
+    if (orgLoading || (!activeOrg && loadingProjects && projects.length === 0)) return "Loading your team...";
     if (!isAuthenticated) return "Sign in to create a project with an Orbit repo.";
     if (!resolvedOrgId) return "No team found. Log out and back in to create a default team.";
     if (!name.trim()) return "Project name is required.";
@@ -325,7 +335,7 @@ export function useNewProjectForm(
     if (workspaceMode === "imported" && importCandidates.length === 0) return "Choose files or a folder to import before creating the project.";
     if (orbitRepoMode === "existing" && !selectedOrbitRepo) return "Select an existing Orbit repo to continue.";
     return "";
-  }, [features.linkedWorkspace, folderPath, importCandidates.length, isAuthenticated, name, orbitRepoMode, orgLoading, resolvedOrgId, selectedOrbitRepo, workspaceMode]);
+  }, [activeOrg, features.linkedWorkspace, folderPath, importCandidates.length, isAuthenticated, loadingProjects, name, orbitRepoMode, orgLoading, projects.length, resolvedOrgId, selectedOrbitRepo, workspaceMode]);
   const canSubmit = !loading && !submitBlocker;
 
   return {

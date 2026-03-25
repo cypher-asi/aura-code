@@ -8,7 +8,13 @@ import { EmptyState } from "../../../components/EmptyState";
 import { AgentEditorModal } from "../../../components/AgentEditorModal";
 import { AgentConversationRow } from "../AgentConversationRow";
 import { api, ApiClientError } from "../../../api/client";
-import { useAgents, useSelectedAgent, useAgentStore, useSortedAgents, LAST_AGENT_ID_KEY } from "../stores";
+import {
+  useAgents,
+  useSelectedAgent,
+  useAgentStore,
+  useSortedAgents,
+  LAST_AGENT_ID_KEY,
+} from "../stores";
 import { useChatHistoryStore, agentHistoryKey } from "../../../stores/chat-history-store";
 import { useSidebarSearch } from "../../../context/SidebarSearchContext";
 
@@ -68,7 +74,6 @@ export function AgentList() {
     [agents],
   );
 
-  // Dismiss context menu on outside click or Escape
   useEffect(() => {
     if (!ctxMenu) return;
     const handleMouseDown = (e: MouseEvent) => {
@@ -96,18 +101,14 @@ export function AgentList() {
     [fetchAgents, navigate],
   );
 
-  const handleHoverPrefetch = useCallback(
-    (e: React.MouseEvent) => {
-      const target = (e.target as HTMLElement).closest("button[id]");
-      if (target) {
-        useChatHistoryStore.getState().prefetchHistory(
-          agentHistoryKey(target.id),
-          () => api.agents.listEvents(target.id),
-        );
-      }
-    },
-    [],
-  );
+  const handleHoverPrefetch = useCallback((e: React.MouseEvent) => {
+    const target = (e.target as HTMLElement).closest("button[id]");
+    if (!target) return;
+    useChatHistoryStore.getState().prefetchHistory(
+      agentHistoryKey(target.id),
+      () => api.agents.listEvents(target.id),
+    );
+  }, []);
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
@@ -163,7 +164,10 @@ export function AgentList() {
   const filteredAgents = useMemo(() => {
     if (!searchQuery) return sortedAgents;
     const q = searchQuery.toLowerCase();
-    return sortedAgents.filter((a) => a.name.toLowerCase().includes(q));
+    return sortedAgents.filter((a) => {
+      const haystack = `${a.name} ${a.role} ${a.personality} ${a.system_prompt}`.toLowerCase();
+      return haystack.includes(q);
+    });
   }, [sortedAgents, searchQuery]);
 
   if (loading && agents.length === 0) {
@@ -230,15 +234,32 @@ export function AgentList() {
 
       <Modal
         isOpen={!!deleteTarget}
-        onClose={() => { setDeleteTarget(null); setDeleteError(null); }}
+        onClose={() => {
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
         title="Delete Agent"
         size="sm"
         footer={
           <div className={styles.confirmFooter}>
-            <Button variant="ghost" size="sm" onClick={() => { setDeleteTarget(null); setDeleteError(null); }} disabled={deleteLoading}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setDeleteTarget(null);
+                setDeleteError(null);
+              }}
+              disabled={deleteLoading}
+            >
               Cancel
             </Button>
-            <Button variant="primary" size="sm" onClick={handleDelete} disabled={deleteLoading} className={styles.dangerButton}>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleDelete}
+              disabled={deleteLoading}
+              className={styles.dangerButton}
+            >
               {deleteLoading ? "Deleting..." : "Delete"}
             </Button>
           </div>

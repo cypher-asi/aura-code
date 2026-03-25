@@ -1,8 +1,9 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { create } from "zustand";
 import type { FeedEvent, FeedComment } from "./feed-store";
 import { networkEventToFeedEvent, networkCommentToFeedComment } from "./feed-store";
 import { useAuthStore } from "./auth-store";
+import { useOrgStore } from "./org-store";
 import { api } from "../api/client";
 
 export interface UserProfileData {
@@ -26,7 +27,9 @@ export interface ProfileProject {
 interface ProfileState {
   profile: UserProfileData;
   projects: ProfileProject[];
+  projectsStatus: "idle" | "loading" | "ready" | "error";
   liveEvents: FeedEvent[];
+  eventsStatus: "idle" | "loading" | "ready" | "error";
   totalTokenUsage: number;
   selectedProject: string | null;
   selectedEventId: string | null;
@@ -67,6 +70,49 @@ function repoActivityForProject(events: FeedEvent[], repo: string): Record<strin
   return activity;
 }
 
+export function buildProfileEvents(
+  liveEvents: FeedEvent[],
+  profileName: string,
+  profileAvatarUrl?: string,
+): FeedEvent[] {
+  return [...liveEvents]
+    .map((evt) => {
+      if (profileAvatarUrl && evt.author.type === "user") {
+        return { ...evt, author: { ...evt.author, name: profileName || evt.author.name, avatarUrl: profileAvatarUrl } };
+      }
+      return evt;
+    })
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+}
+
+export function buildFilteredProfileEvents(
+  events: FeedEvent[],
+  projects: ProfileProject[],
+  selectedProject: string | null,
+): FeedEvent[] {
+  if (!selectedProject) return events;
+  const project = projects.find((item) => item.id === selectedProject);
+  if (!project) return events;
+  return events.filter((event) => event.repo === project.repo);
+}
+
+export function buildProfileCommitActivity(
+  events: FeedEvent[],
+  projects: ProfileProject[],
+  selectedProject: string | null,
+): Record<string, number> {
+  if (!selectedProject) return commitActivityFromEvents(events);
+  const project = projects.find((item) => item.id === selectedProject);
+  if (!project) return commitActivityFromEvents(events);
+  return repoActivityForProject(events, project.repo);
+}
+
+export function getProfileCommentsForEvent(comments: FeedComment[], eventId: string): FeedComment[] {
+  return comments
+    .filter((comment) => comment.eventId === eventId)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+}
+
 let _initialized = false;
 let _nextCommentId = 1;
 const _loadedCommentIds = new Set<string>();
@@ -79,6 +125,7 @@ function loadProfileFromNetwork(
   set: ProfileSetter,
   user: ReturnType<typeof useAuthStore.getState>["user"],
 ): void {
+  set({ eventsStatus: "loading" });
   api.users
     .me()
     .then((networkUser) => {
@@ -103,15 +150,21 @@ function loadProfileFromNetwork(
 
       if (networkUser.profile_id) {
         api.feed.getProfilePosts(networkUser.profile_id)
-          .then((netEvents) => set({ liveEvents: netEvents.map(networkEventToFeedEvent) }))
-          .catch(() => {});
+          .then((netEvents) => set({
+            liveEvents: netEvents.map(networkEventToFeedEvent),
+            eventsStatus: "ready",
+          }))
+          .catch(() => set({ eventsStatus: "error" }));
+      } else {
+        set({ eventsStatus: "ready" });
       }
     })
-    .catch(() => {});
+    .catch(() => set({ eventsStatus: "error" }));
 }
 
-function loadProfileProjects(set: ProfileSetter): void {
-  api.listProjects()
+function loadProfileProjects(set: ProfileSetter, orgId?: string | null): void {
+  set({ projectsStatus: "loading" });
+  api.listProjects(orgId ?? undefined)
     .then((apiProjects) => {
       set({
         projects: apiProjects.map((p) => {
@@ -120,9 +173,10 @@ function loadProfileProjects(set: ProfileSetter): void {
             : (p.git_repo_url ?? "");
           return { id: p.project_id, name: p.name, repo };
         }),
+        projectsStatus: "ready",
       });
     })
-    .catch(() => {});
+    .catch(() => set({ projectsStatus: "error" }));
 }
 
 export const useProfileStore = create<ProfileState>()((set, get) => {
@@ -142,7 +196,9 @@ export const useProfileStore = create<ProfileState>()((set, get) => {
       handle: zid ? `@${zid}` : "",
     },
     projects: [],
+    projectsStatus: "idle",
     liveEvents: [],
+    eventsStatus: "idle",
     totalTokenUsage: 0,
     selectedProject: null,
     selectedEventId: null,
@@ -201,7 +257,7 @@ export const useProfileStore = create<ProfileState>()((set, get) => {
       }
 
       loadProfileFromNetwork(set, user);
-      loadProfileProjects(set);
+      loadProfileProjects(set, useOrgStore.getState().activeOrg?.org_id);
       api.usage.personal("all")
         .then((stats) => set({ totalTokenUsage: stats.total_tokens }))
         .catch(() => {});
@@ -231,6 +287,15 @@ useProfileStore.subscribe((state, prev) => {
     .catch(() => {});
 });
 
+let _prevProfileOrgId: string | null = null;
+useOrgStore.subscribe((state) => {
+  if (!_initialized) return;
+  const orgId = state.activeOrg?.org_id ?? null;
+  if (orgId === _prevProfileOrgId) return;
+  _prevProfileOrgId = orgId;
+  loadProfileProjects(useProfileStore.setState, orgId);
+});
+
 /* ── derived selectors ── */
 
 export function useProfileEvents(): FeedEvent[] {
@@ -238,15 +303,10 @@ export function useProfileEvents(): FeedEvent[] {
   const profileName = useProfileStore((s) => s.profile.name);
   const profileAvatarUrl = useProfileStore((s) => s.profile.avatarUrl);
 
-  const events = [...liveEvents]
-    .map((evt) => {
-      if (profileAvatarUrl && evt.author.type === "user") {
-        return { ...evt, author: { ...evt.author, name: profileName || evt.author.name, avatarUrl: profileAvatarUrl } };
-      }
-      return evt;
-    })
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  return events;
+  return useMemo(
+    () => buildProfileEvents(liveEvents, profileName, profileAvatarUrl),
+    [liveEvents, profileAvatarUrl, profileName],
+  );
 }
 
 export function useProfileFilteredEvents(): FeedEvent[] {
@@ -254,10 +314,10 @@ export function useProfileFilteredEvents(): FeedEvent[] {
   const selectedProject = useProfileStore((s) => s.selectedProject);
   const projects = useProfileStore((s) => s.projects);
 
-  if (!selectedProject) return events;
-  const project = projects.find((p) => p.id === selectedProject);
-  if (!project) return events;
-  return events.filter((e) => e.repo === project.repo);
+  return useMemo(
+    () => buildFilteredProfileEvents(events, projects, selectedProject),
+    [events, projects, selectedProject],
+  );
 }
 
 export function useProfileCommitActivity(): Record<string, number> {
@@ -265,18 +325,18 @@ export function useProfileCommitActivity(): Record<string, number> {
   const selectedProject = useProfileStore((s) => s.selectedProject);
   const projects = useProfileStore((s) => s.projects);
 
-  if (!selectedProject) return commitActivityFromEvents(events);
-  const project = projects.find((p) => p.id === selectedProject);
-  if (!project) return commitActivityFromEvents(events);
-  return repoActivityForProject(events, project.repo);
+  return useMemo(
+    () => buildProfileCommitActivity(events, projects, selectedProject),
+    [events, projects, selectedProject],
+  );
 }
 
 export function useProfileCommentsForEvent(eventId: string | null): FeedComment[] {
   const comments = useProfileStore((s) => s.comments);
-  if (!eventId) return [];
-  return comments
-    .filter((c) => c.eventId === eventId)
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  return useMemo(
+    () => (eventId ? getProfileCommentsForEvent(comments, eventId) : []),
+    [comments, eventId],
+  );
 }
 
 /**
@@ -300,10 +360,7 @@ export function useProfile() {
   const commitActivity = useProfileCommitActivity();
 
   const getCommentsForEvent = useCallback(
-    (eventId: string) =>
-      comments
-        .filter((c) => c.eventId === eventId)
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
+    (eventId: string) => getProfileCommentsForEvent(comments, eventId),
     [comments],
   );
 

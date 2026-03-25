@@ -13,13 +13,11 @@ import { SessionList } from "../../views/SessionList";
 import { SidekickLog } from "../../views/SidekickLog";
 import { FileExplorer } from "../FileExplorer";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
-import { getLinkedWorkspaceRoot } from "../../utils/projectWorkspace";
+import { getLinkedWorkspaceRoot, getProjectWorkspaceDisplay } from "../../utils/projectWorkspace";
 import styles from "../Sidekick/Sidekick.module.css";
 
 function InfoPanel({ project, onClose }: { project: import("../../types").Project; onClose: () => void }) {
-  const workspaceLabel = project.workspace_source === "imported"
-    ? project.workspace_display_path ?? "Imported workspace snapshot"
-    : project.linked_folder_path || "—";
+  const workspaceLabel = getProjectWorkspaceDisplay(project) ?? "—";
 
   return (
     <div className={styles.infoArea}>
@@ -39,7 +37,13 @@ function InfoPanel({ project, onClose }: { project: import("../../types").Projec
   );
 }
 
-const SEARCH_PLACEHOLDERS: Record<string, string> = {};
+const SEARCH_PLACEHOLDERS: Record<string, string> = {
+  specs: "Search Specs...",
+  tasks: "Search Tasks...",
+  sessions: "Search Sessions...",
+  files: "Search Files...",
+  log: "Search Log...",
+};
 
 export function SidekickContent() {
   const { activeTab, showInfo, toggleInfo } = useSidekick();

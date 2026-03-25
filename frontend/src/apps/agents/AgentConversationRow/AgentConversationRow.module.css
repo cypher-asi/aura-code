@@ -50,7 +50,7 @@
 .body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
   flex: 1;
 }
@@ -72,18 +72,21 @@
   color: var(--color-text-primary);
 }
 
-.time {
+.role {
   font-size: 10px;
   color: var(--color-text-muted, var(--color-text-secondary));
   white-space: nowrap;
   flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .preview {
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }

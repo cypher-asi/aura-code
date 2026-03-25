@@ -24,38 +24,66 @@ function toExplorerNodes(entries: DirEntry[]): ExplorerNode[] {
 }
 
 export function FileExplorer({ rootPath, searchQuery, onFileSelect }: FileExplorerProps) {
-  const [entries, setEntries] = useState<DirEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [directoryState, setDirectoryState] = useState<{
+    key: string | null;
+    entries: DirEntry[];
+    error: string | null;
+  }>({
+    key: null,
+    entries: [],
+    error: null,
+  });
   const { features, isMobileLayout } = useAuraCapabilities();
   const canBrowseWorkspace = Boolean(rootPath);
 
   useEffect(() => {
     if (!rootPath) {
-      const frame = window.requestAnimationFrame(() => {
-        setEntries([]);
-        setError(null);
-        setLoading(false);
-      });
-      return () => window.cancelAnimationFrame(frame);
+      return;
     }
-    const frame = window.requestAnimationFrame(() => {
-      setLoading(true);
-      setError(null);
-    });
+
+    let cancelled = false;
+
     api
       .listDirectory(rootPath)
       .then((res) => {
+        if (cancelled) return;
         if (res.ok && res.entries) {
-          setEntries(res.entries);
-        } else {
-          setError(res.error ?? "Failed to list directory");
+          setDirectoryState({
+            key: rootPath,
+            entries: res.entries,
+            error: null,
+          });
+          return;
         }
+        setDirectoryState({
+          key: rootPath,
+          entries: [],
+          error: res.error ?? "Failed to list directory",
+        });
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-    return () => window.cancelAnimationFrame(frame);
+      .catch((e) => {
+        if (cancelled) return;
+        setDirectoryState({
+          key: rootPath,
+          entries: [],
+          error: e.message,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [features.linkedWorkspace, rootPath]);
+
+  const loading = Boolean(rootPath) && directoryState.key !== rootPath;
+  const entries = useMemo(
+    () => (rootPath && directoryState.key === rootPath ? directoryState.entries : []),
+    [directoryState.entries, directoryState.key, rootPath],
+  );
+  const error = useMemo(
+    () => (rootPath && directoryState.key === rootPath ? directoryState.error : null),
+    [directoryState.error, directoryState.key, rootPath],
+  );
 
   const explorerData: ExplorerNode[] = useMemo(() => {
     if (!rootPath) return [];
@@ -176,16 +204,24 @@ function renderMobileNodes({
 }) {
   return nodes.map((node) => {
     const isDir = Boolean(node.children?.length) || node.metadata?.is_dir === true;
-    const canOpenFile = !isDir && (Boolean(onFileSelect) || features.ideIntegration);
+    const canPreviewFile = !isDir && Boolean(onFileSelect);
+    const canOpenFile = !isDir && (canPreviewFile || features.ideIntegration);
     const depthPadding = { paddingLeft: `${12 + depth * 16}px` };
+    const actionLabel = canPreviewFile
+      ? getMobilePreviewLabel(node.label)
+      : canOpenFile
+        ? "Open"
+        : isDir
+          ? "Folder"
+          : "File";
 
     const content = (
-      <>
+      <div className={styles.mobileRowMain}>
         {node.icon}
         <span className={styles.truncatedLabel}>
           {node.label}
         </span>
-      </>
+      </div>
     );
 
     return (
@@ -204,16 +240,40 @@ function renderMobileNodes({
             }}
           >
             {content}
+            <span className={styles.mobileRowMeta}>{actionLabel}</span>
           </button>
         ) : (
           <div className={styles.mobileRow} style={depthPadding}>
             {content}
+            <span className={styles.mobileRowMeta}>{actionLabel}</span>
           </div>
         )}
         {node.children?.length ? renderMobileNodes({ nodes: node.children, features, onFileSelect, rootPath, depth: depth + 1 }) : null}
       </div>
     );
   });
+}
+
+function getMobilePreviewLabel(filename: string): string {
+  const lower = filename.toLowerCase();
+
+  if (lower.endsWith(".pdf")) {
+    return "PDF";
+  }
+
+  if (/\.(png|jpg|jpeg|gif|webp|svg)$/.test(lower)) {
+    return "Image";
+  }
+
+  if (/\.(md|markdown)$/.test(lower)) {
+    return "Read";
+  }
+
+  if (/\.(rs|ts|tsx|js|jsx|json|yaml|yml|toml|css|html|txt|sh|py|go|java|sql)$/.test(lower)) {
+    return "Code";
+  }
+
+  return "Preview";
 }
 
 function findNode(nodes: ExplorerNode[], id: string): ExplorerNode | null {
