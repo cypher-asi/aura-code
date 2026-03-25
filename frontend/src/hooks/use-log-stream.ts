@@ -28,6 +28,7 @@ const EVENT_LABELS: Record<EventType, string> = {
   [EventType.TokenUsage]: "Token",
   [EventType.Done]: "Message",
   [EventType.AgentInstanceUpdated]: "Agent",
+  [EventType.RemoteAgentStateChanged]: "Agent",
   [EventType.SpecSaved]: "Spec",
   [EventType.SpecsTitle]: "Spec",
   [EventType.SpecsSummary]: "Spec",
