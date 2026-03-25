@@ -24,7 +24,8 @@ fn watch_dir(dir: &Path) {
 }
 
 fn main() {
-    let frontend_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../frontend");
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+    let frontend_dir = Path::new(&manifest_dir).join("../../frontend");
     let dist_dir = frontend_dir.join("dist");
 
     if !frontend_dir.join("package.json").exists() {

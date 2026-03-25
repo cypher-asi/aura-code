@@ -761,14 +761,6 @@ pub(crate) async fn send_event_stream(
     open_harness_chat_stream(&state, &session_key, instance.harness_mode(), config, body.content, body.model, persist_ctx).await
 }
 
-pub(crate) fn build_project_system_prompt_pub(
-    state: &AppState,
-    project_id: &ProjectId,
-    agent_prompt: &str,
-) -> String {
-    build_project_system_prompt(state, project_id, agent_prompt)
-}
-
 fn build_project_system_prompt(
     state: &AppState,
     project_id: &ProjectId,
