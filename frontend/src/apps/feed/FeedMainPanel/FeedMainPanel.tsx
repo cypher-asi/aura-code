@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { GitCommitVertical } from "lucide-react";
 import { Lane } from "../../../components/Lane";
 import { CommitGrid } from "../../../components/CommitGrid";
@@ -5,10 +6,12 @@ import { ActivityCard } from "../../../components/ActivityCard";
 import { EmptyState } from "../../../components/EmptyState";
 import { useAuraCapabilities } from "../../../hooks/use-aura-capabilities";
 import { FEED_FILTERS } from "../feedFilters";
-import { useFeed } from "../../../stores/feed-store";
+import { useFeed, useFeedStore } from "../../../stores/feed-store";
 import styles from "./FeedMainPanel.module.css";
 
 export function FeedMainPanel() {
+  const init = useFeedStore((s) => s.init);
+  useEffect(() => { init(); }, [init]);
   const { isMobileLayout } = useAuraCapabilities();
   const { filter, setFilter, filteredEvents, commitActivity, selectedEventId, selectEvent, selectProfile, getCommentsForEvent } = useFeed();
 

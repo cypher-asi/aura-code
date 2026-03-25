@@ -1,0 +1,59 @@
+import { render, screen } from "@testing-library/react";
+import type { Agent } from "../../../types";
+import type { DisplaySessionEvent } from "../../../types/stream";
+import { AgentConversationRow } from "./AgentConversationRow";
+
+const baseAgent: Agent = {
+  agent_id: "agent-1",
+  user_id: "user-1",
+  name: "Rose",
+  role: "Architect",
+  personality: "Plans features end to end.",
+  system_prompt: "",
+  skills: [],
+  icon: null,
+  harness: "local",
+  machine_type: "local",
+  created_at: "2026-03-20T00:00:00Z",
+  updated_at: "2026-03-20T00:00:00Z",
+};
+
+const lastMessage: DisplaySessionEvent = {
+  id: "evt-1",
+  role: "assistant",
+  content: "Latest chat reply",
+} as DisplaySessionEvent;
+
+describe("AgentConversationRow", () => {
+  it("shows the agent summary instead of the last chat message", () => {
+    render(
+      <AgentConversationRow
+        agent={baseAgent}
+        lastMessage={lastMessage}
+        isSelected={false}
+        onClick={() => {}}
+        onContextMenu={() => {}}
+        onMouseOver={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Rose")).toBeInTheDocument();
+    expect(screen.getByText("Architect")).toBeInTheDocument();
+    expect(screen.queryByText("Latest chat reply")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the latest message when the agent has no summary fields", () => {
+    render(
+      <AgentConversationRow
+        agent={{ ...baseAgent, role: "", personality: "" }}
+        lastMessage={lastMessage}
+        isSelected={false}
+        onClick={() => {}}
+        onContextMenu={() => {}}
+        onMouseOver={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Latest chat reply")).toBeInTheDocument();
+  });
+});

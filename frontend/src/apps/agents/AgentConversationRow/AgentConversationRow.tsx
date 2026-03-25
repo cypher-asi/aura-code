@@ -30,9 +30,13 @@ export function AgentConversationRow({
   onContextMenu,
   onMouseOver,
 }: AgentConversationRowProps) {
-  const preview = lastMessage
+  const agentSummary = [agent.role, agent.personality]
+    .map((value) => stripMarkdown(value ?? ""))
+    .find((value) => value.length > 0);
+  const messagePreview = lastMessage
     ? `${lastMessage.role === "user" ? "You: " : ""}${stripMarkdown(lastMessage.content)}`
-    : agent.role;
+    : "";
+  const preview = agentSummary || messagePreview || "Open this agent";
 
   return (
     <button
