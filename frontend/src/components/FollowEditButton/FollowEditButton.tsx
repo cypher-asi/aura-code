@@ -7,17 +7,30 @@ interface FollowEditButtonProps {
   isOwner: boolean;
   targetProfileId?: string;
   onEdit?: () => void;
+  className?: string;
+  size?: "compact" | "touch";
 }
 
-export function FollowEditButton({ isOwner, targetProfileId, onEdit }: FollowEditButtonProps) {
+export function FollowEditButton({
+  isOwner,
+  targetProfileId,
+  onEdit,
+  className,
+  size = "compact",
+}: FollowEditButtonProps) {
   const isFollowing = useFollowStore((s) => s.isFollowing);
   const toggleFollow = useFollowStore((s) => s.toggleFollow);
   const [hover, setHover] = useState(false);
+  const buttonClassName = [
+    styles.button,
+    size === "touch" ? styles.touch : "",
+    className ?? "",
+  ].filter(Boolean).join(" ");
 
   if (isOwner) {
     if (!onEdit) return null;
     return (
-      <button type="button" className={styles.button} onClick={onEdit}>
+      <button type="button" className={buttonClassName} onClick={onEdit}>
         <Pencil size={12} />
         Edit
       </button>
@@ -39,7 +52,7 @@ export function FollowEditButton({ isOwner, targetProfileId, onEdit }: FollowEdi
   return (
     <button
       type="button"
-      className={`${styles.button} ${following ? styles.following : ""}`}
+      className={`${buttonClassName} ${following ? styles.following : ""}`}
       onClick={() => toggleFollow(targetProfileId)}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}

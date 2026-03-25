@@ -10,7 +10,7 @@
   display: flex;
   gap: 10px;
   overflow-x: auto;
-  padding: 2px 0 14px;
+  padding: 2px 0 6px;
   margin: 0 auto;
   width: 100%;
   max-width: 560px;
@@ -37,6 +37,19 @@
   color: var(--color-text);
   border-color: color-mix(in srgb, var(--color-text) 18%, var(--color-border));
   background: color-mix(in srgb, var(--color-bg-secondary, #181818) 84%, white 16%);
+}
+
+.mobileProfileStack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.mobileActivitySection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .scrollArea {
@@ -99,18 +112,19 @@
 
   .mobileFilterBar {
     gap: 8px;
-    padding: 2px 0 12px;
+    padding: 2px 0 4px;
   }
 
   .mobileFilterChip {
-    min-height: 34px;
-    padding: 0 12px;
+    min-height: 38px;
+    padding: 0 14px;
     font-size: 12px;
+    border-radius: 999px;
   }
 
   .commitGridWrapper {
     max-width: none;
-    padding: 8px 0 6px;
+    padding: 8px 0 2px;
   }
 
   .feedList {
@@ -126,6 +140,10 @@
 
 .spinAnimation {
   animation: profileSpin 0.9s linear infinite;
+}
+
+.mobileCommentsDrawer {
+  --drawer-border-color: var(--color-border);
 }
 
 @keyframes profileSpin {

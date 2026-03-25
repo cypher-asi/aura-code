@@ -1,0 +1,145 @@
+.wrapper {
+  width: 100%;
+}
+
+.mobileWrapper {
+  --entity-card-padding: 0;
+  --entity-card-padding-bottom: 0;
+  --entity-card-mobile-padding: 0;
+  --entity-card-mobile-padding-bottom: 0;
+  --entity-card-max-width: 100%;
+  --entity-card-mobile-max-width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.bioSection {
+  padding: var(--space-3);
+}
+
+.mobileBioSection {
+  padding: 14px 16px;
+}
+
+.bioText {
+  font-size: var(--font-size-sm, 13px);
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.mobileBioText {
+  font-size: 14px;
+}
+
+.metaGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.mobileMetaGrid {
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.mobileMetaRow {
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-bg-hover) 70%, transparent);
+}
+
+.metaIcon {
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.metaValue {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobileMetaValue {
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.metaLink {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--color-text);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobileMetaLink {
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.metaLink:hover {
+  text-decoration: underline;
+}
+
+.placeholder {
+  font-style: italic;
+  opacity: 0.4;
+  cursor: pointer;
+}
+
+.placeholder:hover {
+  opacity: 0.6;
+}
+
+.placeholderButton {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+}
+
+.avatarPlaceholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  padding: 16px 24px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+  font-size: var(--font-size-xs, 11px);
+  transition: opacity 0.15s;
+}
+
+.mobileAvatarPlaceholder {
+  min-height: 144px;
+  justify-content: center;
+  padding: 20px 24px;
+}
+
+.avatarPlaceholder:hover {
+  opacity: 0.8;
+}

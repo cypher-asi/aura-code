@@ -86,9 +86,17 @@ test("capture desktop agents, feed, and profile views", async ({ page }, testInf
   });
 
   await page.goto("/profile");
-  await expect(page.getByRole("treeitem", { name: "All" })).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: "All" })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("Shared summary components now power desktop and mobile profile surfaces.")).toBeVisible({ timeout: 10000 });
   await page.screenshot({
     path: `test-artifacts/review-shots/${projectName}-desktop-profile.png`,
+    fullPage: true,
+  });
+
+  await page.getByText("Shared summary components now power desktop and mobile profile surfaces.").click();
+  await expect(page.getByRole("textbox", { name: "Comment" })).toBeVisible();
+  await page.screenshot({
+    path: `test-artifacts/review-shots/${projectName}-desktop-profile-comments.png`,
     fullPage: true,
   });
 });

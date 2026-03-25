@@ -231,3 +231,25 @@ test("capture mobile work, files, and account sheet", async ({ page, browserName
     fullPage: true,
   });
 });
+
+test("capture mobile profile and comments sheet", async ({ page, browserName }, testInfo) => {
+  mkdirSync("test-artifacts/review-shots", { recursive: true });
+
+  await mockMobileVisualApp(page);
+  const projectName = testInfo.project.name.replace(/\s+/g, "-");
+
+  await page.goto("/profile");
+  await expect(page.getByRole("button", { name: "All activity" })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("Shared summary components now power desktop and mobile profile surfaces.")).toBeVisible({ timeout: 10000 });
+  await page.screenshot({
+    path: `test-artifacts/review-shots/${projectName}-${browserName}-profile-mobile-ia.png`,
+    fullPage: true,
+  });
+
+  await page.getByText("Shared summary components now power desktop and mobile profile surfaces.").click();
+  await expect(page.getByRole("textbox", { name: "Comment" })).toBeVisible({ timeout: 10000 });
+  await page.screenshot({
+    path: `test-artifacts/review-shots/${projectName}-${browserName}-profile-comments-mobile-ia.png`,
+    fullPage: true,
+  });
+});

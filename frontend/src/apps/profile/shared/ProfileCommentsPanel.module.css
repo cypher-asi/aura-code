@@ -1,0 +1,156 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.drawerPanel {
+  min-height: 320px;
+}
+
+.commentList {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.drawerPanel .commentList {
+  padding: 16px;
+  gap: 14px;
+}
+
+.commentItem {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.commentAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-bg-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.drawerPanel .commentAvatar {
+  width: 32px;
+  height: 32px;
+}
+
+.commentContent {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.commentHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.commentAuthor {
+  font-weight: 600;
+  font-size: var(--font-size-xs, 11px);
+  color: var(--color-text);
+}
+
+.drawerPanel .commentAuthor {
+  font-size: 12px;
+}
+
+.commentTime {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--color-text-secondary);
+  opacity: 0.6;
+}
+
+.commentText {
+  font-size: var(--font-size-sm, 13px);
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.drawerPanel .commentText {
+  font-size: 14px;
+}
+
+.inputArea {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.drawerPanel .inputArea {
+  padding: 16px;
+}
+
+.inputField {
+  flex: 1;
+  background: var(--color-bg-hover);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm, 13px);
+  color: var(--color-text);
+  outline: none;
+}
+
+.drawerPanel .inputField {
+  min-height: 44px;
+  font-size: 14px;
+  border-radius: 14px;
+}
+
+.inputField:focus {
+  border-color: var(--color-text-secondary);
+}
+
+.inputField::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+}
+
+.sendButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.drawerPanel .sendButton {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-text) 8%, var(--color-bg));
+}
+
+.sendButton:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-bg-hover);
+}
+
+.sendButton:disabled {
+  opacity: 0.3;
+  cursor: default;
+}

@@ -5,16 +5,16 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding: var(--space-5);
+  padding: var(--entity-card-padding, var(--space-5));
   height: 100%;
   overflow-y: auto;
   box-sizing: border-box;
-  padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--entity-card-padding-bottom, var(--space-5)) + env(safe-area-inset-bottom));
 }
 
 .card {
   width: 100%;
-  max-width: 280px;
+  max-width: var(--entity-card-max-width, 280px);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-bg);
@@ -169,12 +169,12 @@
     height: auto;
     min-height: 100%;
     overflow: visible;
-    padding: 12px;
-    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    padding: var(--entity-card-mobile-padding, 12px);
+    padding-bottom: calc(var(--entity-card-mobile-padding-bottom, 24px) + env(safe-area-inset-bottom));
   }
 
   .card {
-    max-width: min(100%, 300px);
+    max-width: min(100%, var(--entity-card-mobile-max-width, 300px));
   }
 
   .cardHeader {

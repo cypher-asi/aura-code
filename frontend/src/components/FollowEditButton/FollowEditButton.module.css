@@ -15,6 +15,15 @@
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
+.touch {
+  min-width: 0;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 16px;
+  font-size: var(--font-size-sm, 13px);
+  border-radius: 14px;
+}
+
 .button:hover {
   color: var(--color-text);
   border-color: var(--color-text-secondary);

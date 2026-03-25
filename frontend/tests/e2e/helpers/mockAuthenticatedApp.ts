@@ -33,6 +33,55 @@ const mockFeedEvents = [
   },
 ];
 
+const mockProfilePosts = [
+  {
+    id: "profile-post-1",
+    profile_id: "profile-1",
+    event_type: "commit_push",
+    post_type: "push",
+    title: "Shipped responsive profile polish",
+    summary: "Shared summary components now power desktop and mobile profile surfaces.",
+    metadata: {
+      author_name: "Test User",
+      author_type: "user",
+      repo: "cypher-asi/demo-project",
+      branch: "main",
+      commits: [
+        { sha: "9f8e7d6", message: "Extract shared profile summary card" },
+        { sha: "8e7d6c5", message: "Move comments into a mobile drawer flow" },
+      ],
+    },
+    commit_ids: ["9f8e7d6", "8e7d6c5"],
+    created_at: "2026-03-17T04:00:00.000Z",
+  },
+  {
+    id: "profile-post-2",
+    profile_id: "profile-1",
+    event_type: "status_post",
+    post_type: "post",
+    title: "Profile polish checkpoint",
+    summary: "Desktop-safe extraction is in place and mobile composition is next.",
+    metadata: {
+      author_name: "Test User",
+      author_type: "user",
+    },
+    commit_ids: [],
+    created_at: "2026-03-17T02:00:00.000Z",
+  },
+];
+
+const initialProfileComments: Record<string, Array<Record<string, unknown>>> = {
+  "profile-post-1": [
+    {
+      id: "profile-comment-1",
+      activity_event_id: "profile-post-1",
+      profile_id: "Teammate",
+      content: "Nice breakdown of the shared pieces.",
+      created_at: "2026-03-17T05:00:00.000Z",
+    },
+  ],
+};
+
 const mockLeaderboardEntries = [
   {
     profile_id: "profile-1",
@@ -47,9 +96,13 @@ const mockLeaderboardEntries = [
 export async function mockAuthenticatedApp(page: Page, options: MockAuthenticatedAppOptions = {}) {
   await page.unroute("**/api/auth/session");
   await page.unroute("**/api/auth/validate");
+  const profileComments = new Map(
+    Object.entries(initialProfileComments).map(([eventId, comments]) => [eventId, [...comments]]),
+  );
 
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
+    const method = route.request().method();
     const pathname = url.pathname !== "/" ? url.pathname.replace(/\/+$/, "") : url.pathname;
     const path = `${pathname}${url.search}`;
 
@@ -351,6 +404,24 @@ export async function mockAuthenticatedApp(page: Page, options: MockAuthenticate
     if (pathname.startsWith("/api/follows/check/")) return json({ following: false });
     if (pathname === "/api/leaderboard" || pathname === "/api/leaderboard/") return json(mockLeaderboardEntries);
     if (pathname === "/api/profiles/profile-1") return json(mockProfile);
+    if (pathname === "/api/profiles/profile-1/posts") return json(mockProfilePosts);
+    if (pathname.startsWith("/api/posts/") && pathname.endsWith("/comments")) {
+      const postId = pathname.split("/")[3] ?? "";
+      const comments = profileComments.get(postId) ?? [];
+      if (method === "POST") {
+        const body = JSON.parse(route.request().postData() || "{}");
+        const createdComment = {
+          id: `profile-comment-${comments.length + 1}`,
+          activity_event_id: postId,
+          profile_id: "Test User",
+          content: typeof body.content === "string" ? body.content : "",
+          created_at: "2026-03-17T06:00:00.000Z",
+        };
+        profileComments.set(postId, [...comments, createdComment]);
+        return json(createdComment);
+      }
+      return json(comments);
+    }
     if (pathname.startsWith("/api/activity/") && pathname.endsWith("/comments")) return json([]);
 
     const matchingAgent = agents.find((agent) => pathname === `/api/agents/${agent.agent_id}`);
