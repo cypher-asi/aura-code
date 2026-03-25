@@ -175,13 +175,14 @@ describe("useScrollAnchor", () => {
   // API & lifecycle
   // ---------------------------------------------------------------------------
 
-  it("returns handleScroll, scrollToBottom, and isReady", () => {
+  it("returns handleScroll, scrollToBottom, scrollToBottomIfPinned, and isReady", () => {
     const ref = { current: makeEl() };
     const { result } = renderHook(() =>
       useScrollAnchor(ref, DEFAULT_OPTIONS),
     );
     expect(typeof result.current.handleScroll).toBe("function");
     expect(typeof result.current.scrollToBottom).toBe("function");
+    expect(typeof result.current.scrollToBottomIfPinned).toBe("function");
     expect(typeof result.current.isReady).toBe("boolean");
   });
 
@@ -608,6 +609,82 @@ describe("useScrollAnchor", () => {
     expect(cro.observe).toHaveBeenCalledTimes(2);
     expect(cro.observe).toHaveBeenCalledWith(child1);
     expect(cro.observe).toHaveBeenCalledWith(child2);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Height decrease while pinned (streaming → finalised transition)
+  // ---------------------------------------------------------------------------
+
+  it("scrolls to bottom on mutation when pinned and scrollHeight DECREASES", () => {
+    const { el } = renderSettled();
+    // Simulate height drop (e.g. StreamingBubble unmounts)
+    (el as any).scrollHeight = 800;
+    act(() => latestMO().trigger());
+    act(() => flushRafs());
+    expect(el.scrollTop).toBe(800);
+  });
+
+  it("does NOT scroll on height decrease when user has scrolled up", () => {
+    const { el, result } = renderSettled();
+
+    (el as any).scrollTop = 100;
+    act(() => result.current.handleScroll());
+
+    (el as any).scrollHeight = 800;
+    act(() => latestMO().trigger());
+    act(() => flushRafs());
+    expect(el.scrollTop).toBe(100);
+  });
+
+  it("handles rapid height decrease then increase while pinned", () => {
+    const { el } = renderSettled();
+
+    // Height drops (StreamingBubble unmounts)
+    (el as any).scrollHeight = 700;
+    act(() => latestMO().trigger());
+
+    // Height jumps back up (virtualiser measures actual row)
+    (el as any).scrollHeight = 1400;
+    act(() => latestMO().trigger());
+    act(() => flushRafs());
+    expect(el.scrollTop).toBe(1400);
+  });
+
+  // ---------------------------------------------------------------------------
+  // scrollToBottomIfPinned
+  // ---------------------------------------------------------------------------
+
+  it("scrollToBottomIfPinned scrolls when pinned", () => {
+    const { el, result } = renderSettled();
+    (el as any).scrollHeight = 2000;
+    act(() => result.current.scrollToBottomIfPinned());
+    expect(el.scrollTop).toBe(2000);
+  });
+
+  it("scrollToBottomIfPinned does nothing when user has scrolled up", () => {
+    const { el, result } = renderSettled();
+
+    (el as any).scrollTop = 100;
+    act(() => result.current.handleScroll());
+
+    (el as any).scrollHeight = 2000;
+    act(() => result.current.scrollToBottomIfPinned());
+    expect(el.scrollTop).toBe(100);
+  });
+
+  it("scrollToBottomIfPinned does not re-pin after user scrolls up", () => {
+    const { el, result } = renderSettled();
+
+    (el as any).scrollTop = 100;
+    act(() => result.current.handleScroll());
+
+    act(() => result.current.scrollToBottomIfPinned());
+
+    // Subsequent mutations should NOT auto-scroll
+    (el as any).scrollHeight = 1500;
+    act(() => latestMO().trigger());
+    act(() => flushRafs());
+    expect(el.scrollTop).toBe(100);
   });
 
   // ---------------------------------------------------------------------------

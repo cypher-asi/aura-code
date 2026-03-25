@@ -48,6 +48,7 @@ export function useScrollAnchor(
 ): {
   handleScroll: () => void;
   scrollToBottom: () => void;
+  scrollToBottomIfPinned: () => void;
   isReady: boolean;
 } {
   const { resetKey, contentReady } = options;
@@ -184,7 +185,7 @@ export function useScrollAnchor(
       const oldSH = prevScrollHeightRef.current;
       const newSH = el.scrollHeight;
       if (newSH === oldSH) return;
-      if (pinnedRef.current && newSH > oldSH) {
+      if (pinnedRef.current) {
         scheduleScroll();
         return;
       }
@@ -279,5 +280,13 @@ export function useScrollAnchor(
     }
   }, [ref]);
 
-  return { handleScroll, scrollToBottom, isReady };
+  const scrollToBottomIfPinned = useCallback(() => {
+    if (!pinnedRef.current) return;
+    const el = ref.current;
+    if (el) {
+      guardedScroll(el, el.scrollHeight, guardRef);
+    }
+  }, [ref]);
+
+  return { handleScroll, scrollToBottom, scrollToBottomIfPinned, isReady };
 }

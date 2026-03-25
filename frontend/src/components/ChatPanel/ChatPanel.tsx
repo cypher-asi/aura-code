@@ -55,10 +55,13 @@ export function ChatPanel({
     attachmentsRef.current = attachments;
   }, [attachments]);
 
-  const { handleScroll, scrollToBottom, isReady } = useScrollAnchor(messageAreaRef, {
-    resetKey: scrollResetKey,
-    contentReady: historyResolved,
-  });
+  const { handleScroll, scrollToBottom, scrollToBottomIfPinned, isReady } = useScrollAnchor(
+    messageAreaRef,
+    {
+      resetKey: scrollResetKey,
+      contentReady: historyResolved,
+    },
+  );
 
   const isStreaming = useIsStreaming(streamKey);
   const queue = useMessageQueue(streamKey);
@@ -127,10 +130,12 @@ export function ChatPanel({
       if (next) {
         onSendRef.current(next.content, next.action, selectedModelRef.current, next.attachments);
         scrollToBottom();
+      } else {
+        requestAnimationFrame(() => scrollToBottomIfPinned());
       }
     }
     prevStreamingRef.current = isStreaming;
-  }, [isStreaming, scrollToBottom, streamKey]);
+  }, [isStreaming, streamKey, scrollToBottom, scrollToBottomIfPinned]);
 
   const handleQueueEdit = useCallback(
     (item: QueuedMessage) => {
