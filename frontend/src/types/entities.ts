@@ -116,7 +116,8 @@ export interface AgentInstance {
   system_prompt: string;
   skills: string[];
   icon: string | null;
-  harness: "local" | "swarm";
+  machine_type: string;
+  harness?: "local" | "swarm";
   status: AgentStatus;
   current_task_id: TaskId | null;
   current_session_id: SessionId | null;
@@ -298,6 +299,14 @@ export interface RemoteVmState {
   active_sessions: number
   last_heartbeat_at?: string
   error_message?: string
+  agent_id?: string
+  name?: string
+  cpu_millicores?: number
+  memory_mb?: number
+  runtime_version?: string
+  isolation?: string
+  endpoint?: string
+  created_at?: string
 }
 
 export interface ApiError {
