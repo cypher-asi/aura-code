@@ -30,7 +30,6 @@ export function AgentConversationRow({
   onContextMenu,
   onMouseOver,
 }: AgentConversationRowProps) {
-  const agentRole = stripMarkdown(agent.role ?? "");
   const agentDescription = stripMarkdown(agent.personality ?? "");
   const messagePreview = lastMessage
     ? `${lastMessage.role === "user" ? "You: " : ""}${stripMarkdown(lastMessage.content)}`
@@ -58,7 +57,7 @@ export function AgentConversationRow({
           <span className={styles.name}>{agent.name}</span>
           <span className={styles.time}>{formatChatTime(agent.updated_at)}</span>
         </span>
-        {agentRole ? <span className={styles.role}>{agentRole}</span> : null}
+
         <span className={styles.preview}>{preview}</span>
       </span>
     </button>
