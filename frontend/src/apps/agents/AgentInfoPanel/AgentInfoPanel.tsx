@@ -45,7 +45,7 @@ export function AgentInfoPanel() {
       await api.agents.delete(selectedAgent.agent_id);
       setShowDeleteConfirm(false);
       setSelectedAgent(null);
-      useAgentStore.getState().fetchAgents();
+      useAgentStore.getState().fetchAgents({ force: true });
       navigate("/agents");
     } catch (err) {
       if (err instanceof ApiClientError) {
@@ -158,7 +158,7 @@ export function AgentInfoPanel() {
           useAgentStore.getState().patchAgent(updated);
           useProjectsListStore.getState().patchAgentTemplateFields(updated);
           setSelectedAgent(updated.agent_id);
-          useAgentStore.getState().fetchAgents();
+          useAgentStore.getState().fetchAgents({ force: true });
         }}
       />
 

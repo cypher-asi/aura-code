@@ -73,7 +73,7 @@ export function SidekickTaskbar() {
           variant="ghost"
           size="sm"
           iconOnly
-          icon={<MoreHorizontal size={16} />}
+          icon={<Ellipsis size={16} />}
           onClick={() => setMoreOpen((v) => !v)}
           title="More actions"
           aria-label="More actions"

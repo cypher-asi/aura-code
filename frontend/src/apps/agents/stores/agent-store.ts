@@ -23,7 +23,7 @@ type AgentState = {
 
   selectedAgentId: string | null;
 
-  fetchAgents: () => Promise<void>;
+  fetchAgents: (opts?: { force?: boolean }) => Promise<void>;
   patchAgent: (agent: Agent) => void;
   fetchHistory: (agentId: string, opts?: { force?: boolean }) => Promise<void>;
   prefetchHistory: (agentId: string) => void;
@@ -32,10 +32,12 @@ type AgentState = {
 };
 
 const HISTORY_TTL_MS = 30_000;
+const AGENTS_TTL_MS = 30_000;
 
 export const useAgentStore = create<AgentState>()(
   subscribeWithSelector((set, get) => {
     let agentsFetchPromise: Promise<void> | null = null;
+    let agentsFetchedAt = 0;
     const historyFetchPromises = new Map<string, Promise<void>>();
 
     return {
@@ -45,10 +47,18 @@ export const useAgentStore = create<AgentState>()(
       history: {},
       selectedAgentId: null,
 
-      fetchAgents: async (): Promise<void> => {
+      fetchAgents: async (opts): Promise<void> => {
         const { agentsStatus } = get();
 
         if (agentsFetchPromise) return agentsFetchPromise;
+
+        if (
+          !opts?.force &&
+          agentsStatus === "ready" &&
+          Date.now() - agentsFetchedAt < AGENTS_TTL_MS
+        ) {
+          return;
+        }
 
         if (agentsStatus === "idle") {
           set({ agentsStatus: "loading", agentsError: null });
@@ -58,6 +68,7 @@ export const useAgentStore = create<AgentState>()(
           .list()
           .then((agents) => {
             const sorted = agents.sort((a, b) => a.name.localeCompare(b.name));
+            agentsFetchedAt = Date.now();
             set({ agents: sorted, agentsStatus: "ready", agentsError: null });
           })
           .catch((err: unknown) => {

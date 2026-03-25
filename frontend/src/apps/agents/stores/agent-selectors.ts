@@ -13,7 +13,7 @@ type AgentsSlice = {
   agents: Agent[];
   status: FetchStatus;
   error: string | null;
-  fetchAgents: () => Promise<void>;
+  fetchAgents: (opts?: { force?: boolean }) => Promise<void>;
 };
 
 export function useAgents(): AgentsSlice {

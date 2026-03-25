@@ -29,18 +29,19 @@ pub(crate) fn get_user_id(state: &AppState) -> Result<String, (StatusCode, Json<
 pub(crate) fn agent_from_network(net: &NetworkAgent) -> Agent {
     let agent_id = net.id.parse::<AgentId>().unwrap_or_else(|_| AgentId::new());
     let profile_id: Option<ProfileId> = net.profile_id_typed();
+    let epoch = DateTime::<Utc>::from(std::time::UNIX_EPOCH);
     let created_at = net
         .created_at
         .as_deref()
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(Utc::now);
+        .unwrap_or(epoch);
     let updated_at = net
         .updated_at
         .as_deref()
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(Utc::now);
+        .unwrap_or(created_at);
 
     Agent {
         agent_id,

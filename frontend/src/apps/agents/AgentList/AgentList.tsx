@@ -34,7 +34,7 @@ interface CtxMenuState {
 export function AgentList() {
   const { agents, status, fetchAgents } = useAgents();
   const { setSelectedAgent } = useSelectedAgent();
-  const loading = status === "loading";
+  const loading = status === "loading" || status === "idle";
   const { query: searchQuery, setAction } = useSidebarSearch();
   const navigate = useNavigate();
   const { agentId } = useParams();
@@ -95,7 +95,7 @@ export function AgentList() {
   const handleAgentSaved = useCallback(
     (agent: Agent) => {
       setShowEditor(false);
-      fetchAgents();
+      fetchAgents({ force: true });
       navigate(`/agents/${agent.agent_id}`);
     },
     [fetchAgents, navigate],
@@ -146,7 +146,7 @@ export function AgentList() {
         navigate("/agents");
       }
       setDeleteTarget(null);
-      useAgentStore.getState().fetchAgents();
+      useAgentStore.getState().fetchAgents({ force: true });
     } catch (err) {
       if (err instanceof ApiClientError) {
         setDeleteError(err.body.error);
