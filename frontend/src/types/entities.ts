@@ -298,6 +298,13 @@ export interface RemoteVmState {
   active_sessions: number
   last_heartbeat_at?: string
   error_message?: string
+  agent_id?: string
+  name?: string
+  cpu_millicores?: number
+  memory_mb?: number
+  runtime_version?: string
+  isolation?: string
+  created_at?: string
 }
 
 export interface ApiError {

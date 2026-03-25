@@ -95,6 +95,36 @@ export function AgentEnvironment({ machineType, agentId }: AgentEnvironmentProps
                 <span className={styles.statusLabel}>Sessions</span>
                 <span className={styles.statusValue}>{vmState.active_sessions}</span>
               </div>
+              {vmState.runtime_version && (
+                <div className={styles.statusRow}>
+                  <span className={styles.statusLabel}>Runtime</span>
+                  <span className={styles.statusValue}>{vmState.runtime_version}</span>
+                </div>
+              )}
+              {(vmState.cpu_millicores || vmState.memory_mb) && (
+                <div className={styles.statusRow}>
+                  <span className={styles.statusLabel}>Resources</span>
+                  <span className={styles.statusValue}>
+                    {vmState.cpu_millicores ? `${vmState.cpu_millicores}m CPU` : ""}
+                    {vmState.cpu_millicores && vmState.memory_mb ? " · " : ""}
+                    {vmState.memory_mb ? `${vmState.memory_mb}MB RAM` : ""}
+                  </span>
+                </div>
+              )}
+              {vmState.isolation && (
+                <div className={styles.statusRow}>
+                  <span className={styles.statusLabel}>Isolation</span>
+                  <span className={styles.statusValue}>
+                    {vmState.isolation === "micro_vm" ? "MicroVM" : "Container"}
+                  </span>
+                </div>
+              )}
+              {vmState.agent_id && (
+                <div className={styles.statusRow}>
+                  <span className={styles.statusLabel}>Agent ID</span>
+                  <span className={styles.statusValue}>{vmState.agent_id.slice(0, 12)}…</span>
+                </div>
+              )}
               {vmState.error_message && (
                 <div className={styles.statusRow}>
                   <span className={styles.statusLabel}>Error</span>
