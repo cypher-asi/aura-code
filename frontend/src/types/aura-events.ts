@@ -53,7 +53,8 @@ export enum EventType {
   ToolUseStart              = "tool_use_start",
 
   // Agent state
-  AgentInstanceUpdated  = "agent_instance_updated",
+  AgentInstanceUpdated      = "agent_instance_updated",
+  RemoteAgentStateChanged   = "remote_agent_state_changed",
 
   // Spec generation
   SpecSaved             = "spec_saved",
@@ -199,6 +200,13 @@ export type AuraEvent = AuraEventBase & (
   // ── Agent state ────────────────────────────────────────────
   | { type: EventType.AgentInstanceUpdated; content: {
       agent_instance: AgentInstance;
+    } }
+  | { type: EventType.RemoteAgentStateChanged; content: {
+      agent_id: string;
+      state: string;
+      uptime_seconds: number;
+      active_sessions: number;
+      error_message?: string;
     } }
 
   // ── Spec generation ────────────────────────────────────────

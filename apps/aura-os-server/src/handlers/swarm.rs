@@ -65,5 +65,14 @@ pub(crate) async fn get_remote_agent_state(
         .await
         .map_err(|e| ApiError::internal(format!("failed to parse gateway response: {e}")))?;
 
+    let _ = state.event_broadcast.send(serde_json::json!({
+        "type": "remote_agent_state_changed",
+        "agent_id": agent_id,
+        "state": gateway_state.state,
+        "uptime_seconds": gateway_state.uptime_seconds,
+        "active_sessions": gateway_state.active_sessions,
+        "error_message": gateway_state.error_message,
+    }));
+
     Ok(Json(gateway_state))
 }
