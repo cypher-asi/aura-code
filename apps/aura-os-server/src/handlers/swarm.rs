@@ -29,6 +29,8 @@ pub(crate) struct RemoteAgentStateResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isolation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
 }
 

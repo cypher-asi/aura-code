@@ -87,6 +87,12 @@ export function AgentEnvironment({ machineType, agentId }: AgentEnvironmentProps
                   <VmStatusBadge state={vmState.state} />
                 </span>
               </div>
+              {vmState.endpoint && (
+                <div className={styles.statusRow}>
+                  <span className={styles.statusLabel}>IP</span>
+                  <span className={styles.statusValue}>{vmState.endpoint}</span>
+                </div>
+              )}
               <div className={styles.statusRow}>
                 <span className={styles.statusLabel}>Uptime</span>
                 <span className={styles.statusValue}>{formatUptime(vmState.uptime_seconds)}</span>

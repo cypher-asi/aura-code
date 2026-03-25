@@ -304,6 +304,7 @@ export interface RemoteVmState {
   memory_mb?: number
   runtime_version?: string
   isolation?: string
+  endpoint?: string
   created_at?: string
 }
 
