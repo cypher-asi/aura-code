@@ -66,7 +66,7 @@ export function BuyCreditsModal({ isOpen, onClose, onOpenBilling }: Props) {
   );
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Buy More Credits" size="md" footer={footer}>
+    <Modal isOpen={isOpen} onClose={onClose} title="BUY CREDITS" size="md" footer={footer}>
       <div className={styles.content}>
         <div className={styles.balanceRow}>
           <div className={styles.balanceValue}>{balanceDisplay}</div>
