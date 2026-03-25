@@ -58,8 +58,6 @@ export function useScrollAnchor(
   const guardRef = useRef(false);
   const prevScrollHeightRef = useRef(0);
   const lastScrollTopRef = useRef(0);
-  const scrollRafRef = useRef<number | null>(null);
-  const pendingTargetRef = useRef<number | null>(null);
 
   const [isReady, setIsReady] = useState(false);
   const isReadyRef = useRef(false);
@@ -87,7 +85,6 @@ export function useScrollAnchor(
     let heightChanged = false;
     let waitingFrames = 0;
     let raf = 0;
-    let correctionRaf = 0;
 
     const reveal = () => {
       if (isReadyRef.current) return;
@@ -96,15 +93,6 @@ export function useScrollAnchor(
       phaseRef.current = "active";
       setIsReady(true);
       isReadyRef.current = true;
-      // Post-reveal correction: the React re-render that removes
-      // opacity:0 can trigger virtualiser recalculations. One extra
-      // guarded scroll absorbs them before the user sees anything.
-      correctionRaf = requestAnimationFrame(() => {
-        if (pinnedRef.current) {
-          guardedScroll(el, el.scrollHeight, guardRef);
-          prevScrollHeightRef.current = el.scrollHeight;
-        }
-      });
     };
 
     const poll = () => {
@@ -146,16 +134,33 @@ export function useScrollAnchor(
 
     return () => {
       cancelAnimationFrame(raf);
-      cancelAnimationFrame(correctionRaf);
       clearTimeout(timeout);
     };
   }, [ref, resetKey]);
+
+  // Post-reveal correction: removing opacity:0 can trigger virtualiser
+  // recalculations that change scrollHeight. useLayoutEffect runs after
+  // React commits but before the browser paints, so the correction is
+  // invisible to the user.
+  useLayoutEffect(() => {
+    if (!isReady || !pinnedRef.current) return;
+    const el = ref.current;
+    if (el) {
+      guardedScroll(el, el.scrollHeight, guardRef);
+      prevScrollHeightRef.current = el.scrollHeight;
+    }
+  }, [isReady, ref]);
 
   // ── Active phase: auto-scroll on content changes ────────────────────
   // MutationObserver catches DOM additions / streaming text. Child
   // ResizeObserver catches virtualiser measurement corrections (inline
   // style changes that don't alter DOM structure). Container
   // ResizeObserver handles width changes (lane resize).
+  //
+  // Scrolls are applied synchronously inside observer callbacks so the
+  // correction lands before the browser paints, eliminating the visible
+  // one-frame snap that a RAF-deferred approach would produce during
+  // large height jumps (e.g. a thinking block appearing).
 
   useEffect(() => {
     const el = ref.current;
@@ -165,28 +170,13 @@ export function useScrollAnchor(
       prevScrollHeightRef.current = el.scrollHeight;
     };
 
-    const scheduleScroll = () => {
-      pendingTargetRef.current = el.scrollHeight;
-      if (scrollRafRef.current !== null) return;
-      scrollRafRef.current = requestAnimationFrame(() => {
-        scrollRafRef.current = null;
-        pendingTargetRef.current = null;
-        if (phaseRef.current !== "active" || !pinnedRef.current) {
-          syncHeight();
-          return;
-        }
-        guardedScroll(el, el.scrollHeight, guardRef);
-        syncHeight();
-      });
-    };
-
     const onContentChange = () => {
       if (phaseRef.current !== "active") return;
-      const oldSH = prevScrollHeightRef.current;
       const newSH = el.scrollHeight;
-      if (newSH === oldSH) return;
+      if (newSH === prevScrollHeightRef.current) return;
       if (pinnedRef.current) {
-        scheduleScroll();
+        guardedScroll(el, el.scrollHeight, guardRef);
+        syncHeight();
         return;
       }
       syncHeight();
@@ -230,11 +220,6 @@ export function useScrollAnchor(
     syncHeight();
 
     return () => {
-      if (scrollRafRef.current !== null) {
-        cancelAnimationFrame(scrollRafRef.current);
-        scrollRafRef.current = null;
-      }
-      pendingTargetRef.current = null;
       mutationObs.disconnect();
       contentObs.disconnect();
       containerObs.disconnect();

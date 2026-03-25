@@ -167,6 +167,11 @@ describe("useScrollAnchor", () => {
       (p: typeof opts) => useScrollAnchor(ref, p),
       { initialProps: opts },
     );
+    // First flush: settling RAFs + reveal guard.
+    // The React commit that follows fires the post-reveal
+    // useLayoutEffect, which sets a new guard.
+    act(() => flushRafs());
+    // Second flush: clear the layout effect's guard RAF.
     act(() => flushRafs());
     return { el, ref, ...hook };
   }
@@ -276,7 +281,6 @@ describe("useScrollAnchor", () => {
     // not break pinning after settling.
     (el as any).scrollHeight = 1200;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(1200);
   });
 
@@ -344,7 +348,6 @@ describe("useScrollAnchor", () => {
     // Verify auto-scroll is off
     (el as any).scrollHeight = 1200;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(100);
 
     // scrollToBottom should re-enable
@@ -352,10 +355,8 @@ describe("useScrollAnchor", () => {
     expect(el.scrollTop).toBe(1200);
 
     // Subsequent mutations should auto-scroll again
-    act(() => flushRafs());
     (el as any).scrollHeight = 1500;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(1500);
   });
 
@@ -367,20 +368,19 @@ describe("useScrollAnchor", () => {
     const { el } = renderSettled();
     (el as any).scrollHeight = 1400;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(1400);
   });
 
-  it("uses live scrollHeight when it grows between observer fire and RAF", () => {
+  it("scrolls synchronously in observer callback (no RAF delay)", () => {
     const { el } = renderSettled();
+    const rafsBefore = nextRafId;
 
-    (el as any).scrollHeight = 1200;
+    (el as any).scrollHeight = 1400;
     act(() => latestMO().trigger());
 
-    // By the time the RAF executes, scrollHeight jumped further
-    (el as any).scrollHeight = 5000;
-    act(() => flushRafs());
-    expect(el.scrollTop).toBe(5000);
+    // Scroll already applied — only RAF is the guard-clearing one
+    expect(el.scrollTop).toBe(1400);
+    expect(nextRafId - rafsBefore).toBe(1); // just the guard RAF
   });
 
   it("does NOT scroll on mutation when user has scrolled up", () => {
@@ -391,7 +391,6 @@ describe("useScrollAnchor", () => {
 
     (el as any).scrollHeight = 1400;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(100);
   });
 
@@ -409,7 +408,6 @@ describe("useScrollAnchor", () => {
 
     (el as any).scrollHeight = 1400;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(1400);
   });
 
@@ -426,7 +424,6 @@ describe("useScrollAnchor", () => {
 
     (el as any).scrollHeight = 1200;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(1200);
   });
 
@@ -439,7 +436,6 @@ describe("useScrollAnchor", () => {
 
     (el as any).scrollHeight = 1200;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(559);
   });
 
@@ -461,7 +457,6 @@ describe("useScrollAnchor", () => {
 
     // Auto-scroll should still be active
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(1500);
   });
 
@@ -477,44 +472,23 @@ describe("useScrollAnchor", () => {
 
     (el as any).scrollHeight = 1200;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(100);
   });
 
   // ---------------------------------------------------------------------------
-  // MutationObserver RAF deduplication
+  // Synchronous scroll (no RAF batching)
   // ---------------------------------------------------------------------------
 
-  it("coalesces rapid mutations into a single RAF", () => {
-    renderSettled();
-    const before = nextRafId;
-
-    const mo = latestMO();
-    const el = MockMutationObserver.instances[0];
-    // Grab the ref's element to bump scrollHeight
-    // (renderSettled returns it, but we can also trigger the observer)
-    act(() => {
-      mo.trigger();
-      mo.trigger();
-      mo.trigger();
-    });
-
-    // At most 1 new RAF should have been scheduled
-    expect(nextRafId - before).toBeLessThanOrEqual(1);
-  });
-
-  it("schedules a new RAF after the previous one fires", () => {
+  it("each mutation scrolls immediately without waiting for RAF", () => {
     const { el } = renderSettled();
+
     (el as any).scrollHeight = 1100;
     act(() => latestMO().trigger());
-    expect(rafQueue.size).toBe(1);
-
-    act(() => flushRafs());
-    expect(rafQueue.size).toBe(0);
+    expect(el.scrollTop).toBe(1100);
 
     (el as any).scrollHeight = 1200;
     act(() => latestMO().trigger());
-    expect(rafQueue.size).toBe(1);
+    expect(el.scrollTop).toBe(1200);
   });
 
   // ---------------------------------------------------------------------------
@@ -572,7 +546,6 @@ describe("useScrollAnchor", () => {
 
     (el as any).scrollHeight = 1800;
     act(() => contentRO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(1800);
   });
 
@@ -586,13 +559,13 @@ describe("useScrollAnchor", () => {
       { initialProps: DEFAULT_OPTIONS },
     );
     act(() => flushRafs());
+    act(() => flushRafs()); // clear post-reveal layout effect guard
 
     (el as any).scrollTop = 100;
     act(() => result.current.handleScroll());
 
     (el as any).scrollHeight = 1800;
     act(() => contentRO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(100);
   });
 
@@ -620,7 +593,6 @@ describe("useScrollAnchor", () => {
     // Simulate height drop (e.g. StreamingBubble unmounts)
     (el as any).scrollHeight = 800;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(800);
   });
 
@@ -632,7 +604,6 @@ describe("useScrollAnchor", () => {
 
     (el as any).scrollHeight = 800;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(100);
   });
 
@@ -642,11 +613,11 @@ describe("useScrollAnchor", () => {
     // Height drops (StreamingBubble unmounts)
     (el as any).scrollHeight = 700;
     act(() => latestMO().trigger());
+    expect(el.scrollTop).toBe(700);
 
     // Height jumps back up (virtualiser measures actual row)
     (el as any).scrollHeight = 1400;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(1400);
   });
 
@@ -683,7 +654,6 @@ describe("useScrollAnchor", () => {
     // Subsequent mutations should NOT auto-scroll
     (el as any).scrollHeight = 1500;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(100);
   });
 
@@ -730,11 +700,10 @@ describe("useScrollAnchor", () => {
     // Subsequent mutations should auto-scroll
     (el as any).scrollHeight = 1300;
     act(() => latestMO().trigger());
-    act(() => flushRafs());
     expect(el.scrollTop).toBe(1300);
   });
 
-  it("scrolls to bottom after resetKey change even with a pending RAF from old observers", () => {
+  it("scrolls to bottom after resetKey change even after a scroll from old observers", () => {
     const el = makeEl();
     const ref = { current: el };
     const { rerender } = renderHook(
@@ -744,12 +713,12 @@ describe("useScrollAnchor", () => {
     );
     act(() => flushRafs());
 
-    // Trigger old MutationObserver before cleanup runs, leaving a pending RAF
+    // Trigger old MutationObserver — scrolls synchronously
     (el as any).scrollHeight = 1500;
     act(() => MockMutationObserver.instances[0].trigger());
-    // Don't flush — leave the RAF pending.
+    expect(el.scrollTop).toBe(1500);
 
-    // Switch conversations. Effect cleanup cancels the pending RAF.
+    // Switch conversations — settling re-scrolls to new content
     (el as any).scrollTop = 0;
     (el as any).scrollHeight = 2000;
     rerender({ key: "b" });
@@ -761,17 +730,6 @@ describe("useScrollAnchor", () => {
   // ---------------------------------------------------------------------------
   // Cleanup
   // ---------------------------------------------------------------------------
-
-  it("cancels pending mutation RAF on unmount", () => {
-    const { el, unmount } = renderSettled();
-
-    (el as any).scrollHeight = 1300;
-    act(() => latestMO().trigger());
-    expect(rafQueue.size).toBeGreaterThan(0);
-
-    unmount();
-    expect(rafQueue.size).toBe(0);
-  });
 
   it("cancels settling RAF and timeout on unmount", () => {
     const el = makeEl();
