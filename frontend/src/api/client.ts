@@ -30,6 +30,7 @@ import { orgsApi } from "./orgs";
 import { desktopApi } from "./desktop";
 import { loopApi } from "./loop";
 import { followsApi, usersApi, profilesApi, feedApi, leaderboardApi, platformStatsApi, usageApi, activityApi } from "./social";
+import { environmentApi } from "./environment";
 
 export const api = {
   auth: authApi,
@@ -49,4 +50,5 @@ export const api = {
   platformStats: platformStatsApi,
   usage: usageApi,
   activity: activityApi,
+  environment: environmentApi,
 };

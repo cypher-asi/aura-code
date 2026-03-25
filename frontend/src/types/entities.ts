@@ -284,6 +284,14 @@ export interface Follow {
   created_at: string;
 }
 
+export interface EnvironmentInfo {
+  os: string;
+  architecture: string;
+  hostname: string;
+  ip: string;
+  cwd: string;
+}
+
 export interface ApiError {
   error: string;
   code: string;

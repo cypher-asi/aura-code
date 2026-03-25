@@ -3,6 +3,7 @@ import { ArrowUp, Plus, X, FileText, ChevronDown } from "lucide-react";
 import { useIsStreaming } from "../../hooks/stream/hooks";
 import { useFileAttachments } from "./useFileAttachments";
 import { AVAILABLE_MODELS, modelLabel } from "../../constants/models";
+import { AgentEnvironment } from "../AgentEnvironment";
 import styles from "../ChatView/ChatView.module.css";
 
 export interface ChatInputBarHandle {
@@ -28,6 +29,7 @@ interface Props {
   selectedModel?: string;
   onModelChange?: (model: string) => void;
   agentName?: string;
+  machineType?: "local" | "remote";
   attachments?: AttachmentItem[];
   onAttachmentsChange?: (items: AttachmentItem[]) => void;
   onRemoveAttachment?: (id: string) => void;
@@ -50,7 +52,7 @@ function AttachmentPreviews({ attachments, onRemove }: { attachments: Attachment
 
 export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function ChatInputBar({
   input, onInputChange, onSend, onStop, streamKey,
-  selectedModel, onModelChange,
+  selectedModel, onModelChange, machineType,
   attachments = [], onAttachmentsChange, onRemoveAttachment,
 }, ref) {
   const isStreaming = useIsStreaming(streamKey);
@@ -109,6 +111,7 @@ export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function 
         </div>
       </div>
       <div className={styles.inputInfoBar}>
+        {machineType && <AgentEnvironment machineType={machineType} />}
         <span className={styles.infoText}>/ for commands</span>
         <div className={styles.modelMenuWrap} ref={modelMenuRef}>
           <button type="button" className={styles.modelButton} onClick={() => setModelMenuOpen((v) => !v)}>

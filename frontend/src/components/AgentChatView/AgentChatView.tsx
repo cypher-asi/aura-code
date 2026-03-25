@@ -84,8 +84,9 @@ export function AgentChatView() {
 
   const deferredLoading = useDelayedLoading(isLoading);
 
-  // ── Project-mode: agent name from API ───────────────────────────────
+  // ── Project-mode: agent metadata from API ──────────────────────────
   const [agentName, setAgentName] = useState<string | undefined>();
+  const [machineType, setMachineType] = useState<"local" | "remote" | undefined>();
   const metadataLoadIdRef = useRef(0);
 
   useEffect(() => {
@@ -95,7 +96,9 @@ export function AgentChatView() {
     api
       .getAgentInstance(projectId, agentInstanceId, { signal: controller.signal })
       .then((inst) => {
-        if (loadId === metadataLoadIdRef.current) setAgentName(inst.name);
+        if (loadId !== metadataLoadIdRef.current) return;
+        setAgentName(inst.name);
+        setMachineType(inst.harness === "swarm" ? "remote" : "local");
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -107,6 +110,10 @@ export function AgentChatView() {
   if (!entityId) return null;
 
   const displayName = mode === "project" ? agentName : selectedAgent?.name;
+  const resolvedMachineType: "local" | "remote" | undefined =
+    mode === "project"
+      ? machineType
+      : selectedAgent?.machine_type === "remote" ? "remote" : "local";
 
   return (
     <ChatPanel
@@ -115,6 +122,7 @@ export function AgentChatView() {
       onSend={wrappedSend}
       onStop={stopStreaming}
       agentName={displayName}
+      machineType={resolvedMachineType}
       isLoading={deferredLoading}
       historyResolved={historyResolved}
       errorMessage={historyError ? historyError : null}

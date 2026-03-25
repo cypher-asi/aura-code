@@ -1,0 +1,74 @@
+.wrapper {
+  position: relative;
+}
+
+.indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: default;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.indicator:hover {
+  color: var(--color-text);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotLocal {
+  background: var(--color-text-tertiary, #6b7280);
+}
+
+.dotRemote {
+  background: #22c55e;
+  box-shadow: 0 0 4px rgba(34, 197, 94, 0.4);
+}
+
+.statusCard {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 100;
+  background: var(--color-bg-secondary, #1a1a1a);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  min-width: 220px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.statusRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.statusLabel {
+  color: var(--color-text-tertiary, #6b7280);
+  flex-shrink: 0;
+  min-width: 68px;
+}
+
+.statusValue {
+  color: var(--color-text);
+  word-break: break-all;
+}
