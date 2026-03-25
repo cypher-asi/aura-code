@@ -14,13 +14,14 @@ interface LoopControlsProps {
 }
 
 export function LoopControls({
-  projectId: _projectId,
+  projectId,
   running,
   paused,
   onStart,
   onPause,
   onStop,
 }: LoopControlsProps) {
+  void projectId;
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const handleStopConfirm = () => {
@@ -32,22 +33,46 @@ export function LoopControls({
     <>
       <div className={styles.controlRow}>
         {!running && !paused && (
-          <Button variant="filled" size="sm" icon={<Play size={14} />} onClick={onStart}>
+          <Button
+            variant="filled"
+            size="sm"
+            icon={<Play size={14} />}
+            onClick={onStart}
+            className={styles.startButton}
+          >
             Start
           </Button>
         )}
         {paused && (
-          <Button variant="filled" size="sm" icon={<Play size={14} />} onClick={onStart}>
+          <Button
+            variant="filled"
+            size="sm"
+            icon={<Play size={14} />}
+            onClick={onStart}
+            className={styles.startButton}
+          >
             Resume
           </Button>
         )}
         {running && !paused && (
-          <Button variant="secondary" size="sm" icon={<Pause size={14} />} onClick={onPause}>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<Pause size={14} />}
+            onClick={onPause}
+            className={styles.secondaryButton}
+          >
             Pause
           </Button>
         )}
         {(running || paused) && (
-          <Button variant="danger" size="sm" icon={<Square size={14} />} onClick={() => setConfirmOpen(true)}>
+          <Button
+            variant="danger"
+            size="sm"
+            icon={<Square size={14} />}
+            onClick={() => setConfirmOpen(true)}
+            className={styles.stopButton}
+          >
             Stop
           </Button>
         )}

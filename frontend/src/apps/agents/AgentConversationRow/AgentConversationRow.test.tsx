@@ -39,6 +39,7 @@ describe("AgentConversationRow", () => {
 
     expect(screen.getByText("Rose")).toBeInTheDocument();
     expect(screen.getByText("Architect")).toBeInTheDocument();
+    expect(screen.getByText("Plans features end to end.")).toBeInTheDocument();
     expect(screen.queryByText("Latest chat reply")).not.toBeInTheDocument();
   });
 
