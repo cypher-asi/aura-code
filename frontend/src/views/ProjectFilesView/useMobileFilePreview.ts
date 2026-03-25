@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 
 interface UseMobileFilePreviewArgs {
@@ -11,7 +11,6 @@ interface UseMobileFilePreviewResult {
   previewContent: string | null;
   previewError: string | null;
   previewLoading: boolean;
-  resetPreview: () => void;
 }
 
 interface PreviewState {
@@ -75,21 +74,11 @@ export function useMobileFilePreview({
     };
   }, [filePath, previewKey]);
 
-  const resetPreview = useCallback(() => {
-    requestIdRef.current += 1;
-    setPreviewState({
-      key: null,
-      content: null,
-      error: null,
-    });
-  }, []);
-
   const isActivePreview = previewState.key === previewKey;
 
   return {
     previewContent: isActivePreview ? previewState.content : null,
     previewError: isActivePreview ? previewState.error : null,
     previewLoading: previewKey != null && !isActivePreview,
-    resetPreview,
   };
 }

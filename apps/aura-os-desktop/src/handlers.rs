@@ -41,11 +41,12 @@ pub(crate) struct ReadFileRequest {
     path: String,
 }
 
-pub(crate) async fn read_file(Json(req): Json<ReadFileRequest>) -> Json<serde_json::Value> {
 #[derive(serde::Deserialize)]
 pub(crate) struct FilePreviewQuery {
     path: String,
 }
+
+pub(crate) async fn read_file(Json(req): Json<ReadFileRequest>) -> Json<serde_json::Value> {
     let target = std::path::Path::new(&req.path);
     let meta = match tokio::fs::metadata(target).await {
         Ok(m) => m,

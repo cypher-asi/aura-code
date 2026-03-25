@@ -167,5 +167,3 @@
 {"data":{"detail":null,"event_type":"text_delta","first_message_seen":true},"hypothesisId":"F","location":"dev_loop.rs:forwarder:typed_event","message":"received typed harness event","sessionId":"926b20","timestamp":1774392079347}
 {"data":{"detail":null,"event_type":"text_delta","first_message_seen":true},"hypothesisId":"F","location":"dev_loop.rs:forwarder:typed_event","message":"received typed harness event","sessionId":"926b20","timestamp":1774392079918}
 {"data":{"detail":null,"event_type":"assistant_message_end","first_message_seen":true},"hypothesisId":"F","location":"dev_loop.rs:forwarder:typed_event","message":"received typed harness event","sessionId":"926b20","timestamp":1774392080169}
-{"data":{"receiver_count":1},"hypothesisId":"B","location":"ws.rs:handle_ws:connected","message":"WS client subscribed to event_broadcast","sessionId":"926b20","timestamp":1774395354604}
-{"data":{"receiver_count":1},"hypothesisId":"B","location":"ws.rs:handle_ws:connected","message":"WS client subscribed to event_broadcast","sessionId":"926b20","timestamp":1774395390858}

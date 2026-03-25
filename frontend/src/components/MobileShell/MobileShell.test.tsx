@@ -87,15 +87,6 @@ vi.mock("../../context/SidebarSearchContext", () => ({
   useSidebarSearch: () => ({ query: "", setQuery: vi.fn() }),
 }));
 
-vi.mock("../../apps/projects/useProjectsList", () => ({
-  useProjectsList: () => ({
-    projects: [demoProject],
-    recentProjects: [],
-    mostRecentProject: demoProject,
-    openNewProjectModal: vi.fn(),
-  }),
-}));
-
 vi.mock("../../stores/projects-list-store", () => ({
   useProjectsListStore: (selector: (state: {
     projects: typeof demoProject[];
