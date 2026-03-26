@@ -45,8 +45,8 @@
 }
 
 .statusDot[data-status="idle"] {
-  background: #eab308;
-  box-shadow: 0 0 4px rgba(234, 179, 8, 0.3);
+  background: #06b6d4;
+  box-shadow: 0 0 4px rgba(6, 182, 212, 0.3);
 }
 
 .statusDot[data-status="provisioning"] {

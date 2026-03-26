@@ -1,14 +1,9 @@
-import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { api, type OrbitRepo } from "../api/client";
 import { useOrgStore } from "../stores/org-store";
 import { useAuth } from "../stores/auth-store";
 import { useProjectsList } from "../apps/projects/useProjectsList";
-import { useAuraCapabilities } from "./use-aura-capabilities";
-import {
-  clearNewProjectDraftFiles,
-  loadNewProjectDraftFiles,
-  saveNewProjectDraftFiles,
-} from "../lib/new-project-draft";
+import { clearNewProjectDraftFiles } from "../lib/new-project-draft";
 import { useNewProjectDraft } from "./use-new-project-draft";
 import { useOrbitRepos } from "./use-orbit-repos";
 
@@ -22,49 +17,7 @@ function slugFromName(name: string): string {
 
 export type OrbitRepoMode = "default" | "custom" | "existing";
 export type WorkspaceMode = "linked" | "imported";
-
-export type ImportCandidate = {
-  file: File;
-  relativePath: string;
-};
-
-type BrowserFile = File & {
-  webkitRelativePath?: string;
-};
-
-type DirectoryInput = HTMLInputElement & {
-  webkitdirectory?: boolean;
-  directory?: boolean;
-};
-
-function getRelativePath(file: File): string {
-  const browserFile = file as BrowserFile;
-  return browserFile.webkitRelativePath && browserFile.webkitRelativePath.length > 0
-    ? browserFile.webkitRelativePath
-    : file.name;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    const slice = bytes.subarray(index, index + chunkSize);
-    binary += String.fromCharCode(...slice);
-  }
-  return window.btoa(binary);
-}
-
-async function toImportedFiles(files: ImportCandidate[]) {
-  return Promise.all(
-    files.map(async ({ file, relativePath }) => {
-      const buffer = await file.arrayBuffer();
-      return {
-        relative_path: relativePath,
-        contents_base64: bytesToBase64(new Uint8Array(buffer)),
-      };
-    }),
-  );
-}
+export type EnvironmentType = "remote" | "local";
 
 export type WorkspaceModeOption = {
   id: WorkspaceMode;
@@ -73,15 +26,12 @@ export type WorkspaceModeOption = {
 };
 
 export interface NewProjectFormState {
-  workspaceMode: WorkspaceMode;
-  setWorkspaceMode: (mode: WorkspaceMode) => void;
   name: string;
   setName: (name: string) => void;
-  description: string;
-  setDescription: (description: string) => void;
   folderPath: string;
   setFolderPath: (path: string) => void;
-  importCandidates: ImportCandidate[];
+  environment: EnvironmentType;
+  setEnvironment: (env: EnvironmentType) => void;
   orbitRepoMode: OrbitRepoMode;
   setOrbitRepoMode: (mode: OrbitRepoMode) => void;
   orbitRepoName: string;
@@ -94,37 +44,26 @@ export interface NewProjectFormState {
   error: string;
   nameError: string;
   setNameError: (error: string) => void;
-  importFolderInputRef: React.RefObject<DirectoryInput | null>;
-  importFilesInputRef: React.RefObject<HTMLInputElement | null>;
 
   orbitOwner: string | null;
   proposedRepoSlug: string;
   displayRepoName: string;
   isAuthenticated: boolean;
-  importSummary: { count: number; sizeLabel: string; samplePaths: string[] };
-  workspaceModeOptions: WorkspaceModeOption[];
-  showWorkspaceModePicker: boolean;
-  needsImportedFiles: boolean;
-  needsLinkedFolder: boolean;
   submitBlocker: string;
   canSubmit: boolean;
 
-  handleImportSelection: (files: FileList | null) => void;
   handleSubmit: () => Promise<void>;
   handleClose: () => void;
 }
 
 function validateSubmit(
   name: string,
-  workspaceMode: WorkspaceMode,
   folderPath: string,
-  importCandidates: ImportCandidate[],
   orbitRepoMode: OrbitRepoMode,
   selectedOrbitRepo: OrbitRepo | null,
 ): string | null {
   if (!name.trim()) return "name";
-  if (workspaceMode === "linked" && !folderPath.trim()) return "Choose a linked folder before creating the project.";
-  if (workspaceMode === "imported" && importCandidates.length === 0) return "Choose files or a folder to import.";
+  if (!folderPath.trim()) return "Linked folder path is required.";
   if (orbitRepoMode === "existing" && !selectedOrbitRepo) return "Please select an existing repo.";
   return null;
 }
@@ -157,46 +96,6 @@ function buildOrbitFields(
   };
 }
 
-function useImportDraftSync(
-  isOpen: boolean,
-  workspaceMode: WorkspaceMode,
-  setImportCandidates: React.Dispatch<React.SetStateAction<ImportCandidate[]>>,
-): { restoringRef: React.MutableRefObject<boolean>; userChangedRef: React.MutableRefObject<boolean> } {
-  const restoringRef = useRef(false);
-  const userChangedRef = useRef(false);
-
-  useEffect(() => {
-    if (!isOpen || workspaceMode !== "imported") return;
-    let cancelled = false;
-    userChangedRef.current = false;
-
-    loadNewProjectDraftFiles().then((files) => {
-      if (cancelled || userChangedRef.current) return;
-      restoringRef.current = true;
-      setImportCandidates(files);
-      restoringRef.current = false;
-    });
-    return () => { cancelled = true; };
-  }, [isOpen, workspaceMode, setImportCandidates]);
-
-  return { restoringRef, userChangedRef };
-}
-
-function useImportDraftPersistence(
-  importCandidates: ImportCandidate[],
-  workspaceMode: WorkspaceMode,
-  restoringRef: React.MutableRefObject<boolean>,
-): void {
-  useEffect(() => {
-    if (workspaceMode !== "imported") {
-      void clearNewProjectDraftFiles();
-      return;
-    }
-    if (restoringRef.current) return;
-    void saveNewProjectDraftFiles(importCandidates);
-  }, [importCandidates, workspaceMode, restoringRef]);
-}
-
 export function useNewProjectForm(
   isOpen: boolean,
   onClose: () => void,
@@ -206,41 +105,45 @@ export function useNewProjectForm(
   const orgLoading = useOrgStore((s) => s.isLoading);
   const { user, isAuthenticated } = useAuth();
   const { projects, loadingProjects, refreshProjects } = useProjectsList();
-  const { features } = useAuraCapabilities();
-  const defaultWorkspaceMode: WorkspaceMode = features.linkedWorkspace ? "linked" : "imported";
 
-  const [workspaceModeState, setWorkspaceModeState] = useState<WorkspaceMode>(defaultWorkspaceMode);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [folderPath, setFolderPath] = useState("");
-  const [importCandidates, setImportCandidates] = useState<ImportCandidate[]>([]);
+  const [name, setNameRaw] = useState("");
+  const [folderPath, setFolderPathRaw] = useState("");
+  const [folderPathTouched, setFolderPathTouched] = useState(false);
+  const [environment, setEnvironment] = useState<EnvironmentType>("remote");
   const [orbitRepoName, setOrbitRepoName] = useState("");
   const [orbitRepoMode, setOrbitRepoMode] = useState<OrbitRepoMode>("default");
   const [selectedOrbitRepo, setSelectedOrbitRepo] = useState<OrbitRepo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [nameError, setNameError] = useState("");
-  const importFolderInputRef = useRef<DirectoryInput>(null);
-  const importFilesInputRef = useRef<HTMLInputElement>(null);
-  const workspaceMode: WorkspaceMode = features.linkedWorkspace ? workspaceModeState : "imported";
-  const setWorkspaceMode = useCallback((mode: WorkspaceMode) => {
-    setWorkspaceModeState(features.linkedWorkspace ? mode : "imported");
-  }, [features.linkedWorkspace]);
 
-  const { storedDraft, clearDraft } = useNewProjectDraft(isOpen, { workspaceMode, name, description, folderPath });
+  const setName = useCallback((value: string) => {
+    setNameRaw(value);
+    if (!folderPathTouched) {
+      const slug = slugFromName(value);
+      setFolderPathRaw(slug ? `p/${slug}` : "");
+    }
+  }, [folderPathTouched]);
+
+  const setFolderPath = useCallback((path: string) => {
+    setFolderPathTouched(true);
+    setFolderPathRaw(path);
+  }, []);
+
+  const { storedDraft, clearDraft } = useNewProjectDraft(isOpen, { name, folderPath, environment });
   const { orbitRepos, orbitReposLoading, resetOrbitRepos } = useOrbitRepos(isOpen, orbitRepoMode, isAuthenticated);
-  const { restoringRef, userChangedRef } = useImportDraftSync(isOpen, workspaceMode, setImportCandidates);
-  useImportDraftPersistence(importCandidates, workspaceMode, restoringRef);
 
   const draftAppliedRef = useRef(false);
   useEffect(() => {
     if (draftAppliedRef.current || !storedDraft) return;
     draftAppliedRef.current = true;
-    setWorkspaceModeState(storedDraft.workspaceMode === "linked" && features.linkedWorkspace ? "linked" : "imported");
-    if (storedDraft.name) setName(storedDraft.name);
-    if (storedDraft.description) setDescription(storedDraft.description);
-    if (storedDraft.folderPath) setFolderPath(storedDraft.folderPath);
-  }, [storedDraft, features.linkedWorkspace]);
+    if (storedDraft.name) setNameRaw(storedDraft.name);
+    if (storedDraft.folderPath) {
+      setFolderPathRaw(storedDraft.folderPath);
+      setFolderPathTouched(true);
+    }
+    if (storedDraft.environment) setEnvironment(storedDraft.environment);
+  }, [storedDraft]);
 
   const orbitOwner = activeOrg?.org_id ?? user?.user_id ?? null;
   const proposedRepoSlug = slugFromName(name) || "my-project";
@@ -252,30 +155,19 @@ export function useNewProjectForm(
     void refreshProjects();
   }, [activeOrg, isOpen, projects.length, refreshProjects]);
 
-  useEffect(() => {
-    if (importFolderInputRef.current) {
-      importFolderInputRef.current.webkitdirectory = true;
-      importFolderInputRef.current.directory = true;
-      importFolderInputRef.current.setAttribute("webkitdirectory", "");
-      importFolderInputRef.current.setAttribute("directory", "");
-    }
-  }, []);
-
   const reset = useCallback(() => {
-    setWorkspaceModeState(features.linkedWorkspace ? "linked" : "imported");
-    setName(""); setDescription(""); setFolderPath("");
-    setImportCandidates([]); setOrbitRepoName(""); setOrbitRepoMode("default");
+    setNameRaw(""); setFolderPathRaw(""); setFolderPathTouched(false);
+    setEnvironment("remote");
+    setOrbitRepoName(""); setOrbitRepoMode("default");
     resetOrbitRepos(); setSelectedOrbitRepo(null);
     setLoading(false); setError(""); setNameError("");
     clearDraft(); void clearNewProjectDraftFiles();
-    if (importFolderInputRef.current) importFolderInputRef.current.value = "";
-    if (importFilesInputRef.current) importFilesInputRef.current.value = "";
-  }, [features.linkedWorkspace, clearDraft, resetOrbitRepos]);
+  }, [clearDraft, resetOrbitRepos]);
 
   const handleClose = useCallback(() => { reset(); onClose(); }, [reset, onClose]);
 
   const handleSubmit = useCallback(async () => {
-    const issue = validateSubmit(name, workspaceMode, folderPath, importCandidates, orbitRepoMode, selectedOrbitRepo);
+    const issue = validateSubmit(name, folderPath, orbitRepoMode, selectedOrbitRepo);
     if (issue === "name") { setNameError("Project name is required"); return; }
     if (issue) { setError(issue); return; }
 
@@ -284,71 +176,43 @@ export function useNewProjectForm(
       if (!resolvedOrgId) { setError("No team found. Log out and back in to create a default team."); return; }
       const orbitFields = buildOrbitFields(orbitRepoMode, orbitRepoName, proposedRepoSlug, selectedOrbitRepo, orbitOwner);
 
-      const project = workspaceMode === "linked"
-        ? await api.createProject({ org_id: resolvedOrgId, name: name.trim(), description: description.trim(), linked_folder_path: folderPath.trim(), ...orbitFields })
-        : await api.importProject({ org_id: resolvedOrgId, name: name.trim(), description: description.trim(), files: await toImportedFiles(importCandidates), ...orbitFields });
+      const project = await api.createProject({
+        org_id: resolvedOrgId,
+        name: name.trim(),
+        description: "",
+        linked_folder_path: folderPath.trim(),
+        workspace_source: environment,
+        ...orbitFields,
+      });
 
       reset(); onCreated(project);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
     } finally { setLoading(false); }
-  }, [name, workspaceMode, folderPath, importCandidates, orbitRepoMode,
+  }, [name, folderPath, environment, orbitRepoMode,
       selectedOrbitRepo, orbitRepoName, proposedRepoSlug, orbitOwner,
-      resolvedOrgId, reset, onCreated, description]);
-
-  const importSummary = useMemo(() => {
-    const totalBytes = importCandidates.reduce((sum, c) => sum + c.file.size, 0);
-    const kb = totalBytes / 1024;
-    return {
-      count: importCandidates.length,
-      sizeLabel: kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${Math.max(kb, 0.1).toFixed(1)} KB`,
-      samplePaths: importCandidates.slice(0, 3).map((c) => c.relativePath),
-    };
-  }, [importCandidates]);
-
-  const handleImportSelection = useCallback((files: FileList | null) => {
-    userChangedRef.current = true;
-    const next = Array.from(files ?? []).map((file) => ({ file, relativePath: getRelativePath(file) }));
-    setImportCandidates(next);
-    setError("");
-  }, [userChangedRef]);
-
-  const workspaceModeOptions: WorkspaceModeOption[] = features.linkedWorkspace
-    ? [
-        { id: "linked", label: "Link folder", description: "Best for the desktop app and live local workspaces." },
-        { id: "imported", label: "Use local files", description: "Choose a folder or files from this device for browser-friendly workspaces." },
-      ]
-    : [{ id: "imported", label: "Local files", description: "Choose a folder or files from this device to start a project." }];
-  const showWorkspaceModePicker = workspaceModeOptions.length > 1;
-  const needsImportedFiles = workspaceMode === "imported" && importCandidates.length === 0;
-  const needsLinkedFolder = workspaceMode === "linked" && !folderPath.trim();
+      resolvedOrgId, reset, onCreated]);
 
   const submitBlocker = useMemo(() => {
     if (orgLoading || (!activeOrg && loadingProjects && projects.length === 0)) return "Loading your team...";
     if (!isAuthenticated) return "Sign in to create a project with an Orbit repo.";
     if (!resolvedOrgId) return "No team found. Log out and back in to create a default team.";
     if (!name.trim()) return "Project name is required.";
-    if (workspaceMode === "linked") {
-      if (!features.linkedWorkspace) return "Linking a live local folder stays in the desktop app.";
-      if (!folderPath.trim()) return "Choose a linked folder to create this project.";
-    }
-    if (workspaceMode === "imported" && importCandidates.length === 0) return "Choose files or a folder to import before creating the project.";
+    if (!folderPath.trim()) return "Linked folder path is required.";
     if (orbitRepoMode === "existing" && !selectedOrbitRepo) return "Select an existing Orbit repo to continue.";
     return "";
-  }, [activeOrg, features.linkedWorkspace, folderPath, importCandidates.length, isAuthenticated, loadingProjects, name, orbitRepoMode, orgLoading, projects.length, resolvedOrgId, selectedOrbitRepo, workspaceMode]);
+  }, [activeOrg, folderPath, isAuthenticated, loadingProjects, name, orbitRepoMode, orgLoading, projects.length, resolvedOrgId, selectedOrbitRepo]);
   const canSubmit = !loading && !submitBlocker;
 
   return {
-    workspaceMode, setWorkspaceMode, name, setName,
-    description, setDescription, folderPath, setFolderPath,
-    importCandidates, orbitRepoMode, setOrbitRepoMode,
+    name, setName, folderPath, setFolderPath,
+    environment, setEnvironment,
+    orbitRepoMode, setOrbitRepoMode,
     orbitRepoName, setOrbitRepoName, orbitRepos, orbitReposLoading,
     selectedOrbitRepo, setSelectedOrbitRepo,
     loading, error, nameError, setNameError,
-    importFolderInputRef, importFilesInputRef,
     orbitOwner, proposedRepoSlug, displayRepoName, isAuthenticated,
-    importSummary, workspaceModeOptions, showWorkspaceModePicker,
-    needsImportedFiles, needsLinkedFolder, submitBlocker, canSubmit,
-    handleImportSelection, handleSubmit, handleClose,
+    submitBlocker, canSubmit,
+    handleSubmit, handleClose,
   };
 }

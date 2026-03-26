@@ -1,11 +1,8 @@
 import { Modal, Input, Button, Spinner, Text } from "@cypher-asi/zui";
 import { PathInput } from "../PathInput";
-import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import { useModalInitialFocus } from "../../hooks/use-modal-initial-focus";
 import { useNewProjectForm } from "../../hooks/use-new-project-form";
-import { WorkspaceModeSection } from "../WorkspaceModeSection";
-import { ImportFilesSection } from "../ImportFilesSection";
-import { OrbitRepoSection } from "../OrbitRepoSection";
+import type { EnvironmentType } from "../../hooks/use-new-project-form";
 import styles from "./NewProjectModal.module.css";
 
 interface NewProjectModalProps {
@@ -14,8 +11,37 @@ interface NewProjectModalProps {
   onCreated: (project: import("../../types").Project) => void;
 }
 
+function EnvironmentToggle({
+  value,
+  onChange,
+}: {
+  value: EnvironmentType;
+  onChange: (env: EnvironmentType) => void;
+}) {
+  return (
+    <div className={styles.fieldGroup}>
+      <Text size="sm" className={styles.fieldLabel}>Environment</Text>
+      <div className={styles.toggleGroup}>
+        <button
+          type="button"
+          className={value === "remote" ? styles.toggleActive : styles.toggleInactive}
+          onClick={() => onChange("remote")}
+        >
+          Remote
+        </button>
+        <button
+          type="button"
+          className={value === "local" ? styles.toggleActive : styles.toggleInactive}
+          onClick={() => onChange("local")}
+        >
+          Local
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalProps) {
-  const { features } = useAuraCapabilities();
   const { inputRef: nameInputRef, initialFocusRef } = useModalInitialFocus<HTMLInputElement>();
   const form = useNewProjectForm(isOpen, onClose, onCreated);
 
@@ -38,10 +64,6 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
           >
             {form.loading ? (
               <><Spinner size="sm" /> Creating...</>
-            ) : form.needsImportedFiles ? (
-              "Choose Files to Continue"
-            ) : form.needsLinkedFolder ? (
-              "Choose Folder to Continue"
             ) : (
               "Create Project"
             )}
@@ -50,13 +72,6 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
       }
     >
       <div className={styles.formColumn}>
-        <WorkspaceModeSection
-          workspaceMode={form.workspaceMode}
-          onSelect={form.setWorkspaceMode}
-          options={form.workspaceModeOptions}
-          showPicker={form.showWorkspaceModePicker}
-        />
-
         <Input
           ref={nameInputRef}
           value={form.name}
@@ -67,50 +82,31 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
           placeholder="Project name"
           validationMessage={form.nameError}
         />
-        <Input
-          value={form.description}
-          onChange={(e) => form.setDescription(e.target.value)}
-          placeholder="Description (optional)"
-        />
 
-        {form.workspaceMode === "linked" ? (
-          <>
-            <PathInput
-              value={form.folderPath}
-              onChange={form.setFolderPath}
-              placeholder="Linked folder path"
-              mode="folder"
-            />
-            {!features.linkedWorkspace && (
-              <Text variant="muted" size="sm">
-                Linking a live local folder stays in the desktop app.
-              </Text>
-            )}
-          </>
-        ) : (
-          <ImportFilesSection
-            importFolderInputRef={form.importFolderInputRef}
-            importFilesInputRef={form.importFilesInputRef}
-            onImportSelection={form.handleImportSelection}
-            importSummary={form.importSummary}
-            loading={form.loading}
+        <div className={styles.fieldGroup}>
+          <Text size="sm" className={styles.fieldLabel}>Linked folder</Text>
+          <PathInput
+            value={form.folderPath}
+            onChange={form.setFolderPath}
+            placeholder="p/project-name"
+            mode="folder"
           />
-        )}
+        </div>
 
-        <OrbitRepoSection
-          isAuthenticated={form.isAuthenticated}
-          orbitOwner={form.orbitOwner}
-          orbitRepoMode={form.orbitRepoMode}
-          setOrbitRepoMode={form.setOrbitRepoMode}
-          orbitRepoName={form.orbitRepoName}
-          setOrbitRepoName={form.setOrbitRepoName}
-          proposedRepoSlug={form.proposedRepoSlug}
-          displayRepoName={form.displayRepoName}
-          orbitRepos={form.orbitRepos}
-          orbitReposLoading={form.orbitReposLoading}
-          selectedOrbitRepo={form.selectedOrbitRepo}
-          setSelectedOrbitRepo={form.setSelectedOrbitRepo}
-        />
+        <div className={styles.fieldGroup}>
+          <Text size="sm" className={styles.fieldLabel}>Orbit repo</Text>
+          {form.orbitOwner ? (
+            <Text variant="muted" size="sm" className={styles.repoPath}>
+              orbit/{form.orbitOwner}/{form.proposedRepoSlug}
+            </Text>
+          ) : (
+            <Text variant="muted" size="sm">
+              Sign in to create an Orbit repo.
+            </Text>
+          )}
+        </div>
+
+        <EnvironmentToggle value={form.environment} onChange={form.setEnvironment} />
 
         {form.error && (
           <Text variant="muted" size="sm" className={styles.dangerText}>

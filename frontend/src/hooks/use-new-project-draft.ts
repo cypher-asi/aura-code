@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { WorkspaceMode } from "./use-new-project-form";
+import type { EnvironmentType } from "./use-new-project-form";
 
 const NEW_PROJECT_DRAFT_STORAGE_KEY = "aura:new-project-draft";
 
 type NewProjectDraft = {
-  workspaceMode: WorkspaceMode;
   name: string;
-  description: string;
   folderPath: string;
+  environment: EnvironmentType;
 };
 
 function readDraft(): NewProjectDraft | null {
@@ -18,10 +17,9 @@ function readDraft(): NewProjectDraft | null {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return null;
     return {
-      workspaceMode: parsed.workspaceMode === "linked" ? "linked" : "imported",
       name: typeof parsed.name === "string" ? parsed.name : "",
-      description: typeof parsed.description === "string" ? parsed.description : "",
       folderPath: typeof parsed.folderPath === "string" ? parsed.folderPath : "",
+      environment: parsed.environment === "local" ? "local" : "remote",
     };
   } catch {
     return null;
@@ -39,7 +37,7 @@ function writeDraft(draft: NewProjectDraft | null) {
 
 export function useNewProjectDraft(
   isOpen: boolean,
-  formValues?: { workspaceMode: WorkspaceMode; name: string; description: string; folderPath: string },
+  formValues?: { name: string; folderPath: string; environment: EnvironmentType },
 ) {
   const storedDraftRef = useRef<NewProjectDraft | null>(null);
   if (storedDraftRef.current === null) {
@@ -49,7 +47,7 @@ export function useNewProjectDraft(
   useEffect(() => {
     if (!isOpen || !formValues) return;
     writeDraft(formValues);
-  }, [isOpen, formValues?.workspaceMode, formValues?.name, formValues?.description, formValues?.folderPath]);
+  }, [isOpen, formValues?.name, formValues?.folderPath, formValues?.environment]);
 
   const clearDraft = useCallback(() => writeDraft(null), []);
 

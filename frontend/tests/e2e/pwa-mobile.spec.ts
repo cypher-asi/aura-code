@@ -438,11 +438,9 @@ test("mobile new project modal opens from the project drawer", async ({ page, br
   await page.locator('button[title="New Project"]:visible').click();
 
   await expect(page.getByPlaceholder("Project name")).toBeVisible();
-  await expect(page.getByText("Choose a folder or files from this device to start a project.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open folder" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Choose files", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Choose Files to Continue" })).toBeDisabled();
-  await expect(page.getByLabel("Create new repo with default name")).toBeChecked();
+  await expect(page.getByText("Linked folder")).toBeVisible();
+  await expect(page.getByText("Environment")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create Project" })).toBeDisabled();
 });
 
 test("mobile new project modal falls back to an existing project org when org lookup is unavailable", async ({ page, browserName }) => {
@@ -457,9 +455,8 @@ test("mobile new project modal falls back to an existing project org when org lo
   await expect(page.getByText("Loading your team...")).toHaveCount(0);
   await expect(page.getByText("No team found. Log out and back in to create a default team.")).toHaveCount(0);
   await expect(
-    page.getByRole("dialog").getByRole("button", { name: "Choose Files to Continue" }),
+    page.getByRole("dialog").getByRole("button", { name: "Create Project" }),
   ).toBeDisabled();
-  await expect(page.getByLabel("Create new repo with default name")).toBeChecked();
 });
 
 test("mobile work view opens shared preview details for specs and tasks", async ({ page }) => {

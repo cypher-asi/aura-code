@@ -13,10 +13,9 @@ describe("useNewProjectDraft", () => {
 
   it("saves a draft to sessionStorage when open", () => {
     const formValues = {
-      workspaceMode: "imported" as const,
       name: "My Project",
-      description: "desc",
-      folderPath: "/path",
+      folderPath: "p/my-project",
+      environment: "remote" as const,
     };
 
     renderHook(() => useNewProjectDraft(true, formValues));
@@ -25,15 +24,15 @@ describe("useNewProjectDraft", () => {
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
     expect(parsed.name).toBe("My Project");
-    expect(parsed.workspaceMode).toBe("imported");
+    expect(parsed.folderPath).toBe("p/my-project");
+    expect(parsed.environment).toBe("remote");
   });
 
   it("does not save when not open", () => {
     const formValues = {
-      workspaceMode: "imported" as const,
       name: "My Project",
-      description: "desc",
-      folderPath: "/path",
+      folderPath: "p/my-project",
+      environment: "remote" as const,
     };
 
     renderHook(() => useNewProjectDraft(false, formValues));
@@ -45,27 +44,25 @@ describe("useNewProjectDraft", () => {
     sessionStorage.setItem(
       "aura:new-project-draft",
       JSON.stringify({
-        workspaceMode: "linked",
         name: "Saved",
-        description: "saved desc",
         folderPath: "/saved",
+        environment: "local",
       }),
     );
 
     const { result } = renderHook(() => useNewProjectDraft(false));
 
     expect(result.current.storedDraft).toEqual({
-      workspaceMode: "linked",
       name: "Saved",
-      description: "saved desc",
       folderPath: "/saved",
+      environment: "local",
     });
   });
 
   it("clearDraft removes from sessionStorage", () => {
     sessionStorage.setItem(
       "aura:new-project-draft",
-      JSON.stringify({ workspaceMode: "imported", name: "", description: "", folderPath: "" }),
+      JSON.stringify({ name: "", folderPath: "", environment: "remote" }),
     );
 
     const { result } = renderHook(() => useNewProjectDraft(false));
@@ -84,13 +81,13 @@ describe("useNewProjectDraft", () => {
     expect(result.current.storedDraft).toBeNull();
   });
 
-  it("defaults workspaceMode to imported for invalid values", () => {
+  it("defaults environment to remote for invalid values", () => {
     sessionStorage.setItem(
       "aura:new-project-draft",
-      JSON.stringify({ workspaceMode: "invalid", name: "x", description: "", folderPath: "" }),
+      JSON.stringify({ name: "x", folderPath: "", environment: "invalid" }),
     );
 
     const { result } = renderHook(() => useNewProjectDraft(false));
-    expect(result.current.storedDraft!.workspaceMode).toBe("imported");
+    expect(result.current.storedDraft!.environment).toBe("remote");
   });
 });

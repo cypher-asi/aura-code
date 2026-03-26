@@ -22,19 +22,6 @@ vi.mock("../apps/projects/useProjectsList", () => ({
   }),
 }));
 
-vi.mock("./use-aura-capabilities", () => ({
-  useAuraCapabilities: () => ({
-    isMobileLayout: false,
-    features: {
-      windowControls: false,
-      linkedWorkspace: false,
-      nativeUpdater: false,
-      hostRetargeting: true,
-      ideIntegration: false,
-    },
-  }),
-}));
-
 vi.mock("../lib/new-project-draft", () => ({
   clearNewProjectDraftFiles: vi.fn().mockResolvedValue(undefined),
   loadNewProjectDraftFiles: vi.fn().mockResolvedValue([]),
@@ -82,13 +69,13 @@ describe("useNewProjectForm", () => {
     );
 
     expect(result.current.name).toBe("");
-    expect(result.current.description).toBe("");
-    expect(result.current.workspaceMode).toBe("linked");
+    expect(result.current.folderPath).toBe("");
+    expect(result.current.environment).toBe("remote");
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBe("");
   });
 
-  it("setName updates the name", () => {
+  it("setName updates the name and auto-derives folderPath", () => {
     const { result } = renderHook(() =>
       useNewProjectForm(true, mockOnClose, mockOnCreated),
     );
@@ -98,18 +85,28 @@ describe("useNewProjectForm", () => {
     });
 
     expect(result.current.name).toBe("New Project");
+    expect(result.current.folderPath).toBe("p/new-project");
   });
 
-  it("setDescription updates the description", () => {
+  it("auto-derived folderPath stops updating after manual edit", () => {
     const { result } = renderHook(() =>
       useNewProjectForm(true, mockOnClose, mockOnCreated),
     );
 
     act(() => {
-      result.current.setDescription("A description");
+      result.current.setName("First");
     });
+    expect(result.current.folderPath).toBe("p/first");
 
-    expect(result.current.description).toBe("A description");
+    act(() => {
+      result.current.setFolderPath("/custom/path");
+    });
+    expect(result.current.folderPath).toBe("/custom/path");
+
+    act(() => {
+      result.current.setName("Second");
+    });
+    expect(result.current.folderPath).toBe("/custom/path");
   });
 
   it("canSubmit is false when name is empty", () => {
@@ -144,23 +141,6 @@ describe("useNewProjectForm", () => {
 
     expect(result.current.nameError).toBe("Project name is required");
     expect(api.createProject).not.toHaveBeenCalled();
-    expect(api.importProject).not.toHaveBeenCalled();
-  });
-
-  it("handleSubmit validates imported files when in imported mode", async () => {
-    const { result } = renderHook(() =>
-      useNewProjectForm(true, mockOnClose, mockOnCreated),
-    );
-
-    act(() => {
-      result.current.setName("Test Project");
-    });
-
-    await act(async () => {
-      await result.current.handleSubmit();
-    });
-
-    expect(result.current.error).toContain("Choose a linked folder");
   });
 
   it("handleClose resets form and calls onClose", () => {
@@ -170,7 +150,6 @@ describe("useNewProjectForm", () => {
 
     act(() => {
       result.current.setName("test");
-      result.current.setDescription("desc");
     });
 
     act(() => {
@@ -178,58 +157,22 @@ describe("useNewProjectForm", () => {
     });
 
     expect(result.current.name).toBe("");
-    expect(result.current.description).toBe("");
+    expect(result.current.folderPath).toBe("");
+    expect(result.current.environment).toBe("remote");
     expect(mockOnClose).toHaveBeenCalled();
   });
 
-  it("handleImportSelection updates candidates", () => {
+  it("setEnvironment updates the environment", () => {
     const { result } = renderHook(() =>
       useNewProjectForm(true, mockOnClose, mockOnCreated),
     );
 
-    const file = new File(["content"], "test.ts", { type: "text/plain" });
-    const fileList = {
-      0: file,
-      length: 1,
-      item: () => file,
-      [Symbol.iterator]: function* () { yield file; },
-    } as unknown as FileList;
+    expect(result.current.environment).toBe("remote");
 
     act(() => {
-      result.current.handleImportSelection(fileList);
+      result.current.setEnvironment("local");
     });
 
-    expect(result.current.importCandidates).toHaveLength(1);
-  });
-
-  it("importSummary computes count and size label", () => {
-    const { result } = renderHook(() =>
-      useNewProjectForm(true, mockOnClose, mockOnCreated),
-    );
-
-    const file = new File(["x".repeat(2048)], "big.ts", { type: "text/plain" });
-    const fileList = {
-      0: file,
-      length: 1,
-      item: () => file,
-      [Symbol.iterator]: function* () { yield file; },
-    } as unknown as FileList;
-
-    act(() => {
-      result.current.handleImportSelection(fileList);
-    });
-
-    expect(result.current.importSummary.count).toBe(1);
-    expect(result.current.importSummary.sizeLabel).toContain("KB");
-  });
-
-  it("workspaceModeOptions has only imported when no linkedWorkspace feature", () => {
-    const { result } = renderHook(() =>
-      useNewProjectForm(true, mockOnClose, mockOnCreated),
-    );
-
-    expect(result.current.workspaceModeOptions).toHaveLength(1);
-    expect(result.current.workspaceModeOptions[0].id).toBe("imported");
-    expect(result.current.showWorkspaceModePicker).toBe(false);
+    expect(result.current.environment).toBe("local");
   });
 });
