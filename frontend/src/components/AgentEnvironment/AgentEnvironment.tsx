@@ -63,6 +63,7 @@ export function AgentEnvironment({ machineType, agentId }: AgentEnvironmentProps
   const [vmState, setVmState] = useState<RemoteVmState | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [showActions, setShowActions] = useState(false)
   const agentStatus = useProfileStatus(isLocal ? agentId : undefined)
 
   const refreshState = useCallback(() => {
@@ -220,27 +221,39 @@ export function AgentEnvironment({ machineType, agentId }: AgentEnvironmentProps
                   return null
                 }
                 return (
-                  <div className={styles.actionsRow}>
-                    {actions.map((a) => (
+                  <>
+                    <div className={styles.actionsRow}>
                       <button
-                        key={a.action}
-                        className={`${styles.actionBtn} ${a.primary ? styles.actionBtnPrimary : ""}`}
-                        disabled={!!actionLoading}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleAction(a.action)
-                        }}
+                        className={styles.manageBtn}
+                        onClick={(e) => { e.stopPropagation(); setShowActions(v => !v) }}
                       >
-                        {actionLoading === a.action ? "…" : a.label}
-                        {a.hint && !actionLoading && (
-                          <span className={styles.actionHint}>{a.hint}</span>
-                        )}
+                        {showActions ? "Hide" : "Manage"}
                       </button>
-                    ))}
-                    {actionError && (
-                      <span className={styles.actionError}>{actionError}</span>
+                    </div>
+                    {showActions && (
+                      <div className={styles.actionsRow}>
+                        {actions.map((a) => (
+                          <button
+                            key={a.action}
+                            className={`${styles.actionBtn} ${a.primary ? styles.actionBtnPrimary : ""}`}
+                            disabled={!!actionLoading}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleAction(a.action)
+                            }}
+                          >
+                            {actionLoading === a.action ? "…" : a.label}
+                            {a.hint && !actionLoading && (
+                              <span className={styles.actionHint}>{a.hint}</span>
+                            )}
+                          </button>
+                        ))}
+                        {actionError && (
+                          <span className={styles.actionError}>{actionError}</span>
+                        )}
+                      </div>
                     )}
-                  </div>
+                  </>
                 )
               })()}
             </>
