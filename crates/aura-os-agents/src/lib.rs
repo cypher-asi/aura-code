@@ -31,6 +31,7 @@ fn network_agent_to_core(net: &NetworkAgent) -> Agent {
         skills: net.skills.clone().unwrap_or_default(),
         icon: net.icon.clone(),
         machine_type: net.machine_type.clone().unwrap_or_else(|| "local".to_string()),
+        vm_id: net.vm_id.clone(),
         network_agent_id: net.id.parse().ok(),
         profile_id,
         created_at,

@@ -218,6 +218,8 @@ pub struct NetworkAgent {
     pub harness: Option<String>,
     #[serde(default)]
     pub machine_type: Option<String>,
+    #[serde(default)]
+    pub vm_id: Option<String>,
     #[serde(alias = "ownerId")]
     pub user_id: String,
     #[serde(default)]
@@ -281,6 +283,8 @@ pub struct UpdateAgentRequest {
     pub harness: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub machine_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vm_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

@@ -16,7 +16,7 @@ use aura_os_agents::{AgentInstanceService, AgentService};
 use aura_os_auth::AuthService;
 use aura_os_billing::BillingClient;
 use aura_os_core::*;
-use aura_os_link::{HarnessLink, LocalHarness, SwarmHarness};
+use aura_os_link::{AutomatonClient, HarnessLink, LocalHarness, SwarmHarness};
 use aura_os_network::NetworkClient;
 use aura_os_orgs::OrgService;
 use aura_os_projects::ProjectService;
@@ -189,6 +189,7 @@ pub async fn build_test_app_with_mocks() -> (Router, AppState, tempfile::TempDir
         db_dir.path().to_path_buf(),
         Some(Arc::new(NetworkClient::with_base_url(&net_url))),
         Some(Arc::new(StorageClient::with_base_url(&storage_url))),
+        None,
     );
     (app, state, db_dir)
 }
@@ -198,6 +199,7 @@ pub fn build_test_app_from_store(
     data_dir: std::path::PathBuf,
     network_client: Option<Arc<NetworkClient>>,
     storage_client: Option<Arc<StorageClient>>,
+    swarm_base_url: Option<String>,
 ) -> (Router, AppState) {
     let billing_client = Arc::new(BillingClient::new());
     let org_service = Arc::new(OrgService::new(store.clone()));
@@ -249,6 +251,9 @@ pub fn build_test_app_from_store(
         network_client,
         storage_client,
         require_zero_pro: false,
+        automaton_client: Arc::new(AutomatonClient::new("http://localhost:19080")),
+        automaton_registry: Arc::new(Mutex::new(HashMap::new())),
+        swarm_base_url,
     };
 
     let app = aura_os_server::create_router_with_frontend(state.clone(), None);
@@ -258,7 +263,7 @@ pub fn build_test_app_from_store(
 pub fn build_test_app() -> (Router, AppState, tempfile::TempDir) {
     let db_dir = tempfile::tempdir().unwrap();
     let store = Arc::new(RocksStore::open(db_dir.path()).unwrap());
-    let (app, state) = build_test_app_from_store(store, db_dir.path().to_path_buf(), None, None);
+    let (app, state) = build_test_app_from_store(store, db_dir.path().to_path_buf(), None, None, None);
     (app, state, db_dir)
 }
 

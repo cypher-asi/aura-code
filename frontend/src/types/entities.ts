@@ -99,6 +99,7 @@ export interface Agent {
   skills: string[];
   icon: string | null;
   machine_type: string;
+  vm_id?: string | null;
   network_agent_id?: string;
   profile_id?: string;
   created_at: string;

@@ -53,6 +53,7 @@ pub(crate) fn agent_from_network(net: &NetworkAgent) -> Agent {
         skills: net.skills.clone().unwrap_or_default(),
         icon: net.icon.clone(),
         machine_type: net.machine_type.clone().unwrap_or_else(|| "local".to_string()),
+        vm_id: net.vm_id.clone(),
         network_agent_id: net.id.parse().ok(),
         profile_id,
         created_at,

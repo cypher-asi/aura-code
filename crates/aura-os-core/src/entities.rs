@@ -157,6 +157,8 @@ pub struct Agent {
     #[serde(default = "default_machine_type")]
     pub machine_type: String,
     #[serde(default)]
+    pub vm_id: Option<String>,
+    #[serde(default)]
     pub network_agent_id: Option<AgentId>,
     #[serde(default)]
     pub profile_id: Option<ProfileId>,

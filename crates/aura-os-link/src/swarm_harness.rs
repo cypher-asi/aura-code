@@ -113,9 +113,11 @@ impl SwarmHarness {
 }
 
 #[derive(serde::Deserialize)]
-struct CreateAgentResponse {
-    agent_id: String,
-    status: String,
+pub struct CreateAgentResponse {
+    pub agent_id: String,
+    pub status: String,
+    #[serde(default)]
+    pub pod_id: Option<String>,
 }
 
 #[derive(serde::Deserialize)]

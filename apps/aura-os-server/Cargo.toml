@@ -17,6 +17,7 @@ aura-os-link = { path = "../../crates/aura-os-link" }
 aura-os-terminal = { path = "../../crates/aura-os-terminal" }
 aura-os-network = { path = "../../crates/aura-os-network" }
 aura-os-storage = { path = "../../crates/aura-os-storage" }
+reqwest = { version = "0.11", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }

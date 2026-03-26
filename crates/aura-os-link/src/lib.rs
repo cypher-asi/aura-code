@@ -6,7 +6,7 @@ mod local_harness;
 mod automaton_client;
 
 pub use harness::{HarnessLink, HarnessSession, SessionConfig};
-pub use swarm_harness::SwarmHarness;
+pub use swarm_harness::{SwarmHarness, CreateAgentResponse};
 pub use local_harness::LocalHarness;
 pub use automaton_client::{AutomatonClient, AutomatonStartParams, AutomatonStartResult};
 

@@ -35,6 +35,7 @@ async fn build_app_with_event_storage() -> (
         db_dir.path().to_path_buf(),
         None,
         Some(storage.clone()),
+        None,
     );
     (app, state, storage, db_dir)
 }
