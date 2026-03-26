@@ -32,16 +32,16 @@
   position: absolute;
   bottom: 0;
   right: 0;
-  width: clamp(6px, 27%, 12px);
-  height: clamp(6px, 27%, 12px);
+  width: clamp(5px, 22%, 10px);
+  height: clamp(5px, 22%, 10px);
   border-radius: 50%;
-  border: 2px solid var(--color-bg, #1a1a1a);
+  border: 1.5px solid var(--color-bg, #1a1a1a);
   box-sizing: content-box;
 }
 
 .statusDot[data-status="running"] {
-  background: #22c55e;
-  box-shadow: 0 0 4px rgba(34, 197, 94, 0.4);
+  background: var(--color-success, #4c9);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--color-success, #4c9) 40%, transparent);
 }
 
 .statusDot[data-status="idle"] {

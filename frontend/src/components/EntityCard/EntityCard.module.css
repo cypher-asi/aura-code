@@ -76,8 +76,8 @@
 
 .statusDot[data-status="running"],
 .statusDot[data-status="working"] {
-  background: #22c55e;
-  box-shadow: 0 0 4px rgba(34, 197, 94, 0.4);
+  background: var(--color-success, #4c9);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--color-success, #4c9) 40%, transparent);
 }
 
 .statusDot[data-status="idle"] {
