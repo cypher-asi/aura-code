@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { EnvironmentType } from "./use-new-project-form";
 
 const NEW_PROJECT_DRAFT_STORAGE_KEY = "aura:new-project-draft";
 
 type NewProjectDraft = {
   name: string;
   folderPath: string;
-  environment: EnvironmentType;
 };
 
 function readDraft(): NewProjectDraft | null {
@@ -19,7 +17,6 @@ function readDraft(): NewProjectDraft | null {
     return {
       name: typeof parsed.name === "string" ? parsed.name : "",
       folderPath: typeof parsed.folderPath === "string" ? parsed.folderPath : "",
-      environment: parsed.environment === "local" ? "local" : "remote",
     };
   } catch {
     return null;
@@ -37,7 +34,7 @@ function writeDraft(draft: NewProjectDraft | null) {
 
 export function useNewProjectDraft(
   isOpen: boolean,
-  formValues?: { name: string; folderPath: string; environment: EnvironmentType },
+  formValues?: { name: string; folderPath: string },
 ) {
   const storedDraftRef = useRef<NewProjectDraft | null>(null);
   if (storedDraftRef.current === null) {
@@ -47,7 +44,7 @@ export function useNewProjectDraft(
   useEffect(() => {
     if (!isOpen || !formValues) return;
     writeDraft(formValues);
-  }, [isOpen, formValues?.name, formValues?.folderPath, formValues?.environment]);
+  }, [isOpen, formValues?.name, formValues?.folderPath]);
 
   const clearDraft = useCallback(() => writeDraft(null), []);
 

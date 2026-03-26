@@ -18,8 +18,6 @@ function slugFromName(name: string): string {
 
 export type OrbitRepoMode = "default" | "custom" | "existing";
 export type WorkspaceMode = "linked" | "imported";
-export type EnvironmentType = "remote" | "local";
-
 export type WorkspaceModeOption = {
   id: WorkspaceMode;
   label: string;
@@ -29,8 +27,6 @@ export type WorkspaceModeOption = {
 export interface NewProjectFormState {
   name: string;
   setName: (name: string) => void;
-  environment: EnvironmentType;
-  setEnvironment: (env: EnvironmentType) => void;
   orbitRepoMode: OrbitRepoMode;
   setOrbitRepoMode: (mode: OrbitRepoMode) => void;
   orbitRepoName: string;
@@ -105,7 +101,6 @@ export function useNewProjectForm(
   const { isMobileLayout } = useAuraCapabilities();
 
   const [name, setNameRaw] = useState("");
-  const [environment, setEnvironment] = useState<EnvironmentType>("remote");
   const [orbitRepoName, setOrbitRepoName] = useState("");
   const [orbitRepoMode, setOrbitRepoMode] = useState<OrbitRepoMode>("default");
   const [selectedOrbitRepo, setSelectedOrbitRepo] = useState<OrbitRepo | null>(null);
@@ -116,7 +111,8 @@ export function useNewProjectForm(
   const setName = useCallback((value: string) => {
     setNameRaw(value);
   }, []);
-  const { storedDraft, clearDraft } = useNewProjectDraft(isOpen, { name, folderPath: "", environment });
+
+  const { storedDraft, clearDraft } = useNewProjectDraft(isOpen, { name, folderPath: "" });
   const { orbitRepos, orbitReposLoading, resetOrbitRepos } = useOrbitRepos(isOpen, orbitRepoMode, isAuthenticated);
 
   const draftAppliedRef = useRef(false);
@@ -124,7 +120,6 @@ export function useNewProjectForm(
     if (draftAppliedRef.current || !storedDraft) return;
     draftAppliedRef.current = true;
     if (storedDraft.name) setNameRaw(storedDraft.name);
-    if (storedDraft.environment) setEnvironment(storedDraft.environment);
   }, [storedDraft]);
 
   const orbitOwner = activeOrg?.org_id ?? user?.user_id ?? null;
@@ -139,7 +134,6 @@ export function useNewProjectForm(
 
   const reset = useCallback(() => {
     setNameRaw("");
-    setEnvironment("remote");
     setOrbitRepoName(""); setOrbitRepoMode("default");
     resetOrbitRepos(); setSelectedOrbitRepo(null);
     setLoading(false); setError(""); setNameError("");
@@ -163,7 +157,6 @@ export function useNewProjectForm(
         name: name.trim(),
         description: "",
         linked_folder_path: `p/${slugFromName(name)}`,
-        workspace_source: environment,
         ...orbitFields,
       });
 
@@ -171,7 +164,7 @@ export function useNewProjectForm(
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
     } finally { setLoading(false); }
-  }, [name, environment, orbitRepoMode,
+  }, [name, orbitRepoMode,
       selectedOrbitRepo, orbitRepoName, proposedRepoSlug, orbitOwner,
       resolvedOrgId, reset, onCreated]);
 
@@ -186,7 +179,6 @@ export function useNewProjectForm(
 
   return {
     name, setName,
-    environment, setEnvironment,
     orbitRepoMode, setOrbitRepoMode,
     orbitRepoName, setOrbitRepoName, orbitRepos, orbitReposLoading,
     selectedOrbitRepo, setSelectedOrbitRepo,
