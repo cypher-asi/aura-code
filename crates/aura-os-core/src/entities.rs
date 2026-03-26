@@ -187,6 +187,8 @@ pub struct AgentInstance {
     pub icon: Option<String>,
     #[serde(default = "default_machine_type")]
     pub machine_type: String,
+    #[serde(default)]
+    pub workspace_path: Option<String>,
     pub status: AgentStatus,
     pub current_task_id: Option<TaskId>,
     pub current_session_id: Option<SessionId>,

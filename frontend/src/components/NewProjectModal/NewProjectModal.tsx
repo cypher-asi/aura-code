@@ -1,5 +1,4 @@
 import { Modal, Input, Button, Spinner, Text } from "@cypher-asi/zui";
-import { PathInput } from "../PathInput";
 import { useModalInitialFocus } from "../../hooks/use-modal-initial-focus";
 import { useNewProjectForm } from "../../hooks/use-new-project-form";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
@@ -84,21 +83,6 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
           placeholder="Project name"
           validationMessage={form.nameError}
         />
-
-        <div className={styles.fieldGroup}>
-          <Text size="sm" className={styles.fieldLabel}>{isMobileLayout ? "Project path" : "Linked folder"}</Text>
-          <PathInput
-            value={form.folderPath}
-            onChange={form.setFolderPath}
-            placeholder="p/project-name"
-            mode="folder"
-          />
-          {isMobileLayout && (
-            <Text variant="muted" size="sm">
-              Mobile projects use remote Aura Swarm agents, not your device filesystem.
-            </Text>
-          )}
-        </div>
 
         <div className={styles.fieldGroup}>
           <Text size="sm" className={styles.fieldLabel}>Orbit repo</Text>

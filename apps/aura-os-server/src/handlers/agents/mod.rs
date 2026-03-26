@@ -18,6 +18,7 @@ pub(crate) use sessions::{
 
 pub mod conversions_pub {
     pub use super::conversions::events_to_session_history;
+    pub(crate) use super::conversions::resolve_workspace_path;
 }
 pub mod chat_pub {
     pub use super::chat::session_events_to_conversation_history;

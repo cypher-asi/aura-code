@@ -356,6 +356,7 @@ pub fn merge_agent_instance(
         machine_type: agent
             .map(|a| a.machine_type.clone())
             .unwrap_or_else(|| "local".to_string()),
+        workspace_path: None,
         status: spa
             .status
             .as_deref()

@@ -97,12 +97,6 @@ pub(crate) async fn create_project(
     if req.name.trim().is_empty() {
         return Err(ApiError::bad_request("name must not be empty"));
     }
-    if req.linked_folder_path.trim().is_empty() {
-        return Err(ApiError::bad_request(
-            "linked_folder_path must not be empty",
-        ));
-    }
-
     let folder = folder_name_from_path(&req.linked_folder_path);
     create_project_impl(&state, &req, folder).await
 }

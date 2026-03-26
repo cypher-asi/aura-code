@@ -8,7 +8,7 @@ use crate::dto::{CreateAgentInstanceRequest, UpdateAgentInstanceRequest};
 use crate::error::{map_storage_error, ApiError, ApiResult};
 use crate::state::AppState;
 
-use super::conversions::{get_user_id, resolve_network_agents, resolve_single_agent};
+use super::conversions::{get_user_id, resolve_network_agents, resolve_single_agent, resolve_workspace_path};
 
 pub(crate) async fn create_agent_instance(
     State(state): State<AppState>,
@@ -44,7 +44,19 @@ pub(crate) async fn create_agent_instance(
         .await
         .map_err(map_storage_error)?;
 
-    let instance = merge_agent_instance(&storage_agent, Some(&agent), None);
+    let mut instance = merge_agent_instance(&storage_agent, Some(&agent), None);
+    if instance.workspace_path.is_none() {
+        let project_folder = state
+            .project_service
+            .get_project(&project_id)
+            .ok()
+            .map(|p| p.linked_folder_path);
+        instance.workspace_path = resolve_workspace_path(
+            &instance.machine_type,
+            &project_id.to_string(),
+            project_folder.as_deref(),
+        );
+    }
     Ok(Json(instance))
 }
 
@@ -61,11 +73,26 @@ pub(crate) async fn list_agent_instances(
 
     let agent_map = resolve_network_agents(&state, &jwt).await;
 
+    let project_folder = state
+        .project_service
+        .get_project(&project_id)
+        .ok()
+        .map(|p| p.linked_folder_path);
+    let pid_str = project_id.to_string();
+
     let instances: Vec<AgentInstance> = storage_agents
         .iter()
         .map(|spa| {
             let agent = spa.agent_id.as_deref().and_then(|aid| agent_map.get(aid));
-            merge_agent_instance(spa, agent, None)
+            let mut instance = merge_agent_instance(spa, agent, None);
+            if instance.workspace_path.is_none() {
+                instance.workspace_path = resolve_workspace_path(
+                    &instance.machine_type,
+                    &pid_str,
+                    project_folder.as_deref(),
+                );
+            }
+            instance
         })
         .collect();
     Ok(Json(instances))
@@ -92,7 +119,20 @@ pub(crate) async fn get_agent_instance(
     } else {
         None
     };
-    let instance = merge_agent_instance(&storage_agent, agent.as_ref(), None);
+    let mut instance = merge_agent_instance(&storage_agent, agent.as_ref(), None);
+    let proj_id_str = storage_agent.project_id.clone().unwrap_or_default();
+    let project_folder = proj_id_str
+        .parse::<aura_os_core::ProjectId>()
+        .ok()
+        .and_then(|pid| state.project_service.get_project(&pid).ok())
+        .map(|p| p.linked_folder_path);
+    if instance.workspace_path.is_none() {
+        instance.workspace_path = resolve_workspace_path(
+            &instance.machine_type,
+            &proj_id_str,
+            project_folder.as_deref(),
+        );
+    }
     Ok(Json(instance))
 }
 
@@ -139,7 +179,20 @@ pub(crate) async fn update_agent_instance(
     } else {
         None
     };
-    let instance = merge_agent_instance(&storage_agent, agent.as_ref(), None);
+    let mut instance = merge_agent_instance(&storage_agent, agent.as_ref(), None);
+    let proj_id_str = storage_agent.project_id.clone().unwrap_or_default();
+    let project_folder = proj_id_str
+        .parse::<aura_os_core::ProjectId>()
+        .ok()
+        .and_then(|pid| state.project_service.get_project(&pid).ok())
+        .map(|p| p.linked_folder_path);
+    if instance.workspace_path.is_none() {
+        instance.workspace_path = resolve_workspace_path(
+            &instance.machine_type,
+            &proj_id_str,
+            project_folder.as_deref(),
+        );
+    }
     Ok(Json(instance))
 }
 

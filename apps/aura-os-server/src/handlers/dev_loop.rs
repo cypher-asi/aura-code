@@ -9,6 +9,7 @@ use aura_os_link::AutomatonStartParams;
 
 use crate::dto::LoopStatusResponse;
 use crate::error::{ApiError, ApiResult};
+use super::agents::conversions_pub::resolve_workspace_path;
 use crate::state::{ActiveAutomaton, AppState};
 
 #[derive(Debug, Deserialize, Default)]
@@ -164,12 +165,22 @@ pub(crate) async fn start_loop(
         .unwrap_or_else(AgentInstanceId::new);
 
     let jwt = state.get_jwt().ok();
-    let project_path = state
+    let project_folder = state
         .project_service
         .get_project(&project_id)
         .ok()
-        .map(|p| p.linked_folder_path)
-        .filter(|s| !s.is_empty());
+        .map(|p| p.linked_folder_path);
+    let machine_type = state
+        .agent_instance_service
+        .get_instance(&project_id, &agent_instance_id)
+        .await
+        .map(|inst| inst.machine_type)
+        .unwrap_or_else(|_| "local".to_string());
+    let project_path = resolve_workspace_path(
+        &machine_type,
+        &project_id.to_string(),
+        project_folder.as_deref(),
+    );
 
     let result = state
         .automaton_client
@@ -357,12 +368,22 @@ pub(crate) async fn run_single_task(
         .unwrap_or_else(AgentInstanceId::new);
 
     let jwt = state.get_jwt().ok();
-    let project_path = state
+    let project_folder = state
         .project_service
         .get_project(&project_id)
         .ok()
-        .map(|p| p.linked_folder_path)
-        .filter(|s| !s.is_empty());
+        .map(|p| p.linked_folder_path);
+    let machine_type = state
+        .agent_instance_service
+        .get_instance(&project_id, &agent_instance_id)
+        .await
+        .map(|inst| inst.machine_type)
+        .unwrap_or_else(|_| "local".to_string());
+    let project_path = resolve_workspace_path(
+        &machine_type,
+        &project_id.to_string(),
+        project_folder.as_deref(),
+    );
 
     let result = state
         .automaton_client

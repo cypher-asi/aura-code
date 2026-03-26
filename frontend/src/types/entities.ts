@@ -117,6 +117,7 @@ export interface AgentInstance {
   skills: string[];
   icon: string | null;
   machine_type: string;
+  workspace_path?: string | null;
   status: AgentStatus;
   current_task_id: TaskId | null;
   current_session_id: SessionId | null;

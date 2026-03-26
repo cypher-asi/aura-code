@@ -6,7 +6,7 @@ export interface CreateProjectRequest {
   org_id: string;
   name: string;
   description: string;
-  linked_folder_path: string;
+  linked_folder_path?: string;
   workspace_source?: string;
   workspace_display_path?: string;
   git_repo_url?: string;

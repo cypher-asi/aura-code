@@ -7,6 +7,7 @@ pub(crate) struct CreateProjectRequest {
     pub org_id: OrgId,
     pub name: String,
     pub description: String,
+    #[serde(default)]
     pub linked_folder_path: String,
     pub workspace_source: Option<String>,
     pub workspace_display_path: Option<String>,

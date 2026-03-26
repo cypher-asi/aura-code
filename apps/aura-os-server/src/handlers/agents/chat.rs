@@ -806,16 +806,7 @@ pub(crate) async fn send_event_stream(
 
     let system_prompt = build_project_system_prompt(&state, &project_id, &instance.system_prompt);
 
-    let project_path = if instance.harness_mode() == aura_os_core::HarnessMode::Local {
-        state
-            .project_service
-            .get_project(&project_id)
-            .ok()
-            .map(|p| p.linked_folder_path)
-            .filter(|s| !s.is_empty())
-    } else {
-        None
-    };
+    let project_path = instance.workspace_path.clone();
 
     let config = SessionConfig {
         system_prompt: Some(system_prompt),

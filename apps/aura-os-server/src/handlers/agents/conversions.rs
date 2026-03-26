@@ -61,6 +61,23 @@ pub(crate) fn agent_from_network(net: &NetworkAgent) -> Agent {
     }
 }
 
+/// Compute the default workspace path for an agent instance based on its
+/// machine type and the project's linked folder path.
+pub(crate) fn resolve_workspace_path(
+    machine_type: &str,
+    project_id: &str,
+    project_folder: Option<&str>,
+) -> Option<String> {
+    if machine_type == "local" {
+        project_folder
+            .filter(|s| !s.is_empty())
+            .filter(|s| std::path::Path::new(s).is_absolute())
+            .map(String::from)
+    } else {
+        Some(format!("/p/{project_id}"))
+    }
+}
+
 /// Fetch all agents from the network, returning a map by network agent ID.
 pub(crate) async fn resolve_network_agents(state: &AppState, jwt: &str) -> HashMap<String, Agent> {
     if let Some(ref client) = state.network_client {

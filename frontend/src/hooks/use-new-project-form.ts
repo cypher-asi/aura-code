@@ -29,8 +29,6 @@ export type WorkspaceModeOption = {
 export interface NewProjectFormState {
   name: string;
   setName: (name: string) => void;
-  folderPath: string;
-  setFolderPath: (path: string) => void;
   environment: EnvironmentType;
   setEnvironment: (env: EnvironmentType) => void;
   orbitRepoMode: OrbitRepoMode;
@@ -59,12 +57,10 @@ export interface NewProjectFormState {
 
 function validateSubmit(
   name: string,
-  folderPath: string,
   orbitRepoMode: OrbitRepoMode,
   selectedOrbitRepo: OrbitRepo | null,
 ): string | null {
   if (!name.trim()) return "name";
-  if (!folderPath.trim()) return "Project path is required.";
   if (orbitRepoMode === "existing" && !selectedOrbitRepo) return "Please select an existing repo.";
   return null;
 }
@@ -109,9 +105,7 @@ export function useNewProjectForm(
   const { isMobileLayout } = useAuraCapabilities();
 
   const [name, setNameRaw] = useState("");
-  const [folderPath, setFolderPathRaw] = useState("");
-  const [folderPathTouched, setFolderPathTouched] = useState(false);
-  const [environmentState, setEnvironmentState] = useState<EnvironmentType>("remote");
+  const [environment, setEnvironment] = useState<EnvironmentType>("remote");
   const [orbitRepoName, setOrbitRepoName] = useState("");
   const [orbitRepoMode, setOrbitRepoMode] = useState<OrbitRepoMode>("default");
   const [selectedOrbitRepo, setSelectedOrbitRepo] = useState<OrbitRepo | null>(null);
@@ -121,22 +115,8 @@ export function useNewProjectForm(
 
   const setName = useCallback((value: string) => {
     setNameRaw(value);
-    if (!folderPathTouched) {
-      const slug = slugFromName(value);
-      setFolderPathRaw(slug ? `p/${slug}` : "");
-    }
-  }, [folderPathTouched]);
-
-  const setFolderPath = useCallback((path: string) => {
-    setFolderPathTouched(true);
-    setFolderPathRaw(path);
   }, []);
-  const environment = isMobileLayout ? "remote" : environmentState;
-  const setEnvironment = useCallback((env: EnvironmentType) => {
-    setEnvironmentState(isMobileLayout ? "remote" : env);
-  }, [isMobileLayout]);
-
-  const { storedDraft, clearDraft } = useNewProjectDraft(isOpen, { name, folderPath, environment });
+  const { storedDraft, clearDraft } = useNewProjectDraft(isOpen, { name, folderPath: "", environment });
   const { orbitRepos, orbitReposLoading, resetOrbitRepos } = useOrbitRepos(isOpen, orbitRepoMode, isAuthenticated);
 
   const draftAppliedRef = useRef(false);
@@ -144,20 +124,8 @@ export function useNewProjectForm(
     if (draftAppliedRef.current || !storedDraft) return;
     draftAppliedRef.current = true;
     if (storedDraft.name) setNameRaw(storedDraft.name);
-    if (storedDraft.folderPath) {
-      setFolderPathRaw(storedDraft.folderPath);
-      setFolderPathTouched(true);
-    }
-    if (storedDraft.environment) {
-      setEnvironmentState(isMobileLayout ? "remote" : storedDraft.environment);
-    }
-  }, [isMobileLayout, storedDraft]);
-
-  useEffect(() => {
-    if (isMobileLayout) {
-      setEnvironmentState("remote");
-    }
-  }, [isMobileLayout]);
+    if (storedDraft.environment) setEnvironment(storedDraft.environment);
+  }, [storedDraft]);
 
   const orbitOwner = activeOrg?.org_id ?? user?.user_id ?? null;
   const proposedRepoSlug = slugFromName(name) || "my-project";
@@ -170,8 +138,8 @@ export function useNewProjectForm(
   }, [activeOrg, isOpen, projects.length, refreshProjects]);
 
   const reset = useCallback(() => {
-    setNameRaw(""); setFolderPathRaw(""); setFolderPathTouched(false);
-    setEnvironmentState("remote");
+    setNameRaw("");
+    setEnvironment("remote");
     setOrbitRepoName(""); setOrbitRepoMode("default");
     resetOrbitRepos(); setSelectedOrbitRepo(null);
     setLoading(false); setError(""); setNameError("");
@@ -181,7 +149,7 @@ export function useNewProjectForm(
   const handleClose = useCallback(() => { reset(); onClose(); }, [reset, onClose]);
 
   const handleSubmit = useCallback(async () => {
-    const issue = validateSubmit(name, folderPath, orbitRepoMode, selectedOrbitRepo);
+    const issue = validateSubmit(name, orbitRepoMode, selectedOrbitRepo);
     if (issue === "name") { setNameError("Project name is required"); return; }
     if (issue) { setError(issue); return; }
 
@@ -194,7 +162,7 @@ export function useNewProjectForm(
         org_id: resolvedOrgId,
         name: name.trim(),
         description: "",
-        linked_folder_path: folderPath.trim(),
+        linked_folder_path: `p/${slugFromName(name)}`,
         workspace_source: environment,
         ...orbitFields,
       });
@@ -203,7 +171,7 @@ export function useNewProjectForm(
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create project");
     } finally { setLoading(false); }
-  }, [name, folderPath, environment, orbitRepoMode,
+  }, [name, environment, orbitRepoMode,
       selectedOrbitRepo, orbitRepoName, proposedRepoSlug, orbitOwner,
       resolvedOrgId, reset, onCreated]);
 
@@ -212,14 +180,13 @@ export function useNewProjectForm(
     if (!isAuthenticated) return "Sign in to create a project with an Orbit repo.";
     if (!resolvedOrgId) return "No team found. Log out and back in to create a default team.";
     if (!name.trim()) return "Project name is required.";
-    if (!folderPath.trim()) return "Project path is required.";
     if (orbitRepoMode === "existing" && !selectedOrbitRepo) return "Select an existing Orbit repo to continue.";
     return "";
-  }, [activeOrg, folderPath, isAuthenticated, loadingProjects, name, orbitRepoMode, orgLoading, projects.length, resolvedOrgId, selectedOrbitRepo]);
+  }, [activeOrg, isAuthenticated, loadingProjects, name, orbitRepoMode, orgLoading, projects.length, resolvedOrgId, selectedOrbitRepo]);
   const canSubmit = !loading && !submitBlocker;
 
   return {
-    name, setName, folderPath, setFolderPath,
+    name, setName,
     environment, setEnvironment,
     orbitRepoMode, setOrbitRepoMode,
     orbitRepoName, setOrbitRepoName, orbitRepos, orbitReposLoading,

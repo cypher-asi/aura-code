@@ -41,7 +41,7 @@ pub(crate) async fn create_agent(
     let mut agent = agent_from_network(&net_agent);
 
     let is_remote = HarnessMode::from_machine_type(
-        machine_type.as_deref().unwrap_or("local"),
+        machine_type.as_deref().unwrap_or("remote"),
     ) == HarnessMode::Swarm;
 
     if is_remote {

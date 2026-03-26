@@ -41,7 +41,7 @@ export function useAgentEditorForm(
   const [personality, setPersonality] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [icon, setIcon] = useState("");
-  const [machineType, setMachineType] = useState("local");
+  const [machineType, setMachineType] = useState("remote");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [nameError, setNameError] = useState("");
