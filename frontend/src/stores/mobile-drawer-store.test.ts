@@ -8,6 +8,7 @@ import {
 beforeEach(() => {
   useMobileDrawerStore.setState({
     navOpen: false,
+    appOpen: false,
     previewOpen: false,
     accountOpen: false,
   });
@@ -23,6 +24,7 @@ describe("mobile-drawer-store", () => {
     it("all drawers are closed", () => {
       const s = useMobileDrawerStore.getState();
       expect(s.navOpen).toBe(false);
+      expect(s.appOpen).toBe(false);
       expect(s.previewOpen).toBe(false);
       expect(s.accountOpen).toBe(false);
     });
@@ -51,10 +53,11 @@ describe("mobile-drawer-store", () => {
 
   describe("closeDrawers", () => {
     it("closes all drawers", () => {
-      useMobileDrawerStore.setState({ navOpen: true, previewOpen: true, accountOpen: true });
+      useMobileDrawerStore.setState({ navOpen: true, appOpen: true, previewOpen: true, accountOpen: true });
       useMobileDrawerStore.getState().closeDrawers();
       const s = useMobileDrawerStore.getState();
       expect(s.navOpen).toBe(false);
+      expect(s.appOpen).toBe(false);
       expect(s.previewOpen).toBe(false);
       expect(s.accountOpen).toBe(false);
     });

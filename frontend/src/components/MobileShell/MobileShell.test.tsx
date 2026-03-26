@@ -117,6 +117,7 @@ vi.mock("../../utils/mobileNavigation", () => ({
   getMobileProjectDestination: (pathname: string) => {
     if (pathname.includes("/work")) return "tasks";
     if (pathname.includes("/files")) return "files";
+    if (pathname.includes("/stats")) return "stats";
     if (pathname.includes("/agent")) return "agent";
     if (pathname.includes("/agents/")) return "agent";
     return null;
@@ -126,6 +127,7 @@ vi.mock("../../utils/mobileNavigation", () => ({
   isProjectSubroute: (pathname: string) => pathname.startsWith("/projects/proj-1/"),
   projectAgentRoute: (id: string) => `/projects/${id}/agent`,
   projectFilesRoute: (id: string) => `/projects/${id}/files`,
+  projectStatsRoute: (id: string) => `/projects/${id}/stats`,
   projectRootPath: (id: string) => `/projects/${id}`,
   projectWorkRoute: (id: string) => `/projects/${id}/work`,
 }));
@@ -179,11 +181,12 @@ describe("MobileShell", () => {
     expect(screen.getByTestId("main-panel")).toBeInTheDocument();
   });
 
-  it("renders project bottom navigation with 3 items", () => {
+  it("renders project bottom navigation with 4 items", () => {
     renderMobile("/projects/proj-1/agent");
     expect(screen.getByText("Agent")).toBeInTheDocument();
     expect(screen.getByText("Execution")).toBeInTheDocument();
     expect(screen.getByText("Files")).toBeInTheDocument();
+    expect(screen.getByText("Stats")).toBeInTheDocument();
     expect(screen.queryByText("Feed")).not.toBeInTheDocument();
   });
 
@@ -213,7 +216,7 @@ describe("MobileShell", () => {
   it("hides bottom nav when a drawer is open", () => {
     drawers.navOpen = true;
     renderMobile("/projects/proj-1/agent");
-    expect(screen.queryByText("Agent")).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Primary mobile navigation" })).not.toBeInTheDocument();
   });
 
   it("shows overlay backdrop when drawer is open", () => {

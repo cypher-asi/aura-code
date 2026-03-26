@@ -23,6 +23,7 @@ import {
   getProjectIdFromPathname,
   projectAgentRoute,
   projectFilesRoute,
+  projectStatsRoute,
   projectRootPath,
   projectWorkRoute,
 } from "../../utils/mobileNavigation";
@@ -76,6 +77,11 @@ function ProjectNavigationDrawerContent() {
 
       if (mobileDestination === "files") {
         navigate(projectFilesRoute(projectId));
+        return;
+      }
+
+      if (mobileDestination === "stats") {
+        navigate(projectStatsRoute(projectId));
         return;
       }
 
@@ -217,6 +223,10 @@ function resolveGlobalProjectPath(state: ReturnType<typeof useMobileShellState>)
 
   if (state.mobileDestination === "files" && state.mobileTargetProjectId) {
     return projectFilesRoute(state.mobileTargetProjectId);
+  }
+
+  if (state.mobileDestination === "stats" && state.mobileTargetProjectId) {
+    return projectStatsRoute(state.mobileTargetProjectId);
   }
 
   if (state.mobileTargetProjectId) {
@@ -423,7 +433,8 @@ export function MobileShell() {
     if (!state.mobileTargetProjectId) { navigate("/projects"); return; }
     if (id === "agent") { navigate(projectAgentRoute(state.mobileTargetProjectId)); return; }
     if (id === "tasks") { navigate(projectWorkRoute(state.mobileTargetProjectId)); return; }
-    navigate(projectFilesRoute(state.mobileTargetProjectId));
+    if (id === "files") { navigate(projectFilesRoute(state.mobileTargetProjectId)); return; }
+    navigate(projectStatsRoute(state.mobileTargetProjectId));
   }, [state.mobileTargetProjectId, navigate]);
 
   return (

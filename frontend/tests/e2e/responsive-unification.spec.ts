@@ -108,16 +108,6 @@ async function expectGlobalAppChrome(
   await expect(page.getByRole("button", { name: /Open project navigation/i })).toHaveCount(0);
 }
 
-async function tapPrimaryNav(
-  page: import("@playwright/test").Page,
-  label: "Agent" | "Tasks" | "Files",
-) {
-  await page
-    .getByRole("navigation", { name: "Primary mobile navigation" })
-    .getByRole("button", { name: label })
-    .tap();
-}
-
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/auth/session", async (route) => {
     await route.fulfill({
@@ -245,13 +235,18 @@ test("project work route uses the combined mobile work view while desktop keeps 
     await expect(page.getByRole("button", { name: "Specs" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Tasks" })).toBeVisible();
   } else {
-    await expect(page.getByText("Execution", { exact: true })).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText("Specs")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("main").getByText("Execution", { exact: true })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("button", { name: "Specs" })).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole("main").getByRole("button", { name: "Tasks" })).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole("treeitem", { name: "Demo Project" })).toHaveCount(0);
-    await tapPrimaryNav(page, "Tasks");
-    await expect(page).toHaveURL(/\/projects\/proj-1\/work$/);
-    await expect(page.getByRole("button", { name: /Open project navigation for Demo Project/i })).toBeVisible();
+    await page
+      .getByRole("navigation", { name: "Primary mobile navigation" })
+      .getByRole("button", { name: "Stats" })
+      .click();
+    await expect(page).toHaveURL(/\/projects\/proj-1\/stats$/);
+    await expect(page.getByText("Completion")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("Tokens")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("button", { name: /Open project navigation/i })).toBeVisible();
   }
 });
 

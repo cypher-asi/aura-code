@@ -63,6 +63,14 @@ test("capture desktop projects root and execution chrome", async ({ page }, test
     path: `test-artifacts/review-shots/${projectName}-desktop-project-execution.png`,
     fullPage: true,
   });
+
+  await page.getByRole("button", { name: "Stats" }).click();
+  await expect(page.getByText("Completion")).toBeVisible();
+  await expect(page.getByText("Tokens")).toBeVisible();
+  await page.screenshot({
+    path: `test-artifacts/review-shots/${projectName}-desktop-project-stats.png`,
+    fullPage: true,
+  });
 });
 
 test("capture desktop agents, feed, and profile views", async ({ page }, testInfo) => {

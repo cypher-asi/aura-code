@@ -1,4 +1,4 @@
-export type MobileProjectDestination = "agent" | "tasks" | "files" | "feed" | null;
+export type MobileProjectDestination = "agent" | "tasks" | "files" | "stats" | "feed" | null;
 export type MobileShellMode = "global" | "project";
 
 function matchProjectPath(pathname: string) {
@@ -29,6 +29,9 @@ export function getMobileProjectDestination(pathname: string): MobileProjectDest
   }
   if (suffix === "files") {
     return "files";
+  }
+  if (suffix === "stats") {
+    return "stats";
   }
   if (suffix === "agent" || suffix.startsWith("agents/")) {
     return "agent";
@@ -76,6 +79,10 @@ export function projectWorkRoute(projectId: string): string {
 
 export function projectFilesRoute(projectId: string): string {
   return `/projects/${projectId}/files`;
+}
+
+export function projectStatsRoute(projectId: string): string {
+  return `/projects/${projectId}/stats`;
 }
 
 export function isProjectSubroute(pathname: string, projectId: string | null): boolean {

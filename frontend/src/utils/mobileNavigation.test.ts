@@ -7,6 +7,7 @@ import {
   projectAgentChatRoute,
   projectWorkRoute,
   projectFilesRoute,
+  projectStatsRoute,
   isProjectSubroute,
 } from "./mobileNavigation";
 
@@ -47,6 +48,10 @@ describe("getMobileProjectDestination", () => {
 
   it("returns files for /projects/:id/files", () => {
     expect(getMobileProjectDestination("/projects/p1/files")).toBe("files");
+  });
+
+  it("returns stats for /projects/:id/stats", () => {
+    expect(getMobileProjectDestination("/projects/p1/stats")).toBe("stats");
   });
 
   it("returns agent for /projects/:id/agent", () => {
@@ -120,6 +125,10 @@ describe("route helpers", () => {
 
   it("projectFilesRoute builds correct path", () => {
     expect(projectFilesRoute("p1")).toBe("/projects/p1/files");
+  });
+
+  it("projectStatsRoute builds correct path", () => {
+    expect(projectStatsRoute("p1")).toBe("/projects/p1/stats");
   });
 });
 

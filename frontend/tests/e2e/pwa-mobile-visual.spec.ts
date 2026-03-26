@@ -198,9 +198,25 @@ test("capture mobile work, files, and account sheet", async ({ page, browserName
   const projectName = testInfo.project.name.replace(/\s+/g, "-");
 
   await page.goto("/projects/proj-1/work");
-  await expect(page.getByText("Execution", { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByRole("main").getByText("Execution", { exact: true })).toBeVisible({ timeout: 15000 });
   await page.screenshot({
     path: `test-artifacts/review-shots/${projectName}-${browserName}-project-work-mobile-ia.png`,
+    fullPage: true,
+  });
+
+  const statsTab = page.getByRole("navigation", { name: "Primary mobile navigation" }).getByRole("button", { name: "Stats" });
+  await expect(statsTab).toBeVisible({ timeout: 10000 });
+  await page.screenshot({
+    path: `test-artifacts/review-shots/${projectName}-${browserName}-project-work-stats-collapsed-mobile-ia.png`,
+    fullPage: true,
+  });
+
+  await statsTab.click();
+  await expect(page).toHaveURL(/\/projects\/proj-1\/stats$/);
+  await expect(page.getByText("Completion")).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("Tokens")).toBeVisible({ timeout: 10000 });
+  await page.screenshot({
+    path: `test-artifacts/review-shots/${projectName}-${browserName}-project-work-stats-expanded-mobile-ia.png`,
     fullPage: true,
   });
 

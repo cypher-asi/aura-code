@@ -1,0 +1,63 @@
+.mobileDashboard {
+  padding: 0;
+}
+
+.mobileSectionMargin {
+  margin: 0 0 6px;
+}
+
+.mobileSectionMarginTop {
+  margin: 16px 0 6px;
+}
+
+.mobileSectionLabel {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.mobileCompletionRow {
+  margin-bottom: 0;
+}
+
+.mobileProgressBarContainer {
+  height: 12px;
+  border-radius: 999px;
+}
+
+.mobileProgressBarFill {
+  border-radius: 999px;
+}
+
+.mobileProgressPct {
+  min-width: 42px;
+  font-size: 12px;
+}
+
+.mobileStatsGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 0;
+}
+
+.mobileStatCard {
+  min-height: 80px;
+  height: auto;
+  padding: 12px 10px;
+  background: color-mix(in srgb, var(--color-bg-surface) 92%, transparent);
+}
+
+.mobileStatValue {
+  font-size: 20px;
+}
+
+.mobileStatLabel {
+  font-size: 11px;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+@media (min-width: 560px) {
+  .mobileStatsGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

@@ -1,12 +1,13 @@
-import { Brain, CheckSquare, FolderOpen } from "lucide-react";
+import { Brain, CheckSquare, FolderOpen, ChartNoAxesColumnIncreasing } from "lucide-react";
 import styles from "../AppShell/AppShell.module.css";
 
-export type MobileNavId = "agent" | "tasks" | "files";
+export type MobileNavId = "agent" | "tasks" | "files" | "stats";
 
 const MOBILE_NAV_ITEMS: Array<{ id: MobileNavId; label: string; icon: typeof Brain }> = [
   { id: "agent", label: "Agent", icon: Brain },
   { id: "tasks", label: "Execution", icon: CheckSquare },
   { id: "files", label: "Files", icon: FolderOpen },
+  { id: "stats", label: "Stats", icon: ChartNoAxesColumnIncreasing },
 ];
 
 export function MobileBottomNav({
@@ -17,7 +18,11 @@ export function MobileBottomNav({
   onNavigate: (id: MobileNavId) => void;
 }) {
   return (
-    <nav className={styles.mobileNavBar} aria-label="Primary mobile navigation">
+    <nav
+      className={styles.mobileNavBar}
+      aria-label="Primary mobile navigation"
+      style={{ gridTemplateColumns: `repeat(${MOBILE_NAV_ITEMS.length}, minmax(0, 1fr))` }}
+    >
       {MOBILE_NAV_ITEMS.map((item) => (
         <button
           key={item.id}

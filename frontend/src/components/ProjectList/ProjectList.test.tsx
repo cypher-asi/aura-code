@@ -102,6 +102,7 @@ vi.mock("../../utils/mobileNavigation", () => ({
   projectRootPath: (id: string) => `/projects/${id}`,
   projectAgentRoute: (id: string) => `/projects/${id}/agent`,
   projectFilesRoute: (id: string) => `/projects/${id}/files`,
+  projectStatsRoute: (id: string) => `/projects/${id}/stats`,
   projectWorkRoute: (id: string) => `/projects/${id}/work`,
 }));
 

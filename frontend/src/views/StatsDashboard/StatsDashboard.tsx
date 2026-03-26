@@ -4,6 +4,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { formatCompact } from "../../utils/format";
 import { useStatsDashboardData } from "./useStatsDashboardData";
 import styles from "../aura.module.css";
+import mobileStyles from "./StatsDashboard.module.css";
 
 function formatCost(usd: number): string {
   if (usd < 0.01) return "$0";
@@ -21,8 +22,17 @@ function formatSeconds(s: number): string {
   return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`;
 }
 
-export function StatsDashboard() {
+interface StatsDashboardProps {
+  variant?: "sidekick" | "mobile";
+}
+
+function cx(...classNames: Array<string | false | null | undefined>): string {
+  return classNames.filter(Boolean).join(" ");
+}
+
+export function StatsDashboard({ variant = "sidekick" }: StatsDashboardProps) {
   const { stats, loading } = useStatsDashboardData();
+  const isMobile = variant === "mobile";
 
   const showEmpty = useDelayedEmpty(!stats, loading, 0);
   if (!stats) {
@@ -31,56 +41,71 @@ export function StatsDashboard() {
   }
 
   return (
-    <div className={styles.dashboardPadding}>
+    <div className={cx(styles.dashboardPadding, isMobile && mobileStyles.mobileDashboard)}>
       {/* Completion */}
-      <div className={styles.sectionMargin}>
-        <Text variant="muted" size="xs" className={styles.uppercaseLabel}>
+      <div className={cx(styles.sectionMargin, isMobile && mobileStyles.mobileSectionMargin)}>
+        <Text
+          variant="muted"
+          size="xs"
+          className={cx(styles.uppercaseLabel, isMobile && mobileStyles.mobileSectionLabel)}
+        >
           Completion
         </Text>
       </div>
-      <div className={styles.completionRow}>
-        <div className={styles.progressBarContainer} style={{ flex: 1 }}>
+      <div className={cx(styles.completionRow, isMobile && mobileStyles.mobileCompletionRow)}>
+        <div
+          className={cx(styles.progressBarContainer, isMobile && mobileStyles.mobileProgressBarContainer)}
+          style={{ flex: 1 }}
+        >
           <div
-            className={styles.progressBarFill}
+            className={cx(styles.progressBarFill, isMobile && mobileStyles.mobileProgressBarFill)}
             style={{ width: `${Math.min(stats.completion_percentage, 100)}%` }}
           />
         </div>
-        <Text size="xs" className={styles.progressPct}>
+        <Text size="xs" className={cx(styles.progressPct, isMobile && mobileStyles.mobileProgressPct)}>
           {Math.round(stats.completion_percentage)}%
         </Text>
       </div>
 
       {/* Tasks */}
-      <div className={styles.sectionMarginTop}>
-        <Text variant="muted" size="xs" className={styles.uppercaseLabel}>
+      <div className={cx(styles.sectionMarginTop, isMobile && mobileStyles.mobileSectionMarginTop)}>
+        <Text
+          variant="muted"
+          size="xs"
+          className={cx(styles.uppercaseLabel, isMobile && mobileStyles.mobileSectionLabel)}
+        >
           Tasks
         </Text>
       </div>
-      <div className={styles.statsGrid}>
-        <StatCard value={stats.pending_tasks} label="Pending" />
-        <StatCard value={stats.ready_tasks} label="Ready" />
-        <StatCard value={stats.in_progress_tasks} label="Active" />
-        <StatCard value={stats.blocked_tasks} label="Blocked" />
-        <StatCard value={stats.done_tasks} label="Done" />
-        <StatCard value={stats.failed_tasks} label="Failed" />
+      <div className={cx(styles.statsGrid, isMobile && mobileStyles.mobileStatsGrid)}>
+        <StatCard value={stats.pending_tasks} label="Pending" variant={variant} />
+        <StatCard value={stats.ready_tasks} label="Ready" variant={variant} />
+        <StatCard value={stats.in_progress_tasks} label="Active" variant={variant} />
+        <StatCard value={stats.blocked_tasks} label="Blocked" variant={variant} />
+        <StatCard value={stats.done_tasks} label="Done" variant={variant} />
+        <StatCard value={stats.failed_tasks} label="Failed" variant={variant} />
       </div>
 
       {/* Overview */}
-      <div className={styles.sectionMarginTop}>
-        <Text variant="muted" size="xs" className={styles.uppercaseLabel}>
+      <div className={cx(styles.sectionMarginTop, isMobile && mobileStyles.mobileSectionMarginTop)}>
+        <Text
+          variant="muted"
+          size="xs"
+          className={cx(styles.uppercaseLabel, isMobile && mobileStyles.mobileSectionLabel)}
+        >
           Code
         </Text>
       </div>
-      <div className={styles.statsGrid}>
-        <StatCard value={stats.estimated_cost_usd} label="Cost" fmtFn={formatCost} />
-        <StatCard value={stats.total_tokens} label="Tokens" fmt />
-        <StatCard value={stats.total_events} label="Events" fmt />
-        <StatCard value={stats.total_agents} label="Agents" />
-        <StatCard value={stats.total_sessions} label="Sessions" />
-        <StatCard value={stats.total_time_seconds} label="Time" fmtFn={formatSeconds} />
-        <StatCard value={stats.lines_changed} label="Lines" fmt />
-        <StatCard value={stats.total_specs} label="Specs" />
-        <StatCard value={stats.contributors} label="Coders" />
+      <div className={cx(styles.statsGrid, isMobile && mobileStyles.mobileStatsGrid)}>
+        <StatCard value={stats.estimated_cost_usd} label="Cost" fmtFn={formatCost} variant={variant} />
+        <StatCard value={stats.total_tokens} label="Tokens" fmt variant={variant} />
+        <StatCard value={stats.total_events} label="Events" fmt variant={variant} />
+        <StatCard value={stats.total_agents} label="Agents" variant={variant} />
+        <StatCard value={stats.total_sessions} label="Sessions" variant={variant} />
+        <StatCard value={stats.total_time_seconds} label="Time" fmtFn={formatSeconds} variant={variant} />
+        <StatCard value={stats.lines_changed} label="Lines" fmt variant={variant} />
+        <StatCard value={stats.total_specs} label="Specs" variant={variant} />
+        <StatCard value={stats.contributors} label="Coders" variant={variant} />
       </div>
     </div>
   );
@@ -91,20 +116,35 @@ function StatCard({
   label,
   fmt,
   fmtFn,
+  variant,
 }: {
-  value: number;
+  value: number | undefined;
   label: string;
   fmt?: boolean;
   fmtFn?: (n: number) => string;
+  variant: "sidekick" | "mobile";
 }) {
-  const display = fmtFn ? fmtFn(value) : fmt ? formatCompact(value) : value;
-  const title = fmtFn || fmt ? value.toLocaleString() : undefined;
+  const isMobile = variant === "mobile";
+  const safeValue = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const display = fmtFn ? fmtFn(safeValue) : fmt ? formatCompact(safeValue) : safeValue;
+  const title = fmtFn || fmt ? safeValue.toLocaleString() : undefined;
   return (
-    <div className={styles.statCard}>
-      <div className={`${styles.statValue} ${styles.statCardValueColor}`} title={title}>
+    <div className={cx(styles.statCard, isMobile && mobileStyles.mobileStatCard)}>
+      <div
+        className={cx(
+          styles.statValue,
+          styles.statCardValueColor,
+          isMobile && mobileStyles.mobileStatValue,
+        )}
+        title={title}
+      >
         {display}
       </div>
-      <Text size="xs" align="center" className={styles.statCardLabel}>
+      <Text
+        size="xs"
+        align="center"
+        className={cx(styles.statCardLabel, isMobile && mobileStyles.mobileStatLabel)}
+      >
         {label}
       </Text>
     </div>

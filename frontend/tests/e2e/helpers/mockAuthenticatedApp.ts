@@ -99,6 +99,25 @@ export async function mockAuthenticatedApp(page: Page, options: MockAuthenticate
   const profileComments = new Map(
     Object.entries(initialProfileComments).map(([eventId, comments]) => [eventId, [...comments]]),
   );
+  const projectStats = {
+    total_tasks: 12,
+    pending_tasks: 2,
+    ready_tasks: 3,
+    in_progress_tasks: 2,
+    blocked_tasks: 1,
+    done_tasks: 3,
+    failed_tasks: 1,
+    completion_percentage: 58,
+    total_tokens: 128_400,
+    total_events: 42,
+    total_agents: 2,
+    total_sessions: 6,
+    total_time_seconds: 4_380,
+    lines_changed: 1_274,
+    total_specs: 4,
+    contributors: 3,
+    estimated_cost_usd: 7.84,
+  };
 
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
@@ -354,6 +373,10 @@ export async function mockAuthenticatedApp(page: Page, options: MockAuthenticate
         total_sessions: 0,
         total_tests: 0,
       });
+    }
+    const matchingProjectStats = projects.find((candidate) => pathname === `/api/projects/${candidate.project_id}/stats`);
+    if (matchingProjectStats) {
+      return json(projectStats);
     }
     if (projects.some((candidate) => pathname === `/api/projects/${candidate.project_id}/start-loop`)) return json({ ok: true });
     if (projects.some((candidate) => pathname === `/api/projects/${candidate.project_id}/pause-loop`)) return json({ ok: true });

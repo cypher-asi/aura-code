@@ -16,6 +16,7 @@ import { ProjectAgentRedirectView } from "./views/ProjectAgentRedirectView";
 import { ProjectRootRedirectView } from "./views/ProjectRootRedirectView/ProjectRootRedirectView";
 import { ProjectWorkView } from "./views/ProjectWorkView";
 import { ProjectFilesView } from "./views/ProjectFilesView";
+import { ProjectStatsView } from "./views/ProjectStatsView";
 
 import "./stores/event-store";
 import "./stores/follow-store";
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="execution" element={<ExecutionView />} />
               <Route path="work" element={<ProjectWorkView />} />
               <Route path="files" element={<ProjectFilesView />} />
+              <Route path="stats" element={<ProjectStatsView />} />
             </Route>
 
             <Route path="agents" element={<AgentIndexRedirect />} />
