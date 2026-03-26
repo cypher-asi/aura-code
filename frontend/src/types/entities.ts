@@ -117,7 +117,6 @@ export interface AgentInstance {
   skills: string[];
   icon: string | null;
   machine_type: string;
-  harness?: "local" | "swarm";
   status: AgentStatus;
   current_task_id: TaskId | null;
   current_session_id: SessionId | null;

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../../api/client";
 import { useChatStreamAdapter } from "../../hooks/use-chat-stream-adapter";
 import { useChatHistorySync } from "../../hooks/use-chat-history-sync";
 import { useDelayedLoading } from "../../hooks/use-delayed-loading";
+import { useAgentChatMeta } from "../../hooks/use-agent-chat-meta";
 import { setLastAgent, setLastProject } from "../../utils/storage";
 import { ChatPanel } from "../ChatPanel";
 import { projectChatHistoryKey, agentHistoryKey } from "../../stores/chat-history-store";
@@ -24,6 +25,13 @@ export function AgentChatView() {
   // ── Stream hook (calls both, only active one receives real IDs) ─────
   const { streamKey, sendMessage, stopStreaming, resetEvents } =
     useChatStreamAdapter(mode, { projectId, agentInstanceId, agentId });
+
+  // ── Unified agent metadata (name, machineType, templateAgentId) ────
+  const { agentName, machineType, templateAgentId } = useAgentChatMeta(mode, {
+    projectId,
+    agentInstanceId,
+    agentId,
+  });
 
   // ── History key ─────────────────────────────────────────────────────
   const historyKey = useMemo(() => {
@@ -48,7 +56,7 @@ export function AgentChatView() {
   }, [mode, projectId, agentInstanceId, agentId]);
 
   // ── Agent-mode: selection persistence ───────────────────────────────
-  const { selectedAgent, setSelectedAgent } = useSelectedAgent();
+  const { setSelectedAgent } = useSelectedAgent();
   const onAgentSwitch = useCallback(() => {
     if (mode !== "agent" || !agentId) return;
     setSelectedAgent(agentId);
@@ -84,36 +92,8 @@ export function AgentChatView() {
 
   const deferredLoading = useDelayedLoading(isLoading);
 
-  // ── Project-mode: agent metadata from API ──────────────────────────
-  const [agentName, setAgentName] = useState<string | undefined>();
-  const [machineType, setMachineType] = useState<"local" | "remote" | undefined>();
-  const metadataLoadIdRef = useRef(0);
-
-  useEffect(() => {
-    if (mode !== "project" || !projectId || !agentInstanceId) return;
-    const loadId = ++metadataLoadIdRef.current;
-    const controller = new AbortController();
-    api
-      .getAgentInstance(projectId, agentInstanceId, { signal: controller.signal })
-      .then((inst) => {
-        if (loadId !== metadataLoadIdRef.current) return;
-        setAgentName(inst.name);
-        setMachineType(inst.machine_type === "remote" ? "remote" : "local");
-      })
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      });
-    return () => { controller.abort(); };
-  }, [mode, projectId, agentInstanceId]);
-
   // ── Render ──────────────────────────────────────────────────────────
   if (!entityId) return null;
-
-  const displayName = mode === "project" ? agentName : selectedAgent?.name;
-  const resolvedMachineType: "local" | "remote" | undefined =
-    mode === "project"
-      ? machineType
-      : selectedAgent?.machine_type === "remote" ? "remote" : "local";
 
   return (
     <ChatPanel
@@ -121,8 +101,9 @@ export function AgentChatView() {
       streamKey={streamKey}
       onSend={wrappedSend}
       onStop={stopStreaming}
-      agentName={displayName}
-      machineType={resolvedMachineType}
+      agentName={agentName}
+      machineType={machineType}
+      templateAgentId={templateAgentId}
       agentId={entityId}
       isLoading={deferredLoading}
       historyResolved={historyResolved}

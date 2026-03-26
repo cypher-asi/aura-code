@@ -25,6 +25,8 @@ export interface ChatPanelProps {
   onStop: () => void;
   agentName?: string;
   machineType?: "local" | "remote";
+  /** Agent template ID used by AgentEnvironment for remote VM state polling. */
+  templateAgentId?: string;
   agentId?: string;
   isLoading?: boolean;
   historyResolved?: boolean;
@@ -39,6 +41,7 @@ export function ChatPanel({
   onStop,
   agentName,
   machineType,
+  templateAgentId,
   agentId,
   isLoading,
   historyResolved = true,
@@ -224,6 +227,7 @@ export function ChatPanel({
           onModelChange={handleModelChange}
           agentName={agentName}
           machineType={machineType}
+          templateAgentId={templateAgentId}
           agentId={agentId}
           attachments={attachments}
           onAttachmentsChange={setAttachments}
