@@ -58,6 +58,25 @@ describe("useLoopStatus", () => {
     expect(result.current.automatingAgentInstanceId).toBeNull();
   });
 
+  it("does not clear on loop_stopped for a different project", () => {
+    const { result } = renderHook(() => useLoopStatus("agent-1"));
+
+    act(() => {
+      subscribeMap.get("loop_started")!.forEach((cb) =>
+        cb({ project_id: "proj-1", agent_id: "agent-1" }),
+      );
+    });
+
+    act(() => {
+      subscribeMap.get("loop_stopped")!.forEach((cb) =>
+        cb({ project_id: "proj-2", agent_id: "agent-x" }),
+      );
+    });
+
+    expect(result.current.automatingProjectId).toBe("proj-1");
+    expect(result.current.automatingAgentInstanceId).toBe("agent-1");
+  });
+
   it("clears on loop_paused", () => {
     const { result } = renderHook(() => useLoopStatus("agent-1"));
 

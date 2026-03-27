@@ -22,6 +22,14 @@ pub struct AutomatonStartParams {
     pub task_id: Option<String>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum AutomatonStartError {
+    #[error("a dev loop is already running (automaton_id: {0:?})")]
+    Conflict(Option<String>),
+    #[error("{0}")]
+    Other(#[from] anyhow::Error),
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AutomatonStartResult {
     pub automaton_id: String,
@@ -47,15 +55,39 @@ impl AutomatonClient {
     pub async fn start(
         &self,
         params: AutomatonStartParams,
-    ) -> anyhow::Result<AutomatonStartResult> {
+    ) -> Result<AutomatonStartResult, AutomatonStartError> {
         let url = format!("{}/automaton/start", self.http_base);
-        let resp = self.http.post(&url).json(&params).send().await?;
+        let resp = self
+            .http
+            .post(&url)
+            .json(&params)
+            .send()
+            .await
+            .map_err(|e| AutomatonStartError::Other(e.into()))?;
         let status = resp.status();
-        let body = resp.text().await?;
-        if !status.is_success() {
-            anyhow::bail!("POST /automaton/start returned {status}: {body}");
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| AutomatonStartError::Other(e.into()))?;
+        if status == reqwest::StatusCode::CONFLICT {
+            let automaton_id = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| {
+                    v.get("error")
+                        .and_then(|e| e.as_str())
+                        .and_then(|msg| {
+                            msg.find("automaton_id: ")
+                                .map(|pos| msg[pos + 14..].trim_end_matches(')').to_string())
+                        })
+                });
+            return Err(AutomatonStartError::Conflict(automaton_id));
         }
-        Ok(serde_json::from_str(&body)?)
+        if !status.is_success() {
+            return Err(AutomatonStartError::Other(anyhow::anyhow!(
+                "POST /automaton/start returned {status}: {body}"
+            )));
+        }
+        serde_json::from_str(&body).map_err(|e| AutomatonStartError::Other(e.into()))
     }
 
     /// Pause a running automaton.

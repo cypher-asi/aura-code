@@ -5,7 +5,7 @@ use serde::Deserialize;
 use tracing::{info, warn};
 
 use aura_os_core::{AgentInstanceId, ProjectId, TaskId};
-use aura_os_link::AutomatonStartParams;
+use aura_os_link::{AutomatonStartError, AutomatonStartParams};
 
 use crate::dto::LoopStatusResponse;
 use crate::error::{ApiError, ApiResult};
@@ -182,24 +182,63 @@ pub(crate) async fn start_loop(
         project_folder.as_deref(),
     );
 
-    let result = state
-        .automaton_client
-        .start(AutomatonStartParams {
-            project_id: project_id.to_string(),
-            auth_token: jwt,
-            model: None,
-            workspace_root: project_path,
-            task_id: None,
-        })
-        .await
-        .map_err(|e| ApiError::internal(format!("starting dev loop: {e}")))?;
+    let start_params = AutomatonStartParams {
+        project_id: project_id.to_string(),
+        auth_token: jwt,
+        model: None,
+        workspace_root: project_path,
+        task_id: None,
+    };
 
-    let automaton_id = result.automaton_id.clone();
+    let (automaton_id, adopted) = match state.automaton_client.start(start_params).await {
+        Ok(r) => (r.automaton_id, false),
+        Err(AutomatonStartError::Conflict(existing_id)) => {
+            // An automaton is already running for this project in the harness.
+            // This happens when the LLM conversation started the loop via a tool
+            // call, or after a server restart that cleared our in-memory registry.
+            // Adopt it: register it in our registry and connect to its event stream
+            // so both the play button and the conversation share the same loop.
+            match existing_id {
+                Some(aid) => {
+                    info!(%aid, %project_id, "Adopting existing automaton from harness");
+                    (aid, true)
+                }
+                None => {
+                    return Err(ApiError::conflict(
+                        "A dev loop is already running but its ID could not be determined",
+                    ));
+                }
+            }
+        }
+        Err(e) => return Err(ApiError::internal(format!("starting dev loop: {e}"))),
+    };
+
     info!(
         %project_id,
         %agent_instance_id,
         %automaton_id,
-        "Dev loop automaton started"
+        adopted,
+        "Dev loop automaton ready"
+    );
+
+    // Attach the event stream before advertising success: if this fails, the
+    // client must not see loop_started or a registered automaton (including
+    // when adopting an existing harness automaton).
+    let events_tx = state
+        .automaton_client
+        .connect_event_stream(&automaton_id)
+        .await
+        .map_err(|e| {
+            ApiError::internal(format!(
+                "connecting event stream for dev loop (adopted={adopted}): {e}"
+            ))
+        })?;
+
+    forward_automaton_events(
+        events_tx,
+        state.event_broadcast.clone(),
+        project_id,
+        agent_instance_id,
     );
 
     emit_domain_event(
@@ -207,23 +246,7 @@ pub(crate) async fn start_loop(
         "loop_started",
         project_id,
         agent_instance_id,
-        serde_json::json!({"automaton_id": &automaton_id}),
-    );
-
-    // Connect to the automaton event stream and start forwarding.
-    // Note: events emitted before the WebSocket connects are lost, so we
-    // emit a synthetic task_started if the first real one was missed.
-    let events_tx = state
-        .automaton_client
-        .connect_event_stream(&automaton_id)
-        .await
-        .map_err(|e| ApiError::internal(format!("connecting event stream: {e}")))?;
-
-    forward_automaton_events(
-        events_tx,
-        state.event_broadcast.clone(),
-        project_id,
-        agent_instance_id,
+        serde_json::json!({"automaton_id": &automaton_id, "adopted": adopted}),
     );
 
     {
@@ -395,7 +418,12 @@ pub(crate) async fn run_single_task(
             task_id: Some(task_id.to_string()),
         })
         .await
-        .map_err(|e| ApiError::internal(format!("starting task runner: {e}")))?;
+        .map_err(|e| match e {
+            AutomatonStartError::Conflict(_) => {
+                ApiError::conflict(format!("starting task runner: {e}"))
+            }
+            _ => ApiError::internal(format!("starting task runner: {e}")),
+        })?;
 
     let automaton_id = result.automaton_id;
     info!(%project_id, %task_id, %automaton_id, "Single task automaton started");

@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { useEnvironmentInfo } from "../../hooks/use-environment-info"
+import { useAvatarState } from "../../hooks/use-avatar-state"
 import { api } from "../../api/client"
 import type { RemoteVmState } from "../../types"
 import type { LifecycleAction } from "../../api/swarm"
-import { useProfileStatus } from "../../stores/profile-status-store"
 import { VmStatusBadge } from "../VmStatusBadge"
 import styles from "./AgentEnvironment.module.css"
 
@@ -64,7 +64,7 @@ export function AgentEnvironment({ machineType, agentId }: AgentEnvironmentProps
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [showActions, setShowActions] = useState(false)
-  const agentStatus = useProfileStatus(isLocal ? agentId : undefined)
+  const avatarState = useAvatarState(agentId)
 
   const refreshState = useCallback(() => {
     if (!isRemote) return
@@ -140,7 +140,7 @@ export function AgentEnvironment({ machineType, agentId }: AgentEnvironmentProps
           data-status={
             isRemote
               ? (vmState?.state ?? "running")
-              : agentStatus === "working" ? "running" : "idle"
+              : (avatarState.isLocal ? "local" : (avatarState.status ?? "idle"))
           }
         />
         {isLocal ? "Local" : "Remote"}

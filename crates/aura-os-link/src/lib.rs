@@ -8,7 +8,7 @@ mod automaton_client;
 pub use harness::{HarnessLink, HarnessSession, SessionConfig};
 pub use swarm_harness::{SwarmHarness, CreateAgentResponse};
 pub use local_harness::LocalHarness;
-pub use automaton_client::{AutomatonClient, AutomatonStartParams, AutomatonStartResult};
+pub use automaton_client::{AutomatonClient, AutomatonStartError, AutomatonStartParams, AutomatonStartResult};
 
 pub use aura_protocol::{
     InboundMessage as HarnessInbound,

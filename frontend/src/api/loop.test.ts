@@ -49,12 +49,12 @@ describe("loopApi", () => {
     );
   });
 
-  it("pauseLoop appends agent_id query param", async () => {
+  it("pauseLoop appends agent_instance_id query param", async () => {
     const fetchMock = mockFetch(204, null);
     globalThis.fetch = fetchMock;
     await loopApi.pauseLoop("p1" as string, "agent-x");
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/projects/p1/loop/pause?agent_id=agent-x",
+      "/api/projects/p1/loop/pause?agent_instance_id=agent-x",
       expect.objectContaining({ method: "POST" }),
     );
   });
@@ -66,12 +66,12 @@ describe("loopApi", () => {
     expect(result.running).toBe(false);
   });
 
-  it("stopLoop appends agent_id query param", async () => {
+  it("stopLoop appends agent_instance_id query param", async () => {
     const fetchMock = mockFetch(200, loopStatus);
     globalThis.fetch = fetchMock;
     await loopApi.stopLoop("p1" as string, "agent-y");
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/projects/p1/loop/stop?agent_id=agent-y",
+      "/api/projects/p1/loop/stop?agent_instance_id=agent-y",
       expect.objectContaining({ method: "POST" }),
     );
   });

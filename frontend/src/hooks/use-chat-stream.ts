@@ -233,6 +233,7 @@ function promotePendingTask(
 
 interface DispatchDeps {
   projectId: string;
+  agentInstanceId: string | undefined;
   refs: ReturnType<typeof useStreamCore>["refs"];
   setters: ReturnType<typeof useStreamCore>["setters"];
   abortRef: ReturnType<typeof useStreamCore>["abortRef"];
@@ -244,9 +245,37 @@ interface DispatchDeps {
   pendingTaskIdsRef: React.MutableRefObject<string[]>;
 }
 
+/** Mirrors the play button (POST /loop/*). Server is authoritative; avoid extra start calls when status already shows a loop. */
+async function bridgeLoopToolResult(
+  name: string,
+  isError: boolean,
+  projectId: string,
+  agentInstanceId: string | undefined,
+) {
+  if (isError) return;
+  switch (name) {
+    case "start_dev_loop": {
+      try {
+        const status = await api.getLoopStatus(projectId);
+        if ((status.active_agent_instances?.length ?? 0) > 0) return;
+        await api.startLoop(projectId, agentInstanceId);
+      } catch {
+        /* ignore; automation bar / WS will reflect server state */
+      }
+      break;
+    }
+    case "pause_dev_loop":
+      api.pauseLoop(projectId, agentInstanceId).catch(() => {});
+      break;
+    case "stop_dev_loop":
+      api.stopLoop(projectId, agentInstanceId).catch(() => {});
+      break;
+  }
+}
+
 function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
   const {
-    projectId, refs, setters, abortRef, coreKey,
+    projectId, agentInstanceId, refs, setters, abortRef, coreKey,
     setProgressText, sidekickRef, projectCtxRef,
     pendingSpecIdsRef, pendingTaskIdsRef,
   } = deps;
@@ -282,6 +311,7 @@ function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
       case EventType.ToolResult: {
         const c = event.content as { id: string; name: string; result: string; is_error: boolean };
         coreHandleToolResult(refs, setters, c);
+        void bridgeLoopToolResult(c.name, c.is_error, projectId, agentInstanceId);
         if (c.name === "create_spec") {
           if (c.is_error) removePendingArtifact(c.id, pendingSpecIdsRef, (id) => sidekickRef.current.removeSpec(id));
           else promotePendingSpec(c, projectId, sidekickRef.current, pendingSpecIdsRef);
@@ -413,7 +443,7 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
       const controller = new AbortController();
       abortRef.current = controller;
       const handler = buildStreamHandler({
-        projectId, refs, setters, abortRef, coreKey: core.key,
+        projectId, agentInstanceId, refs, setters, abortRef, coreKey: core.key,
         setProgressText: core.setProgressText, sidekickRef, projectCtxRef,
         pendingSpecIdsRef, pendingTaskIdsRef,
       });

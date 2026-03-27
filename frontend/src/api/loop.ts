@@ -17,14 +17,14 @@ export const loopApi = {
       { method: "POST" },
     );
   },
-  pauseLoop: (projectId: ProjectId, agentId?: string) => {
-    const params = agentId ? `?agent_id=${agentId}` : "";
+  pauseLoop: (projectId: ProjectId, agentInstanceId?: string) => {
+    const params = agentInstanceId ? `?agent_instance_id=${agentInstanceId}` : "";
     return apiFetch<void>(`/api/projects/${projectId}/loop/pause${params}`, {
       method: "POST",
     });
   },
-  stopLoop: (projectId: ProjectId, agentId?: string) => {
-    const params = agentId ? `?agent_id=${agentId}` : "";
+  stopLoop: (projectId: ProjectId, agentInstanceId?: string) => {
+    const params = agentInstanceId ? `?agent_instance_id=${agentInstanceId}` : "";
     return apiFetch<LoopStatusResponse>(`/api/projects/${projectId}/loop/stop${params}`, {
       method: "POST",
     });
