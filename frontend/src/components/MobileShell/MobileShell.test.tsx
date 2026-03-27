@@ -171,9 +171,6 @@ beforeEach(() => {
   drawers.appOpen = false;
   drawers.previewOpen = false;
   drawers.accountOpen = false;
-  mockActiveApp.id = "projects";
-  mockActiveApp.label = "Projects";
-  mockActiveApp.basePath = "/projects";
   mockActiveApp.PreviewPanel = undefined;
   mockActiveApp.ResponsiveControls = undefined;
 });
@@ -226,16 +223,6 @@ describe("MobileShell", () => {
     drawers.navOpen = true;
     renderMobile();
     expect(screen.getByRole("button", { name: "Close drawer" })).toBeInTheDocument();
-  });
-
-  it("does not show a separate agent details action on mobile library routes", () => {
-    mockActiveApp.id = "agents";
-    mockActiveApp.label = "Agents";
-    mockActiveApp.basePath = "/agents";
-
-    renderMobile("/agents/agent-1");
-
-    expect(screen.queryByRole("button", { name: "Open agent details" })).not.toBeInTheDocument();
   });
 
   it("calls closeDrawers when backdrop is clicked", async () => {

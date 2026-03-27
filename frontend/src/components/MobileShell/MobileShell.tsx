@@ -333,11 +333,7 @@ function PreviewSheetContent({ PreviewPanel, PreviewHeader }: { PreviewPanel: Re
   );
 }
 
-function MobileTopbar({
-  state,
-}: {
-  state: ReturnType<typeof useMobileShellState>;
-}) {
+function MobileTopbar({ state }: { state: ReturnType<typeof useMobileShellState> }) {
   const navigate = useNavigate();
   const setNavOpen = useMobileDrawerStore((s) => s.setNavOpen);
   const setAppOpen = useMobileDrawerStore((s) => s.setAppOpen);
@@ -348,16 +344,7 @@ function MobileTopbar({
       className={styles.mobileTopbar}
       icon={
         <div className={styles.mobileTopbarSlot}>
-          {state.isStandaloneAgentDetailRoute ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              icon={<ArrowLeft size={18} />}
-              aria-label="Back to agent library"
-              onClick={() => navigate("/agents")}
-            />
-          ) : state.showProjectBack && state.currentProjectId ? (
+          {state.showProjectBack && state.currentProjectId ? (
             <Button
               variant="ghost"
               size="sm"
@@ -432,7 +419,6 @@ export function MobileShell() {
     || state.mobileDestination === "stats"
     ? state.mobileDestination
     : null;
-  const previewDrawerTitle = state.activeApp.id === "agents" ? "Agent details" : "Preview";
 
   useMobileDrawerEffects(Boolean(PreviewPanel));
 
@@ -450,9 +436,7 @@ export function MobileShell() {
         <UpdateBanner />
         <div className={styles.mobileMain}>
           {state.showProjectResponsiveControls && ResponsiveControls && <div className={styles.mobileResponsiveControls}><ResponsiveControls /></div>}
-          {!state.isStandaloneAgentLibraryRoot && (
-            <div className={styles.mobileMainPanel}><ErrorBoundary name="main"><MainPanel>{routeContent}</MainPanel></ErrorBoundary></div>
-          )}
+          <div className={styles.mobileMainPanel}><ErrorBoundary name="main"><MainPanel>{routeContent}</MainPanel></ErrorBoundary></div>
         </div>
         {!drawerOpen && state.showProjectTitle && (
           <div className={styles.mobileBottomNav}>
@@ -472,7 +456,7 @@ export function MobileShell() {
       </Drawer>
 
       {PreviewPanel && (
-        <Drawer side={state.isPhoneLayout ? "bottom" : "right"} isOpen={previewOpen} onClose={() => { blurActiveElement(); setPreviewOpen(false); }} title={previewDrawerTitle} className={state.isPhoneLayout ? styles.mobileSheetDrawer : styles.mobileSideSheet} showMinimizedBar={false} defaultSize={state.isPhoneLayout ? 420 : 360} maxSize={state.isPhoneLayout ? 640 : 480}>
+        <Drawer side={state.isPhoneLayout ? "bottom" : "right"} isOpen={previewOpen} onClose={() => { blurActiveElement(); setPreviewOpen(false); }} title="Preview" className={state.isPhoneLayout ? styles.mobileSheetDrawer : styles.mobileSideSheet} showMinimizedBar={false} defaultSize={state.isPhoneLayout ? 420 : 360} maxSize={state.isPhoneLayout ? 640 : 480}>
           <PreviewSheetContent PreviewPanel={PreviewPanel} PreviewHeader={PreviewHeaderComp} />
         </Drawer>
       )}
