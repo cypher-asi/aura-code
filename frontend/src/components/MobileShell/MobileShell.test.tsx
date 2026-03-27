@@ -185,9 +185,9 @@ describe("MobileShell", () => {
     renderMobile("/projects/proj-1/agent");
     expect(screen.getByText("Agent")).toBeInTheDocument();
     expect(screen.getByText("Execution")).toBeInTheDocument();
-    expect(screen.getByText("Files")).toBeInTheDocument();
     expect(screen.getByText("Stats")).toBeInTheDocument();
     expect(screen.queryByText("Feed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Files")).not.toBeInTheDocument();
   });
 
   it("renders the global navigation trigger on global routes", () => {

@@ -22,12 +22,10 @@ import {
   getMobileProjectDestination,
   getProjectIdFromPathname,
   projectAgentRoute,
-  projectFilesRoute,
   projectStatsRoute,
   projectRootPath,
   projectWorkRoute,
 } from "../../utils/mobileNavigation";
-import { getLastSelectedAgentId } from "../../apps/agents/stores";
 import { useMobileShellState } from "./useMobileShellState";
 import styles from "../AppShell/AppShell.module.css";
 
@@ -72,11 +70,6 @@ function ProjectNavigationDrawerContent() {
     openAfterDrawerClose(() => {
       if (mobileDestination === "tasks") {
         navigate(projectWorkRoute(projectId));
-        return;
-      }
-
-      if (mobileDestination === "files") {
-        navigate(projectFilesRoute(projectId));
         return;
       }
 
@@ -221,10 +214,6 @@ function resolveGlobalProjectPath(state: ReturnType<typeof useMobileShellState>)
     return projectWorkRoute(state.mobileTargetProjectId);
   }
 
-  if (state.mobileDestination === "files" && state.mobileTargetProjectId) {
-    return projectFilesRoute(state.mobileTargetProjectId);
-  }
-
   if (state.mobileDestination === "stats" && state.mobileTargetProjectId) {
     return projectStatsRoute(state.mobileTargetProjectId);
   }
@@ -237,8 +226,7 @@ function resolveGlobalProjectPath(state: ReturnType<typeof useMobileShellState>)
 }
 
 function resolveGlobalAgentsPath() {
-  const lastId = getLastSelectedAgentId();
-  return lastId ? `/agents/${lastId}` : "/agents";
+  return "/agents";
 }
 
 function AppSwitcherContent({ state }: { state: ReturnType<typeof useMobileShellState> }) {
@@ -426,6 +414,11 @@ export function MobileShell() {
   const drawerOpen = useMobileDrawerStore(selectDrawerOpen);
   const overlayDrawerOpen = useMobileDrawerStore(selectOverlayDrawerOpen);
   const { hostSettingsOpen, closeHostSettings } = useUIModalStore();
+  const mobileNavActiveId: MobileNavId | null = state.mobileDestination === "agent"
+    || state.mobileDestination === "tasks"
+    || state.mobileDestination === "stats"
+    ? state.mobileDestination
+    : null;
 
   useMobileDrawerEffects(Boolean(PreviewPanel));
 
@@ -433,7 +426,6 @@ export function MobileShell() {
     if (!state.mobileTargetProjectId) { navigate("/projects"); return; }
     if (id === "agent") { navigate(projectAgentRoute(state.mobileTargetProjectId)); return; }
     if (id === "tasks") { navigate(projectWorkRoute(state.mobileTargetProjectId)); return; }
-    if (id === "files") { navigate(projectFilesRoute(state.mobileTargetProjectId)); return; }
     navigate(projectStatsRoute(state.mobileTargetProjectId));
   }, [state.mobileTargetProjectId, navigate]);
 
@@ -448,7 +440,7 @@ export function MobileShell() {
         </div>
         {!drawerOpen && state.showProjectTitle && (
           <div className={styles.mobileBottomNav}>
-            <MobileBottomNav activeId={state.mobileDestination === "feed" ? null : state.mobileDestination} onNavigate={handleMobilePrimaryNavigate} />
+            <MobileBottomNav activeId={mobileNavActiveId} onNavigate={handleMobilePrimaryNavigate} />
           </div>
         )}
       </div>

@@ -1,12 +1,12 @@
 import { Button, Text } from "@cypher-asi/zui";
-import { Bot, CheckSquare, FolderOpen, MessageSquare } from "lucide-react";
+import { Bot, CheckSquare, ChartNoAxesColumnIncreasing, MessageSquare } from "lucide-react";
 import { EmptyState } from "../../components/EmptyState";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import { useProjectContext } from "../../stores/project-action-store";
 import { useProjectsList } from "../../apps/projects/useProjectsList";
-import { projectAgentRoute, projectFilesRoute, projectWorkRoute } from "../../utils/mobileNavigation";
+import { projectAgentRoute, projectStatsRoute, projectWorkRoute } from "../../utils/mobileNavigation";
 import { AgentSelectorModal } from "../../components/AgentSelectorModal";
 import type { AgentInstance } from "../../types";
 import styles from "./ProjectEmptyView.module.css";
@@ -56,7 +56,7 @@ export function ProjectEmptyView({ mode = "project" }: ProjectEmptyViewProps) {
             </Text>
             <Text variant="muted" size="sm">
               {mode === "agent"
-                ? "No agent is assigned yet. Add one now, or continue working in Tasks or Files."
+                ? "No agent is assigned yet. Add one now, or continue working in Execution or Stats."
                 : (project.description?.trim() || "Choose how you want to work in this project.")}
             </Text>
           </div>
@@ -91,11 +91,11 @@ export function ProjectEmptyView({ mode = "project" }: ProjectEmptyViewProps) {
             </Button>
             <Button
               variant="secondary"
-              icon={<FolderOpen size={16} />}
-              onClick={() => navigate(projectFilesRoute(project.project_id))}
+              icon={<ChartNoAxesColumnIncreasing size={16} />}
+              onClick={() => navigate(projectStatsRoute(project.project_id))}
               className={styles.actionButtonStart}
             >
-              Open Files
+              Open Stats
             </Button>
           </div>
         </div>
