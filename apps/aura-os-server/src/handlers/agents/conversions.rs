@@ -21,8 +21,8 @@ pub(crate) fn get_user_id(state: &AppState) -> Result<String, (StatusCode, Json<
         .store
         .get_setting("zero_auth_session")
         .map_err(|_| ApiError::unauthorized("not authenticated"))?;
-    let session: ZeroAuthSession =
-        serde_json::from_slice(&session_bytes).map_err(|e| ApiError::internal(format!("deserializing auth session: {e}")))?;
+    let session: ZeroAuthSession = serde_json::from_slice(&session_bytes)
+        .map_err(|e| ApiError::internal(format!("deserializing auth session: {e}")))?;
     Ok(session.user_id)
 }
 
@@ -52,7 +52,10 @@ pub(crate) fn agent_from_network(net: &NetworkAgent) -> Agent {
         system_prompt: net.system_prompt.clone().unwrap_or_default(),
         skills: net.skills.clone().unwrap_or_default(),
         icon: net.icon.clone(),
-        machine_type: net.machine_type.clone().unwrap_or_else(|| "local".to_string()),
+        machine_type: net
+            .machine_type
+            .clone()
+            .unwrap_or_else(|| "local".to_string()),
         vm_id: net.vm_id.clone(),
         network_agent_id: net.id.parse().ok(),
         profile_id,
@@ -61,20 +64,73 @@ pub(crate) fn agent_from_network(net: &NetworkAgent) -> Agent {
     }
 }
 
-/// Compute the default workspace path for an agent instance based on its
-/// machine type and the project's linked folder path.
+/// Compute the workspace path for an agent instance based on its machine type.
+///
+/// - **local**: prefer the stored absolute `project_folder`; fall back to the
+///   canonical `{data_dir}/workspaces/{slug}` path derived from the project name.
+/// - **remote / swarm**: `/p/{project_id}`.
 pub(crate) fn resolve_workspace_path(
     machine_type: &str,
     project_id: &str,
     project_folder: Option<&str>,
-) -> Option<String> {
+    data_dir: &std::path::Path,
+    project_name: &str,
+) -> String {
     if machine_type == "local" {
         project_folder
             .filter(|s| !s.is_empty())
             .filter(|s| std::path::Path::new(s).is_absolute())
             .map(String::from)
+            .unwrap_or_else(|| {
+                super::super::projects_helpers::canonical_workspace_path(data_dir, project_name)
+                    .to_string_lossy()
+                    .to_string()
+            })
     } else {
-        Some(format!("/p/{project_id}"))
+        format!("/p/{project_id}")
+    }
+}
+
+/// Build the list of domain tools to register with the harness session.
+///
+/// Each tool is backed by an HTTP callback to `POST /api/tool-callbacks/:project_id/:tool_name`.
+pub(crate) fn build_installed_tools(
+    server_base_url: &str,
+    project_id: &str,
+) -> Vec<aura_os_link::InstalledTool> {
+    let base = format!("{server_base_url}/api/tool-callbacks/{project_id}");
+    let none = aura_os_link::ToolAuth::None;
+    vec![
+        tool_def(&base, "get_project", "Get project details", serde_json::json!({"type":"object","properties":{}}), &none),
+        tool_def(&base, "update_project", "Update project name or description", serde_json::json!({"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"}}}), &none),
+        tool_def(&base, "create_spec", "Create a new spec", serde_json::json!({"type":"object","properties":{"title":{"type":"string"},"markdown_contents":{"type":"string"},"order_index":{"type":"integer"}},"required":["title"]}), &none),
+        tool_def(&base, "list_specs", "List all specs for the project", serde_json::json!({"type":"object","properties":{}}), &none),
+        tool_def(&base, "get_spec", "Get a spec by ID", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string"}},"required":["spec_id"]}), &none),
+        tool_def(&base, "update_spec", "Update spec title or contents", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string"},"title":{"type":"string"},"markdown_contents":{"type":"string"},"order_index":{"type":"integer"}},"required":["spec_id"]}), &none),
+        tool_def(&base, "delete_spec", "Delete a spec", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string"}},"required":["spec_id"]}), &none),
+        tool_def(&base, "create_task", "Create a new task under a spec", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"status":{"type":"string"},"order_index":{"type":"integer"}},"required":["spec_id","title"]}), &none),
+        tool_def(&base, "list_tasks", "List all tasks for the project", serde_json::json!({"type":"object","properties":{}}), &none),
+        tool_def(&base, "get_task", "Get a task by ID", serde_json::json!({"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"]}), &none),
+        tool_def(&base, "delete_task", "Delete a task", serde_json::json!({"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"]}), &none),
+    ]
+}
+
+fn tool_def(
+    base: &str,
+    name: &str,
+    description: &str,
+    input_schema: serde_json::Value,
+    auth: &aura_os_link::ToolAuth,
+) -> aura_os_link::InstalledTool {
+    aura_os_link::InstalledTool {
+        name: name.to_string(),
+        description: description.to_string(),
+        input_schema,
+        endpoint: format!("{base}/{name}"),
+        auth: auth.clone(),
+        timeout_ms: None,
+        namespace: None,
+        metadata: std::collections::HashMap::new(),
     }
 }
 

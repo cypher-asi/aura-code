@@ -305,5 +305,12 @@ pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
         )),
         automaton_registry: Arc::new(Mutex::new(HashMap::new())),
         swarm_base_url: env_opt("SWARM_BASE_URL"),
+        server_base_url: std::env::var("AURA_SERVER_BASE_URL").unwrap_or_else(|_| {
+            let port = std::env::var("AURA_SERVER_PORT")
+                .ok()
+                .and_then(|s| s.parse::<u16>().ok())
+                .unwrap_or(3100);
+            format!("http://127.0.0.1:{port}")
+        }),
     })
 }

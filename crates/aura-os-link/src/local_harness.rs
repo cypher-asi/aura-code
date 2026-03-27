@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use tracing::info;
 
-use aura_protocol::{InboundMessage, OutboundMessage, SessionInit};
 use crate::harness::{HarnessLink, HarnessSession, SessionConfig};
 use crate::ws_bridge::spawn_ws_bridge;
+use aura_protocol::{InboundMessage, OutboundMessage, SessionInit};
 
 #[derive(Debug, Clone)]
 pub struct LocalHarness {
@@ -43,7 +43,7 @@ impl HarnessLink for LocalHarness {
             max_tokens: config.max_tokens,
             temperature: None,
             max_turns: config.max_turns,
-            installed_tools: None,
+            installed_tools: config.installed_tools,
             workspace: config.workspace,
             project_path: config.project_path,
             token: config.token,
@@ -58,11 +58,7 @@ impl HarnessLink for LocalHarness {
                     break ready.session_id;
                 }
                 Ok(OutboundMessage::Error(err)) => {
-                    anyhow::bail!(
-                        "Harness error during init ({}): {}",
-                        err.code,
-                        err.message
-                    );
+                    anyhow::bail!("Harness error during init ({}): {}", err.code, err.message);
                 }
                 Err(_) => {
                     anyhow::bail!("Connection closed before session_ready");

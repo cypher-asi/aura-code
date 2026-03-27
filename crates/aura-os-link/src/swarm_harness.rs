@@ -69,12 +69,7 @@ impl SwarmHarness {
                 );
             }
 
-            let resp = self
-                .client
-                .get(&url)
-                .headers(headers.clone())
-                .send()
-                .await;
+            let resp = self.client.get(&url).headers(headers.clone()).send().await;
 
             match resp {
                 Ok(r) if r.status().is_success() => {
@@ -134,10 +129,7 @@ struct CreateSessionResponse {
 #[async_trait]
 impl HarnessLink for SwarmHarness {
     async fn open_session(&self, config: SessionConfig) -> anyhow::Result<HarnessSession> {
-        let token = config
-            .token
-            .as_deref()
-            .or(self.auth_token.as_deref());
+        let token = config.token.as_deref().or(self.auth_token.as_deref());
         let headers = self.bearer_headers(token);
 
         // 1. Create agent (idempotent when agent_id is supplied for ID parity).
@@ -168,10 +160,7 @@ impl HarnessLink for SwarmHarness {
         let agent_id = &agent_resp.agent_id;
 
         // 2. Wait for agent to reach a runnable state before creating session
-        let is_ready = matches!(
-            agent_resp.status.as_str(),
-            "running" | "idle"
-        );
+        let is_ready = matches!(agent_resp.status.as_str(), "running" | "idle");
 
         if !is_ready {
             info!(
@@ -239,7 +228,7 @@ impl HarnessLink for SwarmHarness {
             max_tokens: config.max_tokens,
             temperature: None,
             max_turns: config.max_turns,
-            installed_tools: None,
+            installed_tools: config.installed_tools,
             workspace: config.workspace,
             project_path: config.project_path,
             token: config.token,

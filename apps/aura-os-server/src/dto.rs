@@ -2,7 +2,7 @@ use aura_os_core::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub(crate) struct CreateProjectRequest {
     pub org_id: OrgId,
     pub name: String,

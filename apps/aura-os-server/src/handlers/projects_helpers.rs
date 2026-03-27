@@ -107,8 +107,91 @@ pub(crate) fn project_from_network(
 }
 
 pub(crate) fn ensure_local_shadow(state: &AppState, project: &Project) {
-    if let Err(err) = state.project_service.save_project_shadow(project) {
+    let normalized = normalize_project_workspace(state, project);
+    if let Err(err) = state.project_service.save_project_shadow(&normalized) {
         warn!(project_id = %project.project_id, error = %err, "Failed to save local project shadow");
+    }
+}
+
+pub(crate) fn normalize_project_workspace(state: &AppState, project: &Project) -> Project {
+    let mut normalized = project.clone();
+    let original_path = normalized.linked_folder_path.clone();
+    let normalized_path = normalize_linked_folder_path(state, &original_path, &normalized.name);
+    if normalized_path != original_path {
+        normalized.linked_folder_path = normalized_path;
+        if normalized
+            .workspace_display_path
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or("")
+            .is_empty()
+        {
+            normalized.workspace_display_path = Some(original_path);
+        }
+    }
+    normalized
+}
+
+fn normalize_linked_folder_path(state: &AppState, raw_path: &str, project_name: &str) -> String {
+    let trimmed = raw_path.trim();
+    if trimmed.is_empty() {
+        let resolved = canonical_workspace_path(&state.data_dir, project_name);
+        if let Err(err) = std::fs::create_dir_all(&resolved) {
+            warn!(
+                path = %resolved.display(),
+                error = %err,
+                "Failed to create canonical workspace directory"
+            );
+        }
+        return resolved.to_string_lossy().to_string();
+    }
+
+    let input_path = FsPath::new(trimmed);
+    if input_path.is_absolute() {
+        return trimmed.to_string();
+    }
+
+    let mut rel = PathBuf::new();
+    for component in input_path.components() {
+        match component {
+            Component::Normal(part) => rel.push(part),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                warn!(path = %raw_path, "Rejected unsafe relative workspace path");
+                return raw_path.to_string();
+            }
+        }
+    }
+    if rel.as_os_str().is_empty() {
+        return raw_path.to_string();
+    }
+
+    let resolved = state.data_dir.join("workspaces").join(rel);
+    if let Err(err) = std::fs::create_dir_all(&resolved) {
+        warn!(
+            path = %resolved.display(),
+            error = %err,
+            "Failed to create normalized workspace directory"
+        );
+    }
+    resolved.to_string_lossy().to_string()
+}
+
+pub(crate) fn canonical_workspace_path(data_dir: &std::path::Path, project_name: &str) -> PathBuf {
+    let slug = slugify(project_name);
+    data_dir.join("workspaces").join(&slug)
+}
+
+fn slugify(name: &str) -> String {
+    let s = name
+        .trim()
+        .to_lowercase()
+        .replace(char::is_whitespace, "-")
+        .replace(|c: char| !c.is_ascii_alphanumeric() && c != '-', "");
+    if s.is_empty() {
+        "unnamed-project".to_string()
+    } else {
+        s
     }
 }
 
@@ -195,10 +278,7 @@ pub(super) async fn write_imported_files(
     Ok(())
 }
 
-pub(super) fn build_local_shadow(
-    project_id: ProjectId,
-    req: &CreateProjectRequest,
-) -> Project {
+pub(super) fn build_local_shadow(project_id: ProjectId, req: &CreateProjectRequest) -> Project {
     Project {
         project_id,
         org_id: req.org_id,

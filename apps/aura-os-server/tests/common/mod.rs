@@ -224,9 +224,8 @@ pub fn build_test_app_from_store(
         "http://localhost:19800".to_string(),
         None,
     ));
-    let local_harness: Arc<dyn HarnessLink> = Arc::new(LocalHarness::new(
-        "http://localhost:19080".to_string(),
-    ));
+    let local_harness: Arc<dyn HarnessLink> =
+        Arc::new(LocalHarness::new("http://localhost:19080".to_string()));
 
     let (event_broadcast, _) = broadcast::channel::<serde_json::Value>(256);
 
@@ -254,6 +253,7 @@ pub fn build_test_app_from_store(
         automaton_client: Arc::new(AutomatonClient::new("http://localhost:19080")),
         automaton_registry: Arc::new(Mutex::new(HashMap::new())),
         swarm_base_url,
+        server_base_url: "http://127.0.0.1:3100".to_string(),
     };
 
     let app = aura_os_server::create_router_with_frontend(state.clone(), None);
@@ -263,7 +263,8 @@ pub fn build_test_app_from_store(
 pub fn build_test_app() -> (Router, AppState, tempfile::TempDir) {
     let db_dir = tempfile::tempdir().unwrap();
     let store = Arc::new(RocksStore::open(db_dir.path()).unwrap());
-    let (app, state) = build_test_app_from_store(store, db_dir.path().to_path_buf(), None, None, None);
+    let (app, state) =
+        build_test_app_from_store(store, db_dir.path().to_path_buf(), None, None, None);
     (app, state, db_dir)
 }
 

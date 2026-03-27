@@ -27,7 +27,10 @@ fn net_or_local<T: Clone>(
         .or_else(|| local.and_then(|p| field(p).clone()))
 }
 
-fn network_project_to_core(net: &aura_os_network::NetworkProject, local: Option<&Project>) -> Project {
+fn network_project_to_core(
+    net: &aura_os_network::NetworkProject,
+    local: Option<&Project>,
+) -> Project {
     let project_id = net
         .id
         .parse::<ProjectId>()
@@ -252,11 +255,13 @@ impl ProjectService {
         }
 
         let folder = Path::new(&input.linked_folder_path);
-        if !folder.is_dir() {
-            return Err(ProjectError::InvalidInput(format!(
-                "linked folder path does not exist or is not a directory: {}",
-                input.linked_folder_path
-            )));
+        if !folder.as_os_str().is_empty() {
+            if let Err(e) = std::fs::create_dir_all(folder) {
+                return Err(ProjectError::InvalidInput(format!(
+                    "failed to create workspace directory {}: {e}",
+                    input.linked_folder_path
+                )));
+            }
         }
 
         let now = Utc::now();

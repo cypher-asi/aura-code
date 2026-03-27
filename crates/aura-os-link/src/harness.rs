@@ -18,6 +18,8 @@ pub struct SessionConfig {
     pub project_id: Option<String>,
     /// Absolute path to the project directory on the local filesystem.
     pub project_path: Option<String>,
+    /// Domain tools to register with the harness for this session.
+    pub installed_tools: Option<Vec<aura_protocol::InstalledTool>>,
 }
 
 impl Default for SessionConfig {
@@ -34,6 +36,7 @@ impl Default for SessionConfig {
             conversation_messages: None,
             project_id: None,
             project_path: None,
+            installed_tools: None,
         }
     }
 }

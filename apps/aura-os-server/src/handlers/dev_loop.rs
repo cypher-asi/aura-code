@@ -7,10 +7,10 @@ use tracing::{info, warn};
 use aura_os_core::{AgentInstanceId, ProjectId, TaskId};
 use aura_os_link::{AutomatonStartError, AutomatonStartParams};
 
+use super::agents::conversions_pub::resolve_workspace_path;
 use crate::dto::LoopStatusResponse;
 use crate::error::{ApiError, ApiResult};
-use super::agents::conversions_pub::resolve_workspace_path;
-use crate::state::{ActiveAutomaton, AppState};
+use crate::state::{ActiveAutomaton, AppState, AutomatonRegistry};
 
 #[derive(Debug, Deserialize, Default)]
 pub(crate) struct LoopQueryParams {
@@ -43,6 +43,7 @@ fn emit_domain_event(
 fn forward_automaton_events(
     automaton_events_tx: tokio::sync::broadcast::Sender<serde_json::Value>,
     app_broadcast: tokio::sync::broadcast::Sender<serde_json::Value>,
+    automaton_registry: AutomatonRegistry,
     project_id: ProjectId,
     agent_instance_id: AgentInstanceId,
 ) {
@@ -52,6 +53,15 @@ fn forward_automaton_events(
 
     tokio::spawn(async move {
         let mut first_work_seen = false;
+        let clear_active_automaton = |registry: AutomatonRegistry, project_id: ProjectId, agent_instance_id: AgentInstanceId| async move {
+            let mut reg = registry.lock().await;
+            if reg
+                .get(&agent_instance_id)
+                .is_some_and(|entry| entry.project_id == project_id)
+            {
+                reg.remove(&agent_instance_id);
+            }
+        };
 
         loop {
             match rx.recv().await {
@@ -106,6 +116,12 @@ fn forward_automaton_events(
                         "tool_result" => Some("tool_result"),
                         "progress" => Some("progress"),
                         "done" => {
+                            clear_active_automaton(
+                                automaton_registry.clone(),
+                                project_id,
+                                agent_instance_id,
+                            )
+                                .await;
                             emit_domain_event(
                                 &app_broadcast,
                                 "loop_finished",
@@ -120,24 +136,24 @@ fn forward_automaton_events(
 
                     let mut forwarded = event.clone();
                     if let Some(obj) = forwarded.as_object_mut() {
-                        obj.insert(
-                            "project_id".into(),
-                            serde_json::Value::String(pid.clone()),
-                        );
+                        obj.insert("project_id".into(), serde_json::Value::String(pid.clone()));
                         obj.insert(
                             "agent_instance_id".into(),
                             serde_json::Value::String(aiid.clone()),
                         );
                         if let Some(mapped) = mapped_type {
-                            obj.insert(
-                                "type".into(),
-                                serde_json::Value::String(mapped.into()),
-                            );
+                            obj.insert("type".into(), serde_json::Value::String(mapped.into()));
                         }
                     }
                     let _ = app_broadcast.send(forwarded);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    clear_active_automaton(
+                        automaton_registry.clone(),
+                        project_id,
+                        agent_instance_id,
+                    )
+                        .await;
                     emit_domain_event(
                         &app_broadcast,
                         "loop_finished",
@@ -165,11 +181,9 @@ pub(crate) async fn start_loop(
         .unwrap_or_else(AgentInstanceId::new);
 
     let jwt = state.get_jwt().ok();
-    let project_folder = state
-        .project_service
-        .get_project(&project_id)
-        .ok()
-        .map(|p| p.linked_folder_path);
+    let project = state.project_service.get_project(&project_id).ok();
+    let project_folder = project.as_ref().map(|p| p.linked_folder_path.clone());
+    let project_name = project.as_ref().map(|p| p.name.as_str()).unwrap_or("");
     let machine_type = state
         .agent_instance_service
         .get_instance(&project_id, &agent_instance_id)
@@ -180,13 +194,15 @@ pub(crate) async fn start_loop(
         &machine_type,
         &project_id.to_string(),
         project_folder.as_deref(),
+        &state.data_dir,
+        project_name,
     );
 
     let start_params = AutomatonStartParams {
         project_id: project_id.to_string(),
         auth_token: jwt,
         model: None,
-        workspace_root: project_path,
+        workspace_root: Some(project_path),
         task_id: None,
     };
 
@@ -237,6 +253,7 @@ pub(crate) async fn start_loop(
     forward_automaton_events(
         events_tx,
         state.event_broadcast.clone(),
+        state.automaton_registry.clone(),
         project_id,
         agent_instance_id,
     );
@@ -391,11 +408,9 @@ pub(crate) async fn run_single_task(
         .unwrap_or_else(AgentInstanceId::new);
 
     let jwt = state.get_jwt().ok();
-    let project_folder = state
-        .project_service
-        .get_project(&project_id)
-        .ok()
-        .map(|p| p.linked_folder_path);
+    let project = state.project_service.get_project(&project_id).ok();
+    let project_folder = project.as_ref().map(|p| p.linked_folder_path.clone());
+    let project_name = project.as_ref().map(|p| p.name.as_str()).unwrap_or("");
     let machine_type = state
         .agent_instance_service
         .get_instance(&project_id, &agent_instance_id)
@@ -406,6 +421,8 @@ pub(crate) async fn run_single_task(
         &machine_type,
         &project_id.to_string(),
         project_folder.as_deref(),
+        &state.data_dir,
+        project_name,
     );
 
     let result = state
@@ -414,7 +431,7 @@ pub(crate) async fn run_single_task(
             project_id: project_id.to_string(),
             auth_token: jwt,
             model: None,
-            workspace_root: project_path,
+            workspace_root: Some(project_path),
             task_id: Some(task_id.to_string()),
         })
         .await
@@ -436,6 +453,7 @@ pub(crate) async fn run_single_task(
         forward_automaton_events(
             events_tx,
             state.event_broadcast.clone(),
+            state.automaton_registry.clone(),
             project_id,
             agent_instance_id,
         );

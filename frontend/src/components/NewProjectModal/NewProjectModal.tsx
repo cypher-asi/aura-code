@@ -53,7 +53,6 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
           placeholder="Project name"
           validationMessage={form.nameError}
         />
-
         <div className={styles.fieldGroup}>
           <Text size="sm" className={styles.fieldLabel}>Orbit repo</Text>
           {form.orbitOwner ? (

@@ -97,6 +97,9 @@ pub struct AppState {
     /// Base URL for the aura-swarm gateway (e.g. `http://gateway:8080`).
     /// `None` when `SWARM_BASE_URL` is not set.
     pub swarm_base_url: Option<String>,
+    /// Base URL of this server (e.g. `http://127.0.0.1:3100`) used for
+    /// harness tool callback endpoints.
+    pub server_base_url: String,
 }
 
 impl AppState {

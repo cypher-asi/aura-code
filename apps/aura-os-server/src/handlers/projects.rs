@@ -10,8 +10,8 @@ use crate::error::{map_network_error, ApiError, ApiResult};
 use crate::state::AppState;
 
 use super::projects_helpers::{
-    build_local_shadow, ensure_local_shadow, folder_name_from_path, project_from_network,
-    to_project_input, write_imported_files, ListProjectsQuery,
+    build_local_shadow, ensure_local_shadow, folder_name_from_path, normalize_project_workspace,
+    project_from_network, to_project_input, write_imported_files, ListProjectsQuery,
 };
 
 pub(crate) async fn list_all_projects_from_network(state: &AppState) -> ApiResult<Vec<Project>> {
@@ -30,7 +30,8 @@ pub(crate) async fn list_all_projects_from_network(state: &AppState) -> ApiResul
                 .parse::<ProjectId>()
                 .ok()
                 .and_then(|project_id| state.project_service.get_project(&project_id).ok());
-            let project = project_from_network(net, local.as_ref())?;
+            let project =
+                normalize_project_workspace(state, &project_from_network(net, local.as_ref())?);
             ensure_local_shadow(state, &project);
             projects.push(project);
         }
@@ -48,6 +49,22 @@ async fn create_project_impl(
     req: &CreateProjectRequest,
     network_folder: Option<String>,
 ) -> ApiResult<(StatusCode, Json<Project>)> {
+    let mut req = req.clone();
+    if req.linked_folder_path.trim().is_empty()
+        || !std::path::Path::new(req.linked_folder_path.trim()).is_absolute()
+    {
+        let canonical = super::projects_helpers::canonical_workspace_path(
+            &state.data_dir,
+            &req.name,
+        );
+        if let Err(e) = std::fs::create_dir_all(&canonical) {
+            return Err(ApiError::internal(format!(
+                "creating workspace directory: {e}"
+            )));
+        }
+        req.linked_folder_path = canonical.to_string_lossy().to_string();
+    }
+
     if let Some(client) = &state.network_client {
         let jwt = state.get_jwt()?;
 
@@ -73,13 +90,16 @@ async fn create_project_impl(
                 net_project.id
             ))
         })?;
-        let local_shadow = build_local_shadow(project_id, req);
-        let project = project_from_network(&net_project, Some(&local_shadow))?;
+        let local_shadow = build_local_shadow(project_id, &req);
+        let project = normalize_project_workspace(
+            state,
+            &project_from_network(&net_project, Some(&local_shadow))?,
+        );
         ensure_local_shadow(state, &project);
         return Ok((StatusCode::CREATED, Json(project)));
     }
 
-    let input = to_project_input(req);
+    let input = to_project_input(&req);
     let project = state
         .project_service
         .create_project(input)
@@ -87,6 +107,8 @@ async fn create_project_impl(
             aura_os_projects::ProjectError::InvalidInput(msg) => ApiError::bad_request(msg.clone()),
             _ => ApiError::internal(format!("creating project: {e}")),
         })?;
+    let project = normalize_project_workspace(state, &project);
+    ensure_local_shadow(state, &project);
     Ok((StatusCode::CREATED, Json(project)))
 }
 
@@ -174,7 +196,10 @@ pub(crate) async fn list_projects(
                         net.id.parse::<ProjectId>().ok().and_then(|project_id| {
                             state.project_service.get_project(&project_id).ok()
                         });
-                    let project = project_from_network(net, local.as_ref())?;
+                    let project = normalize_project_workspace(
+                        &state,
+                        &project_from_network(net, local.as_ref())?,
+                    );
                     ensure_local_shadow(&state, &project);
                     Ok(project)
                 })
@@ -186,6 +211,14 @@ pub(crate) async fn list_projects(
             .project_service
             .list_projects_by_org(org_id)
             .map_err(|e| ApiError::internal(format!("listing projects by org: {e}")))?;
+        let projects = projects
+            .iter()
+            .map(|project| {
+                let normalized = normalize_project_workspace(&state, project);
+                ensure_local_shadow(&state, &normalized);
+                normalized
+            })
+            .collect();
         return Ok(Json(projects));
     }
 
@@ -193,6 +226,14 @@ pub(crate) async fn list_projects(
         .project_service
         .list_projects()
         .map_err(|e| ApiError::internal(format!("listing projects: {e}")))?;
+    let projects = projects
+        .iter()
+        .map(|project| {
+            let normalized = normalize_project_workspace(&state, project);
+            ensure_local_shadow(&state, &normalized);
+            normalized
+        })
+        .collect();
     Ok(Json(projects))
 }
 
@@ -207,7 +248,10 @@ pub(crate) async fn get_project(
             .await
             .map_err(map_network_error)?;
         let local = state.project_service.get_project(&project_id).ok();
-        let project = project_from_network(&net_project, local.as_ref())?;
+        let project = normalize_project_workspace(
+            &state,
+            &project_from_network(&net_project, local.as_ref())?,
+        );
         ensure_local_shadow(&state, &project);
         return Ok(Json(project));
     }
@@ -219,6 +263,8 @@ pub(crate) async fn get_project(
             aura_os_projects::ProjectError::NotFound(_) => ApiError::not_found("project not found"),
             _ => ApiError::internal(format!("fetching project: {e}")),
         })?;
+    let project = normalize_project_workspace(&state, &project);
+    ensure_local_shadow(&state, &project);
     Ok(Json(project))
 }
 
@@ -265,11 +311,16 @@ pub(crate) async fn update_project(
             .update_project(&project_id.to_string(), &jwt, &net_req)
             .await
             .map_err(map_network_error)?;
-        let merged = project_from_network(&net_project, Some(&project))?;
+        let merged = normalize_project_workspace(
+            &state,
+            &project_from_network(&net_project, Some(&project))?,
+        );
         ensure_local_shadow(&state, &merged);
         return Ok(Json(merged));
     }
 
+    let project = normalize_project_workspace(&state, &project);
+    ensure_local_shadow(&state, &project);
     Ok(Json(project))
 }
 
