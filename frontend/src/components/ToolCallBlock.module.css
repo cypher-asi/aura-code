@@ -94,29 +94,13 @@
   color: var(--color-text, #fff);
 }
 
-/* Done: square with X */
+/* Done: green checkmark (Lucide icon) */
 .taskDone .taskCheck {
-  border-color: var(--color-text-muted, #666);
-}
-
-.taskDone .taskCheck::before,
-.taskDone .taskCheck::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  width: 7px;
-  height: 1.5px;
-  background: var(--color-text-muted, #666);
-  border-radius: 1px;
-}
-
-.taskDone .taskCheck::before {
-  transform: rotate(45deg);
-}
-
-.taskDone .taskCheck::after {
-  transform: rotate(-45deg);
+  border-color: var(--color-success, #4c9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-success, #4c9);
 }
 
 .taskDone .toolName {
@@ -263,7 +247,7 @@
 }
 
 .taskIndicatorIcon {
-  color: #4ade80;
+  color: var(--color-success, #4c9);
   flex-shrink: 0;
 }
 

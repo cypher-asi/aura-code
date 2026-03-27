@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import type { ToolCallEntry } from "../../types/stream";
 import { TOOL_LABELS, FILE_OPS } from "../../constants/tools";
 import { summarizeInput, formatResult } from "../../utils/format";
@@ -20,7 +20,7 @@ export function ToolCallBlock({
   const autoExpand = defaultExpanded ?? (isSpec && !entry.pending && !entry.started);
   const [expanded, setExpanded] = useState(autoExpand);
   const label = TOOL_LABELS[entry.name] || entry.name;
-  const inputSummary = entry.started ? "" : summarizeInput(entry.name, entry.input);
+  const inputSummary = (entry.started && !isTask) ? "" : summarizeInput(entry.name, entry.input);
   const isFileOp = FILE_OPS.has(entry.name);
 
   const stateClass = entry.pending
@@ -46,8 +46,9 @@ export function ToolCallBlock({
       return null;
     }
     if (isTask) {
+      if (!expanded) return null;
       return (
-        <div className={`${toolStyles.toolBodyWrap} ${toolStyles.noMaxHeight}`}>
+        <div className={`${toolStyles.toolBodyWrap} ${toolStyles.toolBodyExpanded} ${toolStyles.noMaxHeight}`}>
           <div className={toolStyles.toolBody}>
             <TaskCreatedIndicator entry={entry} />
           </div>
@@ -104,7 +105,9 @@ export function ToolCallBlock({
         onClick={() => setExpanded(!expanded)}
         type="button"
       >
-        <span className={toolStyles.taskCheck} />
+        <span className={toolStyles.taskCheck}>
+          {!entry.pending && !entry.isError && <Check size={10} strokeWidth={2.5} />}
+        </span>
         <span className={toolStyles.toolName}>{label}</span>
         {entry.isError && entry.result ? (
           <span className={toolStyles.headerErrorText}>
