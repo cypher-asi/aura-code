@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback, useMemo } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { api, isInsufficientCreditsError, dispatchInsufficientCredits } from "../../api/client";
 import { useSidekick } from "../../stores/sidekick-store";
@@ -7,7 +7,6 @@ import { useTaskOutput } from "../../stores/event-store";
 import { useTaskStatus } from "../../hooks/use-task-status";
 import { useTaskAgentInstances } from "../../hooks/use-task-agent-instances";
 import { useTaskStream } from "../../hooks/use-task-stream";
-import { parseTaskStream } from "../../utils/parse-task-stream";
 
 function useElapsedTime(active: boolean): number {
   const startRef = useRef<number | null>(null);
@@ -43,18 +42,12 @@ export function useTaskPreviewData(task: import("../../types").Task) {
   const isTerminal = effectiveStatus === "done" || effectiveStatus === "failed";
   const elapsed = useElapsedTime(isActive);
 
-  const streamBuf = taskOutput.text;
-  const liveFileOps = taskOutput.fileOps;
-
-  const hasOutput = isActive || isTerminal || !!streamBuf;
-  const parsed = useMemo(() => (hasOutput && streamBuf ? parseTaskStream(streamBuf) : null), [hasOutput, streamBuf]);
-
-  const fileOps = hasOutput
-    ? (liveFileOps.length > 0 ? liveFileOps : parsed?.fileOps ?? (task.files_changed ?? []))
+  const hasOutput = isActive || isTerminal;
+  const fileOps = taskOutput.fileOps.length > 0
+    ? taskOutput.fileOps
     : (task.files_changed ?? []);
-
-  const notes = hasOutput ? (parsed?.notes ?? task.execution_notes) : task.execution_notes;
-  const showNotes = hasOutput ? (parsed?.notes != null || !!task.execution_notes) : !!task.execution_notes;
+  const notes = task.execution_notes || null;
+  const showNotes = !!notes;
 
   const handleRetry = useCallback(async () => {
     if (!projectId || retrying) return;
