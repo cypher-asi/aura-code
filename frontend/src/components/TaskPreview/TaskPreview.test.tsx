@@ -119,9 +119,6 @@ vi.mock("../TaskOutputSection", () => ({
 }));
 
 vi.mock("../../utils/format", () => ({ toBullets: (s: string) => s }));
-vi.mock("../../utils/parse-task-stream", () => ({
-  parseTaskStream: () => ({ fileOps: [], notes: null }),
-}));
 vi.mock("../../utils/derive-activity", () => ({
   deriveActivity: () => [],
   computeIterationStats: () => null,
