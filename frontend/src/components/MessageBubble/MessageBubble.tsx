@@ -131,7 +131,7 @@ export const MessageBubble = memo(function MessageBubble({ message }: Props) {
                 isStreaming={false}
               />
             ) : (
-              <>
+              <div className={styles.fallbackStack}>
                 {hasThinking && message.thinkingText && (
                   <ThinkingRow
                     text={message.thinkingText}
@@ -145,7 +145,7 @@ export const MessageBubble = memo(function MessageBubble({ message }: Props) {
                 {hasContent && (
                   <SegmentedContent content={normalizedContent} />
                 )}
-              </>
+              </div>
             )}
             {hasArtifactRefs && message.artifactRefs && (
               <ArtifactRefsList refs={message.artifactRefs} />

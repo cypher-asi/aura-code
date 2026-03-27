@@ -17,11 +17,11 @@ export function ToolCallBlock({
 }) {
   const isSpec = entry.name === "create_spec" || entry.name === "update_spec";
   const isTask = entry.name === "create_task";
-  const autoExpand = defaultExpanded ?? (isSpec && !entry.pending && !entry.started);
+  const isFileOp = FILE_OPS.has(entry.name);
+  const autoExpand = isFileOp ? false : (defaultExpanded ?? (isSpec && !entry.pending && !entry.started));
   const [expanded, setExpanded] = useState(autoExpand);
   const label = TOOL_LABELS[entry.name] || entry.name;
   const inputSummary = (entry.started && !isTask) ? "" : summarizeInput(entry.name, entry.input);
-  const isFileOp = FILE_OPS.has(entry.name);
 
   const stateClass = entry.pending
     ? toolStyles.taskActive

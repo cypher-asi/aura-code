@@ -91,48 +91,6 @@ pub(crate) fn resolve_workspace_path(
     }
 }
 
-/// Build the list of domain tools to register with the harness session.
-///
-/// Each tool is backed by an HTTP callback to `POST /api/tool-callbacks/:project_id/:tool_name`.
-pub(crate) fn build_installed_tools(
-    server_base_url: &str,
-    project_id: &str,
-) -> Vec<aura_os_link::InstalledTool> {
-    let base = format!("{server_base_url}/api/tool-callbacks/{project_id}");
-    let none = aura_os_link::ToolAuth::None;
-    vec![
-        tool_def(&base, "get_project", "Get project details", serde_json::json!({"type":"object","properties":{}}), &none),
-        tool_def(&base, "update_project", "Update project name or description", serde_json::json!({"type":"object","properties":{"name":{"type":"string"},"description":{"type":"string"}}}), &none),
-        tool_def(&base, "create_spec", "Create a new spec", serde_json::json!({"type":"object","properties":{"title":{"type":"string"},"markdown_contents":{"type":"string"},"order_index":{"type":"integer"}},"required":["title"]}), &none),
-        tool_def(&base, "list_specs", "List all specs for the project", serde_json::json!({"type":"object","properties":{}}), &none),
-        tool_def(&base, "get_spec", "Get a spec by ID", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string"}},"required":["spec_id"]}), &none),
-        tool_def(&base, "update_spec", "Update spec title or contents", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string"},"title":{"type":"string"},"markdown_contents":{"type":"string"},"order_index":{"type":"integer"}},"required":["spec_id"]}), &none),
-        tool_def(&base, "delete_spec", "Delete a spec", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string"}},"required":["spec_id"]}), &none),
-        tool_def(&base, "create_task", "Create a new task under a spec", serde_json::json!({"type":"object","properties":{"spec_id":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"status":{"type":"string"},"order_index":{"type":"integer"}},"required":["spec_id","title"]}), &none),
-        tool_def(&base, "list_tasks", "List all tasks for the project", serde_json::json!({"type":"object","properties":{}}), &none),
-        tool_def(&base, "get_task", "Get a task by ID", serde_json::json!({"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"]}), &none),
-        tool_def(&base, "delete_task", "Delete a task", serde_json::json!({"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"]}), &none),
-    ]
-}
-
-fn tool_def(
-    base: &str,
-    name: &str,
-    description: &str,
-    input_schema: serde_json::Value,
-    auth: &aura_os_link::ToolAuth,
-) -> aura_os_link::InstalledTool {
-    aura_os_link::InstalledTool {
-        name: name.to_string(),
-        description: description.to_string(),
-        input_schema,
-        endpoint: format!("{base}/{name}"),
-        auth: auth.clone(),
-        timeout_ms: None,
-        namespace: None,
-        metadata: std::collections::HashMap::new(),
-    }
-}
 
 /// Fetch all agents from the network, returning a map by network agent ID.
 pub(crate) async fn resolve_network_agents(state: &AppState, jwt: &str) -> HashMap<String, Agent> {

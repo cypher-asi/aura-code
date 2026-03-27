@@ -894,8 +894,6 @@ pub(crate) async fn send_event_stream(
         &state.data_dir,
         project.as_ref().map(|p| p.name.as_str()).unwrap_or(""),
     );
-    let tools = super::conversions::build_installed_tools(&state.server_base_url, &pid_str);
-
     let config = SessionConfig {
         system_prompt: Some(system_prompt),
         agent_id: Some(instance.agent_id.to_string()),
@@ -905,8 +903,6 @@ pub(crate) async fn send_event_stream(
         conversation_messages,
         project_id: Some(pid_str),
         project_path: Some(workspace),
-        workspace: None,
-        installed_tools: Some(tools),
         ..Default::default()
     };
 

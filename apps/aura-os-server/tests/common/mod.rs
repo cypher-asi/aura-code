@@ -253,7 +253,6 @@ pub fn build_test_app_from_store(
         automaton_client: Arc::new(AutomatonClient::new("http://localhost:19080")),
         automaton_registry: Arc::new(Mutex::new(HashMap::new())),
         swarm_base_url,
-        server_base_url: "http://127.0.0.1:3100".to_string(),
     };
 
     let app = aura_os_server::create_router_with_frontend(state.clone(), None);
