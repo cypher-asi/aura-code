@@ -228,28 +228,14 @@ describe("MobileShell", () => {
     expect(screen.getByRole("button", { name: "Close drawer" })).toBeInTheDocument();
   });
 
-  it("shows the agent details action for a selected agent on mobile", () => {
+  it("does not show a separate agent details action on mobile library routes", () => {
     mockActiveApp.id = "agents";
     mockActiveApp.label = "Agents";
     mockActiveApp.basePath = "/agents";
-    mockActiveApp.PreviewPanel = () => <div data-testid="agent-preview" />;
 
     renderMobile("/agents/agent-1");
 
-    expect(screen.getByRole("button", { name: "Open agent details" })).toBeInTheDocument();
-  });
-
-  it("opens the preview drawer when the agent details action is tapped", async () => {
-    mockActiveApp.id = "agents";
-    mockActiveApp.label = "Agents";
-    mockActiveApp.basePath = "/agents";
-    mockActiveApp.PreviewPanel = () => <div data-testid="agent-preview" />;
-
-    const user = userEvent.setup();
-    renderMobile("/agents/agent-1");
-
-    await user.click(screen.getByRole("button", { name: "Open agent details" }));
-    expect(drawers.setPreviewOpen).toHaveBeenCalledWith(true);
+    expect(screen.queryByRole("button", { name: "Open agent details" })).not.toBeInTheDocument();
   });
 
   it("calls closeDrawers when backdrop is clicked", async () => {

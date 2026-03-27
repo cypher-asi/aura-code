@@ -11,15 +11,6 @@ const mocks = vi.hoisted(() => ({
   useSidebarSearch: vi.fn(),
   useAuraCapabilities: vi.fn(),
   useAgentStore: vi.fn(),
-  entries: {} as Record<string, unknown>,
-  useChatHistoryStore: Object.assign(
-    (selector: (state: { entries: Record<string, unknown> }) => unknown) => selector({ entries: {} }),
-    {
-      getState: () => ({
-        prefetchHistory: vi.fn(),
-      }),
-    },
-  ),
 }));
 Object.assign(mocks.useAgentStore, {
   getState: () => ({
@@ -60,9 +51,11 @@ vi.mock("../AgentConversationRow", () => ({
 vi.mock("../../../stores/profile-status-store", () => ({
   useProfileStatusStore: (selector: (state: {
     statuses: Record<string, string>;
+    registerAgents: (agents: unknown[]) => void;
     registerRemoteAgents: (agents: unknown[]) => void;
   }) => unknown) => selector({
     statuses: {},
+    registerAgents: vi.fn(),
     registerRemoteAgents: vi.fn(),
   }),
 }));
@@ -80,16 +73,10 @@ vi.mock("../../../api/client", () => ({
 }));
 
 vi.mock("../stores", () => ({
-  LAST_AGENT_ID_KEY: "aura:lastAgentId",
   useAgents: () => mocks.useAgents(),
   useSelectedAgent: () => mocks.useSelectedAgent(),
   useAgentStore: mocks.useAgentStore,
   useSortedAgents: () => mocks.useSortedAgents(),
-}));
-
-vi.mock("../../../stores/chat-history-store", () => ({
-  useChatHistoryStore: mocks.useChatHistoryStore,
-  agentHistoryKey: (agentId: string) => `agent:${agentId}`,
 }));
 
 vi.mock("../../../context/SidebarSearchContext", () => ({

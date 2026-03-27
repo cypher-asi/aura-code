@@ -5,7 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { ErrorBoundary } from "../ErrorBoundary";
 import {
   ArrowLeft, ChevronDown, CircleUserRound,
-  Settings, Building2, Server, FolderOpen, Bot, GitCommitVertical, Gem, Menu, SlidersHorizontal,
+  Settings, Building2, Server, FolderOpen, Bot, GitCommitVertical, Gem, Menu,
 } from "lucide-react";
 import { PanelSearch } from "../PanelSearch";
 import { UpdateBanner } from "../UpdateBanner";
@@ -335,12 +335,8 @@ function PreviewSheetContent({ PreviewPanel, PreviewHeader }: { PreviewPanel: Re
 
 function MobileTopbar({
   state,
-  showPreviewAction,
-  onOpenPreview,
 }: {
   state: ReturnType<typeof useMobileShellState>;
-  showPreviewAction: boolean;
-  onOpenPreview: () => void;
 }) {
   const navigate = useNavigate();
   const setNavOpen = useMobileDrawerStore((s) => s.setNavOpen);
@@ -352,7 +348,16 @@ function MobileTopbar({
       className={styles.mobileTopbar}
       icon={
         <div className={styles.mobileTopbarSlot}>
-          {state.showProjectBack && state.currentProjectId ? (
+          {state.isStandaloneAgentDetailRoute ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              icon={<ArrowLeft size={18} />}
+              aria-label="Back to agent library"
+              onClick={() => navigate("/agents")}
+            />
+          ) : state.showProjectBack && state.currentProjectId ? (
             <Button
               variant="ghost"
               size="sm"
@@ -397,16 +402,6 @@ function MobileTopbar({
       }
       actions={
         <div className={styles.mobileTopbarActions}>
-          {showPreviewAction && (
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              icon={<SlidersHorizontal size={18} />}
-              aria-label="Open agent details"
-              onClick={onOpenPreview}
-            />
-          )}
           <Button variant="ghost" size="sm" iconOnly icon={<CircleUserRound size={18} />} aria-label="Open account" onClick={() => setAccountOpen(true)} />
         </div>
       }
@@ -437,9 +432,6 @@ export function MobileShell() {
     || state.mobileDestination === "stats"
     ? state.mobileDestination
     : null;
-  const showPreviewAction = state.activeApp.id === "agents"
-    && Boolean(PreviewPanel)
-    && /^\/agents\/[^/]+$/.test(state.location.pathname);
   const previewDrawerTitle = state.activeApp.id === "agents" ? "Agent details" : "Preview";
 
   useMobileDrawerEffects(Boolean(PreviewPanel));
@@ -454,15 +446,13 @@ export function MobileShell() {
   return (
     <>
       <div className={`${styles.mobileShell} ${overlayDrawerOpen ? styles.mobileShellDimmed : ""}`}>
-        <MobileTopbar
-          state={state}
-          showPreviewAction={showPreviewAction}
-          onOpenPreview={() => setPreviewOpen(true)}
-        />
+        <MobileTopbar state={state} />
         <UpdateBanner />
         <div className={styles.mobileMain}>
           {state.showProjectResponsiveControls && ResponsiveControls && <div className={styles.mobileResponsiveControls}><ResponsiveControls /></div>}
-          <div className={styles.mobileMainPanel}><ErrorBoundary name="main"><MainPanel>{routeContent}</MainPanel></ErrorBoundary></div>
+          {!state.isStandaloneAgentLibraryRoot && (
+            <div className={styles.mobileMainPanel}><ErrorBoundary name="main"><MainPanel>{routeContent}</MainPanel></ErrorBoundary></div>
+          )}
         </div>
         {!drawerOpen && state.showProjectTitle && (
           <div className={styles.mobileBottomNav}>

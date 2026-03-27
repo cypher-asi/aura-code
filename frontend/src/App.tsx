@@ -59,7 +59,7 @@ export default function App() {
             </Route>
 
             <Route path="agents" element={<AgentIndexRedirect />} />
-            <Route path="agents/:agentId" element={<AgentChatView />} />
+            <Route path="agents/:agentId" element={null} />
 
             <Route path="leaderboard" element={null} />
             <Route path="feed" element={null} />
