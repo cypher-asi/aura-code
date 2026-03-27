@@ -1,6 +1,17 @@
 import { render, screen } from "@testing-library/react";
 import type { Agent } from "../../../types";
-import type { DisplaySessionEvent } from "../../../types/stream";
+
+vi.mock("../../../components/Avatar", () => ({
+  Avatar: ({ name }: { name: string }) => <div>{name}</div>,
+}));
+
+vi.mock("../../../hooks/use-avatar-state", () => ({
+  useAvatarState: () => ({
+    status: "idle",
+    isLocal: false,
+  }),
+}));
+
 import { AgentConversationRow } from "./AgentConversationRow";
 
 const baseAgent: Agent = {
@@ -17,43 +28,32 @@ const baseAgent: Agent = {
   updated_at: "2026-03-20T00:00:00Z",
 };
 
-const lastMessage: DisplaySessionEvent = {
-  id: "evt-1",
-  role: "assistant",
-  content: "Latest chat reply",
-} as DisplaySessionEvent;
-
 describe("AgentConversationRow", () => {
-  it("shows the agent summary instead of the last chat message", () => {
+  it("shows the agent role and summary without any chat preview", () => {
     render(
       <AgentConversationRow
         agent={baseAgent}
-        lastMessage={lastMessage}
         isSelected={false}
         onClick={() => {}}
         onContextMenu={() => {}}
-        onMouseOver={() => {}}
       />,
     );
 
-    expect(screen.getByText("Rose")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Rose/i })).toBeInTheDocument();
     expect(screen.getByText("Architect")).toBeInTheDocument();
     expect(screen.getByText("Plans features end to end.")).toBeInTheDocument();
-    expect(screen.queryByText("Latest chat reply")).not.toBeInTheDocument();
   });
 
-  it("falls back to the latest message when the agent has no summary fields", () => {
+  it("falls back to a generic prompt when the agent has no summary fields", () => {
     render(
       <AgentConversationRow
         agent={{ ...baseAgent, role: "", personality: "" }}
-        lastMessage={lastMessage}
         isSelected={false}
         onClick={() => {}}
         onContextMenu={() => {}}
-        onMouseOver={() => {}}
       />,
     );
 
-    expect(screen.getByText("Latest chat reply")).toBeInTheDocument();
+    expect(screen.getByText("Open this agent")).toBeInTheDocument();
   });
 });
