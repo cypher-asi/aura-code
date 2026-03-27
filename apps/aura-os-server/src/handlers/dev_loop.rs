@@ -211,7 +211,6 @@ pub(crate) async fn start_loop(
         .unwrap_or_else(|_| "local".to_string());
     let project_path = resolve_workspace_path(
         &machine_type,
-        &project_id.to_string(),
         project_folder.as_deref(),
         &state.data_dir,
         project_name,
@@ -439,7 +438,6 @@ pub(crate) async fn run_single_task(
         .unwrap_or_else(|_| "local".to_string());
     let project_path = resolve_workspace_path(
         &machine_type,
-        &project_id.to_string(),
         project_folder.as_deref(),
         &state.data_dir,
         project_name,

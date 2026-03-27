@@ -887,7 +887,6 @@ pub(crate) async fn send_event_stream(
     let project = state.project_service.get_project(&project_id).ok();
     let workspace = super::conversions::resolve_workspace_path(
         &instance.machine_type,
-        &pid_str,
         project.as_ref().map(|p| p.linked_folder_path.as_str()),
         &state.data_dir,
         project.as_ref().map(|p| p.name.as_str()).unwrap_or(""),

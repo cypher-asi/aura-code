@@ -182,7 +182,7 @@ pub(crate) fn canonical_workspace_path(data_dir: &std::path::Path, project_name:
     data_dir.join("workspaces").join(&slug)
 }
 
-fn slugify(name: &str) -> String {
+pub(crate) fn slugify(name: &str) -> String {
     let s = name
         .trim()
         .to_lowercase()
