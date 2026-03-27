@@ -16,6 +16,7 @@ export const AgentsApp: AuraApp = {
   MainPanel: AgentMainPanel,
   ResponsiveControls: AgentList,
   SidekickPanel: AgentInfoPanel,
+  PreviewPanel: AgentInfoPanel,
   searchPlaceholder: "Search Agents...",
   onPrefetch: () => {
     useAgentStore.getState().fetchAgents().catch(() => {});
