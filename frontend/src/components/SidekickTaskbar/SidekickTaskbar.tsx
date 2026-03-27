@@ -1,7 +1,7 @@
 import { useState, useRef, useLayoutEffect, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Button, Menu } from "@cypher-asi/zui";
-import { Archive, Info, Ellipsis, File, Check, Logs, ChartNoAxesColumnIncreasing, MonitorCog, Code } from "lucide-react";
+import { Archive, Info, Ellipsis, File, Check, Logs, ChartNoAxesColumnIncreasing, MonitorCog, FolderClosed } from "lucide-react";
 import { useSidekick, type SidekickTab } from "../../stores/sidekick-store";
 import { useProjectContext } from "../../stores/project-action-store";
 import { useClickOutside } from "../../hooks/use-click-outside";
@@ -15,7 +15,7 @@ const TAB_ICONS: { id: SidekickTab; icon: React.ReactNode; title: string }[] = [
   { id: "stats", icon: <ChartNoAxesColumnIncreasing size={16} />, title: "Stats" },
   { id: "log", icon: <Logs size={16} />, title: "Log" },
   { id: "sessions", icon: <MonitorCog size={16} />, title: "Sessions" },
-  { id: "files", icon: <Code size={16} />, title: "Files" },
+  { id: "files", icon: <FolderClosed size={16} />, title: "Files" },
 ];
 
 export function SidekickTaskbar() {
