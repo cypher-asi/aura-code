@@ -4,6 +4,7 @@ import { EmptyState } from "../EmptyState";
 import { Avatar } from "../Avatar";
 import type { AgentInstance } from "../../types";
 import { AgentEditorModal } from "../AgentEditorModal";
+import { useAvatarState } from "../../hooks/use-avatar-state";
 import { useAgentSelectorData } from "./useAgentSelectorData";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import styles from "./AgentSelectorModal.module.css";
@@ -13,6 +14,42 @@ interface AgentSelectorModalProps {
   projectId: string;
   onClose: () => void;
   onCreated: (instance: AgentInstance) => void;
+}
+
+interface AgentCardProps {
+  agent: {
+    agent_id: string;
+    icon: string | null;
+    name: string;
+    role: string;
+  };
+  creating: string | null;
+  onSelect: () => void;
+}
+
+function AgentCard({ agent, creating, onSelect }: AgentCardProps) {
+  const { status, isLocal } = useAvatarState(agent.agent_id);
+
+  return (
+    <button
+      className={styles.card}
+      onClick={onSelect}
+      disabled={!!creating}
+    >
+      <div className={styles.cardIcon}>
+        <Avatar
+          avatarUrl={agent.icon ?? undefined}
+          name={agent.name}
+          type="agent"
+          size={48}
+          status={status}
+          isLocal={isLocal}
+        />
+      </div>
+      <div className={styles.cardName}>{agent.name}</div>
+      {agent.role && <div className={styles.cardRole}>{agent.role}</div>}
+    </button>
+  );
 }
 
 export function AgentSelectorModal({ isOpen, projectId, onClose, onCreated }: AgentSelectorModalProps) {
@@ -60,23 +97,12 @@ export function AgentSelectorModal({ isOpen, projectId, onClose, onCreated }: Ag
           ) : (
             <div className={styles.grid}>
               {visibleAgents.map((agent) => (
-                <button
+                <AgentCard
                   key={agent.agent_id}
-                  className={styles.card}
-                  onClick={() => handleSelect(agent)}
-                  disabled={!!creating}
-                >
-                  <div className={styles.cardIcon}>
-                    <Avatar
-                      avatarUrl={agent.icon ?? undefined}
-                      name={agent.name}
-                      type="agent"
-                      size={48}
-                    />
-                  </div>
-                  <div className={styles.cardName}>{agent.name}</div>
-                  {agent.role && <div className={styles.cardRole}>{agent.role}</div>}
-                </button>
+                  agent={agent}
+                  creating={creating}
+                  onSelect={() => handleSelect(agent)}
+                />
               ))}
             </div>
           )}

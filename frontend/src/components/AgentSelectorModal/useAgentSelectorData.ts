@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../../api/client";
 import type { Agent, AgentInstance } from "../../types";
+import { useProfileStatusStore } from "../../stores/profile-status-store";
 
 interface AgentSelectorData {
   agents: Agent[];
@@ -22,6 +23,8 @@ export function useAgentSelectorData(
   onCreated: (instance: AgentInstance) => void,
   onClose: () => void,
 ): AgentSelectorData {
+  const registerAgents = useProfileStatusStore((s) => s.registerAgents);
+  const registerRemote = useProfileStatusStore((s) => s.registerRemoteAgents);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
@@ -42,6 +45,13 @@ export function useAgentSelectorData(
   useEffect(() => {
     if (isOpen) fetchAgents();
   }, [isOpen, fetchAgents]);
+
+  useEffect(() => {
+    if (agents.length === 0) return;
+    registerAgents(agents.map((a) => ({ id: a.agent_id, machineType: a.machine_type })));
+    const remote = agents.filter((a) => a.machine_type === "remote" && a.network_agent_id);
+    if (remote.length > 0) registerRemote(remote);
+  }, [agents, registerAgents, registerRemote]);
 
   const handleSelect = useCallback(async (agent: Agent) => {
     setCreating(agent.agent_id);
