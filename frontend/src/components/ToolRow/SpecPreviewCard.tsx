@@ -27,22 +27,26 @@ export function SpecPreviewCard({ entry }: { entry: ToolCallEntry }) {
         <span className={fileStyles.fileName}>{title}</span>
         <span className={fileStyles.badge}>Spec</span>
       </div>
-      <div className={`${fileStyles.codeArea} ${!expanded && needsCollapse ? fileStyles.collapsed : ""}`}>
-        <pre>
-          <code
-            className="hljs language-markdown"
-            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-          />
-        </pre>
-      </div>
-      {needsCollapse && (
-        <button
-          type="button"
-          className={fileStyles.toggleBtn}
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? "Show less" : `Show all ${lines.length} lines`}
-        </button>
+      {content.trim() && (
+        <>
+          <div className={`${fileStyles.codeArea} ${!expanded && needsCollapse ? fileStyles.collapsed : ""}`}>
+            <pre>
+              <code
+                className="hljs language-markdown"
+                dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+              />
+            </pre>
+          </div>
+          {needsCollapse && (
+            <button
+              type="button"
+              className={fileStyles.toggleBtn}
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? "Show less" : `Show all ${lines.length} lines`}
+            </button>
+          )}
+        </>
       )}
       {entry.isError && entry.result && (
         <div className={toolStyles.inlineError}>
