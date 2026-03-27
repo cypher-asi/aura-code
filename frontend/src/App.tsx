@@ -17,10 +17,20 @@ import { ProjectRootRedirectView } from "./views/ProjectRootRedirectView/Project
 import { ProjectWorkView } from "./views/ProjectWorkView";
 import { ProjectFilesView } from "./views/ProjectFilesView";
 import { ProjectStatsView } from "./views/ProjectStatsView";
+import { apps } from "./apps/registry";
+import { getLastApp } from "./utils/storage";
 
 import "./stores/event-store";
 import "./stores/follow-store";
 import "./stores/profile-status-store";
+
+const DEFAULT_APP_PATH = "/agents";
+
+function LastAppRedirect() {
+  const lastAppId = getLastApp();
+  const target = lastAppId ? apps.find((a) => a.id === lastAppId) : null;
+  return <Navigate to={target?.basePath ?? DEFAULT_APP_PATH} replace />;
+}
 
 export default function App() {
   const restoreSession = useAuthStore((s) => s.restoreSession);
@@ -34,7 +44,7 @@ export default function App() {
         <Route element={<RequireAuth />}>
           <Route path="invite/:token" element={<InviteAcceptView />} />
           <Route element={<AppShell />}>
-            <Route index element={<Navigate to="/agents" replace />} />
+            <Route index element={<LastAppRedirect />} />
 
             <Route path="projects" element={<HomeView />} />
             <Route path="projects/settings" element={<SettingsView />} />

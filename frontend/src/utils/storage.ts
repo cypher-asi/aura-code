@@ -1,4 +1,4 @@
-import { LAST_AGENT_KEY, LAST_PROJECT_KEY } from "../constants";
+import { LAST_AGENT_KEY, LAST_APP_KEY, LAST_PROJECT_KEY } from "../constants";
 
 type LastAgentMap = Record<string, string>;
 
@@ -29,6 +29,14 @@ export function setLastAgent(projectId: string, agentInstanceId: string): void {
   const map = getMap();
   map[projectId] = agentInstanceId;
   localStorage.setItem(LAST_AGENT_KEY, JSON.stringify(map));
+}
+
+export function getLastApp(): string | null {
+  return localStorage.getItem(LAST_APP_KEY);
+}
+
+export function setLastApp(appId: string): void {
+  localStorage.setItem(LAST_APP_KEY, appId);
 }
 
 export function getLastProject(): string | null {
