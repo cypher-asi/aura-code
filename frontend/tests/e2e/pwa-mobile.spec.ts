@@ -270,7 +270,6 @@ test("mobile global app switcher opens feed, leaderboard, and profile", async ({
 
   await page.getByRole("button", { name: "Agent library" }).click();
   await expect(page).toHaveURL(/\/agents$/);
-  await expect(page.getByText("Select an agent from your library.")).toBeVisible();
   await expect(page.getByText("Builder Bot")).toBeVisible();
   await expect(page.getByText("Helpful")).toBeVisible();
   await expect(page.getByPlaceholder("Add a follow-up")).toHaveCount(0);
@@ -299,22 +298,21 @@ test("mobile agent library toggles the selected standalone chat open and closed"
   await page.goto("/agents");
 
   await expect(page).toHaveURL(/\/agents$/);
-  await expect(page.getByText("Select an agent from your library.")).toBeVisible();
+  await expect(page.getByText("Builder Bot")).toBeVisible();
 
   await page.getByRole("button", { name: /Builder Bot/i }).click();
   await expect(page).toHaveURL(/\/agents\/agent-1$/);
+  await expect(page.getByText("Personality")).toBeVisible();
+  await expect(page.getByText("Builder Bot")).toHaveCount(1);
 
-  await page.getByRole("button", { name: /Builder Bot/i }).click();
+  await page.getByRole("button", { name: "Back to agent library" }).click();
   await expect(page).toHaveURL(/\/agents$/);
-  await expect(page.getByText("Select an agent from your library.")).toBeVisible();
+  await expect(page.getByText("Personality")).toHaveCount(0);
 });
 
-test("mobile agent library opens the agent details sheet", async ({ page }) => {
+test("mobile agent library opens the agent details view directly", async ({ page }) => {
   await mockAuthenticatedMobileApp(page);
   await page.goto("/agents/agent-1");
-
-  await expect(page.getByRole("button", { name: "Open agent details" })).toBeVisible();
-  await page.getByRole("button", { name: "Open agent details" }).click();
 
   await expect(page.getByText("Personality")).toBeVisible();
   await expect(page.getByText("System Prompt")).toBeVisible();
