@@ -1,9 +1,11 @@
+import { useMemo } from "react";
 import { Modal, Button, Spinner, Text } from "@cypher-asi/zui";
 import { EmptyState } from "../EmptyState";
 import { Avatar } from "../Avatar";
 import type { AgentInstance } from "../../types";
 import { AgentEditorModal } from "../AgentEditorModal";
 import { useAgentSelectorData } from "./useAgentSelectorData";
+import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import styles from "./AgentSelectorModal.module.css";
 
 interface AgentSelectorModalProps {
@@ -14,19 +16,24 @@ interface AgentSelectorModalProps {
 }
 
 export function AgentSelectorModal({ isOpen, projectId, onClose, onCreated }: AgentSelectorModalProps) {
+  const { isMobileLayout } = useAuraCapabilities();
   const {
     agents, loading, creating, error, showEditor, setShowEditor,
     handleSelect, handleAgentSaved, handleClose,
   } = useAgentSelectorData(isOpen, projectId, onCreated, onClose);
+  const visibleAgents = useMemo(
+    () => (isMobileLayout ? agents.filter((agent) => agent.machine_type === "remote") : agents),
+    [agents, isMobileLayout],
+  );
 
   return (
     <>
       <Modal
         isOpen={isOpen}
         onClose={handleClose}
-        title="Add Agent to Project"
+        title={isMobileLayout ? "Add Remote Agent to Project" : "Add Agent to Project"}
         size="md"
-        footer={agents.length > 0 ? (
+        footer={visibleAgents.length > 0 ? (
           <Button variant="ghost" onClick={() => setShowEditor(true)} disabled={!!creating}>
             + Create New Agent
           </Button>
@@ -37,9 +44,13 @@ export function AgentSelectorModal({ isOpen, projectId, onClose, onCreated }: Ag
             <div className={styles.loadingWrap}>
               <Spinner size="sm" />
             </div>
-          ) : agents.length === 0 ? (
+          ) : visibleAgents.length === 0 ? (
             <div className={styles.emptyState}>
-              <EmptyState>No agents yet. Create one to get started.</EmptyState>
+              <EmptyState>
+                {isMobileLayout
+                  ? "No remote agents yet. Create one to get started."
+                  : "No agents yet. Create one to get started."}
+              </EmptyState>
               <div className={styles.emptyActions}>
                 <Button variant="primary" onClick={() => setShowEditor(true)} disabled={!!creating}>
                   Create New Agent
@@ -48,7 +59,7 @@ export function AgentSelectorModal({ isOpen, projectId, onClose, onCreated }: Ag
             </div>
           ) : (
             <div className={styles.grid}>
-              {agents.map((agent) => (
+              {visibleAgents.map((agent) => (
                 <button
                   key={agent.agent_id}
                   className={styles.card}

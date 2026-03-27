@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "../../api/client";
 import type { Agent } from "../../types";
 import { useModalInitialFocus } from "../../hooks/use-modal-initial-focus";
+import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 
 interface AgentEditorFormResult {
   name: string;
@@ -34,6 +35,7 @@ export function useAgentEditorForm(
   onClose: () => void,
   onSaved: (agent: Agent) => void,
 ): AgentEditorFormResult {
+  const { isMobileLayout } = useAuraCapabilities();
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [personality, setPersonality] = useState("");
@@ -55,10 +57,10 @@ export function useAgentEditorForm(
       setMachineType(agent.machine_type ?? "local");
     } else {
       setName(""); setRole(""); setPersonality(""); setSystemPrompt(""); setIcon("");
-      setMachineType("local");
+      setMachineType(isMobileLayout ? "remote" : "local");
     }
     setError(""); setNameError("");
-  }, [isOpen, agent]);
+  }, [isOpen, agent, isMobileLayout]);
 
   const handleClose = useCallback(() => {
     setError(""); setNameError(""); setSaving(false); onClose();
@@ -91,7 +93,7 @@ export function useAgentEditorForm(
         name: name.trim(), role: role.trim(),
         personality: personality.trim(), system_prompt: systemPrompt.trim(),
         icon: icon || (agent?.icon ? null : undefined),
-        machine_type: machineType,
+        machine_type: !agent && isMobileLayout ? "remote" : machineType,
       };
       const saved = agent
         ? await api.agents.update(agent.agent_id, payload)
@@ -100,7 +102,7 @@ export function useAgentEditorForm(
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save agent");
     } finally { setSaving(false); }
-  }, [name, role, personality, systemPrompt, icon, machineType, agent, onSaved, onClose]);
+  }, [name, role, personality, systemPrompt, icon, machineType, agent, isMobileLayout, onSaved, onClose]);
 
   return {
     name, setName, role, setRole, personality, setPersonality,

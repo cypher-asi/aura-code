@@ -1,6 +1,8 @@
 import { renderHook, act } from "@testing-library/react";
 import { useNewProjectForm } from "./use-new-project-form";
 
+const mockUseAuraCapabilities = vi.fn();
+
 vi.mock("../stores/org-store", () => ({
   useOrgStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
@@ -44,6 +46,10 @@ vi.mock("./use-orbit-repos", () => ({
   }),
 }));
 
+vi.mock("./use-aura-capabilities", () => ({
+  useAuraCapabilities: () => mockUseAuraCapabilities(),
+}));
+
 vi.mock("../api/client", () => ({
   api: {
     createProject: vi.fn(),
@@ -61,6 +67,7 @@ describe("useNewProjectForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    mockUseAuraCapabilities.mockReturnValue({ isMobileLayout: false });
   });
 
   it("returns initial state with empty form fields", () => {
@@ -174,5 +181,21 @@ describe("useNewProjectForm", () => {
     });
 
     expect(result.current.environment).toBe("local");
+  });
+
+  it("keeps mobile projects remote-only even if local is requested", () => {
+    mockUseAuraCapabilities.mockReturnValue({ isMobileLayout: true });
+
+    const { result } = renderHook(() =>
+      useNewProjectForm(true, mockOnClose, mockOnCreated),
+    );
+
+    expect(result.current.environment).toBe("remote");
+
+    act(() => {
+      result.current.setEnvironment("local");
+    });
+
+    expect(result.current.environment).toBe("remote");
   });
 });

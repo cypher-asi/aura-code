@@ -2,6 +2,7 @@ import { Modal, Input, Button, Spinner, Text } from "@cypher-asi/zui";
 import { PathInput } from "../PathInput";
 import { useModalInitialFocus } from "../../hooks/use-modal-initial-focus";
 import { useNewProjectForm } from "../../hooks/use-new-project-form";
+import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import type { EnvironmentType } from "../../hooks/use-new-project-form";
 import styles from "./NewProjectModal.module.css";
 
@@ -43,6 +44,7 @@ function EnvironmentToggle({
 
 export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalProps) {
   const { inputRef: nameInputRef, initialFocusRef } = useModalInitialFocus<HTMLInputElement>();
+  const { isMobileLayout } = useAuraCapabilities();
   const form = useNewProjectForm(isOpen, onClose, onCreated);
 
   return (
@@ -84,13 +86,18 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
         />
 
         <div className={styles.fieldGroup}>
-          <Text size="sm" className={styles.fieldLabel}>Linked folder</Text>
+          <Text size="sm" className={styles.fieldLabel}>{isMobileLayout ? "Project path" : "Linked folder"}</Text>
           <PathInput
             value={form.folderPath}
             onChange={form.setFolderPath}
             placeholder="p/project-name"
             mode="folder"
           />
+          {isMobileLayout && (
+            <Text variant="muted" size="sm">
+              Mobile projects use remote Aura Swarm agents, not your device filesystem.
+            </Text>
+          )}
         </div>
 
         <div className={styles.fieldGroup}>
@@ -106,7 +113,16 @@ export function NewProjectModal({ isOpen, onClose, onCreated }: NewProjectModalP
           )}
         </div>
 
-        <EnvironmentToggle value={form.environment} onChange={form.setEnvironment} />
+        {isMobileLayout ? (
+          <div className={styles.fieldGroup}>
+            <Text size="sm" className={styles.fieldLabel}>Environment</Text>
+            <Text variant="muted" size="sm">
+              Remote only on mobile.
+            </Text>
+          </div>
+        ) : (
+          <EnvironmentToggle value={form.environment} onChange={form.setEnvironment} />
+        )}
 
         {form.error && (
           <Text variant="muted" size="sm" className={styles.dangerText}>
