@@ -42,7 +42,6 @@ export function useTaskPreviewData(task: import("../../types").Task) {
   const isTerminal = effectiveStatus === "done" || effectiveStatus === "failed";
   const elapsed = useElapsedTime(isActive);
 
-  const hasOutput = isActive || isTerminal;
   const fileOps = taskOutput.fileOps.length > 0
     ? taskOutput.fileOps
     : (task.files_changed ?? []);

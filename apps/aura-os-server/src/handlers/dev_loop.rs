@@ -8,6 +8,7 @@ use aura_os_core::{AgentInstanceId, ProjectId, TaskId};
 use aura_os_link::{AutomatonStartError, AutomatonStartParams};
 
 use super::agents::conversions_pub::resolve_workspace_path;
+use super::projects_helpers::optional_jwt;
 use crate::dto::LoopStatusResponse;
 use crate::error::{ApiError, ApiResult};
 use crate::state::{ActiveAutomaton, AppState, AutomatonRegistry};
@@ -199,7 +200,7 @@ pub(crate) async fn start_loop(
         .agent_instance_id
         .unwrap_or_else(AgentInstanceId::new);
 
-    let jwt = state.get_jwt().ok();
+    let jwt = optional_jwt(&state);
     let project = state.project_service.get_project(&project_id).ok();
     let project_folder = project.as_ref().map(|p| p.linked_folder_path.clone());
     let project_name = project.as_ref().map(|p| p.name.as_str()).unwrap_or("");
@@ -426,7 +427,7 @@ pub(crate) async fn run_single_task(
         .agent_instance_id
         .unwrap_or_else(AgentInstanceId::new);
 
-    let jwt = state.get_jwt().ok();
+    let jwt = optional_jwt(&state);
     let project = state.project_service.get_project(&project_id).ok();
     let project_folder = project.as_ref().map(|p| p.linked_folder_path.clone());
     let project_name = project.as_ref().map(|p| p.name.as_str()).unwrap_or("");

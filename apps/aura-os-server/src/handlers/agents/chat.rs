@@ -17,8 +17,9 @@ use crate::dto::SendChatRequest;
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::projects;
 use crate::state::{AppState, ChatSession};
+use super::super::projects_helpers::{optional_jwt, with_optional_jwt};
 
-use super::conversions::events_to_session_history;
+use super::conversions::{events_to_session_history, resolve_workspace_path};
 
 // ---------------------------------------------------------------------------
 // Chat persistence helpers
@@ -238,7 +239,7 @@ async fn setup_project_chat_persistence(
     agent_instance_id: &AgentInstanceId,
 ) -> Option<ChatPersistCtx> {
     let storage = state.storage_client.as_ref()?.clone();
-    let jwt = state.get_jwt().ok()?;
+    let jwt = optional_jwt(state)?;
     let pai = agent_instance_id.to_string();
     let pid = project_id.to_string();
     let session_id = resolve_chat_session(&storage, &jwt, &pai, &pid).await?;
@@ -737,16 +738,14 @@ pub(crate) async fn send_agent_event_stream(
         None
     };
 
-    let jwt = state.get_jwt().ok();
-    let config = SessionConfig {
+    let config = with_optional_jwt(&state, SessionConfig {
         system_prompt: Some(agent.system_prompt.clone()),
         agent_id: Some(agent_id.to_string()),
         agent_name: Some(agent.name.clone()),
         model: body.model.clone(),
-        token: jwt,
         conversation_messages,
         ..Default::default()
-    };
+    });
 
     open_harness_chat_stream(&state, &session_key, agent.harness_mode(), config, body.content, body.model, persist_ctx).await
 }
@@ -801,29 +800,30 @@ pub(crate) async fn send_event_stream(
         None
     };
 
-    let jwt = state.get_jwt().ok();
     let pid_str = project_id.to_string();
 
     let system_prompt = build_project_system_prompt(&state, &project_id, &instance.system_prompt);
 
-    let project_path = state
-        .project_service
-        .get_project(&project_id)
-        .ok()
-        .map(|p| p.linked_folder_path)
-        .filter(|s| !s.is_empty());
+    let project = state.project_service.get_project(&project_id).ok();
+    let project_folder = project.as_ref().map(|p| p.linked_folder_path.as_str());
+    let project_name = project.as_ref().map(|p| p.name.as_str()).unwrap_or("");
+    let project_path = Some(resolve_workspace_path(
+        &instance.machine_type,
+        project_folder,
+        &state.data_dir,
+        project_name,
+    ));
 
-    let config = SessionConfig {
+    let config = with_optional_jwt(&state, SessionConfig {
         system_prompt: Some(system_prompt),
         agent_id: Some(instance.agent_id.to_string()),
         agent_name: Some(instance.name.clone()),
         model: body.model.clone(),
-        token: jwt,
         conversation_messages,
         project_id: Some(pid_str),
         project_path,
         ..Default::default()
-    };
+    });
 
     open_harness_chat_stream(&state, &session_key, instance.harness_mode(), config, body.content, body.model, persist_ctx).await
 }

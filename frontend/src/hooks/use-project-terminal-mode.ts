@@ -1,30 +1,41 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { AgentInstance, ProjectId } from "../types";
 
-interface ProjectTerminalMode {
+export type TerminalModeStatus = "loading" | "ready" | "error";
+
+export interface ProjectTerminalMode {
   remoteAgentId: string | undefined;
-  resolved: boolean;
+  status: TerminalModeStatus;
 }
 
 /**
- * Returns the agent template ID of the first remote agent instance
- * assigned to the project (if any). `resolved` is false until the
- * check completes so callers can avoid spawning a terminal prematurely.
+ * Resolves whether a project should use a remote agent terminal or a local one.
+ *
+ * Returns `status: "ready"` only after the check completes so callers can gate
+ * side-effects (like `setRemoteAgentId`) and avoid acting on stale / transient
+ * values.  While a re-fetch is in-flight for the *same* project the previous
+ * resolved value is preserved, preventing unnecessary terminal resets.
  */
 export function useProjectTerminalMode(projectId: ProjectId | undefined): ProjectTerminalMode {
   const [state, setState] = useState<ProjectTerminalMode>({
     remoteAgentId: undefined,
-    resolved: false,
+    status: "loading",
   });
+
+  const lastResolvedProjectId = useRef<ProjectId | undefined>(undefined);
 
   useEffect(() => {
     if (!projectId) {
-      setState({ remoteAgentId: undefined, resolved: true });
+      lastResolvedProjectId.current = undefined;
+      setState({ remoteAgentId: undefined, status: "ready" });
       return;
     }
 
-    setState((s) => (s.resolved ? { ...s, resolved: false } : s));
+    const isSameProject = lastResolvedProjectId.current === projectId;
+    if (!isSameProject) {
+      setState((prev) => ({ ...prev, status: "loading" }));
+    }
 
     let cancelled = false;
 
@@ -33,10 +44,13 @@ export function useProjectTerminalMode(projectId: ProjectId | undefined): Projec
       .then((instances: AgentInstance[]) => {
         if (cancelled) return;
         const remote = instances.find((i) => i.machine_type === "remote");
-        setState({ remoteAgentId: remote?.agent_id, resolved: true });
+        lastResolvedProjectId.current = projectId;
+        setState({ remoteAgentId: remote?.agent_id, status: "ready" });
       })
       .catch(() => {
-        if (!cancelled) setState({ remoteAgentId: undefined, resolved: true });
+        if (cancelled) return;
+        lastResolvedProjectId.current = projectId;
+        setState({ remoteAgentId: undefined, status: "error" });
       });
 
     return () => {

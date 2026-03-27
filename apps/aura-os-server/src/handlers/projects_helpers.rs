@@ -218,6 +218,17 @@ pub(crate) fn project_tool_session_config(
     })
 }
 
+/// Resolve the caller JWT when available.
+pub(crate) fn optional_jwt(state: &AppState) -> Option<String> {
+    state.get_jwt().ok()
+}
+
+/// Attach the caller JWT to a session config when available.
+pub(crate) fn with_optional_jwt(state: &AppState, mut config: SessionConfig) -> SessionConfig {
+    config.token = optional_jwt(state);
+    config
+}
+
 pub(super) fn to_project_input(req: &CreateProjectRequest) -> CreateProjectInput {
     CreateProjectInput {
         org_id: req.org_id,
