@@ -48,6 +48,7 @@ describe("useAuraCapabilities", () => {
     expect(result.current.isPhoneLayout).toBe(false);
     expect(result.current.isTabletLayout).toBe(false);
     expect(result.current.hasDesktopBridge).toBe(false);
+    expect(result.current.isNativeApp).toBe(false);
     expect(result.current.features.hostRetargeting).toBe(true);
   });
 
@@ -70,6 +71,20 @@ describe("useAuraCapabilities", () => {
     expect(result.current.isPhoneLayout).toBe(true);
     expect(result.current.isTabletLayout).toBe(true);
     expect(result.current.isMobileLayout).toBe(true);
+  });
+
+  it("detects a Capacitor native shell", () => {
+    const { matchMedia } = createMockMatchMedia();
+    window.matchMedia = matchMedia as unknown as typeof window.matchMedia;
+    (window as Window & { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor = {
+      isNativePlatform: () => true,
+    };
+
+    const { result } = renderHook(() => useAuraCapabilities());
+
+    expect(result.current.isNativeApp).toBe(true);
+
+    delete (window as Window & { Capacitor?: { isNativePlatform: () => boolean } }).Capacitor;
   });
 
   it("cleans up listeners on unmount", () => {
