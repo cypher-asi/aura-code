@@ -12,7 +12,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::handlers::{
     agents, auth, billing, dev_loop, feed, files, follows, leaderboard, log, orgs, project_stats,
-    projects, remote_terminal, specs, swarm, system, tasks, terminal, users, ws,
+    projects, remote_files, remote_terminal, specs, swarm, system, tasks, terminal, users, ws,
 };
 use crate::state::AppState;
 
@@ -216,6 +216,14 @@ fn agent_routes() -> Router<AppState> {
         .route(
             "/api/agents/:agent_id/remote_agent/state",
             get(swarm::get_remote_agent_state),
+        )
+        .route(
+            "/api/agents/:agent_id/remote_agent/files",
+            post(remote_files::list_remote_directory),
+        )
+        .route(
+            "/api/agents/:agent_id/remote_agent/read-file",
+            post(remote_files::read_remote_file),
         )
         .route(
             "/api/agents/:agent_id/remote_agent/:action",
