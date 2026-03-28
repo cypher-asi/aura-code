@@ -4,8 +4,9 @@ use axum::Json;
 use serde::Deserialize;
 use tracing::{info, warn};
 
-use aura_os_core::{AgentInstanceId, ProjectId, TaskId};
+use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, TaskId, TaskStatus};
 use aura_os_link::{AutomatonStartError, AutomatonStartParams};
+use aura_os_tasks::TaskService;
 
 use super::agents::conversions_pub::resolve_workspace_path;
 use super::projects_helpers::optional_jwt;
@@ -40,6 +41,46 @@ fn emit_domain_event(
     let _ = broadcast_tx.send(event);
 }
 
+fn automaton_is_active(status: &serde_json::Value) -> bool {
+    if let Some(running) = status.get("running").and_then(|v| v.as_bool()) {
+        return running;
+    }
+    let state = status
+        .get("state")
+        .or_else(|| status.get("status"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_ascii_lowercase());
+    match state.as_deref() {
+        // Paused loops are still active for singleton semantics.
+        Some("running" | "active" | "started" | "paused") => true,
+        Some("done" | "stopped" | "finished" | "failed" | "cancelled" | "terminated" | "completed") => false,
+        // Unknown schema/state: stay conservative and treat as active.
+        _ => true,
+    }
+}
+
+fn automaton_client_for_mode(
+    state: &AppState,
+    mode: HarnessMode,
+    swarm_agent_id: Option<&str>,
+) -> Result<std::sync::Arc<aura_os_link::AutomatonClient>, (StatusCode, Json<ApiError>)> {
+    match mode {
+        HarnessMode::Local => Ok(state.automaton_client.clone()),
+        HarnessMode::Swarm => {
+            let base = state
+                .swarm_base_url
+                .as_deref()
+                .ok_or_else(|| ApiError::service_unavailable("swarm gateway is not configured"))?;
+            let base = base.trim_end_matches('/');
+            let scoped_base = match swarm_agent_id {
+                Some(aid) => format!("{base}/v1/agents/{aid}"),
+                None => base.to_string(),
+            };
+            Ok(std::sync::Arc::new(aura_os_link::AutomatonClient::new(&scoped_base)))
+        }
+    }
+}
+
 struct ForwardParams {
     automaton_events_tx: tokio::sync::broadcast::Sender<serde_json::Value>,
     app_broadcast: tokio::sync::broadcast::Sender<serde_json::Value>,
@@ -47,9 +88,34 @@ struct ForwardParams {
     project_id: ProjectId,
     agent_instance_id: AgentInstanceId,
     task_id: Option<String>,
+    task_service: std::sync::Arc<TaskService>,
     task_output_cache: TaskOutputCache,
     storage_client: Option<std::sync::Arc<aura_os_storage::StorageClient>>,
     jwt: Option<String>,
+}
+
+async fn resolve_active_task_id(
+    task_service: &TaskService,
+    project_id: &ProjectId,
+    agent_instance_id: &AgentInstanceId,
+) -> Option<String> {
+    let tasks = task_service.list_tasks(project_id).await.ok()?;
+
+    // Best signal: an in-progress task already assigned to this agent instance.
+    if let Some(task) = tasks.iter().find(|t| {
+        t.status == TaskStatus::InProgress
+            && t.assigned_agent_instance_id == Some(*agent_instance_id)
+    }) {
+        return Some(task.task_id.to_string());
+    }
+
+    // Fallback: global scheduler's next ready task.
+    task_service
+        .select_next_task(project_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|t| t.task_id.to_string())
 }
 
 /// Forward automaton events from the harness WebSocket to the app's global
@@ -64,6 +130,7 @@ fn forward_automaton_events(params: ForwardParams) {
         project_id,
         agent_instance_id,
         task_id,
+        task_service,
         task_output_cache,
         storage_client,
         jwt,
@@ -93,7 +160,33 @@ fn forward_automaton_events(params: ForwardParams) {
                         .get("type")
                         .and_then(|t| t.as_str())
                         .unwrap_or("unknown");
+                    let is_work = matches!(
+                        event_type,
+                        "task_started"
+                            | "text_delta"
+                            | "thinking_delta"
+                            | "tool_call_started"
+                            | "tool_result"
+                            | "log_line"
+                            | "progress"
+                    );
 
+                    // Keep trying to discover the active task_id until it is known.
+                    // Some harness streams emit deltas before task_started, and if
+                    // we stop attempting resolution after first work we can forward
+                    // all first-task output without task_id.
+                    if current_task_id.is_none() {
+                        if let Some(tid) = event.get("task_id").and_then(|v| v.as_str()) {
+                            current_task_id = Some(tid.to_owned());
+                        } else if is_work {
+                            current_task_id = resolve_active_task_id(
+                                task_service.as_ref(),
+                                &project_id,
+                                &agent_instance_id,
+                            )
+                            .await;
+                        }
+                    }
                     // If we see any work event before a task_started, emit a
                     // synthetic task_started so the UI exits "Preparing" state.
                     // This handles the race where the real task_started was
@@ -118,20 +211,23 @@ fn forward_automaton_events(params: ForwardParams) {
                             .get("task_id")
                             .and_then(|v| v.as_str())
                             .map(str::to_owned);
-                        let effective_task_id = current_task_id.clone().or(event_task_id);
-                        let is_work = matches!(
-                            event_type,
-                            "task_started"
-                                | "text_delta"
-                                | "thinking_delta"
-                                | "tool_call_started"
-                                | "tool_result"
-                                | "log_line"
-                                | "progress"
-                        );
+                        let mut effective_task_id = current_task_id.clone().or(event_task_id);
+                        if effective_task_id.is_none() {
+                            effective_task_id = resolve_active_task_id(
+                                task_service.as_ref(),
+                                &project_id,
+                                &agent_instance_id,
+                            )
+                            .await;
+                            if let Some(ref tid) = effective_task_id {
+                                current_task_id = Some(tid.clone());
+                            }
+                        }
                         if is_work {
-                            first_work_seen = true;
-                            if event_type != "task_started" {
+                            if event_type == "task_started" || effective_task_id.is_some() {
+                                first_work_seen = true;
+                            }
+                            if event_type != "task_started" && effective_task_id.is_some() {
                                 let extra = match &effective_task_id {
                                     Some(tid) => serde_json::json!({"task_id": tid}),
                                     None => serde_json::json!({}),
@@ -323,12 +419,14 @@ pub(crate) async fn start_loop(
     let project = state.project_service.get_project(&project_id).ok();
     let project_folder = project.as_ref().map(|p| p.linked_folder_path.clone());
     let project_name = project.as_ref().map(|p| p.name.as_str()).unwrap_or("");
-    let machine_type = state
+    let (machine_type, swarm_agent_id) = state
         .agent_instance_service
         .get_instance(&project_id, &agent_instance_id)
         .await
-        .map(|inst| inst.machine_type)
-        .unwrap_or_else(|_| "local".to_string());
+        .map(|inst| (inst.machine_type, Some(inst.agent_id.to_string())))
+        .unwrap_or_else(|_| ("local".to_string(), None));
+    let harness_mode = HarnessMode::from_machine_type(&machine_type);
+    let automaton_client = automaton_client_for_mode(&state, harness_mode, swarm_agent_id.as_deref())?;
     let project_path = resolve_workspace_path(
         &machine_type,
         project_folder.as_deref(),
@@ -345,18 +443,67 @@ pub(crate) async fn start_loop(
         task_id: None,
     };
 
-    let (automaton_id, adopted) = match state.automaton_client.start(start_params).await {
+    let (automaton_id, adopted) = match automaton_client.start(start_params.clone()).await {
         Ok(r) => (r.automaton_id, false),
         Err(AutomatonStartError::Conflict(existing_id)) => {
-            // An automaton is already running for this project in the harness.
-            // This happens when the LLM conversation started the loop via a tool
-            // call, or after a server restart that cleared our in-memory registry.
-            // Adopt it: register it in our registry and connect to its event stream
-            // so both the play button and the conversation share the same loop.
             match existing_id {
                 Some(aid) => {
-                    info!(%aid, %project_id, "Adopting existing automaton from harness");
-                    (aid, true)
+                    let stale_or_dead = match automaton_client.status(&aid).await {
+                        Ok(status) => !automaton_is_active(&status),
+                        Err(e) => {
+                            warn!(
+                                %aid,
+                                %project_id,
+                                error = %e,
+                                "Failed to inspect conflicting automaton status; treating as stale"
+                            );
+                            true
+                        }
+                    };
+
+                    if stale_or_dead {
+                        info!(
+                            %aid,
+                            %project_id,
+                            "Conflicting automaton appears stale; stopping and retrying start"
+                        );
+                        if let Err(e) = automaton_client.stop(&aid).await {
+                            warn!(
+                                %aid,
+                                %project_id,
+                                error = %e,
+                                "Failed to stop stale conflicting automaton before retry"
+                            );
+                        }
+                        match automaton_client.start(start_params).await {
+                            Ok(r) => (r.automaton_id, false),
+                            Err(AutomatonStartError::Conflict(Some(retry_id))) => {
+                                info!(
+                                    %retry_id,
+                                    %project_id,
+                                    "Retry still conflicts; adopting existing automaton"
+                                );
+                                (retry_id, true)
+                            }
+                            Err(AutomatonStartError::Conflict(None)) => {
+                                return Err(ApiError::conflict(
+                                    "A dev loop is already running but its ID could not be determined",
+                                ));
+                            }
+                            Err(e) => {
+                                return Err(ApiError::internal(format!(
+                                    "starting dev loop after stale cleanup: {e}"
+                                )));
+                            }
+                        }
+                    } else {
+                        // An automaton is already running for this project in the harness.
+                        // This happens when the loop was started elsewhere or after a
+                        // server restart that cleared our in-memory registry. Adopt it so
+                        // both play button and chat share the same loop.
+                        info!(%aid, %project_id, "Adopting existing automaton from harness");
+                        (aid, true)
+                    }
                 }
                 None => {
                     return Err(ApiError::conflict(
@@ -364,6 +511,37 @@ pub(crate) async fn start_loop(
                     ));
                 }
             }
+        }
+        Err(AutomatonStartError::Request { message, is_connect, is_timeout }) => {
+            if is_connect {
+                crate::app_builder::ensure_local_harness_running();
+                return Err(ApiError::service_unavailable(format!(
+                    "Service unavailable: local aura-harness at {} could not be reached ({message}). \
+                     Recovery spawn was attempted; if this keeps failing, check harness build/startup logs.",
+                    automaton_client.base_url(),
+                )));
+            }
+            if is_timeout {
+                return Err(ApiError::service_unavailable(format!(
+                    "Service unavailable: local aura-harness at {} timed out while handling start ({message}).",
+                    automaton_client.base_url(),
+                )));
+            }
+            return Err(ApiError::internal(format!("starting dev loop: {message}")));
+        }
+        Err(AutomatonStartError::Response { status, body }) => {
+            if harness_mode == HarnessMode::Swarm && status == 404 {
+                return Err(ApiError::service_unavailable(format!(
+                    "Remote dev-loop start is unavailable: swarm gateway at {} does not expose /automaton/start (HTTP 404).",
+                    automaton_client.base_url()
+                )));
+            }
+            return Err(ApiError::bad_gateway(format!(
+                "automaton start failed via {} (status {}): {}",
+                automaton_client.base_url(),
+                status,
+                body
+            )));
         }
         Err(e) => return Err(ApiError::internal(format!("starting dev loop: {e}"))),
     };
@@ -379,27 +557,46 @@ pub(crate) async fn start_loop(
     // Attach the event stream before advertising success: if this fails, the
     // client must not see loop_started or a registered automaton (including
     // when adopting an existing harness automaton).
-    let events_tx = state
-        .automaton_client
-        .connect_event_stream(&automaton_id)
-        .await
-        .map_err(|e| {
-            ApiError::internal(format!(
+    let events_tx = match automaton_client.connect_event_stream(&automaton_id).await {
+        Ok(tx) => tx,
+        Err(e) => {
+            // If start succeeded but event-stream attach failed, proactively stop
+            // the spawned automaton so we don't leak an untracked loop that
+            // cannot be stopped via our registry.
+            if !adopted {
+                if let Err(stop_err) = automaton_client.stop(&automaton_id).await {
+                    warn!(
+                        %project_id,
+                        %agent_instance_id,
+                        %automaton_id,
+                        error = %stop_err,
+                        "Failed to stop newly started automaton after stream attach failure"
+                    );
+                } else {
+                    info!(
+                        %project_id,
+                        %agent_instance_id,
+                        %automaton_id,
+                        "Stopped newly started automaton after stream attach failure"
+                    );
+                }
+            }
+            return Err(ApiError::internal(format!(
                 "connecting event stream for dev loop (adopted={adopted}): {e}"
-            ))
-        })?;
+            )));
+        }
+    };
 
     // Resolve the first task the automaton will pick so that events
     // arriving before the real task_started get stamped with a task_id.
     // Without this, text_delta events have no task_id and the frontend
     // silently discards them.
-    let first_task_id = state
-        .task_service
-        .select_next_task(&project_id)
-        .await
-        .ok()
-        .flatten()
-        .map(|t| t.task_id.to_string());
+    let first_task_id = resolve_active_task_id(
+        state.task_service.as_ref(),
+        &project_id,
+        &agent_instance_id,
+    )
+    .await;
 
     if let Some(ref tid) = first_task_id {
         emit_domain_event(
@@ -424,6 +621,7 @@ pub(crate) async fn start_loop(
         project_id,
         agent_instance_id,
         task_id: first_task_id,
+        task_service: state.task_service.clone(),
         task_output_cache: state.task_output_cache.clone(),
         storage_client: state.storage_client.clone(),
         jwt: jwt_for_persist,
@@ -444,6 +642,7 @@ pub(crate) async fn start_loop(
             ActiveAutomaton {
                 automaton_id: automaton_id.clone(),
                 project_id,
+                harness_base_url: automaton_client.base_url().to_string(),
             },
         );
     }
@@ -481,7 +680,14 @@ pub(crate) async fn pause_loop(
     }
 
     for (aiid, automaton_id) in &targets {
-        if let Err(e) = state.automaton_client.pause(automaton_id).await {
+        let base_url = {
+            let reg = state.automaton_registry.lock().await;
+            reg.get(aiid)
+                .map(|a| a.harness_base_url.clone())
+                .unwrap_or_else(|| state.automaton_client.base_url().to_string())
+        };
+        let client = aura_os_link::AutomatonClient::new(&base_url);
+        if let Err(e) = client.pause(automaton_id).await {
             warn!(automaton_id, error = %e, "Failed to pause automaton");
         }
         emit_domain_event(
@@ -523,7 +729,12 @@ pub(crate) async fn stop_loop(
     }
 
     for (aiid, automaton_id) in &targets {
-        if let Err(e) = state.automaton_client.stop(automaton_id).await {
+        let base_url = reg
+            .get(aiid)
+            .map(|a| a.harness_base_url.clone())
+            .unwrap_or_else(|| state.automaton_client.base_url().to_string());
+        let client = aura_os_link::AutomatonClient::new(&base_url);
+        if let Err(e) = client.stop(automaton_id).await {
             warn!(automaton_id, error = %e, "Failed to stop automaton");
         }
         reg.remove(aiid);
@@ -582,12 +793,14 @@ pub(crate) async fn run_single_task(
     let project = state.project_service.get_project(&project_id).ok();
     let project_folder = project.as_ref().map(|p| p.linked_folder_path.clone());
     let project_name = project.as_ref().map(|p| p.name.as_str()).unwrap_or("");
-    let machine_type = state
+    let (machine_type, swarm_agent_id) = state
         .agent_instance_service
         .get_instance(&project_id, &agent_instance_id)
         .await
-        .map(|inst| inst.machine_type)
-        .unwrap_or_else(|_| "local".to_string());
+        .map(|inst| (inst.machine_type, Some(inst.agent_id.to_string())))
+        .unwrap_or_else(|_| ("local".to_string(), None));
+    let harness_mode = HarnessMode::from_machine_type(&machine_type);
+    let automaton_client = automaton_client_for_mode(&state, harness_mode, swarm_agent_id.as_deref())?;
     let project_path = resolve_workspace_path(
         &machine_type,
         project_folder.as_deref(),
@@ -596,8 +809,7 @@ pub(crate) async fn run_single_task(
     );
 
     let jwt_for_persist = jwt.clone();
-    let result = state
-        .automaton_client
+    let result = automaton_client
         .start(AutomatonStartParams {
             project_id: project_id.to_string(),
             auth_token: jwt,
@@ -610,6 +822,12 @@ pub(crate) async fn run_single_task(
             AutomatonStartError::Conflict(_) => {
                 ApiError::conflict(format!("starting task runner: {e}"))
             }
+            AutomatonStartError::Response { status, body } => ApiError::bad_gateway(format!(
+                "starting task runner via {} failed (status {}): {}",
+                automaton_client.base_url(),
+                status,
+                body
+            )),
             _ => ApiError::internal(format!("starting task runner: {e}")),
         })?;
 
@@ -636,11 +854,7 @@ pub(crate) async fn run_single_task(
         });
     }
 
-    if let Ok(events_tx) = state
-        .automaton_client
-        .connect_event_stream(&automaton_id)
-        .await
-    {
+    if let Ok(events_tx) = automaton_client.connect_event_stream(&automaton_id).await {
         forward_automaton_events(ForwardParams {
             automaton_events_tx: events_tx,
             app_broadcast: state.event_broadcast.clone(),
@@ -648,6 +862,7 @@ pub(crate) async fn run_single_task(
             project_id,
             agent_instance_id,
             task_id: Some(task_id.to_string()),
+            task_service: state.task_service.clone(),
             task_output_cache: state.task_output_cache.clone(),
             storage_client: state.storage_client.clone(),
             jwt: jwt_for_persist,
