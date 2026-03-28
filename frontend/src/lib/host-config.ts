@@ -1,8 +1,64 @@
 const HOST_STORAGE_KEY = "aura-host-origin";
 const HOST_CHANGE_EVENT = "aura-host-change";
 
+interface CapacitorWindow extends Window {
+  Capacitor?: {
+    isNativePlatform?: () => boolean;
+    getPlatform?: () => string;
+  };
+}
+
 function hasWindow() {
   return typeof window !== "undefined";
+}
+
+function isNativeHostRuntime(): boolean {
+  if (!hasWindow()) return false;
+
+  const nativeCheck = (window as CapacitorWindow).Capacitor?.isNativePlatform;
+  if (typeof nativeCheck === "function") {
+    return Boolean(nativeCheck());
+  }
+
+  // Capacitor serves the bundled app from a localhost webview origin. Treat
+  // that as native so we do not mistake the embedded web assets for an API host.
+  return window.location.protocol === "capacitor:" || window.location.origin === "https://localhost";
+}
+
+function getNativePlatform(): string | null {
+  if (!hasWindow()) return null;
+
+  const platformCheck = (window as CapacitorWindow).Capacitor?.getPlatform;
+  if (typeof platformCheck !== "function") return null;
+
+  try {
+    return platformCheck();
+  } catch {
+    return null;
+  }
+}
+
+function inferNativePlatformFromUserAgent(): string | null {
+  if (!hasWindow() || !requiresExplicitHostOrigin()) return null;
+
+  const userAgent = window.navigator.userAgent.toLowerCase();
+  if (userAgent.includes("android")) return "android";
+  if (userAgent.includes("iphone") || userAgent.includes("ipad") || userAgent.includes("ipod")) return "ios";
+  return null;
+}
+
+function readNativeDefaultHostCandidate(): string | null {
+  const platform = getNativePlatform() ?? inferNativePlatformFromUserAgent();
+
+  if (platform === "android") {
+    return import.meta.env.VITE_ANDROID_DEFAULT_HOST || import.meta.env.VITE_NATIVE_DEFAULT_HOST || null;
+  }
+
+  if (platform === "ios") {
+    return import.meta.env.VITE_IOS_DEFAULT_HOST || import.meta.env.VITE_NATIVE_DEFAULT_HOST || null;
+  }
+
+  return import.meta.env.VITE_NATIVE_DEFAULT_HOST || null;
 }
 
 export function normalizeHostOrigin(value: string | null | undefined): string | null {
@@ -34,9 +90,26 @@ export function getConfiguredHostOrigin(): string | null {
   return getQueryHostOrigin() ?? getStoredHostOrigin();
 }
 
+export function getNativeDefaultHostOrigin(): string | null {
+  if (!requiresExplicitHostOrigin()) return null;
+  return normalizeHostOrigin(readNativeDefaultHostCandidate());
+}
+
+export function getTargetHostOrigin(): string | null {
+  // Keep precedence explicit so native shells can have a build-time default
+  // without overriding a user-selected host in Settings.
+  return getConfiguredHostOrigin() ?? getNativeDefaultHostOrigin();
+}
+
 export function getResolvedHostOrigin(): string {
   if (!hasWindow()) return "";
-  return getConfiguredHostOrigin() ?? window.location.origin;
+  const targetHost = getTargetHostOrigin();
+  if (requiresExplicitHostOrigin() && !targetHost) return "";
+  return targetHost ?? window.location.origin;
+}
+
+export function requiresExplicitHostOrigin(): boolean {
+  return isNativeHostRuntime();
 }
 
 export function setConfiguredHostOrigin(value: string | null): string | null {
@@ -71,16 +144,16 @@ export function subscribeToHostChanges(callback: () => void): () => void {
 }
 
 export function resolveApiUrl(path: string): string {
-  const hostOrigin = getConfiguredHostOrigin();
+  const hostOrigin = getTargetHostOrigin();
   return hostOrigin ? `${hostOrigin}${path}` : path;
 }
 
 export function resolveWsUrl(path: string): string {
   if (!hasWindow()) return path;
 
-  const configuredHost = getConfiguredHostOrigin();
-  if (configuredHost) {
-    const url = new URL(configuredHost);
+  const targetHost = getTargetHostOrigin();
+  if (targetHost) {
+    const url = new URL(targetHost);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     url.pathname = path;
     url.search = "";
@@ -95,5 +168,8 @@ export function resolveWsUrl(path: string): string {
 export function getHostDisplayLabel(): string {
   const configuredHost = getConfiguredHostOrigin();
   if (configuredHost) return configuredHost;
+  const defaultHost = getNativeDefaultHostOrigin();
+  if (defaultHost) return `${defaultHost} (build default)`;
+  if (requiresExplicitHostOrigin()) return "No host configured";
   return "Current origin";
 }
