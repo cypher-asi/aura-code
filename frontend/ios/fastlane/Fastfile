@@ -1,0 +1,116 @@
+fastlane_version "2.229.0"
+default_platform(:ios)
+
+require "base64"
+
+def required_env!(name)
+  value = ENV[name]
+  UI.user_error!("Missing required environment variable #{name}") if value.to_s.empty?
+  value
+end
+
+def build_number
+  ENV["IOS_BUILD_NUMBER"] || ENV["GITHUB_RUN_NUMBER"] || Time.now.utc.strftime("%Y%m%d%H%M")
+end
+
+def match_auth_options
+  private_key = ENV["IOS_MATCH_GIT_PRIVATE_KEY"]
+  basic_auth = ENV["IOS_MATCH_GIT_BASIC_AUTHORIZATION"]
+
+  return { git_private_key: private_key } unless private_key.to_s.empty?
+  return { git_basic_authorization: basic_auth } unless basic_auth.to_s.empty?
+
+  UI.user_error!(
+    "Set IOS_MATCH_GIT_PRIVATE_KEY or IOS_MATCH_GIT_BASIC_AUTHORIZATION so fastlane match can fetch signing assets."
+  )
+end
+
+def app_store_api_key
+  app_store_connect_api_key(
+    key_id: required_env!("IOS_APP_STORE_CONNECT_KEY_ID"),
+    issuer_id: required_env!("IOS_APP_STORE_CONNECT_ISSUER_ID"),
+    key_content: Base64.decode64(required_env!("IOS_APP_STORE_CONNECT_KEY_BASE64")),
+    is_key_content_base64: false,
+    duration: 1200,
+    in_house: false
+  )
+end
+
+def sync_signing!(api_key:, readonly:)
+  # We keep signing in match so CI can reproduce the same archive that local
+  # release runs use, instead of depending on one developer machine's keychain.
+  match(
+    type: "appstore",
+    api_key: api_key,
+    readonly: readonly,
+    app_identifier: ENV.fetch("IOS_BUNDLE_ID", "tech.zero.aura"),
+    git_url: required_env!("IOS_MATCH_GIT_URL"),
+    git_branch: ENV.fetch("IOS_MATCH_GIT_BRANCH", "main"),
+    team_id: ENV["IOS_DEVELOPER_TEAM_ID"],
+    **match_auth_options
+  )
+end
+
+private_lane :build_store_archive do
+  increment_build_number(
+    xcodeproj: "App/App.xcodeproj",
+    build_number: build_number
+  )
+
+  build_app(
+    project: "App/App.xcodeproj",
+    scheme: "App",
+    configuration: "Release",
+    clean: true,
+    export_method: "app-store",
+    output_directory: "./build",
+    output_name: "AURA.ipa",
+    # The Xcode project already uses automatic signing, so we let fastlane
+    # archive with the provisioning assets that match synced into the runner.
+    export_options: {
+      signingStyle: "automatic"
+    },
+    xcargs: "-allowProvisioningUpdates"
+  )
+end
+
+platform :ios do
+  desc "Create or refresh App Store signing assets in the match repo"
+  lane :bootstrap_signing do
+    sync_signing!(api_key: app_store_api_key, readonly: false)
+  end
+
+  desc "Build and upload an internal TestFlight build"
+  lane :beta do
+    api_key = app_store_api_key
+    sync_signing!(api_key: api_key, readonly: is_ci)
+    build_store_archive
+
+    upload_to_testflight(
+      api_key: api_key,
+      ipa: "./build/AURA.ipa",
+      changelog: ENV["IOS_CHANGELOG"],
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  desc "Build and upload an App Store candidate; optionally submit it for review"
+  lane :release do
+    api_key = app_store_api_key
+    sync_signing!(api_key: api_key, readonly: is_ci)
+    build_store_archive
+
+    metadata_present = File.directory?("fastlane/metadata")
+    screenshots_present = File.directory?("fastlane/screenshots")
+
+    upload_to_app_store(
+      api_key: api_key,
+      ipa: "./build/AURA.ipa",
+      force: true,
+      automatic_release: false,
+      submit_for_review: ENV["IOS_SUBMIT_FOR_REVIEW"] == "1",
+      skip_metadata: !metadata_present,
+      skip_screenshots: !screenshots_present
+    )
+  end
+end
