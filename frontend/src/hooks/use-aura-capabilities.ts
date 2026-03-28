@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { isNativeRuntime } from "../lib/native-runtime";
 
 export const AURA_BREAKPOINTS = {
   phoneMax: 680,
@@ -30,12 +31,6 @@ export interface AuraCapabilities {
   supportsDesktopWorkspace: boolean;
   supportsNativeUpdates: boolean;
   supportsHostRetargeting: boolean;
-}
-
-interface CapacitorWindow extends Window {
-  Capacitor?: {
-    isNativePlatform?: () => boolean;
-  };
 }
 
 function buildFeatureAvailability(hasDesktopBridge: boolean, isMobileLayout: boolean): AuraFeatureAvailability {
@@ -75,12 +70,7 @@ function readCapabilities(): AuraCapabilities {
   const isStandalone =
     window.matchMedia(STANDALONE_MEDIA_QUERY).matches ||
     (typeof navigator !== "undefined" && "standalone" in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
-  // Capacitor exposes a native-platform check in the webview. The protocol
-  // fallback keeps detection working before that bridge is fully available.
-  const isNativeApp =
-    typeof (window as CapacitorWindow).Capacitor?.isNativePlatform === "function"
-      ? Boolean((window as CapacitorWindow).Capacitor?.isNativePlatform?.())
-      : window.location.protocol === "capacitor:";
+  const isNativeApp = isNativeRuntime();
   const features = buildFeatureAvailability(hasDesktopBridge, isMobileLayout);
 
   return {
