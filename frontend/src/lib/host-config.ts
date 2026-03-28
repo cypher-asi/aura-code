@@ -1,57 +1,14 @@
+import { inferNativePlatform, isNativeRuntime } from "./native-runtime";
+
 const HOST_STORAGE_KEY = "aura-host-origin";
 const HOST_CHANGE_EVENT = "aura-host-change";
-
-interface CapacitorWindow extends Window {
-  Capacitor?: {
-    isNativePlatform?: () => boolean;
-    getPlatform?: () => string;
-  };
-}
 
 function hasWindow() {
   return typeof window !== "undefined";
 }
 
-function isNativeHostRuntime(): boolean {
-  if (!hasWindow()) return false;
-
-  const nativeCheck = (window as CapacitorWindow).Capacitor?.isNativePlatform;
-  if (typeof nativeCheck === "function") {
-    return Boolean(nativeCheck());
-  }
-
-  // Capacitor serves the bundled app from a localhost webview origin. Treat
-  // that as native so we do not mistake the embedded web assets for an API host.
-  return window.location.protocol === "capacitor:" || window.location.origin === "https://localhost";
-}
-
-function getNativePlatform(): string | null {
-  if (!hasWindow()) return null;
-
-  const platformCheck = (window as CapacitorWindow).Capacitor?.getPlatform;
-  if (typeof platformCheck !== "function") return null;
-
-  try {
-    return platformCheck();
-  } catch {
-    return null;
-  }
-}
-
-function inferNativePlatformFromUserAgent(): string | null {
-  if (!hasWindow() || !requiresExplicitHostOrigin()) return null;
-
-  if (window.location.protocol === "capacitor:") return "ios";
-  if (window.location.origin === "http://localhost" || window.location.origin === "https://localhost") return "android";
-
-  const userAgent = window.navigator.userAgent.toLowerCase();
-  if (userAgent.includes("android")) return "android";
-  if (userAgent.includes("iphone") || userAgent.includes("ipad") || userAgent.includes("ipod")) return "ios";
-  return null;
-}
-
 function readNativeDefaultHostCandidate(): string | null {
-  const platform = getNativePlatform() ?? inferNativePlatformFromUserAgent();
+  const platform = inferNativePlatform();
 
   if (platform === "android") {
     return import.meta.env.VITE_ANDROID_DEFAULT_HOST || import.meta.env.VITE_NATIVE_DEFAULT_HOST || null;
@@ -112,7 +69,7 @@ export function getResolvedHostOrigin(): string {
 }
 
 export function requiresExplicitHostOrigin(): boolean {
-  return isNativeHostRuntime();
+  return isNativeRuntime();
 }
 
 export function setConfiguredHostOrigin(value: string | null): string | null {
