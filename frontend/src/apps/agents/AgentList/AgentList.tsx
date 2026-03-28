@@ -9,7 +9,6 @@ import { AgentEditorModal } from "../../../components/AgentEditorModal";
 import { AgentConversationRow } from "../AgentConversationRow";
 import { useProfileStatusStore } from "../../../stores/profile-status-store";
 import { api, ApiClientError } from "../../../api/client";
-import { useAuraCapabilities } from "../../../hooks/use-aura-capabilities";
 import {
   useAgents,
   useSelectedAgent,
@@ -33,10 +32,14 @@ interface CtxMenuState {
   agent: Agent;
 }
 
-export function AgentList() {
+interface AgentListProps {
+  mode?: "default" | "mobile-library";
+}
+
+export function AgentList({ mode = "default" }: AgentListProps) {
   const { agents, status, fetchAgents } = useAgents();
   const { setSelectedAgent } = useSelectedAgent();
-  const { isMobileLayout } = useAuraCapabilities();
+  const isMobileLibrary = mode === "mobile-library";
   const loading = status === "loading" || status === "idle";
   const { query: searchQuery, setAction } = useSidebarSearch();
   const navigate = useNavigate();
@@ -63,6 +66,7 @@ export function AgentList() {
 
   useEffect(() => {
     if (status !== "ready") return;
+    if (isMobileLibrary) return;
     const lastId = localStorage.getItem(LAST_AGENT_ID_KEY);
     if (lastId && !agentId) {
       useChatHistoryStore.getState().prefetchHistory(
@@ -70,7 +74,7 @@ export function AgentList() {
         () => api.agents.listEvents(lastId),
       );
     }
-  }, [status, agentId]);
+  }, [status, agentId, isMobileLibrary]);
 
   const agentMap = useMemo(
     () => new Map(agents.map((a) => [a.agent_id, a])),
@@ -105,22 +109,18 @@ export function AgentList() {
   );
 
   const handleAgentRowClick = useCallback((selectedAgentId: string) => {
-    if (isMobileLayout && selectedAgentId === agentId) {
-      navigate("/agents");
-      return;
-    }
-
     navigate(`/agents/${selectedAgentId}`);
-  }, [agentId, isMobileLayout, navigate]);
+  }, [navigate]);
 
   const handleHoverPrefetch = useCallback((e: React.MouseEvent) => {
+    if (isMobileLibrary) return;
     const target = (e.target as HTMLElement).closest("button[id]");
     if (!target) return;
     useChatHistoryStore.getState().prefetchHistory(
       agentHistoryKey(target.id),
       () => api.agents.listEvents(target.id),
     );
-  }, []);
+  }, [isMobileLibrary]);
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
@@ -216,7 +216,7 @@ export function AgentList() {
     <div className={styles.list}>
       <div onContextMenu={handleContextMenu} onMouseOver={handleHoverPrefetch}>
         {filteredAgents.map((agent) => {
-          const entry = entries[agentHistoryKey(agent.agent_id)];
+          const entry = isMobileLibrary ? undefined : entries[agentHistoryKey(agent.agent_id)];
           const msgs = entry?.events;
           const lastMessage = msgs?.length ? msgs[msgs.length - 1] : undefined;
           return (
@@ -224,6 +224,7 @@ export function AgentList() {
               key={agent.agent_id}
               agent={agent}
               lastMessage={lastMessage}
+              showMetadataOnly={isMobileLibrary}
               isSelected={agent.agent_id === agentId}
               onClick={() => handleAgentRowClick(agent.agent_id)}
               onContextMenu={handleContextMenu}

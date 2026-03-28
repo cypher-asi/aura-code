@@ -1,6 +1,15 @@
 import { render, screen } from "@testing-library/react";
 import type { Agent } from "../../../types";
 import type { DisplaySessionEvent } from "../../../types/stream";
+
+vi.mock("../../../hooks/use-avatar-state", () => ({
+  useAvatarState: () => ({ status: "offline", isLocal: true }),
+}));
+
+vi.mock("../../../components/Avatar", () => ({
+  Avatar: () => <div data-testid="agent-avatar" />,
+}));
+
 import { AgentConversationRow } from "./AgentConversationRow";
 
 const baseAgent: Agent = {
@@ -24,7 +33,7 @@ const lastMessage: DisplaySessionEvent = {
 } as DisplaySessionEvent;
 
 describe("AgentConversationRow", () => {
-  it("shows the agent summary instead of the last chat message", () => {
+  it("shows the latest chat message by default", () => {
     render(
       <AgentConversationRow
         agent={baseAgent}
@@ -37,6 +46,24 @@ describe("AgentConversationRow", () => {
     );
 
     expect(screen.getByText("Rose")).toBeInTheDocument();
+    expect(screen.queryByText("Architect")).not.toBeInTheDocument();
+    expect(screen.getByText("Plans features end to end.")).toBeInTheDocument();
+    expect(screen.queryByText("Latest chat reply")).not.toBeInTheDocument();
+  });
+
+  it("shows role and summary in metadata mode", () => {
+    render(
+      <AgentConversationRow
+        agent={baseAgent}
+        lastMessage={lastMessage}
+        showMetadataOnly
+        isSelected={false}
+        onClick={() => {}}
+        onContextMenu={() => {}}
+        onMouseOver={() => {}}
+      />,
+    );
+
     expect(screen.getByText("Architect")).toBeInTheDocument();
     expect(screen.getByText("Plans features end to end.")).toBeInTheDocument();
     expect(screen.queryByText("Latest chat reply")).not.toBeInTheDocument();

@@ -9,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   useSelectedAgent: vi.fn(),
   useSortedAgents: vi.fn(),
   useSidebarSearch: vi.fn(),
-  useAuraCapabilities: vi.fn(),
   useAgentStore: vi.fn(),
   entries: {} as Record<string, unknown>,
   useChatHistoryStore: Object.assign(
@@ -60,9 +59,11 @@ vi.mock("../AgentConversationRow", () => ({
 vi.mock("../../../stores/profile-status-store", () => ({
   useProfileStatusStore: (selector: (state: {
     statuses: Record<string, string>;
+    registerAgents: (agents: unknown[]) => void;
     registerRemoteAgents: (agents: unknown[]) => void;
   }) => unknown) => selector({
     statuses: {},
+    registerAgents: vi.fn(),
     registerRemoteAgents: vi.fn(),
   }),
 }));
@@ -94,10 +95,6 @@ vi.mock("../../../stores/chat-history-store", () => ({
 
 vi.mock("../../../context/SidebarSearchContext", () => ({
   useSidebarSearch: () => mocks.useSidebarSearch(),
-}));
-
-vi.mock("../../../hooks/use-aura-capabilities", () => ({
-  useAuraCapabilities: () => mocks.useAuraCapabilities(),
 }));
 
 vi.mock("./AgentList.module.css", () => ({
@@ -146,19 +143,17 @@ describe("AgentList", () => {
     });
   });
 
-  it("toggles back to the library root on mobile when tapping the selected agent", async () => {
-    mocks.useAuraCapabilities.mockReturnValue({ isMobileLayout: true });
-    mocks.useParams.mockReturnValue({ agentId: "agent-1" });
+  it("navigates to the agent route in mobile-library mode", async () => {
+    mocks.useParams.mockReturnValue({ agentId: undefined });
     const user = userEvent.setup();
 
-    render(<AgentList />);
+    render(<AgentList mode="mobile-library" />);
     await user.click(screen.getByRole("button", { name: "Builder Bot" }));
 
-    expect(mocks.navigate).toHaveBeenCalledWith("/agents");
+    expect(mocks.navigate).toHaveBeenCalledWith("/agents/agent-1");
   });
 
   it("keeps desktop navigation behavior for the selected agent", async () => {
-    mocks.useAuraCapabilities.mockReturnValue({ isMobileLayout: false });
     mocks.useParams.mockReturnValue({ agentId: "agent-1" });
     const user = userEvent.setup();
 
