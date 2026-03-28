@@ -159,6 +159,28 @@ impl AutomatonClient {
         Ok(serde_json::from_str(&body)?)
     }
 
+    /// Ask the harness for the canonical workspace path for a project.
+    ///
+    /// Calls `GET {base}/workspace/resolve?project_name={name}` and returns
+    /// the `path` field from the JSON response.
+    pub async fn resolve_workspace(&self, project_name: &str) -> anyhow::Result<String> {
+        let url = format!("{}/workspace/resolve", self.http_base);
+        let resp = self
+            .apply_auth(self.http.get(&url).query(&[("project_name", project_name)]))
+            .send()
+            .await?;
+        let status = resp.status();
+        let body = resp.text().await?;
+        if !status.is_success() {
+            anyhow::bail!("GET workspace/resolve returned {status}: {body}");
+        }
+        let json: serde_json::Value = serde_json::from_str(&body)?;
+        json.get("path")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .ok_or_else(|| anyhow::anyhow!("workspace resolve response missing 'path' field"))
+    }
+
     /// Derive the WebSocket base URL from `http_base`.
     fn ws_base(&self) -> String {
         self.http_base

@@ -447,12 +447,17 @@ pub(crate) async fn start_loop(
         ?harness_mode,
         "Automaton client configured for loop start"
     );
-    let project_path = resolve_workspace_path(
-        &machine_type,
-        project_folder.as_deref(),
-        &state.data_dir,
-        project_name,
-    );
+    let project_path = if harness_mode == HarnessMode::Swarm {
+        automaton_client
+            .resolve_workspace(project_name)
+            .await
+            .unwrap_or_else(|e| {
+                warn!(%project_id, error = %e, "Harness workspace resolve failed; using local computation");
+                resolve_workspace_path(&machine_type, project_folder.as_deref(), &state.data_dir, project_name)
+            })
+    } else {
+        resolve_workspace_path(&machine_type, project_folder.as_deref(), &state.data_dir, project_name)
+    };
 
     let jwt_for_persist = jwt.clone();
     let start_params = AutomatonStartParams {
@@ -835,12 +840,17 @@ pub(crate) async fn run_single_task(
         .unwrap_or_else(|_| ("local".to_string(), None));
     let harness_mode = HarnessMode::from_machine_type(&machine_type);
     let automaton_client = automaton_client_for_mode(&state, harness_mode, swarm_agent_id.as_deref(), jwt.as_deref())?;
-    let project_path = resolve_workspace_path(
-        &machine_type,
-        project_folder.as_deref(),
-        &state.data_dir,
-        project_name,
-    );
+    let project_path = if harness_mode == HarnessMode::Swarm {
+        automaton_client
+            .resolve_workspace(project_name)
+            .await
+            .unwrap_or_else(|e| {
+                warn!(%project_id, error = %e, "Harness workspace resolve failed; using local computation");
+                resolve_workspace_path(&machine_type, project_folder.as_deref(), &state.data_dir, project_name)
+            })
+    } else {
+        resolve_workspace_path(&machine_type, project_folder.as_deref(), &state.data_dir, project_name)
+    };
 
     let jwt_for_persist = jwt.clone();
     let result = automaton_client

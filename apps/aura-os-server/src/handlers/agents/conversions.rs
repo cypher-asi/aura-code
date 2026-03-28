@@ -64,16 +64,16 @@ pub(crate) fn agent_from_network(net: &NetworkAgent) -> Agent {
     }
 }
 
-/// Compute the workspace path for an agent instance based on its machine type.
+/// Compute a workspace path hint for an agent instance.
 ///
-/// Both local and remote paths are derived from the project name (slugified)
-/// so directory names are human-readable and consistent.
+/// For **local** agents the server is the authority: prefer the stored absolute
+/// `project_folder`; fall back to `{data_dir}/workspaces/{slug}`.
 ///
-/// - **local**: prefer the stored absolute `project_folder`; fall back to the
-///   canonical `{data_dir}/workspaces/{slug}` path derived from the project name.
-/// - **remote / swarm**: `/home/aura/{slug}` — the harness is the authority for
-///   the final path (via `AURA_PROJECT_BASE`) but we send a matching hint so
-///   that API responses reflect the actual execution directory.
+/// For **remote / swarm** agents the harness is the authoritative source (via
+/// `AutomatonClient::resolve_workspace`). This function returns a best-guess
+/// hint using the same slug convention so that API responses are consistent
+/// even before the harness has been queried. Callers that need the true path
+/// (dev loop, task runner) should call `resolve_workspace` on the client.
 pub(crate) fn resolve_workspace_path(
     machine_type: &str,
     project_folder: Option<&str>,
