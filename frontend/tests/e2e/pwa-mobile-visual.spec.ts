@@ -192,9 +192,17 @@ test("capture mobile root and project drawer", async ({ page, browserName }, tes
 
   await page.getByRole("button", { name: "Agent library" }).click();
   await expect(page).toHaveURL(/\/agents$/);
-  await expect(page.getByText("Select an agent from your library.")).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("Builder Bot")).toBeVisible({ timeout: 10000 });
   await page.screenshot({
     path: `test-artifacts/review-shots/${projectName}-${browserName}-agent-library-root-mobile-ia.png`,
+    fullPage: true,
+  });
+
+  await page.getByRole("button", { name: /Builder Bot/i }).click();
+  await expect(page).toHaveURL(/\/agents\/agent-1$/);
+  await expect(page.getByText("System Prompt")).toBeVisible({ timeout: 10000 });
+  await page.screenshot({
+    path: `test-artifacts/review-shots/${projectName}-${browserName}-agent-library-details-mobile-ia.png`,
     fullPage: true,
   });
 });
