@@ -664,6 +664,7 @@ async fn open_harness_chat_stream(
     user_content: String,
     requested_model: Option<String>,
     persist_ctx: Option<ChatPersistCtx>,
+    commands: Option<Vec<String>>,
 ) -> ApiResult<(
     [(&'static str, HeaderValue); 1],
     Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
@@ -686,6 +687,7 @@ async fn open_harness_chat_stream(
     commands_tx
         .send(HarnessInbound::UserMessage(UserMessage {
             content: user_content,
+            tool_hints: commands.filter(|c| !c.is_empty()),
         }))
         .map_err(|e| ApiError::internal(format!("sending user message: {e}")))?;
 
@@ -756,7 +758,7 @@ pub(crate) async fn send_agent_event_stream(
         ..Default::default()
     });
 
-    open_harness_chat_stream(&state, &session_key, agent.harness_mode(), config, body.content, body.model, persist_ctx).await
+    open_harness_chat_stream(&state, &session_key, agent.harness_mode(), config, body.content, body.model, persist_ctx, body.commands).await
 }
 
 pub(crate) async fn list_events(
@@ -838,7 +840,7 @@ pub(crate) async fn send_event_stream(
         ..Default::default()
     });
 
-    open_harness_chat_stream(&state, &session_key, instance.harness_mode(), config, body.content, body.model, persist_ctx).await
+    open_harness_chat_stream(&state, &session_key, instance.harness_mode(), config, body.content, body.model, persist_ctx, body.commands).await
 }
 
 fn build_project_system_prompt(
