@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { VerificationStepItem } from "../VerificationStepItem";
+import { GitStepItem } from "../GitStepItem";
 import { TaskMetaSection } from "../TaskMetaSection";
 import { TaskFilesSection } from "../TaskFilesSection";
 import { TaskOutputSection } from "../TaskOutputSection";
@@ -72,6 +73,18 @@ export function TaskPreview({ task }: { task: import("../../types").Task }) {
             <div className={styles.activityList}>
               {taskOutput.testSteps.map((step, i) => (
                 <VerificationStepItem key={i} step={step} active={i === taskOutput.testSteps.length - 1} variant="test" />
+              ))}
+            </div>
+          </div>
+        </GroupCollapsible>
+      )}
+
+      {taskOutput.gitSteps.length > 0 && (
+        <GroupCollapsible label="Git Activity" count={taskOutput.gitSteps.length} defaultOpen className={styles.section}>
+          <div className={styles.liveOutputSection}>
+            <div className={styles.activityList}>
+              {taskOutput.gitSteps.map((step, i) => (
+                <GitStepItem key={i} step={step} />
               ))}
             </div>
           </div>
