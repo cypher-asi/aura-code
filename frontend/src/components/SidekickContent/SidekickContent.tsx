@@ -92,7 +92,7 @@ export function SidekickContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const { features } = useAuraCapabilities();
   const { projectId, agentInstanceId } = useParams<{ projectId: string; agentInstanceId: string }>();
-  const { remoteAgentId } = useTerminalTarget({ projectId, agentInstanceId });
+  const { remoteAgentId, remoteWorkspacePath } = useTerminalTarget({ projectId, agentInstanceId });
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => setSearchQuery(""));
@@ -105,9 +105,10 @@ export function SidekickContent() {
 
   const { project } = ctx;
   const linkedWorkspaceRoot = getLinkedWorkspaceRoot(project);
-  const workspaceRoot = linkedWorkspaceRoot ?? getProjectWorkspaceRoot(project);
+  const remoteRoot = remoteWorkspacePath ?? null;
+  const workspaceRoot = remoteAgentId ? remoteRoot : linkedWorkspaceRoot;
   const canBrowseLocal = features.linkedWorkspace && Boolean(linkedWorkspaceRoot);
-  const canBrowseRemote = Boolean(remoteAgentId) && Boolean(workspaceRoot);
+  const canBrowseRemote = Boolean(remoteAgentId) && Boolean(remoteRoot);
   const canBrowseFiles = canBrowseLocal || canBrowseRemote;
 
   if (showInfo) {
