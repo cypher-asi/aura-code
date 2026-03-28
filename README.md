@@ -221,6 +221,51 @@ Notes:
 - Store-safe mobile builds currently disable in-app credit purchases. Buy or manage credits on the web app, then return to mobile.
 - If you regenerate native assets after changing the web UI, run `npm run build:native` again before archiving or uploading a store build.
 
+#### iOS TestFlight / App Store pipeline
+
+The iOS branch now includes a `fastlane` setup under [`frontend/ios`](./frontend/ios) and a GitHub Actions workflow in [`.github/workflows/ios-mobile.yml`](./.github/workflows/ios-mobile.yml).
+
+Local release commands from `frontend/ios/`:
+
+```bash
+bundle install
+bundle exec fastlane ios beta
+bundle exec fastlane ios release
+```
+
+GitHub Actions release input:
+
+- Run `iOS Mobile`
+- Choose lane `beta` for TestFlight or `release` for an App Store candidate
+- Set `submit_for_review=true` only when metadata, screenshots, and review notes are ready
+
+Required iOS secrets for CI:
+
+- `IOS_APP_STORE_CONNECT_KEY_ID`
+- `IOS_APP_STORE_CONNECT_ISSUER_ID`
+- `IOS_APP_STORE_CONNECT_KEY_BASE64`
+- `IOS_DEVELOPER_TEAM_ID`
+- `IOS_MATCH_GIT_URL`
+- `IOS_MATCH_PASSWORD`
+- One match auth method:
+  - `IOS_MATCH_GIT_PRIVATE_KEY`, or
+  - `IOS_MATCH_GIT_BASIC_AUTHORIZATION`
+- Optional overrides:
+  - `IOS_BUNDLE_ID`
+  - `IOS_MATCH_GIT_BRANCH`
+  - `IOS_APP_STORE_CONNECT_TEAM_ID`
+  - `IOS_APPLE_ID`
+
+Still needed before a real App Store submission:
+
+- A live production Aura backend/API that Apple can reach during review
+- App Store Connect app record for the final bundle ID
+- Distribution signing assets in the `match` repo
+- Final app icon, screenshots, and any preview video you want to ship
+- App Privacy answers, privacy policy URL, support URL, and age rating
+- App review contact info, demo credentials, and review notes
+- Final decision on whether production builds should lock to one hosted Aura backend
+
 ### Run desktop app
 
 Build the frontend once, then run the desktop shell (it embeds the server and frontend):
