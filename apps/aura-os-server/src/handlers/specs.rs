@@ -70,7 +70,6 @@ pub(crate) async fn generate_specs_summary(
         .commands_tx
         .send(HarnessInbound::UserMessage(UserMessage {
             content: format!("Generate specs summary for project {project_id}"),
-            tool_hints: None,
         }))
         .map_err(|e| ApiError::internal(format!("sending spec summary command: {e}")))?;
 
@@ -134,7 +133,6 @@ async fn open_spec_gen_session(
         .commands_tx
         .send(HarnessInbound::UserMessage(UserMessage {
             content: format!("Generate specs for project {project_id}"),
-            tool_hints: None,
         }))
         .map_err(|e| ApiError::internal(format!("sending spec gen command: {e}")))?;
 
