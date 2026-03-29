@@ -112,7 +112,8 @@ AURA_STACK_REMOTE_NETWORK_URL=https://aura-network.onrender.com
 ```
 
 Or use the built-in hybrid preset that keeps `aura-os` and the frontend local
-while targeting deployed services for the rest of the stack:
+while targeting deployed services, including swarm-backed agent execution, for
+the rest of the stack:
 
 ```bash
 AURA_STACK_PRESET=hybrid-swarm
@@ -304,7 +305,9 @@ The hybrid preset is meant for the common developer setup where:
 
 That gives you a realistic remote-backed workflow without needing every sibling
 repo running locally. In this mode the local harness autospawn is disabled so
-Aura OS does not silently fall back to localhost execution. If your deployed Aura app already has a valid session, set
+Aura OS does not silently fall back to localhost execution.
+
+If your deployed Aura app already has a valid session, set
 `AURA_STACK_AUTH_SOURCE_URL` to that host before running `up-hybrid.sh` or
 `run-hybrid-one-shot.sh` so the local Aura OS instance can import the same auth
 session automatically.

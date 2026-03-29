@@ -105,11 +105,6 @@ stack_apply_preset() {
         export AURA_STACK_EVAL_BUNDLE_ID="hybrid-swarm"
       fi
       ;;
-    hybrid-render)
-      export AURA_STACK_PRESET="hybrid-swarm"
-      stack_apply_preset
-      return
-      ;;
     *)
       echo "Invalid AURA_STACK_PRESET: ${AURA_STACK_PRESET}. Expected local or hybrid-swarm." >&2
       exit 1
