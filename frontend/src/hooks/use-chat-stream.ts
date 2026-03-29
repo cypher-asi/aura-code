@@ -34,7 +34,7 @@ export type {
   ToolCallEntry,
 } from "../types/stream";
 
-import type { DisplayContentBlockUnion } from "../types/stream";
+import type { DisplayContentBlockUnion, ToolCallEntry } from "../types/stream";
 
 interface UseChatStreamOptions {
   projectId: string | undefined;
@@ -231,19 +231,38 @@ function promotePendingTask(
  * After a create_task tool result arrives, parse the result JSON and
  * patch the ToolCallEntry.input so the header summary and expanded
  * TaskCreatedIndicator can display the task title/description.
- * (The harness protocol's tool_use_start only carries {id, name}.)
+ *
+ * Called after coreHandleToolResult which already resolved the entry
+ * (setting pending=false, result=...).  We locate that entry the same
+ * way: by explicit id/tool_use_id, or by scanning for the most-recent
+ * just-resolved "create_task" entry — mirroring the harness fallback
+ * in handlers.ts handleToolResult.
  */
 function backfillToolCallInput(
   refs: { toolCalls: { current: ToolCallEntry[] } },
   setters: { setActiveToolCalls: (v: ToolCallEntry[]) => void },
-  c: { id: string; result: string },
+  c: Record<string, unknown>,
 ): void {
   try {
-    const parsed = JSON.parse(c.result);
+    const result = c.result as string;
+    const parsed = JSON.parse(result);
     const raw = parsed?.task ?? parsed;
-    if (!raw || typeof raw !== "object") return;
+    if (!raw || typeof raw === "string") return;
 
-    const idx = refs.toolCalls.current.findIndex((tc) => tc.id === c.id);
+    const toolId = (c.id as string) || (c.tool_use_id as string);
+    let idx = -1;
+    if (toolId) {
+      idx = refs.toolCalls.current.findIndex((tc) => tc.id === toolId);
+    }
+    if (idx === -1) {
+      for (let i = refs.toolCalls.current.length - 1; i >= 0; i--) {
+        const tc = refs.toolCalls.current[i];
+        if (tc.name === "create_task" && !tc.pending && tc.result === result) {
+          idx = i;
+          break;
+        }
+      }
+    }
     if (idx === -1) return;
 
     refs.toolCalls.current = refs.toolCalls.current.map((tc, i) =>
@@ -348,7 +367,7 @@ function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
           if (c.is_error) removePendingArtifact(c.id, pendingTaskIdsRef, (id) => sidekickRef.current.removeTask(id));
           else {
             promotePendingTask(c, projectId, sidekickRef.current, pendingTaskIdsRef);
-            backfillToolCallInput(refs, setters, c);
+            backfillToolCallInput(refs, setters, event.content as Record<string, unknown>);
           }
         }
         if (c.name === "delete_spec" && !c.is_error) {
