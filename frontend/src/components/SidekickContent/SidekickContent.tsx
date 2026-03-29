@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button, Text } from "@cypher-asi/zui";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, GitBranch, RefreshCw } from "lucide-react";
 import { EmptyState } from "../EmptyState";
 import { PanelSearch } from "../PanelSearch";
 import { PreviewContent, PreviewHeader } from "../Preview";
@@ -74,6 +74,28 @@ function InfoPanel({ project, onClose }: { project: import("../../types").Projec
         </span>
         <Text variant="muted" size="sm" as="span">Created</Text>
         <Text size="sm" as="span">{new Date(project.created_at).toLocaleString()}</Text>
+
+        <Text variant="muted" size="sm" as="span">Orbit</Text>
+        <span className={styles.infoWorkspaceCell}>
+          {project.orbit_owner && project.orbit_repo ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <GitBranch size={12} />
+              <Text size="sm" as="span">{project.orbit_owner}/{project.orbit_repo}</Text>
+            </span>
+          ) : (
+            <Text size="sm" variant="muted" as="span">Not linked</Text>
+          )}
+          {project.git_branch && (
+            <Text size="xs" variant="muted" as="span">branch: {project.git_branch}</Text>
+          )}
+        </span>
+
+        {project.git_repo_url && (
+          <>
+            <Text variant="muted" size="sm" as="span">Git URL</Text>
+            <Text size="sm" as="span" style={{ wordBreak: "break-all" }}>{project.git_repo_url}</Text>
+          </>
+        )}
       </div>
     </div>
   );
