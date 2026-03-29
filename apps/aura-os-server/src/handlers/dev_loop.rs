@@ -229,6 +229,23 @@ fn forward_automaton_events(params: ForwardParams) {
                     // task_id in their payload still get stamped correctly.
                     if event_type == "task_started" {
                         if let Some(tid) = event.get("task_id").and_then(|v| v.as_str()) {
+                            // If the harness switched to a different task, close
+                            // the old task's stream so the frontend exits any
+                            // stale "Waiting for agent output..." state.
+                            if let Some(ref old_tid) = current_task_id {
+                                if old_tid != tid {
+                                    emit_domain_event(
+                                        &app_broadcast,
+                                        "task_failed",
+                                        project_id,
+                                        agent_instance_id,
+                                        serde_json::json!({
+                                            "task_id": old_tid,
+                                            "reason": "Superseded by another task",
+                                        }),
+                                    );
+                                }
+                            }
                             current_task_id = Some(tid.to_owned());
                             let session_id = event.get("session_id").and_then(|v| v.as_str()).map(str::to_owned);
                             let mut cache = task_output_cache.lock().await;
@@ -418,6 +435,39 @@ fn forward_automaton_events(params: ForwardParams) {
                         }
                     }
                     let _ = app_broadcast.send(forwarded);
+
+                    // Emit user-visible progress for build/test verification
+                    // phases so the frontend stream shows activity during
+                    // harness startup instead of a blank "Cooking..." state.
+                    let progress_stage: Option<&str> = match event_type {
+                        "build_verification_started" => Some("Running build verification..."),
+                        "build_verification_passed" => Some("Build passed"),
+                        "build_verification_failed" => Some("Build failed — attempting fix..."),
+                        "build_fix_attempt" => Some("Retrying build fix..."),
+                        "test_verification_started" => Some("Running tests..."),
+                        "test_verification_passed" => Some("Tests passed"),
+                        "test_verification_failed" => Some("Tests failed — attempting fix..."),
+                        "test_fix_attempt" => Some("Retrying test fix..."),
+                        _ => None,
+                    };
+                    if let Some(stage) = progress_stage {
+                        let event_task_id = event.get("task_id").and_then(|v| v.as_str()).map(str::to_owned);
+                        let effective_task_id = current_task_id.clone().or(event_task_id);
+                        let mut extra = serde_json::json!({"stage": stage});
+                        if let Some(ref tid) = effective_task_id {
+                            extra.as_object_mut().unwrap().insert(
+                                "task_id".into(),
+                                serde_json::Value::String(tid.clone()),
+                            );
+                        }
+                        emit_domain_event(
+                            &app_broadcast,
+                            "progress",
+                            project_id,
+                            agent_instance_id,
+                            extra,
+                        );
+                    }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     // Persist any accumulated output that was not flushed by a
@@ -731,6 +781,13 @@ pub(crate) async fn start_loop(
             agent_instance_id,
             serde_json::json!({"task_id": tid}),
         );
+        emit_domain_event(
+            &state.event_broadcast,
+            "progress",
+            project_id,
+            agent_instance_id,
+            serde_json::json!({"task_id": tid, "stage": "Preparing agent..."}),
+        );
         let mut cache = state.task_output_cache.lock().await;
         cache.insert(tid.clone(), CachedTaskOutput {
             project_id: Some(project_id.to_string()),
@@ -954,6 +1011,13 @@ pub(crate) async fn run_single_task(
         project_id,
         agent_instance_id,
         serde_json::json!({"task_id": task_id.to_string()}),
+    );
+    emit_domain_event(
+        &state.event_broadcast,
+        "progress",
+        project_id,
+        agent_instance_id,
+        serde_json::json!({"task_id": task_id.to_string(), "stage": "Preparing agent..."}),
     );
 
     // Pre-seed the output cache so the REST endpoint can serve partial output.

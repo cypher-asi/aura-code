@@ -16,14 +16,23 @@ import { getThinkingDurationMs } from "./stream/store";
 /**
  * Bridges global WebSocket task events into the shared stream store,
  * reusing the same handlers and rendering path as the chat UI.
+ *
+ * Pass `isActive` so the hook can eagerly set `isStreaming` when the task
+ * is already in-progress on mount, avoiding the race where the
+ * `TaskStarted` WS event fires before the subscription is registered.
  */
-export function useTaskStream(taskId: string | undefined): { streamKey: string } {
+export function useTaskStream(taskId: string | undefined, isActive?: boolean): { streamKey: string } {
   const { key, refs, setters, abortRef } = useStreamCore(["task", taskId]);
   const subscribe = useEventStore((s) => s.subscribe);
   const isStreamingRef = useRef(false);
 
   useEffect(() => {
     if (!taskId) return;
+
+    if (isActive && !isStreamingRef.current) {
+      setters.setIsStreaming(true);
+      isStreamingRef.current = true;
+    }
 
     const unsubs = [
       subscribe(EventType.TaskStarted, (e) => {
@@ -149,7 +158,7 @@ export function useTaskStream(taskId: string | undefined): { streamKey: string }
     ];
 
     return () => unsubs.forEach((u) => u());
-  }, [taskId, key, refs, setters, abortRef, subscribe]);
+  }, [taskId, isActive, key, refs, setters, abortRef, subscribe]);
 
   return { streamKey: key };
 }

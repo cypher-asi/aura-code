@@ -19,6 +19,7 @@ fn valid_transitions_succeed() {
     assert!(TaskService::validate_transition(TaskStatus::InProgress, TaskStatus::Blocked).is_ok());
     assert!(TaskService::validate_transition(TaskStatus::InProgress, TaskStatus::Ready).is_ok());
     assert!(TaskService::validate_transition(TaskStatus::Failed, TaskStatus::Ready).is_ok());
+    assert!(TaskService::validate_transition(TaskStatus::Failed, TaskStatus::InProgress).is_ok());
     assert!(TaskService::validate_transition(TaskStatus::Blocked, TaskStatus::Ready).is_ok());
 }
 

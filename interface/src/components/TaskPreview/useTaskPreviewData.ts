@@ -28,7 +28,6 @@ function useElapsedTime(active: boolean): number {
 
 export function useTaskPreviewData(task: import("../../types").Task) {
   const taskOutput = useTaskOutput(task.task_id);
-  const { streamKey } = useTaskStream(task.task_id);
   const ctx = useProjectContext();
   const sidekick = useSidekick();
   const { agentInstanceId: routeAgentInstanceId } = useParams<{ agentInstanceId: string }>();
@@ -41,6 +40,7 @@ export function useTaskPreviewData(task: import("../../types").Task) {
   const effectiveStatus = liveStatus ?? task.status;
   const effectiveSessionId = liveSessionId ?? task.session_id;
   const isActive = effectiveStatus === "in_progress";
+  const { streamKey } = useTaskStream(task.task_id, isActive);
   const isTerminal = effectiveStatus === "done" || effectiveStatus === "failed";
   const elapsed = useElapsedTime(isActive);
 
