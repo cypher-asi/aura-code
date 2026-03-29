@@ -51,27 +51,6 @@ const EMPTY_OUTPUT: TaskOutputEntry = { text: "", fileOps: [], buildSteps: [], t
 const subscribers = new Map<EventType, Set<EventCallback>>();
 const taskOutputListeners = new Map<string, Set<TaskOutputListener>>();
 
-function debugLog(hypothesisId: string, location: string, message: string, data: Record<string, unknown>) {
-  // #region agent log
-  fetch("http://127.0.0.1:7836/ingest/c96ab900-9f38-42f7-81b1-bd596c64b5c4", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "b85524",
-    },
-    body: JSON.stringify({
-      sessionId: "b85524",
-      runId: "initial",
-      hypothesisId,
-      location,
-      message,
-      data,
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-}
-
 interface EventState {
   connected: boolean;
   lastEventAt: number | null;
@@ -123,20 +102,6 @@ export const useEventStore = create<EventState>()((set, get) => ({
 }));
 
 function handleEngineEvent(event: AuraEvent) {
-  if (
-    event.type === EventType.TaskStarted ||
-    event.type === EventType.TextDelta ||
-    event.type === EventType.ThinkingDelta ||
-    event.type === EventType.Progress
-  ) {
-    const c = event.content as Record<string, unknown>;
-    debugLog("H2", "event-store.ts:112", "WS event parsed in store", {
-      eventType: event.type,
-      taskId: (c.task_id as string | undefined) ?? null,
-      hasText: typeof c.text === "string" && (c.text as string).length > 0,
-    });
-  }
-
   const { taskOutputs } = useEventStore.getState();
   let updatedOutputs = taskOutputs;
   let outputChanged = false;
@@ -145,10 +110,6 @@ function handleEngineEvent(event: AuraEvent) {
     const { task_id } = event.content;
     if (task_id) {
       const existing = updatedOutputs[task_id];
-      debugLog("H5", "event-store.ts:127", "TaskStarted received in store", {
-        taskId: task_id,
-        existingTextLength: existing?.text.length ?? 0,
-      });
       if (existing && existing.text) {
         updatedOutputs = { ...updatedOutputs, [task_id]: { text: "", fileOps: [], buildSteps: [], testSteps: [], gitSteps: [] } };
         outputChanged = true;

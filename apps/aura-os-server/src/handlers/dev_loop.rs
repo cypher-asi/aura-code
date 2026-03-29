@@ -298,14 +298,6 @@ fn forward_automaton_events(params: ForwardParams) {
                                 | "test_verification_failed" | "test_fix_attempt" => {
                                     entry.test_steps.push(event.clone());
                                 }
-                                "token_usage" => {
-                                    if let Some(input) = event.get("input_tokens").and_then(|v| v.as_u64()) {
-                                        entry.input_tokens += input;
-                                    }
-                                    if let Some(output) = event.get("output_tokens").and_then(|v| v.as_u64()) {
-                                        entry.output_tokens += output;
-                                    }
-                                }
                                 _ => {}
                             }
                         }
@@ -701,6 +693,29 @@ pub(crate) async fn start_loop(
     )
     .await;
 
+    forward_automaton_events(ForwardParams {
+        automaton_events_tx: events_tx,
+        app_broadcast: state.event_broadcast.clone(),
+        automaton_registry: state.automaton_registry.clone(),
+        project_id,
+        agent_instance_id,
+        task_id: first_task_id.clone(),
+        task_service: state.task_service.clone(),
+        task_output_cache: state.task_output_cache.clone(),
+        storage_client: state.storage_client.clone(),
+        jwt: jwt_for_persist,
+    });
+
+    // Emit loop_started before task_started so the frontend processes
+    // LoopStarted (sets preparing=true) then TaskStarted (clears it).
+    emit_domain_event(
+        &state.event_broadcast,
+        "loop_started",
+        project_id,
+        agent_instance_id,
+        serde_json::json!({"automaton_id": &automaton_id, "adopted": adopted}),
+    );
+
     if let Some(ref tid) = first_task_id {
         emit_domain_event(
             &state.event_broadcast,
@@ -716,27 +731,6 @@ pub(crate) async fn start_loop(
             ..Default::default()
         });
     }
-
-    forward_automaton_events(ForwardParams {
-        automaton_events_tx: events_tx,
-        app_broadcast: state.event_broadcast.clone(),
-        automaton_registry: state.automaton_registry.clone(),
-        project_id,
-        agent_instance_id,
-        task_id: first_task_id,
-        task_service: state.task_service.clone(),
-        task_output_cache: state.task_output_cache.clone(),
-        storage_client: state.storage_client.clone(),
-        jwt: jwt_for_persist,
-    });
-
-    emit_domain_event(
-        &state.event_broadcast,
-        "loop_started",
-        project_id,
-        agent_instance_id,
-        serde_json::json!({"automaton_id": &automaton_id, "adopted": adopted}),
-    );
 
     {
         let mut reg = state.automaton_registry.lock().await;
@@ -965,19 +959,38 @@ pub(crate) async fn run_single_task(
         });
     }
 
-    if let Ok(events_tx) = automaton_client.connect_event_stream(&automaton_id, Some(&event_stream_url)).await {
-        forward_automaton_events(ForwardParams {
-            automaton_events_tx: events_tx,
-            app_broadcast: state.event_broadcast.clone(),
-            automaton_registry: state.automaton_registry.clone(),
-            project_id,
-            agent_instance_id,
-            task_id: Some(task_id.to_string()),
-            task_service: state.task_service.clone(),
-            task_output_cache: state.task_output_cache.clone(),
-            storage_client: state.storage_client.clone(),
-            jwt: jwt_for_persist,
-        });
+    match automaton_client.connect_event_stream(&automaton_id, Some(&event_stream_url)).await {
+        Ok(events_tx) => {
+            forward_automaton_events(ForwardParams {
+                automaton_events_tx: events_tx,
+                app_broadcast: state.event_broadcast.clone(),
+                automaton_registry: state.automaton_registry.clone(),
+                project_id,
+                agent_instance_id,
+                task_id: Some(task_id.to_string()),
+                task_service: state.task_service.clone(),
+                task_output_cache: state.task_output_cache.clone(),
+                storage_client: state.storage_client.clone(),
+                jwt: jwt_for_persist,
+            });
+        }
+        Err(e) => {
+            warn!(%project_id, %task_id, %automaton_id, error = %e,
+                "Failed to connect event stream for single task; emitting task_failed");
+            emit_domain_event(
+                &state.event_broadcast,
+                "task_failed",
+                project_id,
+                agent_instance_id,
+                serde_json::json!({
+                    "task_id": task_id.to_string(),
+                    "reason": format!("Failed to connect event stream: {e}"),
+                }),
+            );
+            return Err(ApiError::internal(format!(
+                "connecting event stream for task {task_id}: {e}"
+            )));
+        }
     }
 
     Ok(StatusCode::ACCEPTED)
