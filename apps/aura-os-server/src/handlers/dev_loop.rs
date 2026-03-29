@@ -223,10 +223,12 @@ fn forward_automaton_events(params: ForwardParams) {
                     if event_type == "task_started" {
                         if let Some(tid) = event.get("task_id").and_then(|v| v.as_str()) {
                             current_task_id = Some(tid.to_owned());
+                            let session_id = event.get("session_id").and_then(|v| v.as_str()).map(str::to_owned);
                             let mut cache = task_output_cache.lock().await;
                             cache.insert(tid.to_owned(), CachedTaskOutput {
                                 project_id: Some(pid.clone()),
                                 agent_instance_id: Some(aiid.clone()),
+                                session_id,
                                 ..Default::default()
                             });
                         }
@@ -411,6 +413,26 @@ fn forward_automaton_events(params: ForwardParams) {
                     let _ = app_broadcast.send(forwarded);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    // Persist any accumulated output that was not flushed by a
+                    // task_completed / task_failed event (e.g. the completion
+                    // event was lost to lag or the automaton disconnected).
+                    if let Some(ref tid) = current_task_id {
+                        let cached = {
+                            let cache = task_output_cache.lock().await;
+                            cache.get(tid).cloned()
+                        };
+                        if let Some(cached) = cached {
+                            if !cached.live_output.is_empty() || !cached.build_steps.is_empty() || !cached.test_steps.is_empty() {
+                                warn!(task_id = %tid, "Broadcast closed before task completion; persisting accumulated output");
+                                persistence::persist_task_output(
+                                    storage_client.as_ref(),
+                                    jwt.as_deref(),
+                                    tid,
+                                    &cached,
+                                ).await;
+                            }
+                        }
+                    }
                     clear_active_automaton(
                         automaton_registry.clone(),
                         project_id,
@@ -426,7 +448,14 @@ fn forward_automaton_events(params: ForwardParams) {
                     );
                     break;
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    warn!(
+                        task_id = ?current_task_id,
+                        skipped = n,
+                        "Automaton event forwarder lagged; events lost"
+                    );
+                    continue;
+                }
             }
         }
     });

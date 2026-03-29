@@ -244,7 +244,7 @@ impl AutomatonClient {
         .map_err(|_| anyhow::anyhow!("timed out connecting to automaton event stream: {url}"))??;
         info!(automaton_id, "Connected to automaton event stream");
 
-        let (broadcast_tx, _) = broadcast::channel(256);
+        let (broadcast_tx, _) = broadcast::channel(4096);
         let tx = broadcast_tx.clone();
         let aid = automaton_id.to_string();
 
