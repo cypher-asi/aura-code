@@ -65,11 +65,15 @@ That makes it possible to:
 - `bin/up-all.sh`
 - `bin/down-all.sh`
 - `bin/status.sh`
+- `bin/up-hybrid.sh`
+- `bin/status-hybrid.sh`
 - `bin/render-envs.sh`
 - `bin/run-service.sh`
 - `bin/bootstrap-auth.sh`
 - `bin/run-benchmark.sh`
+- `bin/run-hybrid-benchmark.sh`
 - `bin/run-one-shot.sh`
+- `bin/run-hybrid-one-shot.sh`
 
 ## Prerequisites
 
@@ -106,6 +110,19 @@ You can also flip individual services to remote mode:
 AURA_STACK_NETWORK_MODE=remote
 AURA_STACK_REMOTE_NETWORK_URL=https://aura-network.onrender.com
 ```
+
+Or use the built-in hybrid preset that keeps `aura-os`, frontend, and the host
+harness local while targeting the deployed Render core services:
+
+```bash
+AURA_STACK_PRESET=hybrid-render
+```
+
+That preset currently maps to:
+
+- `https://aura-network.onrender.com`
+- `https://aura-storage.onrender.com`
+- `https://orbit-sfvu.onrender.com`
 
 Supported modes are:
 
@@ -162,6 +179,12 @@ If you want the stack to stay up for normal local work, the shortest setup is:
 
 ```bash
 ./evals/local-stack/bin/up-all.sh
+```
+
+For the Render-backed hybrid setup, use:
+
+```bash
+./evals/local-stack/bin/up-hybrid.sh
 ```
 
 That command will:
@@ -246,16 +269,43 @@ Or use the helper:
 ./evals/local-stack/bin/run-benchmark.sh "Hello world static site benchmark"
 ```
 
+For the Render-backed hybrid lane:
+
+```bash
+./evals/local-stack/bin/run-hybrid-benchmark.sh
+./evals/local-stack/bin/run-hybrid-benchmark.sh "Hello world static site benchmark"
+```
+
 Or use the full one-shot runner that handles stack bring-up and teardown too:
 
 ```bash
 ./evals/local-stack/bin/run-one-shot.sh "Hello world static site benchmark"
 ```
 
+And for the hybrid one-shot path:
+
+```bash
+./evals/local-stack/bin/run-hybrid-one-shot.sh "Hello world static site benchmark"
+```
+
 By default the live benchmark now cleans up the project agent, project, and
 agent that it created after the run. Set `AURA_EVAL_KEEP_ENTITIES=1` if you
 want to preserve benchmark artifacts for debugging. Org reuse is preferred over
 org churn because there is no org delete route yet.
+
+## Hybrid Notes
+
+The hybrid preset is meant for the common developer setup where:
+
+- Aura OS and the frontend run locally
+- the build loop still uses a local host harness
+- `aura-network`, `aura-storage`, and `orbit` point at deployed Render services
+
+That gives you a realistic remote-backed workflow without needing every sibling
+repo running locally. If your deployed Aura app already has a valid session, set
+`AURA_STACK_AUTH_SOURCE_URL` to that host before running `up-hybrid.sh` or
+`run-hybrid-one-shot.sh` so the local Aura OS instance can import the same auth
+session automatically.
 
 The local stack does not create a fake auth provider. It uses a real zOS-backed Aura session, then routes that session into the local sibling services.
 

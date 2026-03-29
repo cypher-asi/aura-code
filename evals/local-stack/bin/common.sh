@@ -35,6 +35,7 @@ stack_load_env() {
   export AURA_STACK_ORBIT_MODE="${AURA_STACK_ORBIT_MODE:-local}"
   export AURA_STACK_HARNESS_MODE="${AURA_STACK_HARNESS_MODE:-local}"
   export AURA_STACK_HARNESS_RUNTIME="${AURA_STACK_HARNESS_RUNTIME:-host}"
+  export AURA_STACK_PRESET="${AURA_STACK_PRESET:-}"
 
   export AURA_STACK_REMOTE_NETWORK_URL="${AURA_STACK_REMOTE_NETWORK_URL:-}"
   export AURA_STACK_REMOTE_STORAGE_URL="${AURA_STACK_REMOTE_STORAGE_URL:-}"
@@ -77,11 +78,38 @@ stack_load_env() {
   export AURA_STACK_ANTHROPIC_MODEL="${AURA_STACK_ANTHROPIC_MODEL:-claude-opus-4-6}"
   export AURA_STACK_AURA_OS_DATA_DIR="${AURA_STACK_AURA_OS_DATA_DIR:-$AURA_STACK_RUNTIME_DIR/aura-app}"
 
+  stack_apply_preset
+
   export AURA_STACK_EVAL_BASE_URL="${AURA_STACK_EVAL_BASE_URL:-http://127.0.0.1:${AURA_STACK_FRONTEND_PORT}}"
   export AURA_STACK_EVAL_BUNDLE_ID="${AURA_STACK_EVAL_BUNDLE_ID:-local-stack}"
 
   export AURA_STACK_ORBIT_GIT_STORAGE_ROOT="${AURA_STACK_ORBIT_GIT_STORAGE_ROOT:-$AURA_STACK_RUNTIME_DIR/orbit/repos}"
   export AURA_STACK_DOCKER_COMPOSE_FILE="${AURA_STACK_DOCKER_COMPOSE_FILE:-$AURA_STACK_LOCAL_STACK_DIR/docker-compose.yml}"
+}
+
+stack_apply_preset() {
+  case "$AURA_STACK_PRESET" in
+    ""|local)
+      ;;
+    hybrid-render)
+      export AURA_STACK_NETWORK_MODE="remote"
+      export AURA_STACK_STORAGE_MODE="remote"
+      export AURA_STACK_ORBIT_MODE="remote"
+      export AURA_STACK_HARNESS_MODE="local"
+      export AURA_STACK_HARNESS_RUNTIME="host"
+
+      export AURA_STACK_REMOTE_NETWORK_URL="${AURA_STACK_REMOTE_NETWORK_URL:-https://aura-network.onrender.com}"
+      export AURA_STACK_REMOTE_STORAGE_URL="${AURA_STACK_REMOTE_STORAGE_URL:-https://aura-storage.onrender.com}"
+      export AURA_STACK_REMOTE_ORBIT_URL="${AURA_STACK_REMOTE_ORBIT_URL:-https://orbit-sfvu.onrender.com}"
+      if [[ -z "${AURA_STACK_EVAL_BUNDLE_ID:-}" || "${AURA_STACK_EVAL_BUNDLE_ID}" == "local-stack" ]]; then
+        export AURA_STACK_EVAL_BUNDLE_ID="hybrid-render"
+      fi
+      ;;
+    *)
+      echo "Invalid AURA_STACK_PRESET: ${AURA_STACK_PRESET}. Expected local or hybrid-render." >&2
+      exit 1
+      ;;
+  esac
 }
 
 stack_assert_mode() {
@@ -236,6 +264,9 @@ stack_docker_services() {
   fi
   if stack_is_local harness && [[ "$AURA_STACK_HARNESS_RUNTIME" == "docker" ]]; then
     services+=("aura-harness")
+  fi
+  if [[ "${#services[@]}" -eq 0 ]]; then
+    return 0
   fi
   printf '%s\n' "${services[@]}"
 }
