@@ -227,6 +227,34 @@ function promotePendingTask(
   } catch { /* result wasn't parseable JSON – leave pending for TaskSaved fallback */ }
 }
 
+/**
+ * After a create_task tool result arrives, parse the result JSON and
+ * patch the ToolCallEntry.input so the header summary and expanded
+ * TaskCreatedIndicator can display the task title/description.
+ * (The harness protocol's tool_use_start only carries {id, name}.)
+ */
+function backfillToolCallInput(
+  refs: { toolCalls: { current: ToolCallEntry[] } },
+  setters: { setActiveToolCalls: (v: ToolCallEntry[]) => void },
+  c: { id: string; result: string },
+): void {
+  try {
+    const parsed = JSON.parse(c.result);
+    const raw = parsed?.task ?? parsed;
+    if (!raw || typeof raw !== "object") return;
+
+    const idx = refs.toolCalls.current.findIndex((tc) => tc.id === c.id);
+    if (idx === -1) return;
+
+    refs.toolCalls.current = refs.toolCalls.current.map((tc, i) =>
+      i === idx
+        ? { ...tc, input: { ...tc.input, title: raw.title, description: raw.description } }
+        : tc,
+    );
+    setters.setActiveToolCalls([...refs.toolCalls.current]);
+  } catch { /* ignore unparseable results */ }
+}
+
 /* ------------------------------------------------------------------ */
 /*  Event dispatcher                                                   */
 /* ------------------------------------------------------------------ */
@@ -318,7 +346,10 @@ function buildStreamHandler(deps: DispatchDeps): StreamEventHandler {
         }
         if (c.name === "create_task") {
           if (c.is_error) removePendingArtifact(c.id, pendingTaskIdsRef, (id) => sidekickRef.current.removeTask(id));
-          else promotePendingTask(c, projectId, sidekickRef.current, pendingTaskIdsRef);
+          else {
+            promotePendingTask(c, projectId, sidekickRef.current, pendingTaskIdsRef);
+            backfillToolCallInput(refs, setters, c);
+          }
         }
         if (c.name === "delete_spec" && !c.is_error) {
           try {
