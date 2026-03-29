@@ -12,6 +12,7 @@ import { useMessageQueueStore, useMessageQueue } from "../../stores/message-queu
 import type { QueuedMessage } from "../../stores/message-queue-store";
 import type { ChatAttachment } from "../../api/streams";
 import type { SlashCommand } from "../../constants/commands";
+import type { Project } from "../../types";
 import { loadPersistedModel, persistModel } from "../../constants/models";
 import styles from "../ChatView/ChatView.module.css";
 
@@ -23,6 +24,7 @@ export interface ChatPanelProps {
     selectedModel: string | null,
     attachments?: ChatAttachment[],
     commands?: string[],
+    projectId?: string,
   ) => void;
   onStop: () => void;
   agentName?: string;
@@ -35,6 +37,9 @@ export interface ChatPanelProps {
   errorMessage?: string | null;
   emptyMessage?: string;
   scrollResetKey?: unknown;
+  projects?: Project[];
+  selectedProjectId?: string;
+  onProjectChange?: (projectId: string) => void;
 }
 
 export function ChatPanel({
@@ -50,6 +55,9 @@ export function ChatPanel({
   errorMessage,
   emptyMessage,
   scrollResetKey,
+  projects,
+  selectedProjectId,
+  onProjectChange,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [selectedModel, setSelectedModel] = useState(loadPersistedModel);
@@ -117,11 +125,11 @@ export function ChatPanel({
           commands: commandIds,
         });
       } else {
-        onSend(content, action ?? null, selectedModel, apiAttachments, commandIds);
+        onSend(content, action ?? null, selectedModel, apiAttachments, commandIds, selectedProjectId);
       }
       scrollToBottom();
     },
-    [buildApiAttachments, commands, isStreaming, onSend, scrollToBottom, selectedModel, streamKey],
+    [buildApiAttachments, commands, isStreaming, onSend, scrollToBottom, selectedModel, selectedProjectId, streamKey],
   );
 
   const prevStreamingRef = useRef(false);
@@ -135,11 +143,16 @@ export function ChatPanel({
     selectedModelRef.current = selectedModel;
   }, [selectedModel]);
 
+  const selectedProjectIdRef = useRef(selectedProjectId);
+  useEffect(() => {
+    selectedProjectIdRef.current = selectedProjectId;
+  }, [selectedProjectId]);
+
   useEffect(() => {
     if (prevStreamingRef.current && !isStreaming) {
       const next = useMessageQueueStore.getState().dequeue(streamKey);
       if (next) {
-        onSendRef.current(next.content, next.action, selectedModelRef.current, next.attachments, next.commands);
+        onSendRef.current(next.content, next.action, selectedModelRef.current, next.attachments, next.commands, selectedProjectIdRef.current);
         scrollToBottom();
       } else {
         requestAnimationFrame(() => scrollToBottomIfPinned());
@@ -240,6 +253,9 @@ export function ChatPanel({
           onRemoveAttachment={handleRemoveAttachment}
           selectedCommands={commands}
           onCommandsChange={setCommands}
+          projects={projects}
+          selectedProjectId={selectedProjectId}
+          onProjectChange={onProjectChange}
         />
       </div>
     </div>

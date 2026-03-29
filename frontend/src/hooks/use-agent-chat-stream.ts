@@ -37,6 +37,7 @@ interface UseAgentChatStreamResult {
     selectedModel?: string | null,
     attachments?: ChatAttachment[],
     commands?: string[],
+    projectId?: string,
   ) => Promise<void>;
   stopStreaming: () => void;
   resetEvents: (msgs: DisplaySessionEvent[], options?: { allowWhileStreaming?: boolean }) => void;
@@ -59,6 +60,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
       selectedModel?: string | null,
       attachments?: ChatAttachment[],
       commands?: string[],
+      projectId?: string,
     ) => {
       if (!agentId || getIsStreaming(core.key)) return;
       const trimmed = content.trim();
@@ -152,6 +154,7 @@ export function useAgentChatStream({ agentId, onTaskSaved, onSpecSaved }: UseAge
           handler,
           controller.signal,
           commands,
+          projectId,
         );
       } catch (err: unknown) {
         if (err instanceof DOMException && err.name === "AbortError") return;

@@ -262,6 +262,7 @@ async fn setup_agent_chat_persistence(
     state: &AppState,
     agent_id: &AgentId,
     agent_name: &str,
+    requested_project_id: Option<&str>,
 ) -> Option<ChatPersistCtx> {
     let storage = match state.storage_client.as_ref() {
         Some(s) => s.clone(),
@@ -280,7 +281,17 @@ async fn setup_agent_chat_persistence(
     let matching =
         find_matching_project_agents(state, &storage, &jwt, &agent_id.to_string()).await;
 
-    let (pai, pid) = if let Some(pa) = matching.first() {
+    let filtered = if let Some(req_pid) = requested_project_id {
+        matching
+            .iter()
+            .filter(|pa| pa.project_id.as_deref() == Some(req_pid))
+            .cloned()
+            .collect::<Vec<_>>()
+    } else {
+        matching.clone()
+    };
+
+    let (pai, pid) = if let Some(pa) = filtered.first() {
         let pid = pa.project_id.clone().unwrap_or_default();
         if pid.is_empty() {
             warn!(%agent_id, "No project_id for agent; skipping chat persistence");
@@ -290,21 +301,24 @@ async fn setup_agent_chat_persistence(
         (pa.id.clone(), pid)
     } else {
         warn!(%agent_id, "agent chat persistence: no matching project agents found, attempting auto-create");
-        let all_projects = match projects::list_all_projects_from_network(state).await {
-            Ok(p) => p,
-            Err((status, body)) => {
-                warn!(%agent_id, ?status, ?body, "agent chat persistence: failed to list projects for auto-create");
-                return None;
+        let target_project_id = if let Some(req_pid) = requested_project_id {
+            Some(req_pid.to_string())
+        } else {
+            match projects::list_all_projects_from_network(state).await {
+                Ok(p) => p.first().map(|proj| proj.project_id.to_string()),
+                Err((status, body)) => {
+                    warn!(%agent_id, ?status, ?body, "agent chat persistence: failed to list projects for auto-create");
+                    return None;
+                }
             }
         };
-        let project = match all_projects.first() {
-            Some(p) => p,
+        let project_id_str = match target_project_id {
+            Some(pid) => pid,
             None => {
                 warn!(%agent_id, "agent chat persistence: no projects available for auto-create");
                 return None;
             }
         };
-        let project_id_str = project.project_id.to_string();
         let req = aura_os_storage::CreateProjectAgentRequest {
             agent_id: agent_id.to_string(),
             name: agent_name.to_string(),
@@ -741,14 +755,25 @@ pub(crate) async fn send_agent_event_stream(
         .await
         .map_err(|e| ApiError::internal(format!("looking up agent: {e}")))?;
 
-    let persist_ctx = setup_agent_chat_persistence(&state, &agent_id, &agent.name).await;
+    let requested_project_id = body.project_id.clone();
+    let persist_ctx = setup_agent_chat_persistence(
+        &state,
+        &agent_id,
+        &agent.name,
+        requested_project_id.as_deref(),
+    )
+    .await;
     if persist_ctx.is_none() {
         warn!(%agent_id, "agent chat: persistence context unavailable — chat will NOT be saved");
     } else {
         info!(%agent_id, "agent chat: persistence context ready");
     }
 
-    let session_key = format!("agent:{agent_id}");
+    let session_key = if let Some(ref pid) = requested_project_id {
+        format!("agent:{agent_id}:project:{pid}")
+    } else {
+        format!("agent:{agent_id}")
+    };
     let conversation_messages = if !has_live_session(&state, &session_key) {
         let stored = aggregate_agent_events_from_storage(&state, &agent_id).await;
         if stored.is_empty() { None } else { Some(session_events_to_conversation_history(&stored)) }
@@ -756,12 +781,39 @@ pub(crate) async fn send_agent_event_stream(
         None
     };
 
+    let system_prompt = if let Some(ref pid) = requested_project_id {
+        if let Ok(pid_typed) = pid.parse::<ProjectId>() {
+            build_project_system_prompt(&state, &pid_typed, &agent.system_prompt)
+        } else {
+            agent.system_prompt.clone()
+        }
+    } else {
+        agent.system_prompt.clone()
+    };
+
+    let (project_id_cfg, project_path_cfg) = if let Some(ref pid) = requested_project_id {
+        let project = pid.parse::<ProjectId>().ok().and_then(|p| state.project_service.get_project(&p).ok());
+        let project_folder = project.as_ref().map(|p| p.linked_folder_path.as_str());
+        let project_name = project.as_ref().map(|p| p.name.as_str()).unwrap_or("");
+        let path = Some(resolve_workspace_path(
+            &agent.machine_type,
+            project_folder,
+            &state.data_dir,
+            project_name,
+        ));
+        (Some(pid.clone()), path)
+    } else {
+        (None, None)
+    };
+
     let config = with_optional_jwt(&state, SessionConfig {
-        system_prompt: Some(agent.system_prompt.clone()),
+        system_prompt: Some(system_prompt),
         agent_id: Some(agent_id.to_string()),
         agent_name: Some(agent.name.clone()),
         model: body.model.clone(),
         conversation_messages,
+        project_id: project_id_cfg,
+        project_path: project_path_cfg,
         ..Default::default()
     });
 

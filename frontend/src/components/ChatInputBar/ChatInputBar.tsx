@@ -1,5 +1,5 @@
 import { useRef, useState, useImperativeHandle, forwardRef, memo, useCallback, useEffect } from "react";
-import { ArrowUp, Plus, X, FileText, ChevronDown } from "lucide-react";
+import { ArrowUp, Plus, X, FileText, ChevronDown, FolderOpen } from "lucide-react";
 import { useIsStreaming } from "../../hooks/stream/hooks";
 import { useFileAttachments } from "./useFileAttachments";
 import { AVAILABLE_MODELS, modelLabel } from "../../constants/models";
@@ -7,6 +7,7 @@ import { AgentEnvironment } from "../AgentEnvironment";
 import { SlashCommandMenu } from "./SlashCommandMenu";
 import { CommandChips } from "./CommandChips";
 import type { SlashCommand } from "../../constants/commands";
+import type { Project } from "../../types";
 import styles from "../ChatView/ChatView.module.css";
 
 export interface ChatInputBarHandle {
@@ -40,6 +41,9 @@ interface Props {
   onRemoveAttachment?: (id: string) => void;
   selectedCommands?: SlashCommand[];
   onCommandsChange?: (commands: SlashCommand[]) => void;
+  projects?: Project[];
+  selectedProjectId?: string;
+  onProjectChange?: (projectId: string) => void;
 }
 
 function AttachmentPreviews({ attachments, onRemove }: { attachments: AttachmentItem[]; onRemove: (id: string) => void }) {
@@ -62,14 +66,17 @@ export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function 
   selectedModel, onModelChange, machineType, templateAgentId, agentId,
   attachments = [], onAttachmentsChange, onRemoveAttachment,
   selectedCommands = [], onCommandsChange,
+  projects = [], selectedProjectId, onProjectChange,
 }, ref) {
   const isStreaming = useIsStreaming(streamKey);
   const [isDragOver, setIsDragOver] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState("");
   const slashStartRef = useRef<number | null>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
+  const projectMenuRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -101,6 +108,19 @@ export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function 
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [modelMenuOpen]);
+
+  useEffect(() => {
+    if (!projectMenuOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (projectMenuRef.current && !projectMenuRef.current.contains(e.target as Node)) {
+        setProjectMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [projectMenuOpen]);
+
+  const selectedProjectName = projects.find((p) => p.project_id === selectedProjectId)?.name;
 
   const excludeIds = new Set(selectedCommands.map((c) => c.id));
 
@@ -175,6 +195,27 @@ export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function 
       <div className={styles.inputInfoBar}>
         {machineType && <><AgentEnvironment machineType={machineType} agentId={templateAgentId ?? agentId} /><span className={styles.infoText} style={{ marginRight: 2 }}>·</span></>}
         <span className={styles.infoText}>/ for commands</span>
+        {projects.length > 0 && (
+          <div className={styles.projectMenuWrap} ref={projectMenuRef}>
+            <button type="button" className={styles.projectButton} onClick={() => setProjectMenuOpen((v) => !v)}>
+              <FolderOpen size={10} />{selectedProjectName ?? "Project"}<ChevronDown size={10} />
+            </button>
+            {projectMenuOpen && (
+              <div className={styles.projectMenu}>
+                {projects.map((p) => (
+                  <button
+                    key={p.project_id}
+                    type="button"
+                    className={`${styles.projectMenuItem} ${p.project_id === selectedProjectId ? styles.projectMenuItemActive : ""}`}
+                    onClick={() => { onProjectChange?.(p.project_id); setProjectMenuOpen(false); }}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div className={styles.modelMenuWrap} ref={modelMenuRef}>
           <button type="button" className={styles.modelButton} onClick={() => setModelMenuOpen((v) => !v)}>
             {modelLabel(selectedModel ?? "")}<ChevronDown size={10} />

@@ -133,6 +133,7 @@ export function sendAgentEventStream(
   handler: StreamEventHandler = { onEvent: () => {}, onError: () => {} },
   signal?: AbortSignal,
   commands?: string[],
+  projectId?: string,
 ) {
   const body: Record<string, unknown> = { content, action };
   if (model) body.model = model;
@@ -142,6 +143,7 @@ export function sendAgentEventStream(
   if (commands && commands.length > 0) {
     body.commands = commands;
   }
+  if (projectId) body.project_id = projectId;
   return streamSSE<string>(
     `${BASE_URL}/api/agents/${agentId}/events/stream`,
     {
