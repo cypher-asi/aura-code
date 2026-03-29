@@ -11,6 +11,7 @@ import { SegmentedContent } from "../SegmentedContent";
 import { ThinkingRow } from "../ThinkingRow";
 import { ToolCallsList } from "../ToolRow";
 import { ActivityTimeline } from "../ActivityTimeline";
+import { LargeTextBlock, isLargeText } from "./LargeTextBlock";
 
 interface Props {
   message: DisplaySessionEvent;
@@ -89,6 +90,8 @@ export const MessageBubble = memo(function MessageBubble({ message }: Props) {
             block.type === "text" ? (
               FILE_PREFIX_RE.test(block.text) ? (
                 <FileAttachmentBlock key={i} text={block.text} />
+              ) : isLargeText(block.text) ? (
+                <LargeTextBlock key={i} text={block.text} />
               ) : (
                 <span key={i}>{block.text}</span>
               )
@@ -103,6 +106,9 @@ export const MessageBubble = memo(function MessageBubble({ message }: Props) {
           )}
         </div>
       );
+    }
+    if (hasContent && isLargeText(message.content)) {
+      return <LargeTextBlock text={message.content} />;
     }
     return message.content;
   };
