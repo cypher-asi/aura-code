@@ -18,13 +18,14 @@ Docker-managed:
 - PostgreSQL for `aura-network`
 - PostgreSQL for `aura-storage`
 - PostgreSQL for `orbit`
-- `aura-harness`
+- `aura-harness` when `AURA_STACK_HARNESS_RUNTIME=docker`
 
 Host-managed via helper scripts:
 
 - `aura-network`
 - `aura-storage`
 - `orbit`
+- `aura-harness` by default for local evals (`AURA_STACK_HARNESS_RUNTIME=host`)
 - `aura-os-server`
 - Aura frontend (`vite`)
 
@@ -61,9 +62,13 @@ That makes it possible to:
 - `bin/doctor.sh`
 - `bin/up.sh`
 - `bin/down.sh`
+- `bin/up-all.sh`
+- `bin/down-all.sh`
+- `bin/status.sh`
 - `bin/render-envs.sh`
 - `bin/run-service.sh`
 - `bin/bootstrap-auth.sh`
+- `bin/run-benchmark.sh`
 
 ## Prerequisites
 
@@ -114,6 +119,16 @@ Available mode switches:
 - `AURA_STACK_ORBIT_MODE`
 - `AURA_STACK_HARNESS_MODE`
 
+The harness also has a local runtime switch:
+
+- `AURA_STACK_HARNESS_RUNTIME=host`
+- `AURA_STACK_HARNESS_RUNTIME=docker`
+
+`host` is the default because the local benchmark imports workspaces into the
+Aura OS data directory, and the host-run harness can read those paths directly.
+Use `docker` only when the harness has access to the same workspace tree via a
+compatible mount strategy.
+
 For benchmark runs, the harness also needs command tools enabled so generated
 projects can execute their real `build` and `test` commands. The stack now
 defaults to enabling them with a configurable allowlist:
@@ -125,7 +140,24 @@ AURA_STACK_HARNESS_ALLOWED_COMMANDS=npm,node,npx,pnpm,bun,cargo,python,python3,p
 
 ## Bring the stack up
 
-Start the Docker-managed dependencies:
+The shortest setup is now:
+
+```bash
+./evals/local-stack/bin/up-all.sh
+```
+
+That command will:
+
+- validate repo paths and tool availability
+- render `.runtime/*.env` files for each service
+- start Docker-managed infra
+- start host-managed services in the background
+- wait for health on every local service
+- attempt auth bootstrap from an existing Aura session if one is available
+
+If you want the lower-level steps, you can still do them manually.
+
+Start only the Docker-managed dependencies:
 
 ```bash
 ./evals/local-stack/bin/doctor.sh
@@ -136,8 +168,8 @@ That will:
 
 - validate repo paths and tool availability
 - render `.runtime/*.env` files for each service
-- start the Postgres containers and the local harness container
-- point the local harness at the same local sibling services Aura is using
+- start the Postgres containers
+- optionally start the harness container when `AURA_STACK_HARNESS_RUNTIME=docker`
 
 Then run the host services in separate terminals:
 
@@ -189,6 +221,18 @@ cd frontend
 npm run test:evals:benchmark
 ```
 
+Or use the helper:
+
+```bash
+./evals/local-stack/bin/run-benchmark.sh
+./evals/local-stack/bin/run-benchmark.sh "Hello world static site benchmark"
+```
+
+By default the live benchmark now cleans up the project agent, project, and
+agent that it created after the run. Set `AURA_EVAL_KEEP_ENTITIES=1` if you
+want to preserve benchmark artifacts for debugging. Org reuse is preferred over
+org churn because there is no org delete route yet.
+
 The local stack does not create a fake auth provider. It uses a real zOS-backed Aura session, then routes that session into the local sibling services.
 
 ## Rendered env files
@@ -218,13 +262,19 @@ The `run-service.sh` wrapper already does this for you.
 ## Shut it down
 
 ```bash
-./evals/local-stack/bin/down.sh
+./evals/local-stack/bin/down-all.sh
 ```
 
 For a full clean reset, including persisted Postgres and harness data:
 
 ```bash
-./evals/local-stack/bin/down.sh --volumes
+./evals/local-stack/bin/down-all.sh --volumes
+```
+
+For the lower-level Docker-only stop:
+
+```bash
+./evals/local-stack/bin/down.sh
 ```
 
 ## Current limits

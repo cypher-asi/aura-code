@@ -21,7 +21,7 @@ stack_require_dir_if_local harness
 
 echo "Aura local stack doctor"
 echo
-printf '%-8s  %-8s  %s\n' "service" "mode" "target"
+printf '%-8s  %-8s  %-7s  %s\n' "service" "mode" "runtime" "target"
 stack_print_service_matrix
 echo
 echo "workspace: $AURA_STACK_WORKSPACE_ROOT"

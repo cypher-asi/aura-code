@@ -37,12 +37,9 @@ docker compose -f "$AURA_STACK_DOCKER_COMPOSE_FILE" up -d "${services[@]}"
 echo
 echo "Local stack containers are up."
 echo
-printf '%-8s  %-8s  %s\n' "service" "mode" "target"
+printf '%-8s  %-8s  %-7s  %s\n' "service" "mode" "runtime" "target"
 stack_print_service_matrix
 echo
 echo "Next steps:"
-echo "  ./evals/local-stack/bin/run-service.sh network"
-echo "  ./evals/local-stack/bin/run-service.sh storage"
-echo "  ./evals/local-stack/bin/run-service.sh orbit"
-echo "  ./evals/local-stack/bin/run-service.sh aura-os"
-echo "  ./evals/local-stack/bin/run-service.sh frontend"
+echo "  ./evals/local-stack/bin/up-all.sh"
+echo "  or run services manually with ./evals/local-stack/bin/run-service.sh <service>"

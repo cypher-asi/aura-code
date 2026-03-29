@@ -21,6 +21,9 @@ stack_load_env() {
   export AURA_STACK_REPO_ROOT="${AURA_STACK_REPO_ROOT:-$stack__repo_root}"
   export AURA_STACK_WORKSPACE_ROOT="${AURA_STACK_WORKSPACE_ROOT:-$stack__workspace_root}"
   export AURA_STACK_RUNTIME_DIR="${AURA_STACK_RUNTIME_DIR:-$AURA_STACK_LOCAL_STACK_DIR/.runtime}"
+  export AURA_STACK_PID_DIR="${AURA_STACK_PID_DIR:-$AURA_STACK_RUNTIME_DIR/pids}"
+  export AURA_STACK_LOG_DIR="${AURA_STACK_LOG_DIR:-$AURA_STACK_RUNTIME_DIR/logs}"
+  export AURA_STACK_HEALTH_TIMEOUT_SECONDS="${AURA_STACK_HEALTH_TIMEOUT_SECONDS:-120}"
 
   export AURA_STACK_NETWORK_DIR="${AURA_STACK_NETWORK_DIR:-$AURA_STACK_WORKSPACE_ROOT/aura-network}"
   export AURA_STACK_STORAGE_DIR="${AURA_STACK_STORAGE_DIR:-$AURA_STACK_WORKSPACE_ROOT/aura-storage}"
@@ -31,6 +34,7 @@ stack_load_env() {
   export AURA_STACK_STORAGE_MODE="${AURA_STACK_STORAGE_MODE:-local}"
   export AURA_STACK_ORBIT_MODE="${AURA_STACK_ORBIT_MODE:-local}"
   export AURA_STACK_HARNESS_MODE="${AURA_STACK_HARNESS_MODE:-local}"
+  export AURA_STACK_HARNESS_RUNTIME="${AURA_STACK_HARNESS_RUNTIME:-host}"
 
   export AURA_STACK_REMOTE_NETWORK_URL="${AURA_STACK_REMOTE_NETWORK_URL:-}"
   export AURA_STACK_REMOTE_STORAGE_URL="${AURA_STACK_REMOTE_STORAGE_URL:-}"
@@ -97,6 +101,13 @@ stack_validate_modes() {
   stack_assert_mode "$AURA_STACK_STORAGE_MODE" "AURA_STACK_STORAGE_MODE"
   stack_assert_mode "$AURA_STACK_ORBIT_MODE" "AURA_STACK_ORBIT_MODE"
   stack_assert_mode "$AURA_STACK_HARNESS_MODE" "AURA_STACK_HARNESS_MODE"
+  case "$AURA_STACK_HARNESS_RUNTIME" in
+    host|docker) ;;
+    *)
+      echo "Invalid AURA_STACK_HARNESS_RUNTIME: ${AURA_STACK_HARNESS_RUNTIME}. Expected host or docker." >&2
+      exit 1
+      ;;
+  esac
 }
 
 stack_service_mode() {
@@ -200,6 +211,8 @@ stack_mkdir_runtime() {
   mkdir -p "$AURA_STACK_RUNTIME_DIR"
   mkdir -p "$AURA_STACK_RUNTIME_DIR/orbit/repos"
   mkdir -p "$AURA_STACK_AURA_OS_DATA_DIR"
+  mkdir -p "$AURA_STACK_PID_DIR"
+  mkdir -p "$AURA_STACK_LOG_DIR"
 }
 
 stack_check_command() {
@@ -221,20 +234,147 @@ stack_docker_services() {
   if stack_is_local orbit; then
     services+=("orbit-db")
   fi
-  if stack_is_local harness; then
+  if stack_is_local harness && [[ "$AURA_STACK_HARNESS_RUNTIME" == "docker" ]]; then
     services+=("aura-harness")
   fi
   printf '%s\n' "${services[@]}"
 }
 
 stack_print_service_matrix() {
-  local service mode url
+  local service mode url runtime
   for service in network storage orbit harness; do
     mode="$(stack_service_mode "$service")"
     url="$(stack_resolved_url "$service")"
     if [[ -z "$url" ]]; then
       url="disabled"
     fi
-    printf '%-8s  %-8s  %s\n' "$service" "$mode" "$url"
+    runtime="-"
+    if [[ "$service" == "harness" && "$mode" == "local" ]]; then
+      runtime="$AURA_STACK_HARNESS_RUNTIME"
+    fi
+    printf '%-8s  %-8s  %-7s  %s\n' "$service" "$mode" "$runtime" "$url"
   done
+}
+
+stack_service_pid_file() {
+  printf '%s/%s.pid\n' "$AURA_STACK_PID_DIR" "$1"
+}
+
+stack_service_log_file() {
+  printf '%s/%s.log\n' "$AURA_STACK_LOG_DIR" "$1"
+}
+
+stack_pid_is_running() {
+  local pid="${1:-}"
+  [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1
+}
+
+stack_service_pid() {
+  local pid_file
+  pid_file="$(stack_service_pid_file "$1")"
+  if [[ -f "$pid_file" ]]; then
+    cat "$pid_file"
+  fi
+}
+
+stack_host_managed_services() {
+  local services=()
+  if stack_is_local network; then
+    services+=("network")
+  fi
+  if stack_is_local storage; then
+    services+=("storage")
+  fi
+  if stack_is_local orbit; then
+    services+=("orbit")
+  fi
+  if stack_is_local harness && [[ "$AURA_STACK_HARNESS_RUNTIME" == "host" ]]; then
+    services+=("harness")
+  fi
+  services+=("aura-os" "frontend")
+  printf '%s\n' "${services[@]}"
+}
+
+stack_service_health_url() {
+  local service="$1"
+  case "$service" in
+    network) printf 'http://127.0.0.1:%s/health\n' "$AURA_STACK_NETWORK_PORT" ;;
+    storage) printf 'http://127.0.0.1:%s/health\n' "$AURA_STACK_STORAGE_PORT" ;;
+    orbit) printf 'http://127.0.0.1:%s/health\n' "$AURA_STACK_ORBIT_PORT" ;;
+    harness) printf 'http://127.0.0.1:%s/health\n' "$AURA_STACK_HARNESS_PORT" ;;
+    aura-os) printf 'http://127.0.0.1:%s/api/auth/session\n' "$AURA_STACK_AURA_OS_PORT" ;;
+    frontend) printf 'http://127.0.0.1:%s/login\n' "$AURA_STACK_FRONTEND_PORT" ;;
+    *)
+      echo "Unknown service: $service" >&2
+      exit 1
+      ;;
+  esac
+}
+
+stack_healthcheck_expected_codes() {
+  case "$1" in
+    aura-os) printf '200 401\n' ;;
+    frontend) printf '200\n' ;;
+    *) printf '200\n' ;;
+  esac
+}
+
+stack_wait_for_service() {
+  local service="$1"
+  local url code deadline
+  url="$(stack_service_health_url "$service")"
+  deadline=$((SECONDS + AURA_STACK_HEALTH_TIMEOUT_SECONDS))
+  code=""
+  while (( SECONDS < deadline )); do
+    code="$(curl -sS -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || true)"
+    for allowed in $(stack_healthcheck_expected_codes "$service"); do
+      if [[ "$code" == "$allowed" ]]; then
+        return 0
+      fi
+    done
+    sleep 1
+  done
+  echo "Timed out waiting for ${service} health at ${url} (last status ${code:-unreachable})" >&2
+  return 1
+}
+
+stack_start_background_service() {
+  local service="$1"
+  local script_dir="$2"
+  local pid_file log_file existing_pid
+  pid_file="$(stack_service_pid_file "$service")"
+  log_file="$(stack_service_log_file "$service")"
+  existing_pid="$(stack_service_pid "$service" || true)"
+  if stack_pid_is_running "$existing_pid"; then
+    echo "${service} already running (pid ${existing_pid})"
+    return 0
+  fi
+  rm -f "$pid_file"
+  nohup bash -lc "
+    cd "$AURA_STACK_REPO_ROOT"
+    exec "$script_dir/run-service.sh" "$service"
+  " >"$log_file" 2>&1 &
+  echo $! >"$pid_file"
+  echo "Started ${service} (pid $(cat "$pid_file"))"
+}
+
+stack_stop_background_service() {
+  local service="$1"
+  local pid_file pid deadline
+  pid_file="$(stack_service_pid_file "$service")"
+  if [[ ! -f "$pid_file" ]]; then
+    return 0
+  fi
+  pid="$(cat "$pid_file")"
+  if stack_pid_is_running "$pid"; then
+    kill "$pid" >/dev/null 2>&1 || true
+    deadline=$((SECONDS + 20))
+    while stack_pid_is_running "$pid" && (( SECONDS < deadline )); do
+      sleep 1
+    done
+    if stack_pid_is_running "$pid"; then
+      kill -9 "$pid" >/dev/null 2>&1 || true
+    fi
+  fi
+  rm -f "$pid_file"
 }
