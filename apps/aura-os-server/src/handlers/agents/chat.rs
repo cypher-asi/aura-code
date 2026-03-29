@@ -723,7 +723,7 @@ async fn open_harness_chat_stream(
     user_content: String,
     requested_model: Option<String>,
     persist_ctx: Option<ChatPersistCtx>,
-    commands: Option<Vec<String>>,
+    _commands: Option<Vec<String>>,
 ) -> ApiResult<(
     [(&'static str, HeaderValue); 1],
     Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
@@ -751,7 +751,7 @@ async fn open_harness_chat_stream(
 
     commands_tx
         .send(HarnessInbound::UserMessage(UserMessage {
-            content: user_message_content(user_content, commands),
+            content: user_content,
         }))
         .map_err(|e| ApiError::internal(format!("sending user message: {e}")))?;
 
@@ -938,23 +938,6 @@ pub(crate) async fn send_event_stream(
         body.commands,
     )
     .await
-}
-
-fn user_message_content(content: String, commands: Option<Vec<String>>) -> String {
-    let Some(commands) = commands.filter(|items| !items.is_empty()) else {
-        return content;
-    };
-
-    let mut message = content;
-    message.push_str("\n\nPreferred commands:\n");
-    for command in commands {
-        if !command.trim().is_empty() {
-            message.push_str("- ");
-            message.push_str(command.trim());
-            message.push('\n');
-        }
-    }
-    message
 }
 
 fn build_project_system_prompt(
