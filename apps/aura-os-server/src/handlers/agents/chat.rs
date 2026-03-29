@@ -723,7 +723,7 @@ async fn open_harness_chat_stream(
     user_content: String,
     requested_model: Option<String>,
     persist_ctx: Option<ChatPersistCtx>,
-    _commands: Option<Vec<String>>,
+    commands: Option<Vec<String>>,
 ) -> ApiResult<(
     [(&'static str, HeaderValue); 1],
     Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
