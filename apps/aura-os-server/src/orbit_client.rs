@@ -65,7 +65,7 @@ impl OrbitClient {
             .header("authorization", format!("Bearer {jwt}"))
             .json(&serde_json::json!({
                 "name": name,
-                "org_id": org_id,
+                "orgId": org_id,
             }))
             .send()
             .await
