@@ -866,7 +866,18 @@ fn forward_automaton_events(params: ForwardParams) {
                             obj.insert("type".into(), serde_json::Value::String(mapped.into()));
                         }
                     }
-                    let _ = app_broadcast.send(forwarded);
+                    let _ = app_broadcast.send(forwarded.clone());
+
+                    if persistence::is_log_worthy(
+                        forwarded.get("type").and_then(|t| t.as_str()).unwrap_or(""),
+                    ) {
+                        let sc = storage_client.clone();
+                        let j = jwt.clone();
+                        let p = pid.clone();
+                        tokio::spawn(async move {
+                            persistence::persist_log_event(sc.as_ref(), j.as_deref(), &p, &forwarded).await;
+                        });
+                    }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     clear_active_automaton(
@@ -1218,6 +1229,15 @@ pub(crate) async fn start_loop(
         agent_instance_id,
         serde_json::json!({"automaton_id": &automaton_id, "adopted": adopted}),
     );
+    {
+        let ev = serde_json::json!({"type": "loop_started", "project_id": project_id.to_string(), "agent_instance_id": agent_instance_id.to_string()});
+        let sc = state.storage_client.clone();
+        let j = state.get_jwt().ok();
+        let p = project_id.to_string();
+        tokio::spawn(async move {
+            persistence::persist_log_event(sc.as_ref(), j.as_deref(), &p, &ev).await;
+        });
+    }
 
     {
         let mut reg = state.automaton_registry.lock().await;
@@ -1281,6 +1301,15 @@ pub(crate) async fn pause_loop(
             *aiid,
             serde_json::json!({}),
         );
+        {
+            let ev = serde_json::json!({"type": "loop_paused", "project_id": project_id.to_string(), "agent_instance_id": aiid.to_string()});
+            let sc = state.storage_client.clone();
+            let j = state.get_jwt().ok();
+            let p = project_id.to_string();
+            tokio::spawn(async move {
+                persistence::persist_log_event(sc.as_ref(), j.as_deref(), &p, &ev).await;
+            });
+        }
     }
 
     let active_agent_instances = active_instances(&state, project_id).await;
@@ -1329,6 +1358,15 @@ pub(crate) async fn stop_loop(
             *aiid,
             serde_json::json!({}),
         );
+        {
+            let ev = serde_json::json!({"type": "loop_stopped", "project_id": project_id.to_string(), "agent_instance_id": aiid.to_string()});
+            let sc = state.storage_client.clone();
+            let j = state.get_jwt().ok();
+            let p = project_id.to_string();
+            tokio::spawn(async move {
+                persistence::persist_log_event(sc.as_ref(), j.as_deref(), &p, &ev).await;
+            });
+        }
     }
 
     let remaining: Vec<AgentInstanceId> = reg
