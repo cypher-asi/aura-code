@@ -59,6 +59,10 @@ stack:
 - Playwright evals:
   [frontend/tests/e2e/evals](/Users/shahrozkhan/Documents/zero/aura-os/frontend/tests/e2e/evals)
 
+For the current operational workflow map, see:
+
+- [release-workflows.md](/Users/shahrozkhan/Documents/zero/aura-os/docs/release-workflows.md)
+
 ## Core Insight
 
 We should not build a second testing system for release packaging.
