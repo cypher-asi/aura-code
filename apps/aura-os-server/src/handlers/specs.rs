@@ -65,7 +65,8 @@ pub(crate) async fn generate_specs_summary(
 
     let mode = resolve_harness_mode(&state, &project_id, &params).await;
     let harness = state.harness_for(mode);
-    let session_config = project_tool_session_config(&state, &project_id, "spec-summary", &jwt);
+    let session_config =
+        project_tool_session_config(&state, &project_id, "spec-summary", mode, &jwt);
     let session = harness
         .open_session(session_config)
         .await
@@ -130,7 +131,7 @@ async fn open_spec_gen_session(
     super::billing::require_credits(state, jwt).await?;
 
     let harness = state.harness_for(harness_mode);
-    let session_config = project_tool_session_config(state, project_id, "spec-gen", jwt);
+    let session_config = project_tool_session_config(state, project_id, "spec-gen", harness_mode, jwt);
     let session = harness
         .open_session(session_config)
         .await

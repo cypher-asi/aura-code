@@ -79,7 +79,8 @@ pub(crate) async fn extract_tasks(
         HarnessMode::Local
     };
     let harness = state.harness_for(harness_mode);
-    let session_config = project_tool_session_config(&state, &project_id, "task-extract", &jwt);
+    let session_config =
+        project_tool_session_config(&state, &project_id, "task-extract", harness_mode, &jwt);
     let session = harness
         .open_session(session_config)
         .await

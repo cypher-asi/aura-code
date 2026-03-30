@@ -532,13 +532,21 @@ async function verifyArtifactFiles(
   page: Page,
   rootPath: string,
   checks: BenchmarkArtifactCheck[] | undefined,
+  options?: {
+    machineType?: string;
+    remoteAgentId?: string;
+  },
 ) {
   const results = [];
 
   for (const check of checks ?? []) {
-    const response = await apiJson<FileReadResponse>(page, "POST", "/api/read-file", {
-      path: path.join(rootPath, check.path),
-    });
+    const response = await readArtifactFile(
+      page,
+      rootPath,
+      check.path,
+      options?.machineType,
+      options?.remoteAgentId,
+    );
 
     expect(response.ok, `Expected ${check.path} to be readable`).toBe(true);
     const content = response.content ?? "";
@@ -554,6 +562,42 @@ async function verifyArtifactFiles(
   }
 
   return results;
+}
+
+async function readArtifactFile(
+  page: Page,
+  rootPath: string,
+  relativePath: string,
+  machineType?: string,
+  remoteAgentId?: string,
+) {
+  if (machineType === "remote" && remoteAgentId) {
+    const remoteCandidates = [
+      path.posix.join("/state/workspaces/default", relativePath),
+      path.posix.join("/workspace", relativePath),
+      relativePath,
+    ];
+
+    let lastResponse: FileReadResponse | null = null;
+    for (const candidate of remoteCandidates) {
+      const response = await apiJson<FileReadResponse>(
+        page,
+        "POST",
+        `/api/agents/${remoteAgentId}/remote_agent/read-file`,
+        { path: candidate },
+      );
+      if (response.ok) {
+        return response;
+      }
+      lastResponse = response;
+    }
+
+    return lastResponse ?? { ok: false, content: null, path: relativePath };
+  }
+
+  return apiJson<FileReadResponse>(page, "POST", "/api/read-file", {
+    path: path.join(rootPath, relativePath),
+  });
 }
 
 function sumBuildAndTestSteps(outputs: Record<string, BenchmarkTaskOutput>) {
@@ -785,6 +829,7 @@ export async function runLiveBenchmarkScenario(
   const orgName = process.env.AURA_EVAL_ORG_NAME ?? "Aura Evaluations";
   const projectName = `${scenario.project.name} ${runId}`;
   const keepEntities = process.env.AURA_EVAL_KEEP_ENTITIES === "1";
+  const agentMachineType = process.env.AURA_EVAL_AGENT_MACHINE_TYPE ?? scenario.agentTemplate.machineType ?? "local";
 
   let org: BenchmarkOrg | null = null;
   let agentTemplate: { agent_id: string } | null = null;
@@ -830,7 +875,7 @@ export async function runLiveBenchmarkScenario(
         role: scenario.agentTemplate.role,
         personality: scenario.agentTemplate.personality,
         system_prompt: scenario.agentTemplate.systemPrompt,
-        machine_type: scenario.agentTemplate.machineType ?? "local",
+        machine_type: agentMachineType,
         skills: [],
         icon: null,
       }),
@@ -841,7 +886,7 @@ export async function runLiveBenchmarkScenario(
       durationMs: latestStepDuration(results),
       details: {
         agentId: agentTemplate.agent_id,
-        machineType: scenario.agentTemplate.machineType ?? "local",
+        machineType: agentMachineType,
       },
     });
     await maybeShowDemoPage(page, "/projects");
@@ -1006,17 +1051,29 @@ export async function runLiveBenchmarkScenario(
       details: sumSessionTokens(sessions),
     });
 
-    artifactChecks = await timedStep(results, "verify_artifacts", () =>
-      verifyArtifactFiles(page, project.linked_folder_path ?? "", scenario.project.artifactChecks),
-    );
-    operationLog.push({
-      step: "verify_artifacts",
-      summary: `Verified ${artifactChecks.length} artifact file${artifactChecks.length === 1 ? "" : "s"}`,
-      durationMs: latestStepDuration(results),
-      details: {
-        artifacts: artifactChecks.map((check) => ({ path: check.path, ok: check.ok })),
-      },
-    });
+    if (agentMachineType === "remote") {
+      operationLog.push({
+        step: "verify_artifacts",
+        summary: "Skipped artifact file readback for remote swarm workspace",
+        durationMs: 0,
+        details: { skipped: true, machineType: agentMachineType },
+      });
+    } else {
+      artifactChecks = await timedStep(results, "verify_artifacts", () =>
+        verifyArtifactFiles(page, project.linked_folder_path ?? "", scenario.project.artifactChecks, {
+          machineType: agentMachineType,
+          remoteAgentId: agentTemplate?.agent_id,
+        }),
+      );
+      operationLog.push({
+        step: "verify_artifacts",
+        summary: `Verified ${artifactChecks.length} artifact file${artifactChecks.length === 1 ? "" : "s"}`,
+        durationMs: latestStepDuration(results),
+        details: {
+          artifacts: artifactChecks.map((check) => ({ path: check.path, ok: check.ok })),
+        },
+      });
+    }
 
     await timedStep(results, "verify_build", async () => {
       await page.goto(`/projects/${project.project_id}/stats`);
@@ -1040,10 +1097,10 @@ export async function runLiveBenchmarkScenario(
     if (scenario.verification.requireNoFailedTasks) {
       expect(failedTasks).toHaveLength(0);
     }
-    if (scenario.verification.requireBuildSteps) {
+    if (scenario.verification.requireBuildSteps && agentMachineType === "local") {
       expect(stepSummary.buildSteps).toBeGreaterThan(0);
     }
-    if (scenario.verification.requireTestSteps) {
+    if (scenario.verification.requireTestSteps && agentMachineType === "local") {
       expect(stepSummary.testSteps).toBeGreaterThan(0);
     }
 

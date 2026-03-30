@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use tracing::{debug, warn};
 
-use aura_os_core::{OrgId, Project, ProjectId, ProjectStatus};
+use aura_os_core::{HarnessMode, OrgId, Project, ProjectId, ProjectStatus};
 use aura_os_link::SessionConfig;
 use aura_os_network::NetworkProject;
 use aura_os_projects::CreateProjectInput;
@@ -208,6 +208,7 @@ pub(crate) fn project_tool_session_config(
     state: &AppState,
     project_id: &ProjectId,
     tool_agent_name: &'static str,
+    harness_mode: HarnessMode,
     jwt: &str,
 ) -> SessionConfig {
     let project = state.project_service.get_project(project_id).ok();
@@ -226,7 +227,8 @@ pub(crate) fn project_tool_session_config(
         }
     });
     SessionConfig {
-        agent_id: Some(format!("{tool_agent_name}-{project_id}")),
+        agent_id: (harness_mode == HarnessMode::Local)
+            .then(|| format!("{tool_agent_name}-{project_id}")),
         agent_name: Some(tool_agent_name.to_string()),
         token: Some(jwt.to_string()),
         project_id: Some(project_id.to_string()),
