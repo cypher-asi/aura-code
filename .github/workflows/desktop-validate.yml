@@ -115,6 +115,15 @@ jobs:
         if: env.CARGO_PACKAGER_SIGN_PRIVATE_KEY != ''
         run: cargo install cargo-packager --locked
 
+      - name: Normalize signing key
+        if: env.CARGO_PACKAGER_SIGN_PRIVATE_KEY != ''
+        shell: bash
+        run: |
+          normalized="$(python scripts/normalize-packager-key.py)"
+          if [ -n "$normalized" ]; then
+            echo "CARGO_PACKAGER_SIGN_PRIVATE_KEY=$normalized" >> "$GITHUB_ENV"
+          fi
+
       - name: Package desktop artifact
         if: env.CARGO_PACKAGER_SIGN_PRIVATE_KEY != ''
         env:

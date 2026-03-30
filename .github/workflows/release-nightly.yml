@@ -90,6 +90,14 @@ jobs:
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
 
+      - name: Normalize signing key
+        shell: bash
+        run: |
+          normalized="$(python scripts/normalize-packager-key.py)"
+          if [ -n "$normalized" ]; then
+            echo "CARGO_PACKAGER_SIGN_PRIVATE_KEY=$normalized" >> "$GITHUB_ENV"
+          fi
+
       - name: Build interface
         working-directory: interface
         run: |
