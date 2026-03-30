@@ -1,6 +1,7 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, SpecId, Task, TaskId, TaskStatus};
 use aura_os_link::{HarnessInbound, HarnessOutbound, UserMessage};
@@ -87,6 +88,7 @@ pub(crate) async fn extract_tasks(
         .commands_tx
         .send(HarnessInbound::UserMessage(UserMessage {
             content: format!("Extract tasks for project {project_id}"),
+            tool_hints: None,
         }))
         .map_err(|e| ApiError::internal(format!("sending task extract command: {e}")))?;
 
@@ -231,15 +233,31 @@ async fn fetch_task_output_from_storage(
     task_id: &TaskId,
 ) -> Option<TaskOutputResponse> {
     let task = storage.get_task(&task_id.to_string(), jwt).await.ok()?;
-    let session_id = task.session_id?;
+    let session_id = match task.session_id {
+        Some(sid) => sid,
+        None => {
+            debug!(%task_id, "Task has no session_id in storage; cannot fetch persisted output");
+            return None;
+        }
+    };
     let events = storage
         .list_events(&session_id, jwt, None, None)
         .await
         .ok()?;
 
+    let task_id_str = task_id.to_string();
+    let matches_task = |e: &&aura_os_storage::StorageSessionEvent, expected_type: &str| -> bool {
+        e.event_type.as_deref() == Some(expected_type)
+            && e.content
+                .as_ref()
+                .and_then(|c| c.get("task_id"))
+                .and_then(|v| v.as_str())
+                .is_some_and(|id| id == task_id_str)
+    };
+
     let output: String = events
         .iter()
-        .filter(|e| e.event_type.as_deref() == Some("task_output"))
+        .filter(|e| matches_task(e, "task_output"))
         .filter_map(|e| {
             e.content
                 .as_ref()
@@ -251,7 +269,7 @@ async fn fetch_task_output_from_storage(
 
     let (mut build_steps, mut test_steps) = (Vec::new(), Vec::new());
     for evt in &events {
-        if evt.event_type.as_deref() != Some("task_steps") {
+        if !matches_task(&evt, "task_steps") {
             continue;
         }
         if let Some(content) = evt.content.as_ref() {
@@ -265,6 +283,11 @@ async fn fetch_task_output_from_storage(
     }
 
     if output.is_empty() && build_steps.is_empty() && test_steps.is_empty() {
+        debug!(
+            %task_id, %session_id,
+            total_events = events.len(),
+            "Session has events but none matched this task_id or all were empty"
+        );
         return None;
     }
     Some(TaskOutputResponse {

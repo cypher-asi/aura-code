@@ -39,6 +39,7 @@ pub struct ProjectStats {
     pub total_specs: u64,
     #[serde(default)]
     pub contributors: u64,
+    #[serde(default)]
     pub estimated_cost_usd: f64,
 }
 
@@ -230,7 +231,7 @@ pub struct CreateTaskRequest {
     pub dependency_ids: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateTaskRequest {
     #[serde(skip_serializing_if = "Option::is_none")]

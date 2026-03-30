@@ -68,6 +68,7 @@ impl TaskService {
                 | (TaskStatus::InProgress, TaskStatus::Blocked)
                 | (TaskStatus::InProgress, TaskStatus::Ready)
                 | (TaskStatus::Failed, TaskStatus::Ready)
+                | (TaskStatus::Failed, TaskStatus::InProgress)
                 | (TaskStatus::Blocked, TaskStatus::Ready)
         );
         if legal {

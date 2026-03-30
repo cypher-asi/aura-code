@@ -119,6 +119,7 @@ pub(crate) struct SendChatRequest {
     pub action: Option<String>,
     pub model: Option<String>,
     pub commands: Option<Vec<String>>,
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
