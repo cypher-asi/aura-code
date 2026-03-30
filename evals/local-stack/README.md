@@ -235,7 +235,7 @@ Seed the isolated Aura server with an existing local Aura login:
 ./evals/local-stack/bin/bootstrap-auth.sh
 ```
 
-By default that copies the access token from `http://127.0.0.1:3100` into the isolated Aura server on `http://127.0.0.1:3190`. Override `AURA_STACK_AUTH_SOURCE_URL` in `stack.env` if your already-authenticated Aura instance lives somewhere else.
+By default that reuses the persisted session from your local Aura app data directory and imports it into the isolated Aura server on `http://127.0.0.1:3190`. Override `AURA_STACK_AUTH_SOURCE_DATA_DIR`, `AURA_STACK_AUTH_SOURCE_URL`, or `AURA_STACK_SOURCE_ACCESS_TOKEN` in `stack.env` if you want to bootstrap from a different source.
 
 At that point the typical local URLs are:
 
@@ -259,12 +259,11 @@ set -a
 source evals/local-stack/.runtime/evals.env
 set +a
 
-export AURA_EVAL_ACCESS_TOKEN="$(
-  curl -fsSL http://127.0.0.1:3190/api/auth/access-token \
-    | sed -n 's/.*"access_token":"\\([^"]*\\)".*/\\1/p'
-)"
+set -a
+source evals/local-stack/.runtime/auth.env
+set +a
 
-cd frontend
+cd interface
 npm run test:evals:benchmark
 ```
 
@@ -314,7 +313,8 @@ Aura OS does not silently fall back to localhost execution.
 If your deployed Aura app already has a valid session, set
 `AURA_STACK_AUTH_SOURCE_URL` to that host before running `up-hybrid.sh` or
 `run-hybrid-one-shot.sh` so the local Aura OS instance can import the same auth
-session automatically.
+session automatically. If you prefer to skip session discovery entirely, you can
+also set `AURA_STACK_SOURCE_ACCESS_TOKEN` directly.
 
 The local stack does not create a fake auth provider. It uses a real zOS-backed Aura session, then routes that session into the local sibling services.
 
