@@ -1,0 +1,41 @@
+import { useEffect } from "react";
+import { useKanbanStore, useKanbanLanes } from "../stores/kanban-store";
+import { useEventStore } from "../../../stores/event-store";
+import { EventType } from "../../../types/aura-events";
+
+export function useKanbanData(
+  projectId: string | undefined,
+  agentInstanceId?: string,
+) {
+  const fetchTasks = useKanbanStore((s) => s.fetchTasks);
+  const patchTask = useKanbanStore((s) => s.patchTask);
+  const subscribe = useEventStore((s) => s.subscribe);
+  const result = useKanbanLanes(projectId, agentInstanceId);
+
+  useEffect(() => {
+    if (projectId) fetchTasks(projectId);
+  }, [projectId, fetchTasks]);
+
+  useEffect(() => {
+    if (!projectId) return;
+
+    const unsubs = [
+      subscribe(EventType.TaskStarted, (e) => {
+        if (e.project_id !== projectId || !e.content.task_id) return;
+        patchTask(projectId, e.content.task_id, { status: "in_progress" });
+      }),
+      subscribe(EventType.TaskCompleted, (e) => {
+        if (e.project_id !== projectId || !e.content.task_id) return;
+        patchTask(projectId, e.content.task_id, { status: "done" });
+      }),
+      subscribe(EventType.TaskFailed, (e) => {
+        if (e.project_id !== projectId || !e.content.task_id) return;
+        patchTask(projectId, e.content.task_id, { status: "failed" });
+      }),
+    ];
+
+    return () => unsubs.forEach((u) => u());
+  }, [projectId, subscribe, patchTask]);
+
+  return result;
+}

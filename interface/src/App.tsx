@@ -61,6 +61,10 @@ export default function App() {
             <Route path="agents" element={<AgentIndexRedirect />} />
             <Route path="agents/:agentId" element={<AgentChatView />} />
 
+            <Route path="tasks" element={null} />
+            <Route path="tasks/:projectId" element={null} />
+            <Route path="tasks/:projectId/agents/:agentInstanceId" element={null} />
+
             <Route path="leaderboard" element={null} />
             <Route path="feed" element={null} />
             <Route path="profile" element={null} />

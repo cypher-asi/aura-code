@@ -20,6 +20,10 @@ function resolveAppPath(app: { id: string; basePath: string }): string {
       return `/projects/${projectId}/agent`;
     }
   }
+  if (app.id === "tasks") {
+    const projectId = getLastProject();
+    if (projectId) return `/tasks/${projectId}`;
+  }
   return app.basePath;
 }
 
