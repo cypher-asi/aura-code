@@ -144,3 +144,7 @@ Android and iOS workflows now emit lightweight release summaries and upload any
 discovered build artifacts in addition to their normal validation or Fastlane
 steps. This keeps the shipping path the same while making it easier to inspect
 what each run produced.
+
+Desktop nightly and stable publish jobs also validate generated updater
+manifests before pushing them to `gh-pages`, so broken channel metadata is less
+likely to slip through unnoticed.

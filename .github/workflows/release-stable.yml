@@ -176,6 +176,11 @@ jobs:
           ref: gh-pages
           fetch-depth: 0
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Determine version
         id: version
         shell: bash
@@ -224,6 +229,17 @@ jobs:
           generate_manifest "macos" "aarch64" "aura-os-desktop_${VERSION}_aarch64.dmg" "dmg"
           generate_manifest "macos" "x86_64" "aura-os-desktop_${VERSION}_x64.dmg" "dmg"
           generate_manifest "linux" "x86_64" "aura-os-desktop_${VERSION}_amd64.AppImage" "appimage"
+
+      - name: Validate stable update manifests
+        run: |
+          node scripts/desktop-manifest-validate.mjs \
+            --root-dir . \
+            --channel stable \
+            --output-dir manifest-validation
+
+      - name: Attach stable manifest summary
+        shell: bash
+        run: cat manifest-validation/desktop-manifests-stable.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit and push manifests
         run: |
