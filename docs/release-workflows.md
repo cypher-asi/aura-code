@@ -48,7 +48,7 @@ Purpose:
 
 - build native desktop artifacts from `main`
 - publish a rolling nightly GitHub Release
-- generate nightly update manifests
+- generate nightly update manifests from updater-friendly bundles
 - publish release summaries and checksums
 
 This is the automatic desktop distribution path for `main`.
@@ -62,7 +62,7 @@ Purpose:
 
 - build native desktop artifacts for a tagged or manually requested version
 - publish a stable GitHub Release
-- generate stable update manifests
+- generate stable update manifests from updater-friendly bundles
 - publish release summaries and checksums
 
 This is the canonical stable desktop shipping path.
@@ -162,3 +162,12 @@ nightly release or updating `gh-pages`.
 The desktop workflows currently target Apple Silicon with `macos-latest` and
 Intel with `macos-15-intel`, which matches GitHub's current standard
 GitHub-hosted macOS runner labels for arm64 and x64 builds.
+
+The desktop runtime now treats update checks as a background concern:
+
+- startup does not block on the update endpoint
+- the app polls for updates after launch on a background task
+- when a verified update is found, Aura downloads and installs it automatically
+- the update manifests therefore need to point at updater-compatible payloads
+  such as `.app.tar.gz`, `.AppImage`, and NSIS installers rather than only the
+  user-facing installer formats

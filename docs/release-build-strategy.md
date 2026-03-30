@@ -112,6 +112,7 @@ This layer should verify:
 - the embedded frontend and backend come up correctly
 - key native routes work
 - updater configuration is readable and functional
+- background auto-update checks stay non-blocking when no update is available
 
 This should not rerun the entire local-stack benchmark inside every packaging
 workflow. Instead it should run a small shared smoke subset against the packaged

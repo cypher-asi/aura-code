@@ -1,12 +1,12 @@
-import { Button, Text } from "@cypher-asi/zui";
-import { Download, X } from "lucide-react";
+import { Text } from "@cypher-asi/zui";
+import { Download } from "lucide-react";
 import { useUpdateBanner } from "./useUpdateBanner";
 import styles from "./UpdateBanner.module.css";
 
 export function UpdateBanner() {
-  const { data, dismissed, installing, enabled, dismiss, install } = useUpdateBanner();
+  const { data, enabled } = useUpdateBanner();
 
-  if (!enabled || !data || dismissed) return null;
+  if (!enabled || !data) return null;
 
   const { update } = data;
 
@@ -19,30 +19,13 @@ export function UpdateBanner() {
     );
   }
 
-  if (update.status === "ready") {
+  if (update.status === "installing") {
     return (
       <div className={styles.banner} data-variant="ready">
         <Download size={14} className={styles.icon} />
         <Text size="sm">
-          Aura v{update.version} is ready to install.
+          Installing Aura v{update.version} and restarting&hellip;
         </Text>
-        <div className={styles.actions}>
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={installing}
-            onClick={install}
-          >
-            {installing ? "Installing…" : "Restart & Update"}
-          </Button>
-          <button
-            className={styles.dismiss}
-            onClick={dismiss}
-            aria-label="Dismiss"
-          >
-            <X size={14} />
-          </button>
-        </div>
       </div>
     );
   }

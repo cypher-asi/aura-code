@@ -15,20 +15,14 @@ interface UpdateStatusResponse {
 
 interface UpdateBannerData {
   data: UpdateStatusResponse | null;
-  dismissed: boolean;
-  installing: boolean;
   enabled: boolean;
-  dismiss: () => void;
-  install: () => Promise<void>;
 }
 
-const POLL_INTERVAL = 60_000;
+const POLL_INTERVAL = 5_000;
 
 export function useUpdateBanner(): UpdateBannerData {
   const { features } = useAuraCapabilities();
   const [data, setData] = useState<UpdateStatusResponse | null>(null);
-  const [dismissed, setDismissed] = useState(false);
-  const [installing, setInstalling] = useState(false);
 
   const poll = useCallback(() => {
     api.getUpdateStatus().then(setData).catch(() => {});
@@ -41,12 +35,5 @@ export function useUpdateBanner(): UpdateBannerData {
     return () => clearInterval(id);
   }, [features.nativeUpdater, poll]);
 
-  const dismiss = useCallback(() => setDismissed(true), []);
-
-  const install = useCallback(async () => {
-    setInstalling(true);
-    try { await api.installUpdate(); } catch { setInstalling(false); }
-  }, []);
-
-  return { data, dismissed, installing, enabled: !!features.nativeUpdater, dismiss, install };
+  return { data, enabled: !!features.nativeUpdater };
 }

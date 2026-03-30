@@ -1,5 +1,9 @@
 use base64::Engine;
-use minisign_verify::{PublicKey, Signature};
+use cargo_packager_updater::{
+    semver::Version as SemverVersion, Config as PackagerUpdaterConfig, Update, UpdaterBuilder,
+    WindowsConfig, WindowsUpdateInstallMode,
+};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,6 +12,8 @@ use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
 const CHECK_INTERVAL: Duration = Duration::from_secs(30 * 60);
+const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+const INITIAL_CHECK_DELAY: Duration = Duration::from_secs(5);
 
 // Base64-encoded Minisign public key baked in at compile time through build.rs.
 const UPDATER_PUB_KEY: &str = env!("UPDATER_PUBLIC_KEY");
@@ -50,7 +56,7 @@ impl std::str::FromStr for UpdateChannel {
 pub(crate) enum UpdateStatus {
     Checking,
     Downloading,
-    Ready {
+    Installing {
         version: String,
         channel: UpdateChannel,
     },
@@ -100,132 +106,6 @@ pub(crate) fn endpoint_for_channel(channel: UpdateChannel) -> String {
     endpoint_for_channel_with_base(channel, &base)
 }
 
-/// Manifest returned by the update endpoint (GitHub Pages JSON file).
-#[derive(Debug, Deserialize)]
-struct UpdateManifest {
-    version: String,
-    url: String,
-    signature: String,
-    #[serde(default, rename = "format")]
-    _format: Option<String>,
-}
-
-async fn fetch_manifest(channel: UpdateChannel) -> Result<Option<UpdateManifest>, String> {
-    let current_version = env!("CARGO_PKG_VERSION");
-    let target = std::env::consts::OS;
-    let arch = std::env::consts::ARCH;
-    let endpoint = endpoint_for_channel(channel)
-        .replace("{{target}}", target)
-        .replace("{{arch}}", arch);
-
-    info!(%endpoint, %current_version, %channel, "checking for updates");
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|e| format!("http client error: {e}"))?;
-
-    let resp = client
-        .get(&endpoint)
-        .send()
-        .await
-        .map_err(|e| format!("request failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        let code = resp.status();
-        return Err(format!("update endpoint returned {code}"));
-    }
-
-    let manifest: UpdateManifest = resp
-        .json()
-        .await
-        .map_err(|e| format!("invalid manifest: {e}"))?;
-
-    if manifest.version == current_version {
-        info!(%current_version, "already up-to-date");
-        return Ok(None);
-    }
-
-    Ok(Some(manifest))
-}
-
-async fn download_and_verify(manifest: &UpdateManifest) -> Result<std::path::PathBuf, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|e| format!("http client error: {e}"))?;
-
-    let bytes = client
-        .get(&manifest.url)
-        .send()
-        .await
-        .map_err(|e| format!("download failed: {e}"))?
-        .bytes()
-        .await
-        .map_err(|e| format!("download read failed: {e}"))?;
-
-    let cache_dir = dirs::cache_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("aura-updates");
-    tokio::fs::create_dir_all(&cache_dir)
-        .await
-        .map_err(|e| format!("failed to create cache dir: {e}"))?;
-
-    let filename = manifest.url.rsplit('/').next().unwrap_or("update-package");
-    let pkg_path = cache_dir.join(filename);
-    tokio::fs::write(&pkg_path, &bytes)
-        .await
-        .map_err(|e| format!("failed to write update package: {e}"))?;
-
-    let signature_raw = decode_base64_utf8("signature", &manifest.signature)?;
-    let sig_path = cache_dir.join(format!("{filename}.sig"));
-    tokio::fs::write(&sig_path, &signature_raw)
-        .await
-        .map_err(|e| format!("failed to write signature: {e}"))?;
-
-    if let Err(e) = verify_signature(&pkg_path, &manifest.signature) {
-        tokio::fs::remove_file(&pkg_path).await.ok();
-        tokio::fs::remove_file(&sig_path).await.ok();
-        return Err(format!("signature verification failed: {e}"));
-    }
-
-    Ok(pkg_path)
-}
-
-/// Check for updates and download if available. Returns the new version string
-/// on success, or `None` if already up-to-date.
-async fn check_and_download(
-    channel: UpdateChannel,
-    status: Arc<RwLock<UpdateStatus>>,
-) -> Result<Option<String>, String> {
-    *status.write().await = UpdateStatus::Checking;
-
-    let manifest = match fetch_manifest(channel).await? {
-        Some(m) => m,
-        None => {
-            *status.write().await = UpdateStatus::UpToDate;
-            return Ok(None);
-        }
-    };
-
-    info!(new_version = %manifest.version, "update available, downloading");
-    *status.write().await = UpdateStatus::Downloading;
-
-    let pkg_path = download_and_verify(&manifest).await?;
-
-    info!(
-        version = %manifest.version,
-        path = %pkg_path.display(),
-        "update downloaded and verified"
-    );
-
-    *status.write().await = UpdateStatus::Ready {
-        version: manifest.version.clone(),
-        channel,
-    };
-    Ok(Some(manifest.version))
-}
-
 fn decode_base64_utf8(label: &str, encoded: &str) -> Result<String, String> {
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(encoded.trim())
@@ -233,88 +113,163 @@ fn decode_base64_utf8(label: &str, encoded: &str) -> Result<String, String> {
     String::from_utf8(decoded).map_err(|e| format!("invalid {label} utf-8: {e}"))
 }
 
-fn verify_signature_with_pubkey(
-    pkg_path: &std::path::Path,
-    signature_b64: &str,
-    public_key_b64: &str,
-) -> Result<(), String> {
-    if public_key_b64.starts_with("NOT_SET__") {
+fn updater_public_key() -> Result<String, String> {
+    if UPDATER_PUB_KEY.starts_with("NOT_SET__") {
         return Err("updater public key is not configured".into());
     }
-
-    let public_key_raw = decode_base64_utf8("public key", public_key_b64)?;
-    let signature_raw = decode_base64_utf8("signature", signature_b64)?;
-    let public_key =
-        PublicKey::decode(&public_key_raw).map_err(|e| format!("invalid public key: {e}"))?;
-    let signature =
-        Signature::decode(&signature_raw).map_err(|e| format!("invalid signature: {e}"))?;
-    let package_bytes = std::fs::read(pkg_path).map_err(|e| format!("read failed: {e}"))?;
-
-    public_key
-        .verify(&package_bytes, &signature, true)
-        .map_err(|e| format!("signature mismatch: {e}"))
+    decode_base64_utf8("public key", UPDATER_PUB_KEY)
 }
 
-fn verify_signature(pkg_path: &std::path::Path, signature_b64: &str) -> Result<(), String> {
-    verify_signature_with_pubkey(pkg_path, signature_b64, UPDATER_PUB_KEY)
+fn updater_config(channel: UpdateChannel) -> Result<PackagerUpdaterConfig, String> {
+    let endpoint = endpoint_for_channel(channel)
+        .parse()
+        .map_err(|e| format!("invalid updater endpoint: {e}"))?;
+    Ok(PackagerUpdaterConfig {
+        endpoints: vec![endpoint],
+        pubkey: updater_public_key()?,
+        windows: Some(WindowsConfig {
+            install_mode: Some(WindowsUpdateInstallMode::Passive),
+            installer_args: None,
+        }),
+    })
+}
+
+fn set_status(status: &Arc<RwLock<UpdateStatus>>, next: UpdateStatus) {
+    *status.blocking_write() = next;
+}
+
+fn build_updater(channel: UpdateChannel) -> Result<cargo_packager_updater::Updater, String> {
+    let current_version = SemverVersion::parse(env!("CARGO_PKG_VERSION"))
+        .map_err(|e| format!("invalid current version: {e}"))?;
+    let config = updater_config(channel)?;
+    UpdaterBuilder::new(current_version, config)
+        .timeout(CHECK_TIMEOUT)
+        .build()
+        .map_err(|e| format!("failed to build updater: {e}"))
+}
+
+fn check_and_autoinstall(
+    channel: UpdateChannel,
+    status: Arc<RwLock<UpdateStatus>>,
+) -> Result<Option<String>, String> {
+    let updater = build_updater(channel)?;
+    let endpoint = endpoint_for_channel(channel)
+        .replace("{{target}}", std::env::consts::OS)
+        .replace("{{arch}}", std::env::consts::ARCH);
+    info!(
+        %endpoint,
+        current_version = env!("CARGO_PKG_VERSION"),
+        %channel,
+        "checking for updates"
+    );
+
+    set_status(&status, UpdateStatus::Checking);
+    let Some(update) = updater
+        .check()
+        .map_err(|e| format!("update check failed: {e}"))?
+    else {
+        set_status(&status, UpdateStatus::UpToDate);
+        return Ok(None);
+    };
+
+    let version = update.version.clone();
+    info!(new_version = %version, format = %update.format, "update available, downloading");
+    set_status(&status, UpdateStatus::Downloading);
+    let bytes = update
+        .download()
+        .map_err(|e| format!("download failed: {e}"))?;
+
+    info!(new_version = %version, "update downloaded and verified");
+    set_status(
+        &status,
+        UpdateStatus::Installing {
+            version: version.clone(),
+            channel,
+        },
+    );
+
+    update
+        .install(bytes)
+        .map_err(|e| format!("update install failed: {e}"))?;
+    restart_after_install(&update)?;
+    Ok(Some(version))
+}
+
+fn restart_after_install(update: &Update) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = update;
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let bundle_path = &update.extract_path;
+        info!(path = %bundle_path.display(), "restarting updated macOS app");
+        Command::new("open")
+            .arg("-n")
+            .arg(bundle_path)
+            .spawn()
+            .map_err(|e| format!("failed to relaunch updated app: {e}"))?;
+        std::process::exit(0);
+    }
+
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd"
+    ))]
+    {
+        if !matches!(
+            update.format,
+            cargo_packager_updater::UpdateFormat::AppImage
+        ) {
+            return Err(format!(
+                "unsupported Linux update format for relaunch: {}",
+                update.format
+            ));
+        }
+        let target_path = std::env::var_os("APPIMAGE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| update.extract_path.clone());
+        info!(path = %target_path.display(), "restarting updated Linux app");
+        Command::new(&target_path)
+            .spawn()
+            .map_err(|e| format!("failed to relaunch updated app: {e}"))?;
+        std::process::exit(0);
+    }
 }
 
 /// Install a previously-downloaded update and restart the process.
 pub(crate) fn install_and_restart() -> Result<(), String> {
-    let cache_dir = dirs::cache_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("aura-updates");
-
-    let pkg = newest_file_in(&cache_dir).ok_or("no downloaded update found")?;
-    info!(path = %pkg.display(), "installing update");
-
-    // On Windows NSIS: run the installer and exit.
-    // On macOS DMG / Linux AppImage: replace-in-place then restart.
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new(&pkg)
-            .arg("/S") // NSIS silent install
-            .spawn()
-            .map_err(|e| format!("failed to launch installer: {e}"))?;
-        std::process::exit(0);
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let current_exe =
-            std::env::current_exe().map_err(|e| format!("cannot find current exe: {e}"))?;
-        std::fs::copy(&pkg, &current_exe).map_err(|e| format!("failed to replace binary: {e}"))?;
-        std::process::Command::new(&current_exe)
-            .spawn()
-            .map_err(|e| format!("failed to restart: {e}"))?;
-        std::process::exit(0);
-    }
-}
-
-fn newest_file_in(dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    std::fs::read_dir(dir)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_file() && e.path().extension().is_none_or(|ext| ext != "sig"))
-        .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
-        .map(|e| e.path())
+    Err("updates install automatically after download".into())
 }
 
 /// Spawn the background update-check loop. Call once at startup.
 pub(crate) fn spawn_update_loop(state: UpdateState) {
     tokio::spawn(async move {
         // Small initial delay so the app finishes launching first.
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(INITIAL_CHECK_DELAY).await;
 
         loop {
             let channel = *state.channel.read().await;
-            match check_and_download(channel, Arc::clone(&state.status)).await {
-                Ok(Some(v)) => info!(version = %v, "update ready"),
-                Ok(None) => {}
-                Err(e) => {
+            let status = Arc::clone(&state.status);
+            match tokio::task::spawn_blocking(move || check_and_autoinstall(channel, status)).await
+            {
+                Ok(Ok(Some(v))) => info!(version = %v, "update installed"),
+                Ok(Ok(None)) => {}
+                Ok(Err(e)) => {
                     error!(error = %e, "update check failed");
                     *state.status.write().await = UpdateStatus::Failed {
                         error: e.to_string(),
+                    };
+                }
+                Err(e) => {
+                    error!(error = %e, "update task panicked");
+                    *state.status.write().await = UpdateStatus::Failed {
+                        error: format!("update task failed: {e}"),
                     };
                 }
             }
@@ -327,13 +282,20 @@ pub(crate) fn spawn_update_loop(state: UpdateState) {
 pub(crate) fn trigger_recheck(state: UpdateState) {
     tokio::spawn(async move {
         let channel = *state.channel.read().await;
-        match check_and_download(channel, Arc::clone(&state.status)).await {
-            Ok(Some(v)) => info!(version = %v, "update ready after channel switch"),
-            Ok(None) => {}
-            Err(e) => {
+        let status = Arc::clone(&state.status);
+        match tokio::task::spawn_blocking(move || check_and_autoinstall(channel, status)).await {
+            Ok(Ok(Some(v))) => info!(version = %v, "update installed after channel switch"),
+            Ok(Ok(None)) => {}
+            Ok(Err(e)) => {
                 warn!(error = %e, "recheck failed");
                 *state.status.write().await = UpdateStatus::Failed {
                     error: e.to_string(),
+                };
+            }
+            Err(e) => {
+                warn!(error = %e, "recheck task failed");
+                *state.status.write().await = UpdateStatus::Failed {
+                    error: format!("update task failed: {e}"),
                 };
             }
         }
@@ -342,7 +304,7 @@ pub(crate) fn trigger_recheck(state: UpdateState) {
 
 #[cfg(test)]
 mod tests {
-    use super::{endpoint_for_channel_with_base, verify_signature_with_pubkey, UpdateChannel};
+    use super::{decode_base64_utf8, endpoint_for_channel_with_base, UpdateChannel};
     use base64::Engine;
 
     #[test]
@@ -366,26 +328,13 @@ mod tests {
     }
 
     #[test]
-    fn verifies_base64_encoded_minisign_payloads() {
+    fn decodes_base64_encoded_public_key() {
         let public_key = "untrusted comment: minisign public key E7620F1842B4E81F\nRWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3";
-        let signature = "untrusted comment: signature from minisign secret key\nRWQf6LRCGA9i59SLOFxz6NxvASXDJeRtuZykwQepbDEGt87ig1BNpWaVWuNrm73YiIiJbq71Wi+dP9eKL8OC351vwIasSSbXxwA=\ntrusted comment: timestamp:1555779966\tfile:test\nQtKMXWyYcwdpZAlPF7tE2ENJkRd1ujvKjlj1m9RtHTBnZPa5WKU5uWRs5GoP5M/VqE81QFuMKI5k/SfNQUaOAA==";
-        let package_path = std::env::temp_dir().join(format!(
-            "aura-updater-test-{}-{}.bin",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system time should be after epoch")
-                .as_nanos()
-        ));
-        std::fs::write(&package_path, b"test").expect("test package should be written");
-
-        let result = verify_signature_with_pubkey(
-            &package_path,
-            &base64::engine::general_purpose::STANDARD.encode(signature),
+        let decoded = decode_base64_utf8(
+            "public key",
             &base64::engine::general_purpose::STANDARD.encode(public_key),
-        );
-
-        std::fs::remove_file(&package_path).ok();
-        assert!(result.is_ok(), "expected signature to verify, got {result:?}");
+        )
+        .expect("public key should decode");
+        assert_eq!(decoded, public_key);
     }
 }
