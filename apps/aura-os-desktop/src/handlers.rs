@@ -114,10 +114,13 @@ pub(crate) async fn get_update_status(
 ) -> Json<serde_json::Value> {
     let status = state.status.read().await;
     let channel = state.channel.read().await;
+    let endpoint_template = crate::updater::endpoint_for_channel(*channel);
     Json(serde_json::json!({
         "update": *status,
         "channel": *channel,
         "current_version": env!("CARGO_PKG_VERSION"),
+        "update_base_url": crate::updater::update_base_url(),
+        "endpoint_template": endpoint_template,
     }))
 }
 

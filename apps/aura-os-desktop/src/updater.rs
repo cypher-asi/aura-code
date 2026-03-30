@@ -76,7 +76,7 @@ impl UpdateState {
     }
 }
 
-fn update_base_url() -> String {
+pub(crate) fn update_base_url() -> String {
     std::env::var("AURA_UPDATE_BASE_URL")
         .ok()
         .map(|value| value.trim().trim_end_matches('/').to_string())

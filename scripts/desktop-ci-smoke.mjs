@@ -99,6 +99,9 @@ async function waitForReady() {
       if (!payload.update || typeof payload.update.status !== "string") {
         throw new Error("desktop update status payload missing update state");
       }
+      if (typeof payload.endpoint_template !== "string" || !payload.endpoint_template.includes("/{{target}}/{{arch}}.json")) {
+        throw new Error("desktop update status payload missing endpoint_template");
+      }
 
       console.log(JSON.stringify({
         ok: true,
@@ -106,6 +109,8 @@ async function waitForReady() {
         currentVersion: payload.current_version,
         updateStatus: payload.update.status,
         channel: payload.channel,
+        updateBaseUrl: payload.update_base_url,
+        endpointTemplate: payload.endpoint_template,
         logs: { stdout: stdoutPath, stderr: stderrPath },
       }, null, 2));
       cleanupAndExit(0);
