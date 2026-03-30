@@ -247,7 +247,24 @@ fn forward_automaton_events(params: ForwardParams) {
                                 }
                             }
                             current_task_id = Some(tid.to_owned());
-                            let session_id = event.get("session_id").and_then(|v| v.as_str()).map(str::to_owned);
+                            let mut session_id = event.get("session_id").and_then(|v| v.as_str()).map(str::to_owned);
+
+                            // The automaton typically omits session_id from its
+                            // event payloads. Front-load it from the task document
+                            // (set by assign_task) so the cache has it by
+                            // completion time and persistence doesn't need a
+                            // fallback lookup.
+                            if session_id.is_none() {
+                                if let (Some(ref sc), Some(ref j)) = (&storage_client, &jwt) {
+                                    if let Ok(task) = sc.get_task(tid, j).await {
+                                        if let Some(sid) = task.session_id {
+                                            info!(task_id = tid, %sid, "Front-loaded session_id from task document into cache");
+                                            session_id = Some(sid);
+                                        }
+                                    }
+                                }
+                            }
+
                             let mut cache = task_output_cache.lock().await;
                             let entry = cache.entry(tid.to_owned()).or_default();
                             entry.project_id = Some(pid.clone());
@@ -403,6 +420,11 @@ fn forward_automaton_events(params: ForwardParams) {
                                 agent_instance_id,
                             )
                                 .await;
+                            let finished_event = serde_json::json!({
+                                "type": "loop_finished",
+                                "project_id": pid,
+                                "agent_instance_id": aiid,
+                            });
                             emit_domain_event(
                                 &app_broadcast,
                                 "loop_finished",
@@ -410,6 +432,12 @@ fn forward_automaton_events(params: ForwardParams) {
                                 agent_instance_id,
                                 serde_json::json!({}),
                             );
+                            persistence::persist_log_event(
+                                storage_client.as_ref(),
+                                jwt.as_deref(),
+                                &pid,
+                                &finished_event,
+                            ).await;
                             break;
                         }
                         _ => None,
@@ -434,7 +462,29 @@ fn forward_automaton_events(params: ForwardParams) {
                             obj.insert("type".into(), serde_json::Value::String(mapped.into()));
                         }
                     }
-                    let _ = app_broadcast.send(forwarded);
+                    let _ = app_broadcast.send(forwarded.clone());
+
+                    // Persist log-worthy events to aura-storage.
+                    {
+                        let final_type = forwarded
+                            .get("type")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("");
+                        if persistence::is_log_worthy(final_type) {
+                            let sc = storage_client.clone();
+                            let j = jwt.clone();
+                            let p = pid.clone();
+                            tokio::spawn(async move {
+                                persistence::persist_log_event(
+                                    sc.as_ref(),
+                                    j.as_deref(),
+                                    &p,
+                                    &forwarded,
+                                )
+                                .await;
+                            });
+                        }
+                    }
 
                     // Emit user-visible progress for build/test verification
                     // phases so the frontend stream shows activity during
@@ -470,25 +520,28 @@ fn forward_automaton_events(params: ForwardParams) {
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    // Persist any accumulated output that was not flushed by a
-                    // task_completed / task_failed event (e.g. the completion
-                    // event was lost to lag or the automaton disconnected).
-                    if let Some(ref tid) = current_task_id {
-                        let cached = {
-                            let cache = task_output_cache.lock().await;
-                            cache.get(tid).cloned()
-                        };
-                        if let Some(cached) = cached {
-                            if !cached.live_output.is_empty() || !cached.build_steps.is_empty() || !cached.test_steps.is_empty() {
-                                warn!(task_id = %tid, "Broadcast closed before task completion; persisting accumulated output");
-                                persistence::persist_task_output(
-                                    storage_client.as_ref(),
-                                    jwt.as_deref(),
-                                    tid,
-                                    &cached,
-                                ).await;
-                            }
-                        }
+                    // Persist accumulated output for all tasks this loop worked
+                    // on, not just current_task_id.  Covers multi-task loops and
+                    // cases where the completion event was lost to lag.
+                    let entries_to_persist: Vec<(String, CachedTaskOutput)> = {
+                        let cache = task_output_cache.lock().await;
+                        cache.iter()
+                            .filter(|(_, e)| {
+                                e.project_id.as_deref() == Some(pid.as_str())
+                                    && e.agent_instance_id.as_deref() == Some(aiid.as_str())
+                                    && (!e.live_output.is_empty() || !e.build_steps.is_empty() || !e.test_steps.is_empty())
+                            })
+                            .map(|(tid, e)| (tid.clone(), e.clone()))
+                            .collect()
+                    };
+                    for (tid, cached) in &entries_to_persist {
+                        warn!(task_id = %tid, "Broadcast closed; persisting accumulated output");
+                        persistence::persist_task_output(
+                            storage_client.as_ref(),
+                            jwt.as_deref(),
+                            tid,
+                            cached,
+                        ).await;
                     }
                     clear_active_automaton(
                         automaton_registry.clone(),
@@ -496,6 +549,11 @@ fn forward_automaton_events(params: ForwardParams) {
                         agent_instance_id,
                     )
                         .await;
+                    let finished_event = serde_json::json!({
+                        "type": "loop_finished",
+                        "project_id": pid,
+                        "agent_instance_id": aiid,
+                    });
                     emit_domain_event(
                         &app_broadcast,
                         "loop_finished",
@@ -503,6 +561,12 @@ fn forward_automaton_events(params: ForwardParams) {
                         agent_instance_id,
                         serde_json::json!({}),
                     );
+                    persistence::persist_log_event(
+                        storage_client.as_ref(),
+                        jwt.as_deref(),
+                        &pid,
+                        &finished_event,
+                    ).await;
                     break;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
@@ -760,7 +824,7 @@ pub(crate) async fn start_loop(
         task_service: state.task_service.clone(),
         task_output_cache: state.task_output_cache.clone(),
         storage_client: state.storage_client.clone(),
-        jwt: jwt_for_persist,
+        jwt: jwt_for_persist.clone(),
     });
 
     // Emit loop_started before task_started so the interface processes
@@ -772,6 +836,20 @@ pub(crate) async fn start_loop(
         agent_instance_id,
         serde_json::json!({"automaton_id": &automaton_id, "adopted": adopted}),
     );
+    {
+        let event = serde_json::json!({
+            "type": "loop_started",
+            "project_id": project_id.to_string(),
+            "agent_instance_id": agent_instance_id.to_string(),
+            "automaton_id": &automaton_id,
+        });
+        let sc = state.storage_client.clone();
+        let j = jwt_for_persist.clone();
+        let p = project_id.to_string();
+        tokio::spawn(async move {
+            persistence::persist_log_event(sc.as_ref(), j.as_deref(), &p, &event).await;
+        });
+    }
 
     if let Some(ref tid) = first_task_id {
         emit_domain_event(
@@ -840,6 +918,8 @@ pub(crate) async fn pause_loop(
         return Err(ApiError::bad_request("no matching dev loop is running"));
     }
 
+    let jwt = optional_jwt(&state);
+
     for (aiid, automaton_id) in &targets {
         let base_url = {
             let reg = state.automaton_registry.lock().await;
@@ -858,6 +938,17 @@ pub(crate) async fn pause_loop(
             *aiid,
             serde_json::json!({}),
         );
+        let event = serde_json::json!({
+            "type": "loop_paused",
+            "project_id": project_id.to_string(),
+            "agent_instance_id": aiid.to_string(),
+        });
+        let sc = state.storage_client.clone();
+        let j = jwt.clone();
+        let p = project_id.to_string();
+        tokio::spawn(async move {
+            persistence::persist_log_event(sc.as_ref(), j.as_deref(), &p, &event).await;
+        });
     }
 
     let active_agent_instances = active_instances(&state, project_id).await;
@@ -889,6 +980,8 @@ pub(crate) async fn stop_loop(
         return Err(ApiError::bad_request("no matching dev loop is running"));
     }
 
+    let jwt = optional_jwt(&state);
+
     for (aiid, automaton_id) in &targets {
         let base_url = reg
             .get(aiid)
@@ -906,6 +999,17 @@ pub(crate) async fn stop_loop(
             *aiid,
             serde_json::json!({}),
         );
+        let event = serde_json::json!({
+            "type": "loop_stopped",
+            "project_id": project_id.to_string(),
+            "agent_instance_id": aiid.to_string(),
+        });
+        let sc = state.storage_client.clone();
+        let j = jwt.clone();
+        let p = project_id.to_string();
+        tokio::spawn(async move {
+            persistence::persist_log_event(sc.as_ref(), j.as_deref(), &p, &event).await;
+        });
     }
 
     let remaining: Vec<AgentInstanceId> = reg

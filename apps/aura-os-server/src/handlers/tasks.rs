@@ -1,6 +1,7 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, SpecId, Task, TaskId, TaskStatus};
 use aura_os_link::{HarnessInbound, HarnessOutbound, UserMessage};
@@ -232,7 +233,13 @@ async fn fetch_task_output_from_storage(
     task_id: &TaskId,
 ) -> Option<TaskOutputResponse> {
     let task = storage.get_task(&task_id.to_string(), jwt).await.ok()?;
-    let session_id = task.session_id?;
+    let session_id = match task.session_id {
+        Some(sid) => sid,
+        None => {
+            debug!(%task_id, "Task has no session_id in storage; cannot fetch persisted output");
+            return None;
+        }
+    };
     let events = storage
         .list_events(&session_id, jwt, None, None)
         .await
@@ -276,6 +283,11 @@ async fn fetch_task_output_from_storage(
     }
 
     if output.is_empty() && build_steps.is_empty() && test_steps.is_empty() {
+        debug!(
+            %task_id, %session_id,
+            total_events = events.len(),
+            "Session has events but none matched this task_id or all were empty"
+        );
         return None;
     }
     Some(TaskOutputResponse {

@@ -6,6 +6,123 @@ use aura_os_storage::StorageClient;
 
 use crate::state::CachedTaskOutput;
 
+// ---------------------------------------------------------------------------
+// Log-worthy event filter
+// ---------------------------------------------------------------------------
+
+const LOG_WORTHY_TYPES: &[&str] = &[
+    // Loop lifecycle
+    "loop_started", "loop_paused", "loop_resumed", "loop_stopped", "loop_finished",
+    "loop_iteration_summary",
+    // Task lifecycle
+    "task_started", "task_completed", "task_failed", "task_retrying",
+    "task_became_ready", "tasks_became_ready", "follow_up_task_created",
+    // File operations
+    "file_ops_applied",
+    // Session
+    "session_rolled_over", "log_line",
+    // Spec generation
+    "spec_gen_started", "spec_gen_progress", "spec_gen_completed", "spec_gen_failed", "spec_saved",
+    // Build verification
+    "build_verification_skipped", "build_verification_started",
+    "build_verification_passed", "build_verification_failed", "build_fix_attempt",
+    // Test verification
+    "test_verification_started", "test_verification_passed",
+    "test_verification_failed", "test_fix_attempt",
+    // Git
+    "git_committed", "git_pushed",
+    // Errors
+    "error",
+];
+
+pub(crate) fn is_log_worthy(event_type: &str) -> bool {
+    LOG_WORTHY_TYPES.contains(&event_type)
+}
+
+fn log_level_for_event(event_type: &str) -> &'static str {
+    match event_type {
+        "task_failed" | "error" => "error",
+        "build_verification_failed" | "test_verification_failed" => "warn",
+        _ => "info",
+    }
+}
+
+fn log_message_for_event(event: &serde_json::Value) -> String {
+    let event_type = event
+        .get("type")
+        .and_then(|t| t.as_str())
+        .unwrap_or("unknown");
+
+    let task_id = event.get("task_id").and_then(|v| v.as_str());
+    let task_title = event.get("task_title").and_then(|v| v.as_str());
+    let label = task_title.or(task_id).unwrap_or("");
+
+    match event_type {
+        "loop_started" => "Dev loop started".to_string(),
+        "loop_paused" => "Dev loop paused".to_string(),
+        "loop_resumed" => "Dev loop resumed".to_string(),
+        "loop_stopped" => "Dev loop stopped".to_string(),
+        "loop_finished" => "Dev loop finished".to_string(),
+        "task_started" => format!("Task started: {label}"),
+        "task_completed" => format!("Task completed: {label}"),
+        "task_failed" => {
+            let reason = event.get("reason").and_then(|v| v.as_str()).unwrap_or("unknown");
+            format!("Task failed: {label} — {reason}")
+        }
+        "task_retrying" => format!("Task retrying: {label}"),
+        "git_committed" => {
+            let sha = event.get("commit_sha").and_then(|v| v.as_str()).unwrap_or("");
+            format!("Git commit: {}", &sha[..sha.len().min(8)])
+        }
+        "git_pushed" => {
+            let branch = event.get("branch").and_then(|v| v.as_str()).unwrap_or("");
+            format!("Git push: {branch}")
+        }
+        "error" => {
+            let msg = event.get("message").and_then(|v| v.as_str()).unwrap_or("unknown");
+            format!("Error: {msg}")
+        }
+        other => other.replace('_', " "),
+    }
+}
+
+/// Persist a single domain event as a log entry in aura-storage.
+/// Designed to be called from a fire-and-forget `tokio::spawn`.
+pub(crate) async fn persist_log_event(
+    storage: Option<&Arc<StorageClient>>,
+    jwt: Option<&str>,
+    project_id: &str,
+    event: &serde_json::Value,
+) {
+    let (Some(storage), Some(jwt)) = (storage, jwt) else {
+        return;
+    };
+    if project_id.is_empty() {
+        return;
+    }
+
+    let event_type = event
+        .get("type")
+        .and_then(|t| t.as_str())
+        .unwrap_or("unknown");
+
+    let req = aura_os_storage::CreateLogEntryRequest {
+        level: log_level_for_event(event_type).to_string(),
+        message: log_message_for_event(event),
+        org_id: None,
+        metadata: Some(event.clone()),
+    };
+
+    if let Err(e) = storage.create_log_entry(project_id, jwt, &req).await {
+        warn!(
+            project_id,
+            event_type,
+            error = %e,
+            "Failed to persist log event to storage"
+        );
+    }
+}
+
 /// Persist accumulated task output (live text + build/test steps) to
 /// aura-storage as session events, and update the task record with
 /// accumulated token counts. Called from `forward_automaton_events`
@@ -46,9 +163,29 @@ pub(crate) async fn persist_task_output(
         }
     }
 
-    let Some(ref session_id) = cached.session_id else {
-        warn!(task_id, "Cannot persist task output: session_id is missing from cache");
-        return;
+    // The automaton does not include session_id in its WS event payloads,
+    // so the cache usually has None.  Fall back to the task document which
+    // gets session_id written by TaskService::assign_task when the harness
+    // claims the task.
+    let session_id: String = match cached.session_id.clone() {
+        Some(sid) => sid,
+        None => {
+            match storage.get_task(task_id, jwt).await {
+                Ok(task) if task.session_id.is_some() => {
+                    let sid = task.session_id.unwrap();
+                    info!(task_id, %sid, "Resolved session_id from task document (cache miss fallback)");
+                    sid
+                }
+                Ok(_) => {
+                    warn!(task_id, "Cannot persist task output: session_id missing from both cache and task document");
+                    return;
+                }
+                Err(e) => {
+                    warn!(task_id, error = %e, "Cannot persist task output: failed to fetch task for session_id fallback");
+                    return;
+                }
+            }
+        }
     };
 
     // Ensure the task document in aura-storage carries the session_id so
@@ -79,7 +216,7 @@ pub(crate) async fn persist_task_output(
             })),
         };
 
-        if let Err(e) = storage.create_event(session_id, jwt, &req).await {
+        if let Err(e) = storage.create_event(&session_id, jwt, &req).await {
             warn!(task_id, %session_id, error = %e, "Failed to persist task output event");
         } else {
             info!(task_id, %session_id, "Persisted task output event");
@@ -102,7 +239,7 @@ pub(crate) async fn persist_task_output(
             })),
         };
 
-        if let Err(e) = storage.create_event(session_id, jwt, &req).await {
+        if let Err(e) = storage.create_event(&session_id, jwt, &req).await {
             warn!(task_id, %session_id, error = %e, "Failed to persist task steps event");
         } else {
             info!(task_id, %session_id, "Persisted task steps event");
