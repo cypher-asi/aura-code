@@ -148,3 +148,8 @@ what each run produced.
 Desktop nightly and stable publish jobs also validate generated updater
 manifests before pushing them to `gh-pages`, so broken channel metadata is less
 likely to slip through unnoticed.
+
+`Release Nightly` now supports manual validation runs through
+`workflow_dispatch`. Those runs build and package the nightly artifacts and
+generate preview manifests by default, but they only publish the GitHub release
+and `gh-pages` manifests if `publish_live` is explicitly enabled.
