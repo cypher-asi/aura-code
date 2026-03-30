@@ -105,17 +105,10 @@ pub fn create_router_with_interface(state: AppState, interface_dir: Option<PathB
 }
 
 fn auth_routes() -> Router<AppState> {
-    Router::new()
+    let routes = Router::new()
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/register", post(auth::register))
-        .route("/api/auth/logout", post(auth::logout))
-}
-
-fn protected_auth_routes() -> Router<AppState> {
-    let routes = Router::new()
-        .route("/api/auth/session", get(auth::get_session))
-        .route("/api/auth/validate", post(auth::validate))
-        .route("/api/auth/jwt-issuer", get(auth::get_jwt_issuer));
+        .route("/api/auth/logout", post(auth::logout));
 
     if auth::auth_token_import_enabled() {
         routes.route(
@@ -125,6 +118,13 @@ fn protected_auth_routes() -> Router<AppState> {
     } else {
         routes
     }
+}
+
+fn protected_auth_routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/auth/session", get(auth::get_session))
+        .route("/api/auth/validate", post(auth::validate))
+        .route("/api/auth/jwt-issuer", get(auth::get_jwt_issuer))
 }
 
 fn user_routes() -> Router<AppState> {
