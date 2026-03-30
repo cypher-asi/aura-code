@@ -158,3 +158,7 @@ Pushes to `codex/release-build-system` also run the nightly workflow in preview
 mode. That gives us a branch-safe way to validate the matrix build, packaging,
 artifact summaries, and manifest generation without publishing the shared
 nightly release or updating `gh-pages`.
+
+The desktop workflows currently target Apple Silicon with `macos-latest` and
+Intel with `macos-15-intel`, which matches GitHub's current standard
+GitHub-hosted macOS runner labels for arm64 and x64 builds.

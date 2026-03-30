@@ -54,7 +54,7 @@ jobs:
           - os: macos-latest
             target: macos-arm64
             binary: target/release/aura-os-desktop
-          - os: macos-13
+          - os: macos-15-intel
             target: macos-x64
             binary: target/release/aura-os-desktop
           - os: windows-latest
