@@ -104,6 +104,15 @@ jobs:
           ls -la dist/
           echo "dir=dist" >> "$GITHUB_OUTPUT"
 
+      - name: Generate artifact summary and checksums
+        shell: bash
+        run: |
+          node scripts/desktop-release-summary.mjs dist nightly "${{ steps.version.outputs.version }}"
+          mv dist/release-summary.json "dist/release-summary-${{ matrix.target }}-${{ matrix.arch }}.json"
+          mv dist/release-summary.md "dist/release-summary-${{ matrix.target }}-${{ matrix.arch }}.md"
+          mv dist/checksums.txt "dist/checksums-${{ matrix.target }}-${{ matrix.arch }}.txt"
+          cat "dist/release-summary-${{ matrix.target }}-${{ matrix.arch }}.md" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -143,6 +152,14 @@ jobs:
             Automated nightly build from `main` at ${{ github.sha }}.
 
             **Version**: `${{ steps.version.outputs.version }}`
+
+      - name: Attach release summary to job
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for file in all-artifacts/release-summary-*.md; do
+            cat "$file" >> "$GITHUB_STEP_SUMMARY"
+          done
 
   publish-manifests:
     needs: [build, release]
