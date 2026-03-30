@@ -365,6 +365,13 @@ cargo run -p aura-os-desktop
 
 Run from the repo root so `.env` is loaded. The desktop app bundles the server and frontend into a single native window via WebView.
 
+### Release automation docs
+
+For the current release-build plan and workflow map, see:
+
+- [Release Build Strategy](/Users/shahrozkhan/Documents/zero/aura-os/docs/release-build-strategy.md)
+- [Release Workflows](/Users/shahrozkhan/Documents/zero/aura-os/docs/release-workflows.md)
+
 ### Optional services
 
 - **aura-network** — When `AURA_NETWORK_URL` (and optionally `AURA_NETWORK_AUTH_TOKEN`) is set, the app can sync organizations and projects with a shared backend (e.g. `https://your-network-host.example.com`).
