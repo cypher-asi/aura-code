@@ -355,7 +355,6 @@ dependencies = [
  "dirs 5.0.1",
  "dotenvy",
  "image",
- "minisign-verify",
  "objc",
  "open",
  "rfd",

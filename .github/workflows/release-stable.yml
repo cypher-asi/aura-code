@@ -44,6 +44,7 @@ jobs:
         uses: ./.github/actions/setup-zui-sibling
         with:
           repository-owner: ${{ github.repository_owner }}
+          include-harness: "true"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

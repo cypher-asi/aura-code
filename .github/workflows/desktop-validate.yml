@@ -3,6 +3,7 @@ name: Desktop Validate
 on:
   pull_request:
     paths:
+      - .github/actions/**
       - .github/workflows/desktop-validate.yml
       - .github/workflows/release-nightly.yml
       - .github/workflows/release-stable.yml
@@ -17,6 +18,7 @@ on:
       - main
       - codex/release-build-system
     paths:
+      - .github/actions/**
       - .github/workflows/desktop-validate.yml
       - .github/workflows/release-nightly.yml
       - .github/workflows/release-stable.yml
@@ -70,6 +72,7 @@ jobs:
         uses: ./.github/actions/setup-zui-sibling
         with:
           repository-owner: ${{ github.repository_owner }}
+          include-harness: "true"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
