@@ -21,3 +21,8 @@ runs:
         rm -rf "$GITHUB_WORKSPACE/../zui"
         ln -s "$GITHUB_WORKSPACE/zui" "$GITHUB_WORKSPACE/../zui"
         ls -ld "$GITHUB_WORKSPACE/zui" "$GITHUB_WORKSPACE/../zui"
+
+    - name: Install zui dependencies
+      shell: bash
+      run: npm ci
+      working-directory: zui
