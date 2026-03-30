@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { Fragment, useCallback, useMemo } from "react";
 import { useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { Topbar, Drawer, Button, ButtonPlus, Text } from "@cypher-asi/zui";
 import { useShallow } from "zustand/react/shallow";
@@ -412,6 +412,7 @@ export function MobileShell() {
   const routeContent = useOutlet();
   const navigate = useNavigate();
   const { MainPanel, ResponsiveControls, PreviewPanel, PreviewHeader: PreviewHeaderComp } = state.activeApp;
+  const ActiveProvider = state.activeApp.Provider ?? Fragment;
 
   const navOpen = useMobileDrawerStore((s) => s.navOpen);
   const setNavOpen = useMobileDrawerStore((s) => s.setNavOpen);
@@ -442,53 +443,54 @@ export function MobileShell() {
 
   return (
     <>
-      <div className={`${styles.mobileShell} ${overlayDrawerOpen ? styles.mobileShellDimmed : ""}`}>
-        <MobileTopbar state={state} />
-        <UpdateBanner />
-        <div className={styles.mobileMain}>
-          {state.showProjectResponsiveControls && ResponsiveControls && <div className={styles.mobileResponsiveControls}><ResponsiveControls /></div>}
-          {state.isStandaloneAgentLibraryRoot ? (
-            <div className={styles.mobileMainPanel}><ErrorBoundary name="main"><MobileAgentLibraryView /></ErrorBoundary></div>
-          ) : state.isStandaloneAgentDetailRoute ? (
-            <div className={styles.mobileMainPanel}><ErrorBoundary name="main"><MobileAgentDetailsView /></ErrorBoundary></div>
-          ) : (
-            <div className={styles.mobileMainPanel}><ErrorBoundary name="main"><MainPanel>{routeContent}</MainPanel></ErrorBoundary></div>
+      <ActiveProvider>
+        <div className={`${styles.mobileShell} ${overlayDrawerOpen ? styles.mobileShellDimmed : ""}`}>
+          <MobileTopbar state={state} />
+          <UpdateBanner />
+          <div className={styles.mobileMain}>
+            {state.showProjectResponsiveControls && ResponsiveControls && <div className={styles.mobileResponsiveControls}><ResponsiveControls /></div>}
+            {state.isStandaloneAgentLibraryRoot ? (
+              <div className={styles.mobileMainPanel}><ErrorBoundary name="main"><MobileAgentLibraryView /></ErrorBoundary></div>
+            ) : state.isStandaloneAgentDetailRoute ? (
+              <div className={styles.mobileMainPanel}><ErrorBoundary name="main"><MobileAgentDetailsView /></ErrorBoundary></div>
+            ) : (
+              <div className={styles.mobileMainPanel}><ErrorBoundary name="main"><MainPanel>{routeContent}</MainPanel></ErrorBoundary></div>
+            )}
+          </div>
+          {!drawerOpen && state.showProjectTitle && (
+            <div className={styles.mobileBottomNav}>
+              <MobileBottomNav activeId={mobileNavActiveId} onNavigate={handleMobilePrimaryNavigate} />
+            </div>
           )}
         </div>
-        {!drawerOpen && state.showProjectTitle && (
-          <div className={styles.mobileBottomNav}>
-            <MobileBottomNav activeId={mobileNavActiveId} onNavigate={handleMobilePrimaryNavigate} />
-          </div>
-        )}
-      </div>
+        {overlayDrawerOpen && <button type="button" className={styles.mobileDrawerBackdrop} aria-label="Close drawer" onClick={closeDrawers} />}
 
-      {overlayDrawerOpen && <button type="button" className={styles.mobileDrawerBackdrop} aria-label="Close drawer" onClick={closeDrawers} />}
-
-      <Drawer side="left" isOpen={navOpen} onClose={() => { blurActiveElement(); setNavOpen(false); }} title="Aura" className={styles.mobileNavDrawer} showMinimizedBar={false} defaultSize={356} maxSize={404}>
-        {navOpen && <ProjectNavigationDrawerContent />}
-      </Drawer>
-
-      <Drawer side={state.isPhoneLayout ? "bottom" : "right"} isOpen={appOpen} onClose={() => { blurActiveElement(); setAppOpen(false); }} title="Navigate" className={state.isPhoneLayout ? styles.mobileSheetDrawer : styles.mobileSideSheet} showMinimizedBar={false} defaultSize={state.isPhoneLayout ? 420 : 360} maxSize={state.isPhoneLayout ? 520 : 420}>
-        <AppSwitcherContent state={state} />
-      </Drawer>
-
-      {PreviewPanel && (
-        <Drawer side={state.isPhoneLayout ? "bottom" : "right"} isOpen={previewOpen} onClose={() => { blurActiveElement(); setPreviewOpen(false); }} title="Preview" className={state.isPhoneLayout ? styles.mobileSheetDrawer : styles.mobileSideSheet} showMinimizedBar={false} defaultSize={state.isPhoneLayout ? 420 : 360} maxSize={state.isPhoneLayout ? 640 : 480}>
-          <PreviewSheetContent PreviewPanel={PreviewPanel} PreviewHeader={PreviewHeaderComp} />
+        <Drawer side="left" isOpen={navOpen} onClose={() => { blurActiveElement(); setNavOpen(false); }} title="Aura" className={styles.mobileNavDrawer} showMinimizedBar={false} defaultSize={356} maxSize={404}>
+          {navOpen && <ProjectNavigationDrawerContent />}
         </Drawer>
-      )}
 
-      <Drawer side={state.isPhoneLayout ? "bottom" : "right"} isOpen={accountOpen} onClose={() => { blurActiveElement(); setAccountOpen(false); }} title="Account" className={state.isPhoneLayout ? styles.mobileSheetDrawer : styles.mobileSideSheet} showMinimizedBar={false} defaultSize={state.isPhoneLayout ? 320 : 360} maxSize={state.isPhoneLayout ? 420 : 440}>
-        <AccountSheetContent />
-      </Drawer>
+        <Drawer side={state.isPhoneLayout ? "bottom" : "right"} isOpen={appOpen} onClose={() => { blurActiveElement(); setAppOpen(false); }} title="Navigate" className={state.isPhoneLayout ? styles.mobileSheetDrawer : styles.mobileSideSheet} showMinimizedBar={false} defaultSize={state.isPhoneLayout ? 420 : 360} maxSize={state.isPhoneLayout ? 520 : 420}>
+          <AppSwitcherContent state={state} />
+        </Drawer>
 
-      <HostSettingsModal
-        isOpen={hostSettingsOpen}
-        onClose={() => {
-          blurActiveElement();
-          closeHostSettings();
-        }}
-      />
+        {PreviewPanel && (
+          <Drawer side={state.isPhoneLayout ? "bottom" : "right"} isOpen={previewOpen} onClose={() => { blurActiveElement(); setPreviewOpen(false); }} title="Preview" className={state.isPhoneLayout ? styles.mobileSheetDrawer : styles.mobileSideSheet} showMinimizedBar={false} defaultSize={state.isPhoneLayout ? 420 : 360} maxSize={state.isPhoneLayout ? 640 : 480}>
+            <PreviewSheetContent PreviewPanel={PreviewPanel} PreviewHeader={PreviewHeaderComp} />
+          </Drawer>
+        )}
+
+        <Drawer side={state.isPhoneLayout ? "bottom" : "right"} isOpen={accountOpen} onClose={() => { blurActiveElement(); setAccountOpen(false); }} title="Account" className={state.isPhoneLayout ? styles.mobileSheetDrawer : styles.mobileSideSheet} showMinimizedBar={false} defaultSize={state.isPhoneLayout ? 320 : 360} maxSize={state.isPhoneLayout ? 420 : 440}>
+          <AccountSheetContent />
+        </Drawer>
+
+        <HostSettingsModal
+          isOpen={hostSettingsOpen}
+          onClose={() => {
+            blurActiveElement();
+            closeHostSettings();
+          }}
+        />
+      </ActiveProvider>
     </>
   );
 }

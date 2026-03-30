@@ -1,9 +1,11 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { PageEmptyState, Text } from "@cypher-asi/zui";
 import { Loader2, SquareKanban } from "lucide-react";
+import { Avatar } from "../../../components/Avatar";
 import { ResponsiveMainLane } from "../../../components/ResponsiveMainLane";
 import { TaskStatusIcon } from "../../../components/TaskStatusIcon";
+import { useProjectsListStore } from "../../../stores/projects-list-store";
 import { useSidekickStore } from "../../../stores/sidekick-store";
 import { useKanbanData } from "../hooks/useKanbanData";
 import type { TaskStatus } from "../../../types";
@@ -20,15 +22,25 @@ const LANE_CONFIG: { status: TaskStatus; label: string }[] = [
   { status: "failed", label: "Failed" },
 ];
 
-export function TasksMainPanel({ children }: { children?: React.ReactNode }) {
+export function TasksMainPanel({ children: _children }: { children?: React.ReactNode }) {
   const { projectId, agentInstanceId } = useParams<{ projectId: string; agentInstanceId: string }>();
   const viewTask = useSidekickStore((s) => s.viewTask);
+  const refreshProjectAgents = useProjectsListStore((s) => s.refreshProjectAgents);
+  const projectAgents = useProjectsListStore((s) => (
+    projectId ? s.agentsByProject[projectId] : undefined
+  ));
   const { lanes, loading } = useKanbanData(projectId, agentInstanceId);
-
-  const totalTaskCount = useMemo(
-    () => Object.values(lanes).reduce((sum, laneTasks) => sum + laneTasks.length, 0),
-    [lanes],
+  const agentById = useMemo(
+    () => new Map((projectAgents ?? []).map((agent) => [agent.agent_instance_id, agent])),
+    [projectAgents],
   );
+
+  useEffect(() => {
+    if (!projectId) return;
+    if (!projectAgents) {
+      void refreshProjectAgents(projectId);
+    }
+  }, [projectId, projectAgents, refreshProjectAgents]);
 
   if (!projectId) {
     return (
@@ -42,54 +54,57 @@ export function TasksMainPanel({ children }: { children?: React.ReactNode }) {
     );
   }
 
-  if (children) {
-    return <ResponsiveMainLane>{children}</ResponsiveMainLane>;
-  }
-
   return (
     <ResponsiveMainLane>
       <div className={styles.root}>
-        <div className={styles.boardHeader}>
-          <div className={styles.titleWrap}>
-            <SquareKanban size={16} />
-            <Text size="sm" className={styles.title}>Kanban</Text>
+        <div className={styles.boardViewport}>
+          <div className={styles.board}>
+            {LANE_CONFIG.map((lane) => {
+              const laneTasks = lanes[lane.status] ?? [];
+              return (
+                <section key={lane.status} className={styles.column}>
+                  <header className={styles.columnHeader}>
+                    <Text size="xs" className={styles.columnTitle}>{lane.label}</Text>
+                    <span className={styles.countBadge}>{laneTasks.length}</span>
+                  </header>
+                  <div className={styles.columnBody}>
+                    {laneTasks.length === 0 ? (
+                      <Text size="xs" variant="muted" className={styles.emptyLabel}>No tasks</Text>
+                    ) : (
+                      laneTasks.map((task) => {
+                        const assignedAgent = task.assigned_agent_instance_id
+                          ? agentById.get(task.assigned_agent_instance_id)
+                          : undefined;
+                        return (
+                          <button
+                            key={task.task_id}
+                            type="button"
+                            className={styles.taskCard}
+                            onClick={() => viewTask(task)}
+                          >
+                            {assignedAgent && (
+                              <span className={styles.assigneeAvatar}>
+                                <Avatar
+                                  avatarUrl={assignedAgent.icon ?? undefined}
+                                  name={assignedAgent.name}
+                                  type="agent"
+                                  size={16}
+                                />
+                              </span>
+                            )}
+                            <span className={styles.taskCardMeta}>
+                              <TaskStatusIcon status={task.status} />
+                            </span>
+                            <span className={styles.taskCardText}>{task.title}</span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </section>
+              );
+            })}
           </div>
-          <Text size="xs" variant="muted">
-            {totalTaskCount} {totalTaskCount === 1 ? "task" : "tasks"}
-          </Text>
-        </div>
-
-        <div className={styles.board}>
-          {LANE_CONFIG.map((lane) => {
-            const laneTasks = lanes[lane.status] ?? [];
-            return (
-              <section key={lane.status} className={styles.column}>
-                <header className={styles.columnHeader}>
-                  <Text size="xs" className={styles.columnTitle}>{lane.label}</Text>
-                  <span className={styles.countBadge}>{laneTasks.length}</span>
-                </header>
-                <div className={styles.columnBody}>
-                  {laneTasks.length === 0 ? (
-                    <Text size="xs" variant="muted" className={styles.emptyLabel}>No tasks</Text>
-                  ) : (
-                    laneTasks.map((task) => (
-                      <button
-                        key={task.task_id}
-                        type="button"
-                        className={styles.taskCard}
-                        onClick={() => viewTask(task)}
-                      >
-                        <span className={styles.taskCardMeta}>
-                          <TaskStatusIcon status={task.status} />
-                        </span>
-                        <span className={styles.taskCardText}>{task.title}</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </section>
-            );
-          })}
         </div>
 
         {loading && (

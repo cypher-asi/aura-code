@@ -6,6 +6,7 @@ import { SidekickTaskbar } from "../../components/SidekickTaskbar";
 import { SidekickHeader } from "../../components/SidekickHeader";
 import { PreviewContent, PreviewHeader } from "../../components/Preview";
 import type { AuraApp } from "../types";
+import { TasksProvider } from "./components/TasksProvider";
 
 export const TasksApp: AuraApp = {
   id: "tasks",
@@ -20,5 +21,6 @@ export const TasksApp: AuraApp = {
   SidekickHeader: SidekickHeader,
   PreviewPanel: PreviewContent,
   PreviewHeader: PreviewHeader,
+  Provider: TasksProvider,
   searchPlaceholder: "Search Tasks...",
 };

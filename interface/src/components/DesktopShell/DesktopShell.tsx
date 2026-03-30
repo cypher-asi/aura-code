@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { useOutlet } from "react-router-dom";
 import { Topbar, Button } from "@cypher-asi/zui";
 import { Server } from "lucide-react";
@@ -87,6 +87,7 @@ export function DesktopShell() {
   const routeContent = useOutlet();
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const { MainPanel } = activeApp;
+  const ActiveProvider = activeApp.Provider ?? Fragment;
 
 
   useEffect(() => {
@@ -165,12 +166,14 @@ export function DesktopShell() {
             <BottomTaskbar />
           </div>
 
-          <ErrorBoundary name="main">
-            <MainPanel>{routeContent}</MainPanel>
-          </ErrorBoundary>
-          <ErrorBoundary name="sidekick">
-            <SidekickLane />
-          </ErrorBoundary>
+          <ActiveProvider>
+            <ErrorBoundary name="main">
+              <MainPanel>{routeContent}</MainPanel>
+            </ErrorBoundary>
+            <ErrorBoundary name="sidekick">
+              <SidekickLane />
+            </ErrorBoundary>
+          </ActiveProvider>
         </div>
       </div>
 
