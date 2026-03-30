@@ -18,7 +18,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: frontend
+        working-directory: interface
 
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: interface/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -58,15 +58,15 @@ jobs:
         with:
           name: aura-evals-smoke
           path: |
-            frontend/playwright-report
-            frontend/test-results
+            interface/playwright-report
+            interface/test-results
 
   workflow-e2e:
     runs-on: ubuntu-latest
 
     defaults:
       run:
-        working-directory: frontend
+        working-directory: interface
 
     steps:
       - uses: actions/checkout@v4
@@ -81,7 +81,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: interface/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -106,8 +106,8 @@ jobs:
         with:
           name: aura-evals-workflow
           path: |
-            frontend/playwright-report
-            frontend/test-results
+            interface/playwright-report
+            interface/test-results
 
   behavior-evals:
     runs-on: ubuntu-latest
@@ -152,7 +152,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: frontend
+        working-directory: interface
 
     steps:
       - uses: actions/checkout@v4
@@ -162,7 +162,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: interface/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -188,5 +188,5 @@ jobs:
         with:
           name: aura-evals-live-benchmark
           path: |
-            frontend/playwright-report
-            frontend/test-results
+            interface/playwright-report
+            interface/test-results

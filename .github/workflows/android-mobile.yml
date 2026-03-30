@@ -107,7 +107,7 @@ jobs:
             --platform android \
             --mode validate \
             --output-dir mobile-release-summary \
-            --roots frontend/android/app/build/outputs
+            --roots interface/android/app/build/outputs
 
       - name: Attach Android validation summary
         shell: bash
@@ -120,7 +120,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             mobile-release-summary/**
-            frontend/android/app/build/outputs/apk/debug/*.apk
+            interface/android/app/build/outputs/apk/debug/*.apk
 
   ship-android:
     if: github.event_name == 'workflow_dispatch'
@@ -195,7 +195,7 @@ jobs:
             --platform android \
             --mode ship \
             --output-dir mobile-release-summary \
-            --roots frontend/android/app/build/outputs
+            --roots interface/android/app/build/outputs
 
       - name: Attach Android release summary
         shell: bash
@@ -208,5 +208,5 @@ jobs:
           if-no-files-found: ignore
           path: |
             mobile-release-summary/**
-            frontend/android/app/build/outputs/**/*.apk
-            frontend/android/app/build/outputs/**/*.aab
+            interface/android/app/build/outputs/**/*.apk
+            interface/android/app/build/outputs/**/*.aab

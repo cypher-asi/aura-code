@@ -167,7 +167,7 @@ jobs:
             --platform ios \
             --mode ship \
             --output-dir mobile-release-summary \
-            --roots frontend/ios/build
+            --roots interface/ios/build
 
       - name: Attach iOS release summary
         shell: bash
@@ -180,6 +180,6 @@ jobs:
           if-no-files-found: ignore
           path: |
             mobile-release-summary/**
-            frontend/ios/build/**/*.ipa
-            frontend/ios/build/**/*.app
-            frontend/ios/build/**/*.xcarchive
+            interface/ios/build/**/*.ipa
+            interface/ios/build/**/*.app
+            interface/ios/build/**/*.xcarchive
