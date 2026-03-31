@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Text, Item, ModalConfirm, Tabs } from "@cypher-asi/zui";
-import { Trash2, Play, Pause, Square, Loader2, Plus, ChevronDown, X } from "lucide-react";
+import { Trash2, Play, Pause, Square, Loader2, Plus, X } from "lucide-react";
 import {
   useTaskOutputPanel,
   useTaskOutputPanelStore,
@@ -69,7 +69,6 @@ function AutomationControls({ projectId }: { projectId: string }) {
             ? <Loader2 size={11} className={styles.spinner} />
             : <Play size={11} />}
           <span>Run</span>
-          <span className={styles.shortcutBadge}>&#8984;R</span>
         </button>
       )}
       {showStopPause && (
@@ -84,7 +83,6 @@ function AutomationControls({ projectId }: { projectId: string }) {
             >
               <Play size={11} />
               <span>Run</span>
-              <span className={styles.shortcutBadge}>&#8984;R</span>
             </button>
           )}
           {canPause && (
@@ -125,24 +123,34 @@ function AutomationControls({ projectId }: { projectId: string }) {
   );
 }
 
-const PANEL_TABS = [
-  { id: "run", label: "Run" },
-  { id: "terminal", label: "Terminal" },
-] as const;
-
 function PanelTabs({
   activeTab,
   onTabChange,
+  isRunning,
 }: {
   activeTab: OutputPanelTab;
   onTabChange: (tab: OutputPanelTab) => void;
+  isRunning: boolean;
 }) {
   const { addTerminal } = useTerminalPanel();
+
+  const tabs = [
+    {
+      id: "run",
+      label: (
+        <>
+          <span className={isRunning ? styles.tabDotActive : styles.tabDotIdle} />
+          Run
+        </>
+      ),
+    },
+    { id: "terminal", label: "Terminal" },
+  ];
 
   return (
     <div className={styles.headerTabs}>
       <Tabs
-        tabs={PANEL_TABS as unknown as { id: string; label: string }[]}
+        tabs={tabs as any}
         value={activeTab}
         onChange={(id) => onTabChange(id as OutputPanelTab)}
         size="sm"
@@ -198,23 +206,39 @@ export function TaskOutputPanel() {
   const setActiveTab = useTaskOutputPanelStore((s) => s.setActiveTab);
   const clearCompleted = useTaskOutputPanelStore((s) => s.clearCompleted);
   const contentRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
   const ctx = useProjectContext();
   const projectId = ctx?.project.project_id;
   const { agentInstanceId } = useParams<{ agentInstanceId?: string }>();
   const projectTasks = useTasksForProject(projectId, agentInstanceId);
   useActiveTaskTracking();
 
+  const hasActiveTasks = projectTasks.some((t) => t.status === "active");
   const hasCompleted = projectTasks.some((t) => t.status !== "active");
+
+  const handleContentScroll = () => {
+    const el = contentRef.current;
+    if (!el) return;
+    stickToBottom.current =
+      el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
+  };
 
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
+
+    stickToBottom.current = true;
+    el.scrollTop = el.scrollHeight;
+
     const observer = new MutationObserver(() => {
-      el.scrollTop = el.scrollHeight;
+      if (stickToBottom.current) {
+        bottomRef.current?.scrollIntoView({ block: "end" });
+      }
     });
     observer.observe(el, { childList: true, subtree: true, characterData: true });
     return () => observer.disconnect();
-  }, []);
+  }, [activeTab]);
 
   return (
     <div
@@ -225,7 +249,7 @@ export function TaskOutputPanel() {
       <div className={styles.header}>
         <div className={styles.headerLeft}>
           <Item.Chevron expanded={!collapsed} onToggle={toggleCollapse} size="sm" />
-          <PanelTabs activeTab={activeTab} onTabChange={setActiveTab} />
+          <PanelTabs activeTab={activeTab} onTabChange={setActiveTab} isRunning={hasActiveTasks} />
         </div>
         <div className={styles.headerActions}>
           <span className={styles.wifiIcon}><ConnectionDot /></span>
@@ -241,19 +265,11 @@ export function TaskOutputPanel() {
               <Trash2 size={11} />
             </button>
           )}
-          <button
-            type="button"
-            className={styles.headerBtn}
-            onClick={toggleCollapse}
-            title={collapsed ? "Expand" : "Collapse"}
-          >
-            <ChevronDown size={13} style={{ transform: collapsed ? undefined : "rotate(180deg)", transition: "transform 0.15s" }} />
-          </button>
         </div>
       </div>
 
       {activeTab === "run" && (
-        <div className={styles.content} ref={contentRef}>
+        <div className={styles.content} ref={contentRef} onScroll={handleContentScroll}>
           {projectTasks.length === 0 ? (
             <div className={styles.emptyState}>
               <Text size="sm" className={styles.emptyText}>No tasks</Text>
@@ -277,6 +293,7 @@ export function TaskOutputPanel() {
               ),
             )
           )}
+          <div ref={bottomRef} />
         </div>
       )}
 

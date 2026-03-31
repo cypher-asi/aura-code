@@ -89,6 +89,24 @@
   font-size: 11px;
 }
 
+.tabDotIdle,
+.tabDotActive {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.tabDotIdle {
+  background: var(--color-danger, #ef4444);
+}
+
+.tabDotActive {
+  background: var(--color-success, #4c9);
+}
+
 .addTerminalBtn {
   display: inline-flex;
   align-items: center;
@@ -148,14 +166,6 @@
   opacity: 0.25;
   cursor: default;
   pointer-events: none;
-}
-
-.shortcutBadge {
-  font-size: 9px;
-  font-weight: 500;
-  color: var(--color-text-muted, #666);
-  letter-spacing: 0.02em;
-  margin-left: 2px;
 }
 
 .wifiIcon {
@@ -233,7 +243,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgb(74, 222, 128);
+  background: var(--color-success, #4c9);
   flex-shrink: 0;
   animation: pulse 2s ease-in-out infinite;
 }
@@ -250,15 +260,15 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: rgba(74, 222, 128, 0.15);
-  color: rgb(74, 222, 128);
+  background: color-mix(in srgb, var(--color-success, #4c9) 15%, transparent);
+  color: var(--color-success, #4c9);
   flex-shrink: 0;
 }
 
 .taskDotFailed {
   composes: taskDotCompleted;
-  background: rgba(248, 113, 113, 0.15);
-  color: rgb(248, 113, 113);
+  background: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent);
+  color: var(--color-danger, #ef4444);
 }
 
 .taskStatusBadge {
@@ -269,13 +279,13 @@
   padding: 1px 5px;
   border-radius: 3px;
   flex-shrink: 0;
-  background: rgba(74, 222, 128, 0.1);
-  color: rgb(74, 222, 128);
+  background: color-mix(in srgb, var(--color-success, #4c9) 10%, transparent);
+  color: var(--color-success, #4c9);
 }
 
 .taskStatusBadge[data-status="failed"] {
-  background: rgba(248, 113, 113, 0.1);
-  color: rgb(248, 113, 113);
+  background: color-mix(in srgb, var(--color-danger, #ef4444) 10%, transparent);
+  color: var(--color-danger, #ef4444);
 }
 
 .dismissBtn {
