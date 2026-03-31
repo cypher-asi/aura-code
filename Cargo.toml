@@ -11,6 +11,7 @@ members = [
     "crates/aura-os-sessions",
     "crates/aura-os-storage",
     "crates/aura-os-store",
+    "crates/aura-os-super-agent",
     "crates/aura-os-tasks",
     "crates/aura-os-terminal",
     "apps/aura-os-desktop",

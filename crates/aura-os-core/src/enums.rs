@@ -74,3 +74,38 @@ impl HarnessMode {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrchestrationStatus {
+    Planning,
+    Executing,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepStatus {
+    Pending,
+    Running,
+    Done,
+    Failed,
+    Skipped,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolDomain {
+    Project,
+    Spec,
+    Task,
+    Agent,
+    Execution,
+    Org,
+    Billing,
+    Social,
+    Monitoring,
+    System,
+    Generation,
+}

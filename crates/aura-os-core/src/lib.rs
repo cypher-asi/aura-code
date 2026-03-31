@@ -11,7 +11,8 @@ pub mod testutil;
 // TODO: replace with explicit re-exports
 pub use entities::*;
 pub use enums::{
-    AgentStatus, ChatRole, HarnessMode, OrgRole, ProjectStatus, SessionStatus, TaskStatus,
+    AgentStatus, ChatRole, HarnessMode, OrgRole, OrchestrationStatus, ProjectStatus,
+    SessionStatus, StepStatus, TaskStatus, ToolDomain,
 };
 pub use helpers::{extract_fenced_json, fuzzy_search_replace, parse_dt};
 pub use ids::{

@@ -16,6 +16,7 @@ pub(crate) mod remote_terminal;
 pub(crate) mod specs;
 pub(crate) mod sse;
 pub(crate) mod swarm;
+pub(crate) mod super_agent;
 pub(crate) mod system;
 pub(crate) mod tasks;
 pub(crate) mod terminal;

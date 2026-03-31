@@ -4,6 +4,8 @@ import type {
   TaskStatus,
   AgentStatus,
   SessionStatus,
+  OrchestrationStatus,
+  StepStatus,
 } from "./enums";
 
 export interface Project {
@@ -102,6 +104,8 @@ export interface Agent {
   vm_id?: string | null;
   network_agent_id?: string;
   profile_id?: string;
+  tags: string[];
+  is_pinned: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -308,6 +312,25 @@ export interface RemoteVmState {
   isolation?: string
   endpoint?: string
   created_at?: string
+}
+
+export interface SuperAgentOrchestration {
+  orchestration_id: string;
+  agent_id: string;
+  org_id: string;
+  intent: string;
+  plan: SuperAgentStep[];
+  status: OrchestrationStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SuperAgentStep {
+  step_index: number;
+  tool_name: string;
+  tool_input: unknown;
+  status: StepStatus;
+  result: unknown | null;
 }
 
 export interface ApiError {

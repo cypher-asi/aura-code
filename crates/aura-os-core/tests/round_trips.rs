@@ -190,6 +190,8 @@ fn sample_agent() -> Agent {
         vm_id: None,
         network_agent_id: None,
         profile_id: None,
+        tags: vec![],
+        is_pinned: false,
         created_at: now,
         updated_at: now,
     }

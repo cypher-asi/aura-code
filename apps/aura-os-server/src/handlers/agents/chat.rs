@@ -799,6 +799,14 @@ pub(crate) async fn send_agent_event_stream(
         .await
         .map_err(|e| ApiError::internal(format!("looking up agent: {e}")))?;
 
+    if agent.tags.contains(&"super_agent".to_string()) {
+        info!(%agent_id, "SuperAgent detected — routing to SuperAgent handler");
+        // TODO: Phase 2 will implement handle_super_agent_stream
+        return Err(ApiError::internal(
+            "SuperAgent streaming not yet implemented".to_string(),
+        ));
+    }
+
     let persist_ctx = setup_agent_chat_persistence(&state, &agent_id, &agent.name, &jwt).await;
     if persist_ctx.is_none() {
         warn!(%agent_id, "agent chat: persistence context unavailable — chat will NOT be saved");

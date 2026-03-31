@@ -12,7 +12,8 @@ use tower_http::trace::TraceLayer;
 
 use crate::handlers::{
     agents, auth, billing, dev_loop, feed, files, follows, leaderboard, log, orgs, project_stats,
-    projects, remote_files, remote_terminal, specs, swarm, system, tasks, terminal, users, ws,
+    projects, remote_files, remote_terminal, specs, super_agent, swarm, system, tasks, terminal,
+    users, ws,
 };
 use crate::state::AppState;
 
@@ -77,6 +78,7 @@ pub fn create_router_with_interface(state: AppState, interface_dir: Option<PathB
         .merge(agent_routes())
         .merge(social_routes())
         .merge(system_routes())
+        .merge(super_agent_routes())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth_guard::require_verified_session,
@@ -365,6 +367,13 @@ fn social_routes() -> Router<AppState> {
             get(feed::list_comments).post(feed::add_comment),
         )
         .route("/api/comments/:comment_id", delete(feed::delete_comment))
+}
+
+fn super_agent_routes() -> Router<AppState> {
+    Router::new().route(
+        "/api/super-agent/setup",
+        post(super_agent::setup_super_agent),
+    )
 }
 
 fn system_routes() -> Router<AppState> {

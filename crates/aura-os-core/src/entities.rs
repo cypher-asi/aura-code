@@ -162,6 +162,10 @@ pub struct Agent {
     pub network_agent_id: Option<AgentId>,
     #[serde(default)]
     pub profile_id: Option<ProfileId>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub is_pinned: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -397,4 +401,25 @@ pub struct ZeroAuthSession {
     pub is_zero_pro: bool,
     pub created_at: DateTime<Utc>,
     pub validated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SuperAgentOrchestration {
+    pub orchestration_id: uuid::Uuid,
+    pub agent_id: AgentId,
+    pub org_id: OrgId,
+    pub intent: String,
+    pub plan: Vec<SuperAgentStep>,
+    pub status: crate::enums::OrchestrationStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SuperAgentStep {
+    pub step_index: u32,
+    pub tool_name: String,
+    pub tool_input: serde_json::Value,
+    pub status: crate::enums::StepStatus,
+    pub result: Option<serde_json::Value>,
 }

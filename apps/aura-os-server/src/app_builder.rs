@@ -16,6 +16,7 @@ use aura_os_sessions::SessionService;
 use aura_os_storage::StorageClient;
 use aura_os_store::{RocksStore, StoreError};
 use aura_os_tasks::TaskService;
+use aura_os_super_agent::SuperAgentService;
 use aura_os_terminal::TerminalManager;
 
 use crate::orbit_client::OrbitClient;
@@ -294,6 +295,29 @@ pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
         cache
     };
 
+    let automaton_client = Arc::new(aura_os_link::AutomatonClient::new(
+        &std::env::var("LOCAL_HARNESS_URL")
+            .unwrap_or_else(|_| "http://localhost:8080".to_string()),
+    ));
+
+    let router_url = std::env::var("AURA_ROUTER_URL")
+        .unwrap_or_else(|_| "https://aura-router.onrender.com".to_string());
+    let super_agent_service = Arc::new(SuperAgentService::new(
+        router_url,
+        domain.project_service.clone(),
+        domain.agent_service.clone(),
+        domain.agent_instance_service.clone(),
+        domain.task_service.clone(),
+        domain.session_service.clone(),
+        core.org_service.clone(),
+        core.billing_client.clone(),
+        automaton_client.clone(),
+        network_client.clone(),
+        storage_client.clone(),
+        store.clone(),
+        event_broadcast.clone(),
+    ));
+
     spawn_health_checks(&storage_client, &network_client);
     if let Some(ref client) = network_client {
         super::network_bridge::spawn_network_ws_bridge(
@@ -326,14 +350,12 @@ pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
         require_zero_pro: std::env::var("REQUIRE_ZERO_PRO")
             .map(|v| v != "false" && v != "0")
             .unwrap_or(true),
-        automaton_client: Arc::new(aura_os_link::AutomatonClient::new(
-            &std::env::var("LOCAL_HARNESS_URL")
-                .unwrap_or_else(|_| "http://localhost:8080".to_string()),
-        )),
+        automaton_client,
         automaton_registry: Arc::new(Mutex::new(HashMap::new())),
         swarm_base_url: env_opt("SWARM_BASE_URL"),
         task_output_cache: Arc::new(Mutex::new(HashMap::new())),
         orbit_client,
         validation_cache,
+        super_agent_service,
     })
 }

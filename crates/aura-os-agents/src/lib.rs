@@ -37,6 +37,8 @@ fn network_agent_to_core(net: &NetworkAgent) -> Agent {
         vm_id: net.vm_id.clone(),
         network_agent_id: net.id.parse().ok(),
         profile_id,
+        tags: Vec::new(),
+        is_pinned: false,
         created_at,
         updated_at,
     }

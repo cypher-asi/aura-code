@@ -24,6 +24,7 @@ use aura_os_storage::StorageClient;
 use aura_os_store::RocksStore;
 use aura_os_tasks::TaskService;
 use aura_os_terminal::TerminalManager;
+use aura_os_super_agent::SuperAgentService;
 
 use crate::error::ApiError;
 
@@ -272,6 +273,7 @@ pub struct AppState {
     pub orbit_client: Option<crate::orbit_client::OrbitClient>,
     /// Per-JWT validation cache. Avoids calling zOS on every request.
     pub validation_cache: ValidationCache,
+    pub super_agent_service: Arc<SuperAgentService>,
 }
 
 impl AppState {
