@@ -56,7 +56,7 @@ body:has([role="dialog"][aria-modal="true"]) {
 
 .titlebar-drag {
   -webkit-app-region: drag;
-  height: var(--control-height-md);
+  height: var(--control-height-sm);
   position: relative;
   padding-left: 13px;
   padding-right: var(--space-2);
