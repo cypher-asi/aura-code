@@ -244,7 +244,7 @@ export function TaskOutputPanel() {
       className={collapsed ? styles.panelCollapsed : styles.panel}
       style={{ height: collapsed ? 30 : panelHeight }}
     >
-      <div className={styles.resizeHandle} onMouseDown={collapsed ? undefined : handleMouseDown} />
+      <div data-resize-handle className={styles.resizeHandle} onMouseDown={collapsed ? undefined : handleMouseDown} />
       <div className={styles.header}>
         <div className={styles.headerLeft}>
           <Item.Chevron expanded={!collapsed} onToggle={toggleCollapse} size="sm" />

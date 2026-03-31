@@ -17,40 +17,22 @@
   display: none;
 }
 
-/* ── Resize handle ── */
+/* ── Resize handle (invisible hit area, matches Lane) ── */
 
 .resizeHandle {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 6px;
+  height: 16px;
   cursor: row-resize;
-  background: transparent;
-  transition: background 0.15s;
-  z-index: 2;
+  z-index: 10;
+  user-select: none;
+  transform: translateY(-50%);
 }
 
-.resizeHandle::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 32px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--color-border);
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.resizeHandle:hover {
-  background: var(--color-accent, #569cd6);
-}
-
-.resizeHandle:hover::after {
-  opacity: 1;
+.panel:has([data-resize-handle]:hover) {
+  border-top-color: #fff;
 }
 
 /* ── Header bar ── */
@@ -250,8 +232,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-2, 8px);
-  padding: var(--space-1, 4px) var(--space-3, 12px);
+  padding: 0 var(--space-3, 12px);
   background: rgba(255, 255, 255, 0.02);
+  height: var(--control-height-sm, 32px);
+  min-height: var(--control-height-sm, 32px);
+  box-sizing: border-box;
 }
 
 .taskDot {
