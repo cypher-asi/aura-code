@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useParams } from "react-router-dom";
 import { Text, Item, ModalConfirm } from "@cypher-asi/zui";
 import { Trash2, Play, Pause, Square, Loader2, Plus, ChevronDown, X } from "lucide-react";
 import {
@@ -28,8 +29,8 @@ function useActiveTaskTracking() {
     const unsubs = [
       subscribe(EventType.TaskStarted, (e) => {
         const { task_id, task_title } = e.content;
-        const pid = e.project_id ?? projectId;
-        if (task_id && pid) addTask(task_id, pid, task_title);
+        const pid = e.project_id || projectId;
+        if (task_id && pid) addTask(task_id, pid, task_title, e.agent_id || undefined);
       }),
       subscribe(EventType.TaskCompleted, (e) => {
         if (e.content.task_id) completeTask(e.content.task_id);
@@ -200,7 +201,8 @@ export function TaskOutputPanel() {
   const contentRef = useRef<HTMLDivElement>(null);
   const ctx = useProjectContext();
   const projectId = ctx?.project.project_id;
-  const projectTasks = useTasksForProject(projectId);
+  const { agentInstanceId } = useParams<{ agentInstanceId?: string }>();
+  const projectTasks = useTasksForProject(projectId, agentInstanceId);
   useActiveTaskTracking();
 
   const hasCompleted = projectTasks.some((t) => t.status !== "active");

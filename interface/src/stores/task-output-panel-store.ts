@@ -16,6 +16,7 @@ export interface PanelTaskEntry {
   title: string;
   status: PanelTaskStatus;
   projectId: string;
+  agentInstanceId?: string;
   updatedAt: number;
 }
 
@@ -59,7 +60,7 @@ interface TaskOutputPanelState {
 
   setActiveTab: (tab: OutputPanelTab) => void;
   toggleCollapse: () => void;
-  addTask: (taskId: string, projectId: string, title?: string) => void;
+  addTask: (taskId: string, projectId: string, title?: string, agentInstanceId?: string) => void;
   completeTask: (taskId: string) => void;
   failTask: (taskId: string) => void;
   dismissTask: (taskId: string) => void;
@@ -86,7 +87,7 @@ export const useTaskOutputPanelStore = create<TaskOutputPanelState>()((set, get)
     set((s) => ({ collapsed: !s.collapsed }));
   },
 
-  addTask: (taskId, projectId, title) => {
+  addTask: (taskId, projectId, title, agentInstanceId) => {
     set((s) => {
       const existing = s.tasks.find((t) => t.taskId === taskId);
       if (existing && existing.status === "active") return s;
@@ -95,6 +96,7 @@ export const useTaskOutputPanelStore = create<TaskOutputPanelState>()((set, get)
         title: title || existing?.title || taskId,
         status: "active",
         projectId,
+        agentInstanceId: agentInstanceId || existing?.agentInstanceId,
         updatedAt: Date.now(),
       };
       const filtered = s.tasks.filter((t) => t.taskId !== taskId);
@@ -172,8 +174,12 @@ export function useTaskOutputPanel() {
   return useTaskOutputPanelStore(useShallow((s) => s));
 }
 
-export function useTasksForProject(projectId: string | undefined) {
+export function useTasksForProject(projectId: string | undefined, agentInstanceId?: string | undefined) {
   return useTaskOutputPanelStore(
-    useShallow((s) => (projectId ? s.tasks.filter((t) => t.projectId === projectId) : s.tasks)),
+    useShallow((s) => {
+      let list = projectId ? s.tasks.filter((t) => t.projectId === projectId) : s.tasks;
+      if (agentInstanceId) list = list.filter((t) => t.agentInstanceId === agentInstanceId);
+      return list;
+    }),
   );
 }
