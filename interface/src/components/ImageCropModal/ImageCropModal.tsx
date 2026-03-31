@@ -1,0 +1,95 @@
+import { useState, useCallback } from "react";
+import Cropper from "react-easy-crop";
+import type { Area } from "react-easy-crop";
+import { Modal, Button } from "@cypher-asi/zui";
+import { getCroppedImageDataUrl } from "../../utils/crop-image";
+import styles from "./ImageCropModal.module.css";
+
+interface ImageCropModalProps {
+  isOpen: boolean;
+  imageSrc: string;
+  /** "round" for avatars, "rect" for banners etc. */
+  cropShape?: "round" | "rect";
+  /** Pixel dimensions of the output square image. */
+  outputSize?: number;
+  onConfirm: (dataUrl: string) => void;
+  onClose: () => void;
+}
+
+export function ImageCropModal({
+  isOpen,
+  imageSrc,
+  cropShape = "round",
+  outputSize = 256,
+  onConfirm,
+  onClose,
+}: ImageCropModalProps) {
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedArea, setCroppedArea] = useState<Area | null>(null);
+
+  const onCropComplete = useCallback((_: Area, croppedPixels: Area) => {
+    setCroppedArea(croppedPixels);
+  }, []);
+
+  const handleConfirm = useCallback(async () => {
+    if (!croppedArea) return;
+    const dataUrl = await getCroppedImageDataUrl(imageSrc, croppedArea, outputSize);
+    onConfirm(dataUrl);
+    onClose();
+  }, [croppedArea, imageSrc, outputSize, onConfirm, onClose]);
+
+  const handleClose = useCallback(() => {
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCroppedArea(null);
+    onClose();
+  }, [onClose]);
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="Crop Image"
+      size="md"
+      footer={
+        <div className={styles.footer}>
+          <Button variant="ghost" onClick={handleClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleConfirm}>
+            Confirm
+          </Button>
+        </div>
+      }
+    >
+      <div className={styles.cropContainer}>
+        {imageSrc && (
+          <Cropper
+            image={imageSrc}
+            crop={crop}
+            zoom={zoom}
+            aspect={1}
+            cropShape={cropShape}
+            showGrid={false}
+            onCropChange={setCrop}
+            onZoomChange={setZoom}
+            onCropComplete={onCropComplete}
+          />
+        )}
+      </div>
+      <div className={styles.controls}>
+        <span className={styles.zoomLabel}>Zoom</span>
+        <input
+          type="range"
+          className={styles.zoomSlider}
+          min={1}
+          max={3}
+          step={0.05}
+          value={zoom}
+          onChange={(e) => setZoom(Number(e.target.value))}
+        />
+      </div>
+    </Modal>
+  );
+}

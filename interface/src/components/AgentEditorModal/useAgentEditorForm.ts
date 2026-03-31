@@ -24,9 +24,13 @@ interface AgentEditorFormResult {
   nameRef: React.RefObject<HTMLInputElement | null>;
   initialFocusRef: React.RefObject<HTMLElement> | undefined;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
+  cropOpen: boolean;
+  rawImageSrc: string;
   handleSave: () => Promise<void>;
   handleClose: () => void;
-  handleImageSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleCropConfirm: (dataUrl: string) => void;
+  handleCropClose: () => void;
 }
 
 export function useAgentEditorForm(
@@ -45,6 +49,8 @@ export function useAgentEditorForm(
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [nameError, setNameError] = useState("");
+  const [cropOpen, setCropOpen] = useState(false);
+  const [rawImageSrc, setRawImageSrc] = useState("");
   const { inputRef: nameRef, initialFocusRef } = useModalInitialFocus<HTMLInputElement>();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -66,24 +72,27 @@ export function useAgentEditorForm(
     setError(""); setNameError(""); setSaving(false); onClose();
   }, [onClose]);
 
-  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = 128; canvas.height = 128;
-      const ctx = canvas.getContext("2d")!;
-      const scale = Math.max(128 / img.width, 128 / img.height);
-      const w = img.width * scale;
-      const h = img.height * scale;
-      ctx.drawImage(img, (128 - w) / 2, (128 - h) / 2, w, h);
-      setIcon(canvas.toDataURL("image/webp", 0.85));
-      URL.revokeObjectURL(img.src);
-    };
-    img.src = URL.createObjectURL(file);
+    const objectUrl = URL.createObjectURL(file);
+    setRawImageSrc(objectUrl);
+    setCropOpen(true);
     e.target.value = "";
   }, []);
+
+  const handleCropConfirm = useCallback((dataUrl: string) => {
+    setIcon(dataUrl);
+    if (rawImageSrc) URL.revokeObjectURL(rawImageSrc);
+    setRawImageSrc("");
+    setCropOpen(false);
+  }, [rawImageSrc]);
+
+  const handleCropClose = useCallback(() => {
+    setCropOpen(false);
+    if (rawImageSrc) URL.revokeObjectURL(rawImageSrc);
+    setRawImageSrc("");
+  }, [rawImageSrc]);
 
   const handleSave = useCallback(async () => {
     if (!name.trim()) { setNameError("Name is required"); return; }
@@ -109,6 +118,7 @@ export function useAgentEditorForm(
     systemPrompt, setSystemPrompt, icon, setIcon, machineType, setMachineType,
     saving, error, nameError, setNameError,
     nameRef, initialFocusRef, fileInputRef,
-    handleSave, handleClose, handleImageSelect,
+    cropOpen, rawImageSrc,
+    handleSave, handleClose, handleFileSelect, handleCropConfirm, handleCropClose,
   };
 }

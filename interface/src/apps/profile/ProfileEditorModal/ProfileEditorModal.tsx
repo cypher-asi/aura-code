@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Modal, Input, Textarea, Button } from "@cypher-asi/zui";
+import { ImagePlus, X } from "lucide-react";
 import type { UserProfileData } from "../../../stores/profile-store";
 import { useModalInitialFocus } from "../../../hooks/use-modal-initial-focus";
+import { ImageCropModal } from "../../../components/ImageCropModal";
 import styles from "../../../components/AgentEditorModal/AgentEditorModal.module.css";
 
 interface ProfileEditorModalProps {
@@ -18,7 +20,10 @@ export function ProfileEditorModal({ isOpen, profile, onClose, onSave }: Profile
   const [location, setLocation] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [nameError, setNameError] = useState("");
+  const [rawImageSrc, setRawImageSrc] = useState("");
+  const [cropOpen, setCropOpen] = useState(false);
   const { inputRef: nameRef, initialFocusRef } = useModalInitialFocus<HTMLInputElement>();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -54,82 +59,134 @@ export function ProfileEditorModal({ isOpen, profile, onClose, onSave }: Profile
     onClose();
   };
 
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const objectUrl = URL.createObjectURL(file);
+    setRawImageSrc(objectUrl);
+    setCropOpen(true);
+    e.target.value = "";
+  }, []);
+
+  const handleCropConfirm = useCallback((dataUrl: string) => {
+    setAvatarUrl(dataUrl);
+    if (rawImageSrc) URL.revokeObjectURL(rawImageSrc);
+    setRawImageSrc("");
+  }, [rawImageSrc]);
+
+  const handleCropClose = useCallback(() => {
+    setCropOpen(false);
+    if (rawImageSrc) URL.revokeObjectURL(rawImageSrc);
+    setRawImageSrc("");
+  }, [rawImageSrc]);
+
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={handleClose}
-      title="Edit Profile"
-      size="md"
-      initialFocusRef={initialFocusRef}
-      footer={
-        <div className={styles.footer}>
-          <Button variant="ghost" onClick={handleClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" onClick={handleSave}>
-            Save Changes
-          </Button>
-        </div>
-      }
-    >
-      <div className={styles.form}>
-        <div className={styles.fieldGroup}>
-          <label className={styles.label}>Avatar URL</label>
-          <Input
-            value={avatarUrl}
-            onChange={(e) => setAvatarUrl(e.target.value)}
-            placeholder="https://example.com/avatar.png"
-          />
-        </div>
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={handleClose}
+        title="Edit Profile"
+        size="md"
+        initialFocusRef={initialFocusRef}
+        footer={
+          <div className={styles.footer}>
+            <Button variant="ghost" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleSave}>
+              Save Changes
+            </Button>
+          </div>
+        }
+      >
+        <div className={styles.form}>
+          <div className={styles.avatarRow}>
+            <button
+              type="button"
+              className={styles.avatarUpload}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Profile avatar" className={styles.avatarImg} />
+              ) : (
+                <ImagePlus size={24} className={styles.avatarPlaceholder} />
+              )}
+              {avatarUrl && (
+                <span
+                  className={styles.avatarRemove}
+                  onClick={(e) => { e.stopPropagation(); setAvatarUrl(""); }}
+                >
+                  <X size={12} />
+                </span>
+              )}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className={styles.hiddenInput}
+              onChange={handleFileSelect}
+            />
+          </div>
 
-        <div className={styles.fieldGroup}>
-          <label className={styles.label}>Name *</label>
-          <Input
-            ref={nameRef}
-            value={name}
-            onChange={(e) => { setName(e.target.value); setNameError(""); }}
-            placeholder="Display name"
-            validationMessage={nameError}
-          />
-        </div>
+          <div className={styles.fieldGroup}>
+            <label className={styles.label}>Name *</label>
+            <Input
+              ref={nameRef}
+              value={name}
+              onChange={(e) => { setName(e.target.value); setNameError(""); }}
+              placeholder="Display name"
+              validationMessage={nameError}
+            />
+          </div>
 
-        <div className={styles.fieldGroup}>
-          <label className={styles.label}>Handle</label>
-          <Input
-            value={profile.handle}
-            disabled
-            placeholder="@handle"
-          />
-        </div>
+          <div className={styles.fieldGroup}>
+            <label className={styles.label}>Handle</label>
+            <Input
+              value={profile.handle}
+              disabled
+              placeholder="@handle"
+            />
+          </div>
 
-        <div className={styles.fieldGroup}>
-          <label className={styles.label}>Bio</label>
-          <Textarea
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            placeholder="Tell us about yourself..."
-            rows={3}
-          />
-        </div>
+          <div className={styles.fieldGroup}>
+            <label className={styles.label}>Bio</label>
+            <Textarea
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              placeholder="Tell us about yourself..."
+              rows={3}
+            />
+          </div>
 
-        <div className={styles.fieldGroup}>
-          <label className={styles.label}>Website</label>
-          <Input
-            value={website}
-            onChange={(e) => setWebsite(e.target.value)}
-            placeholder="https://example.com"
-          />
-        </div>
+          <div className={styles.fieldGroup}>
+            <label className={styles.label}>Website</label>
+            <Input
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              placeholder="https://example.com"
+            />
+          </div>
 
-        <div className={styles.fieldGroup}>
-          <label className={styles.label}>Location</label>
-          <Input
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            placeholder="City, Country"
-          />
+          <div className={styles.fieldGroup}>
+            <label className={styles.label}>Location</label>
+            <Input
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="City, Country"
+            />
+          </div>
         </div>
-      </div>
-    </Modal>
+      </Modal>
+
+      <ImageCropModal
+        isOpen={cropOpen}
+        imageSrc={rawImageSrc}
+        cropShape="round"
+        outputSize={256}
+        onConfirm={handleCropConfirm}
+        onClose={handleCropClose}
+      />
+    </>
   );
 }

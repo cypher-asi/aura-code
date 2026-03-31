@@ -63,7 +63,7 @@ export function ProfileSummaryCard({
       <EntityCard
         headerLabel="PROFILE"
         headerStatus="ACTIVE"
-        image={summary.profile.avatarUrl && summary.profile.avatarUrl.startsWith("http") ? summary.profile.avatarUrl : undefined}
+        image={summary.profile.avatarUrl && (summary.profile.avatarUrl.startsWith("http") || summary.profile.avatarUrl.startsWith("data:")) ? summary.profile.avatarUrl : undefined}
         fallbackIcon={
           summary.isOwnProfile ? (
             <button
