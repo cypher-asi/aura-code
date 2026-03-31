@@ -783,6 +783,28 @@ async fn open_harness_chat_stream(
     ))
 }
 
+/// Resolve the active org for the super agent. Tries network first, then
+/// falls back to the org_id stored on local projects.
+async fn resolve_org_for_super_agent(state: &AppState, jwt: &str) -> (String, String) {
+    if let Some(ref client) = state.network_client {
+        if let Ok(orgs) = client.list_orgs(jwt).await {
+            if let Some(org) = orgs.first() {
+                return (org.name.clone(), org.id.clone());
+            }
+        }
+    }
+    // Fallback: derive org from local projects
+    if let Ok(projects) = state.project_service.list_projects() {
+        if let Some(p) = projects.first() {
+            let oid = p.org_id.to_string();
+            if oid != aura_os_core::OrgId::nil().to_string() {
+                return (String::new(), oid);
+            }
+        }
+    }
+    ("Default Org".into(), "default".into())
+}
+
 async fn handle_super_agent_stream(
     state: &AppState,
     jwt: &str,
@@ -799,18 +821,14 @@ async fn handle_super_agent_stream(
         .and_then(|b| serde_json::from_slice(&b).ok());
     let user_id = session.as_ref().map(|s| s.user_id.as_str()).unwrap_or("unknown");
 
-    let org_id = if let Some(ref client) = state.network_client {
-        client
-            .list_orgs(jwt)
-            .await
-            .ok()
-            .and_then(|orgs| orgs.first().map(|o| o.id.clone()))
-            .unwrap_or_else(|| "default".into())
-    } else {
-        "default".into()
-    };
+    // Resolve org: try network first, then derive from local projects
+    let (org_name, org_id) = resolve_org_for_super_agent(state, jwt).await;
 
     let sa_ctx = Arc::new(sas.build_context(user_id, &org_id, jwt));
+
+    // Always generate a fresh system prompt with current org info
+    let system_prompt =
+        aura_os_super_agent::prompt::super_agent_system_prompt(&org_name, &org_id);
 
     let user_content = body.content;
     let requested_model = body.model;
@@ -849,7 +867,7 @@ async fn handle_super_agent_stream(
     let stream_handle = aura_os_super_agent::stream::SuperAgentStream::new(
         sas.router_url.clone(),
         sas.http_client.clone(),
-        agent.system_prompt.clone(),
+        system_prompt,
         tool_defs,
         conversation_history,
         sa_ctx,
