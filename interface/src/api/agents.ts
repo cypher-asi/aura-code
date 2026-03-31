@@ -49,6 +49,8 @@ export const agentInstancesApi = {
 
 export const superAgentApi = {
   setup: () => apiFetch<{ agent: Agent; created: boolean }>("/api/super-agent/setup", { method: "POST" }),
+  listOrchestrations: () => apiFetch<any[]>("/api/super-agent/orchestrations"),
+  getOrchestration: (id: string) => apiFetch<any>(`/api/super-agent/orchestrations/${id}`),
 };
 
 export const sessionsApi = {

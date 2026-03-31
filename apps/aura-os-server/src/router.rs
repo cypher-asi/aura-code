@@ -370,10 +370,19 @@ fn social_routes() -> Router<AppState> {
 }
 
 fn super_agent_routes() -> Router<AppState> {
-    Router::new().route(
-        "/api/super-agent/setup",
-        post(super_agent::setup_super_agent),
-    )
+    Router::new()
+        .route(
+            "/api/super-agent/setup",
+            post(super_agent::setup_super_agent),
+        )
+        .route(
+            "/api/super-agent/orchestrations",
+            get(super_agent::list_orchestrations),
+        )
+        .route(
+            "/api/super-agent/orchestrations/:orchestration_id",
+            get(super_agent::get_orchestration),
+        )
 }
 
 fn system_routes() -> Router<AppState> {

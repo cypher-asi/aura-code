@@ -6,6 +6,7 @@ import { EmptyState } from "../../../components/EmptyState";
 import { EntityCard } from "../../../components/EntityCard";
 import { FollowEditButton } from "../../../components/FollowEditButton";
 import { SidekickActions } from "../../../components/SidekickActions";
+import { SuperAgentDashboardPanel } from "../../../components/SuperAgentDashboardPanel";
 import { AgentEditorModal } from "../../../components/AgentEditorModal";
 import { api, ApiClientError } from "../../../api/client";
 import { useSelectedAgent, useAgentStore } from "../stores";
@@ -155,6 +156,10 @@ export function AgentInfoPanel({ variant = "default" }: AgentInfoPanelProps) {
           )}
 
         </EntityCard>
+
+        {a.tags?.includes("super_agent") && (
+          <SuperAgentDashboardPanel agent={a} />
+        )}
       </div>
 
       {isOwnAgent && (

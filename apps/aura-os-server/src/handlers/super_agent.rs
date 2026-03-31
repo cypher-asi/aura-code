@@ -1,12 +1,12 @@
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::Json;
 use serde::Serialize;
 use tracing::info;
 
-use aura_os_core::{Agent, AgentId, ProfileId};
+use aura_os_core::{Agent, AgentId, ProfileId, SuperAgentOrchestration};
 use chrono::{DateTime, Utc};
 
-use crate::error::{map_network_error, ApiResult};
+use crate::error::{map_network_error, ApiError, ApiResult};
 use crate::state::{AppState, AuthJwt, AuthSession};
 
 #[derive(Serialize)]
@@ -73,6 +73,32 @@ pub(crate) async fn setup_super_agent(
         agent,
         created: true,
     }))
+}
+
+pub(crate) async fn list_orchestrations(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    AuthSession(_session): AuthSession,
+) -> ApiResult<Json<Vec<SuperAgentOrchestration>>> {
+    let store = aura_os_super_agent::state::OrchestrationStore::new(state.store.clone());
+    let orchestrations = store.list().map_err(ApiError::internal)?;
+    Ok(Json(orchestrations))
+}
+
+pub(crate) async fn get_orchestration(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    AuthSession(_session): AuthSession,
+    Path(orchestration_id): Path<String>,
+) -> ApiResult<Json<SuperAgentOrchestration>> {
+    let id = uuid::Uuid::parse_str(&orchestration_id)
+        .map_err(|_| ApiError::bad_request("invalid orchestration ID"))?;
+    let store = aura_os_super_agent::state::OrchestrationStore::new(state.store.clone());
+    let orch = store
+        .get(&id)
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::not_found("orchestration not found"))?;
+    Ok(Json(orch))
 }
 
 fn agent_from_net(net: &aura_os_network::NetworkAgent) -> Agent {

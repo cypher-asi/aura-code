@@ -9,7 +9,7 @@ use crate::batch::BatchOp;
 use crate::error::{StoreError, StoreResult};
 
 /// Only settings CF is persisted; projects, orgs, agents, messages are remote-only.
-pub(crate) const CF_NAMES: &[&str] = &["settings"];
+pub(crate) const CF_NAMES: &[&str] = &["settings", "super_agent_orchestrations"];
 
 pub(crate) type RocksDB = DBWithThreadMode<MultiThreaded>;
 
@@ -95,6 +95,34 @@ impl RocksStore {
                     let key_str = String::from_utf8_lossy(&key);
                     tracing::warn!(key = %key_str, error = %e, "Skipping unreadable entry");
                 }
+            }
+        }
+        Ok(results)
+    }
+
+    pub fn put_cf_bytes(&self, cf_name: &str, key: &[u8], value: &[u8]) -> StoreResult<()> {
+        let cf = self.cf_handle(cf_name)?;
+        self.db.put_cf(&cf, key, value)?;
+        Ok(())
+    }
+
+    pub fn get_cf_bytes(&self, cf_name: &str, key: &[u8]) -> StoreResult<Option<Vec<u8>>> {
+        let cf = self.cf_handle(cf_name)?;
+        Ok(self.db.get_cf(&cf, key)?)
+    }
+
+    pub fn scan_cf_all<T: DeserializeOwned>(&self, cf_name: &str) -> StoreResult<Vec<T>> {
+        let cf = self.cf_handle(cf_name)?;
+        let mut opts = rocksdb::ReadOptions::default();
+        opts.set_total_order_seek(true);
+        let iter = self
+            .db
+            .iterator_cf_opt(&cf, opts, rocksdb::IteratorMode::Start);
+        let mut results = Vec::new();
+        for item in iter {
+            let (_key, value) = item?;
+            if let Ok(val) = serde_json::from_slice::<T>(&value) {
+                results.push(val);
             }
         }
         Ok(results)
