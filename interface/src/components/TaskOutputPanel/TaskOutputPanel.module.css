@@ -257,17 +257,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--color-success, #4c9) 15%, transparent);
   color: var(--color-success, #4c9);
   flex-shrink: 0;
 }
 
 .taskDotFailed {
   composes: taskDotCompleted;
-  background: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent);
   color: var(--color-danger, #ef4444);
 }
 
