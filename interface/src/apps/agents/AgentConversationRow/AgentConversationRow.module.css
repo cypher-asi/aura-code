@@ -87,8 +87,8 @@
   line-height: 1;
   padding: 2px 5px;
   border-radius: 4px;
-  background: var(--color-accent, #6366f1);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 

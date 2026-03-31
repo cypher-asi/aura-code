@@ -64,10 +64,10 @@ export function AgentConversationRow({
       <span className={styles.body}>
         <span className={styles.top}>
           <span className={styles.name}>
+            {agent.name}
             {agent.tags?.includes("super_agent") && (
               <span className={styles.ceoBadge}>CEO</span>
             )}
-            {agent.name}
           </span>
           <span className={styles.time}>{formatChatTime(agent.updated_at)}</span>
         </span>
