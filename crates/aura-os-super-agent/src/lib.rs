@@ -1,6 +1,7 @@
 pub mod events;
 pub mod prompt;
 pub mod state;
+pub mod stream;
 pub mod tier;
 pub mod tools;
 

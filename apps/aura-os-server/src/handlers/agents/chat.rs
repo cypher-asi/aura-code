@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -9,7 +10,10 @@ use futures_util::future::join_all;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
-use aura_os_core::{AgentId, AgentInstanceId, ChatRole, HarnessMode, ProjectId, SessionEvent};
+type SseStream = Pin<Box<dyn futures_core::Stream<Item = Result<Event, Infallible>> + Send>>;
+type SseResponse = ([(&'static str, HeaderValue); 1], Sse<SseStream>);
+
+use aura_os_core::{Agent, AgentId, AgentInstanceId, ChatRole, HarnessMode, ProjectId, SessionEvent};
 use aura_os_link::{
     ConversationMessage, HarnessInbound, HarnessOutbound, SessionConfig, UserMessage,
 };
@@ -723,10 +727,7 @@ async fn open_harness_chat_stream(
     requested_model: Option<String>,
     persist_ctx: Option<ChatPersistCtx>,
     _commands: Option<Vec<String>>,
-) -> ApiResult<(
-    [(&'static str, HeaderValue); 1],
-    Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
-)> {
+) -> ApiResult<SseResponse> {
     let (is_new, rx, commands_tx) = get_or_create_chat_session(
         state,
         session_key,
@@ -774,10 +775,106 @@ async fn open_harness_chat_stream(
         .map(|evt| super::super::sse::harness_event_to_sse(&evt));
 
     let stream = futures_util::stream::iter(prefix).chain(broadcast_stream);
+    let boxed: SseStream = Box::pin(stream);
 
     Ok((
         SSE_NO_BUFFERING_HEADERS,
-        Sse::new(stream).keep_alive(KeepAlive::default()),
+        Sse::new(boxed).keep_alive(KeepAlive::default()),
+    ))
+}
+
+async fn handle_super_agent_stream(
+    state: &AppState,
+    jwt: &str,
+    agent: &Agent,
+    body: SendChatRequest,
+) -> ApiResult<SseResponse> {
+    let agent_id = agent.agent_id;
+    let sas = &state.super_agent_service;
+
+    let session: Option<aura_os_core::ZeroAuthSession> = state
+        .store
+        .get_setting("zero_auth_session")
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok());
+    let user_id = session.as_ref().map(|s| s.user_id.as_str()).unwrap_or("unknown");
+
+    let org_id = if let Some(ref client) = state.network_client {
+        client
+            .list_orgs(jwt)
+            .await
+            .ok()
+            .and_then(|orgs| orgs.first().map(|o| o.id.clone()))
+            .unwrap_or_else(|| "default".into())
+    } else {
+        "default".into()
+    };
+
+    let sa_ctx = Arc::new(sas.build_context(user_id, &org_id, jwt));
+
+    let user_content = body.content;
+    let requested_model = body.model;
+
+    let domains = aura_os_super_agent::tier::classify_intent(&user_content);
+    let domain_tools = sas.tool_registry.tools_for_domains(&domains);
+    let tool_defs = sas.tool_registry.tool_definitions(&domain_tools);
+
+    let session_key = format!("super_agent:{agent_id}");
+    let conversation_history: Vec<serde_json::Value> =
+        if !has_live_session(state, &session_key) {
+            let stored = aggregate_agent_events_from_storage(state, &agent_id, jwt).await;
+            session_events_to_conversation_history(&stored)
+                .into_iter()
+                .map(|m| serde_json::json!({ "role": m.role, "content": m.content }))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+    let persist_ctx =
+        setup_agent_chat_persistence(state, &agent_id, &agent.name, jwt).await;
+    if persist_ctx.is_none() {
+        warn!(%agent_id, "super agent chat: persistence context unavailable");
+    }
+
+    let (tx, _) = tokio::sync::broadcast::channel::<HarnessOutbound>(256);
+    let rx = tx.subscribe();
+
+    let persist_rx = persist_ctx.as_ref().map(|_| tx.subscribe());
+
+    if let Some(ref pctx) = persist_ctx {
+        persist_user_message(pctx, &user_content);
+    }
+
+    let stream_handle = aura_os_super_agent::stream::SuperAgentStream::new(
+        sas.router_url.clone(),
+        sas.http_client.clone(),
+        agent.system_prompt.clone(),
+        tool_defs,
+        conversation_history,
+        sa_ctx,
+        Arc::new(aura_os_super_agent::tools::ToolRegistry::with_all_tools()),
+        tx,
+        requested_model,
+    );
+
+    let content_for_run = user_content.clone();
+    tokio::spawn(async move {
+        stream_handle.run(content_for_run).await;
+    });
+
+    if let (Some(pctx), Some(prx)) = (persist_ctx, persist_rx) {
+        spawn_chat_persist_task(prx, pctx);
+    }
+
+    let broadcast_stream = tokio_stream::wrappers::BroadcastStream::new(rx)
+        .filter_map(|r| r.ok())
+        .map(|evt| super::super::sse::harness_event_to_sse(&evt));
+
+    let boxed: SseStream = Box::pin(broadcast_stream);
+    Ok((
+        SSE_NO_BUFFERING_HEADERS,
+        Sse::new(boxed).keep_alive(KeepAlive::default()),
     ))
 }
 
@@ -786,25 +883,21 @@ pub(crate) async fn send_agent_event_stream(
     AuthJwt(jwt): AuthJwt,
     Path(agent_id): Path<AgentId>,
     Json(body): Json<SendChatRequest>,
-) -> ApiResult<(
-    [(&'static str, HeaderValue); 1],
-    Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
-)> {
+) -> ApiResult<SseResponse> {
     super::super::billing::require_credits(&state, &jwt).await?;
     info!(%agent_id, action = ?body.action, "Agent message stream requested");
 
-    let agent = state
-        .agent_service
-        .get_agent_async("", &agent_id)
-        .await
-        .map_err(|e| ApiError::internal(format!("looking up agent: {e}")))?;
+    let agent = match state.agent_service.get_agent_async("", &agent_id).await {
+        Ok(a) => a,
+        Err(_) => state
+            .agent_service
+            .get_agent_local(&agent_id)
+            .map_err(|e| ApiError::not_found(format!("agent not found: {e}")))?,
+    };
 
-    if agent.tags.contains(&"super_agent".to_string()) {
+    if agent.role == "super_agent" || agent.tags.contains(&"super_agent".to_string()) {
         info!(%agent_id, "SuperAgent detected — routing to SuperAgent handler");
-        // TODO: Phase 2 will implement handle_super_agent_stream
-        return Err(ApiError::internal(
-            "SuperAgent streaming not yet implemented".to_string(),
-        ));
+        return handle_super_agent_stream(&state, &jwt, &agent, body).await;
     }
 
     let persist_ctx = setup_agent_chat_persistence(&state, &agent_id, &agent.name, &jwt).await;
@@ -875,10 +968,7 @@ pub(crate) async fn send_event_stream(
     AuthJwt(jwt): AuthJwt,
     Path((project_id, agent_instance_id)): Path<(ProjectId, AgentInstanceId)>,
     Json(body): Json<SendChatRequest>,
-) -> ApiResult<(
-    [(&'static str, HeaderValue); 1],
-    Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
-)> {
+) -> ApiResult<SseResponse> {
     super::super::billing::require_credits(&state, &jwt).await?;
     info!(%project_id, %agent_instance_id, action = ?body.action, "Message stream requested");
 

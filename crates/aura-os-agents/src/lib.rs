@@ -20,6 +20,7 @@ fn network_agent_to_core(net: &NetworkAgent) -> Agent {
     let profile_id: Option<ProfileId> = net.profile_id.as_ref().and_then(|s| s.parse().ok());
     let created_at = parse_dt(&net.created_at);
     let updated_at = parse_dt(&net.updated_at);
+    let is_super = net.role.as_deref() == Some("super_agent");
 
     Agent {
         agent_id,
@@ -37,8 +38,8 @@ fn network_agent_to_core(net: &NetworkAgent) -> Agent {
         vm_id: net.vm_id.clone(),
         network_agent_id: net.id.parse().ok(),
         profile_id,
-        tags: Vec::new(),
-        is_pinned: false,
+        tags: if is_super { vec!["super_agent".to_string()] } else { Vec::new() },
+        is_pinned: is_super,
         created_at,
         updated_at,
     }
