@@ -1,24 +1,63 @@
 .bar {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   width: 100%;
-  height: var(--control-height-sm, 28px);
+  height: var(--control-height-md);
   border-top: 1px solid var(--color-border);
   background: var(--color-bg);
   flex-shrink: 0;
-  contain: inline-size;
+  padding: 0 var(--space-2);
 }
 
-.creditsWrap {
+.spacer {
   flex: 1;
   min-width: 0;
+}
+
+.right {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
 }
 
-.creditsWrap > div {
-  border-radius: 0;
-  justify-content: center;
-  flex: 1;
-  min-width: 0;
+.creditsButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+
+.creditsButton:hover {
+  background: var(--color-surface-hover);
+}
+
+.creditsLabel {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.divider {
+  width: 1px;
+  height: 14px;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
+.clock {
+  font-size: var(--text-2xs);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+  user-select: none;
 }

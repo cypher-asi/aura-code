@@ -168,7 +168,6 @@ export function DesktopShell() {
                 })}
               </Lane>
             </div>
-            <BottomTaskbar />
           </div>
 
           <ActiveProvider>
@@ -180,6 +179,7 @@ export function DesktopShell() {
             </ErrorBoundary>
           </ActiveProvider>
         </div>
+        <BottomTaskbar />
       </div>
 
       <HostSettingsModal
