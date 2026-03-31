@@ -65,6 +65,9 @@
 }
 
 .name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--text-sm);
   font-weight: 600;
   white-space: nowrap;
@@ -72,6 +75,21 @@
   text-overflow: ellipsis;
   min-width: 0;
   color: var(--color-text-primary);
+}
+
+.ceoBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--color-accent, #6366f1);
+  color: #fff;
+  flex-shrink: 0;
 }
 
 .time {

@@ -1,3 +1,9 @@
+pub mod agent_tools;
+pub mod billing_tools;
+pub mod exec_tools;
+pub mod monitor_tools;
+pub mod project_tools;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -64,6 +70,42 @@ impl ToolRegistry {
         Self {
             tools: HashMap::new(),
         }
+    }
+
+    pub fn with_tier1_tools() -> Self {
+        let mut registry = Self::new();
+
+        // Project tools
+        registry.register(Arc::new(project_tools::CreateProjectTool));
+        registry.register(Arc::new(project_tools::ImportProjectTool));
+        registry.register(Arc::new(project_tools::ListProjectsTool));
+        registry.register(Arc::new(project_tools::GetProjectTool));
+        registry.register(Arc::new(project_tools::UpdateProjectTool));
+        registry.register(Arc::new(project_tools::DeleteProjectTool));
+        registry.register(Arc::new(project_tools::ArchiveProjectTool));
+        registry.register(Arc::new(project_tools::GetProjectStatsTool));
+
+        // Agent tools
+        registry.register(Arc::new(agent_tools::ListAgentsTool));
+        registry.register(Arc::new(agent_tools::GetAgentTool));
+        registry.register(Arc::new(agent_tools::AssignAgentToProjectTool));
+
+        // Execution tools
+        registry.register(Arc::new(exec_tools::StartDevLoopTool));
+        registry.register(Arc::new(exec_tools::PauseDevLoopTool));
+        registry.register(Arc::new(exec_tools::StopDevLoopTool));
+        registry.register(Arc::new(exec_tools::GetLoopStatusTool));
+        registry.register(Arc::new(exec_tools::SendToAgentTool));
+
+        // Monitoring tools
+        registry.register(Arc::new(monitor_tools::GetFleetStatusTool));
+        registry.register(Arc::new(monitor_tools::GetProgressReportTool));
+        registry.register(Arc::new(monitor_tools::GetProjectCostTool));
+
+        // Billing tools
+        registry.register(Arc::new(billing_tools::GetCreditBalanceTool));
+
+        registry
     }
 
     pub fn register(&mut self, tool: Arc<dyn SuperAgentTool>) {

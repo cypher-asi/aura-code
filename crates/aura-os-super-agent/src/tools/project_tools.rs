@@ -1,0 +1,355 @@
+use async_trait::async_trait;
+use serde_json::json;
+
+use aura_os_core::ToolDomain;
+use aura_os_network::{CreateProjectRequest, UpdateProjectRequest};
+
+use super::{SuperAgentContext, SuperAgentTool, ToolResult};
+use crate::SuperAgentError;
+
+fn require_network(ctx: &SuperAgentContext) -> Result<&aura_os_network::NetworkClient, SuperAgentError> {
+    ctx.network_client
+        .as_deref()
+        .ok_or_else(|| SuperAgentError::Internal("network client not available".into()))
+}
+
+fn tool_err(action: &str, e: impl std::fmt::Display) -> SuperAgentError {
+    SuperAgentError::ToolError(format!("{action}: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// 1. CreateProjectTool
+// ---------------------------------------------------------------------------
+
+pub struct CreateProjectTool;
+
+#[async_trait]
+impl SuperAgentTool for CreateProjectTool {
+    fn name(&self) -> &str { "create_project" }
+    fn description(&self) -> &str { "Create a new project in the organization" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Project }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string", "description": "Project name" },
+                "description": { "type": "string", "description": "Project description" },
+                "org_id": { "type": "string", "description": "Organization ID (uses context org if omitted)" },
+                "linked_folder_path": { "type": "string", "description": "Local folder path to link" }
+            },
+            "required": ["name"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let name = input["name"].as_str().unwrap_or_default().to_string();
+        let org_id = input["org_id"]
+            .as_str()
+            .unwrap_or(&ctx.org_id)
+            .to_string();
+        let req = CreateProjectRequest {
+            name,
+            org_id,
+            description: input["description"].as_str().map(String::from),
+            folder: input["linked_folder_path"].as_str().map(String::from),
+            git_repo_url: None,
+            git_branch: None,
+            orbit_base_url: None,
+            orbit_owner: None,
+            orbit_repo: None,
+        };
+        let project = network
+            .create_project(&ctx.jwt, &req)
+            .await
+            .map_err(|e| tool_err("create_project", e))?;
+        Ok(ToolResult {
+            content: serde_json::to_value(&project).unwrap_or_default(),
+            is_error: false,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 2. ImportProjectTool (stub)
+// ---------------------------------------------------------------------------
+
+pub struct ImportProjectTool;
+
+#[async_trait]
+impl SuperAgentTool for ImportProjectTool {
+    fn name(&self) -> &str { "import_project" }
+    fn description(&self) -> &str { "Import an existing project (e.g. from GitHub)" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Project }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string" },
+                "description": { "type": "string" },
+                "org_id": { "type": "string" }
+            },
+            "required": ["name"]
+        })
+    }
+
+    async fn execute(&self, _input: serde_json::Value, _ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        Ok(ToolResult {
+            content: json!({ "message": "Project import is not yet supported via SuperAgent. Please use the web UI to import projects." }),
+            is_error: false,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 3. ListProjectsTool
+// ---------------------------------------------------------------------------
+
+pub struct ListProjectsTool;
+
+#[async_trait]
+impl SuperAgentTool for ListProjectsTool {
+    fn name(&self) -> &str { "list_projects" }
+    fn description(&self) -> &str { "List all projects in the organization" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Project }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
+    }
+
+    async fn execute(&self, _input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let projects = network
+            .list_projects_by_org(&ctx.org_id, &ctx.jwt)
+            .await
+            .map_err(|e| tool_err("list_projects", e))?;
+        Ok(ToolResult {
+            content: serde_json::to_value(&projects).unwrap_or_default(),
+            is_error: false,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 4. GetProjectTool
+// ---------------------------------------------------------------------------
+
+pub struct GetProjectTool;
+
+#[async_trait]
+impl SuperAgentTool for GetProjectTool {
+    fn name(&self) -> &str { "get_project" }
+    fn description(&self) -> &str { "Get details of a specific project" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Project }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "project_id": { "type": "string", "description": "Project ID" }
+            },
+            "required": ["project_id"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let project_id = input["project_id"]
+            .as_str()
+            .ok_or_else(|| SuperAgentError::ToolError("project_id is required".into()))?;
+        let project = network
+            .get_project(project_id, &ctx.jwt)
+            .await
+            .map_err(|e| tool_err("get_project", e))?;
+        Ok(ToolResult {
+            content: serde_json::to_value(&project).unwrap_or_default(),
+            is_error: false,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 5. UpdateProjectTool
+// ---------------------------------------------------------------------------
+
+pub struct UpdateProjectTool;
+
+#[async_trait]
+impl SuperAgentTool for UpdateProjectTool {
+    fn name(&self) -> &str { "update_project" }
+    fn description(&self) -> &str { "Update project settings (name, description, git config, etc.)" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Project }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "project_id": { "type": "string", "description": "Project ID" },
+                "name": { "type": "string" },
+                "description": { "type": "string" },
+                "linked_folder_path": { "type": "string" },
+                "git_repo_url": { "type": "string" },
+                "git_branch": { "type": "string" }
+            },
+            "required": ["project_id"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let project_id = input["project_id"]
+            .as_str()
+            .ok_or_else(|| SuperAgentError::ToolError("project_id is required".into()))?;
+        let req = UpdateProjectRequest {
+            name: input["name"].as_str().map(String::from),
+            description: input["description"].as_str().map(String::from),
+            folder: input["linked_folder_path"].as_str().map(String::from),
+            git_repo_url: input["git_repo_url"].as_str().map(String::from),
+            git_branch: input["git_branch"].as_str().map(String::from),
+            orbit_base_url: None,
+            orbit_owner: None,
+            orbit_repo: None,
+        };
+        let project = network
+            .update_project(project_id, &ctx.jwt, &req)
+            .await
+            .map_err(|e| tool_err("update_project", e))?;
+        Ok(ToolResult {
+            content: serde_json::to_value(&project).unwrap_or_default(),
+            is_error: false,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 6. DeleteProjectTool
+// ---------------------------------------------------------------------------
+
+pub struct DeleteProjectTool;
+
+#[async_trait]
+impl SuperAgentTool for DeleteProjectTool {
+    fn name(&self) -> &str { "delete_project" }
+    fn description(&self) -> &str { "Permanently delete a project" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Project }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "project_id": { "type": "string", "description": "Project ID to delete" }
+            },
+            "required": ["project_id"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let project_id = input["project_id"]
+            .as_str()
+            .ok_or_else(|| SuperAgentError::ToolError("project_id is required".into()))?;
+        network
+            .delete_project(project_id, &ctx.jwt)
+            .await
+            .map_err(|e| tool_err("delete_project", e))?;
+        Ok(ToolResult {
+            content: json!({ "deleted": true, "project_id": project_id }),
+            is_error: false,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 7. ArchiveProjectTool (soft-delete via update)
+// ---------------------------------------------------------------------------
+
+pub struct ArchiveProjectTool;
+
+#[async_trait]
+impl SuperAgentTool for ArchiveProjectTool {
+    fn name(&self) -> &str { "archive_project" }
+    fn description(&self) -> &str { "Archive a project (soft-delete)" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Project }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "project_id": { "type": "string", "description": "Project ID to archive" }
+            },
+            "required": ["project_id"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, _ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let project_id = input["project_id"]
+            .as_str()
+            .ok_or_else(|| SuperAgentError::ToolError("project_id is required".into()))?;
+        Ok(ToolResult {
+            content: json!({
+                "message": "Project archival is not yet supported via the API. Use delete_project for permanent removal.",
+                "project_id": project_id
+            }),
+            is_error: false,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 8. GetProjectStatsTool
+// ---------------------------------------------------------------------------
+
+pub struct GetProjectStatsTool;
+
+#[async_trait]
+impl SuperAgentTool for GetProjectStatsTool {
+    fn name(&self) -> &str { "get_project_stats" }
+    fn description(&self) -> &str { "Get statistics for a project (tasks, agents, sessions)" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Project }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "project_id": { "type": "string", "description": "Project ID" }
+            },
+            "required": ["project_id"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let project_id = input["project_id"]
+            .as_str()
+            .ok_or_else(|| SuperAgentError::ToolError("project_id is required".into()))?;
+
+        let project = network
+            .get_project(project_id, &ctx.jwt)
+            .await
+            .map_err(|e| tool_err("get_project_stats", e))?;
+
+        let agents = network
+            .list_agents_by_org(&ctx.org_id, &ctx.jwt)
+            .await
+            .unwrap_or_default();
+
+        let agent_count = agents.len();
+
+        Ok(ToolResult {
+            content: json!({
+                "project_id": project_id,
+                "project_name": project.name,
+                "agent_count": agent_count,
+                "description": project.description,
+                "git_repo_url": project.git_repo_url,
+            }),
+            is_error: false,
+        })
+    }
+}

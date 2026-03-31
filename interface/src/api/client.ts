@@ -25,7 +25,7 @@ export type { LoopStatusResponse } from "./loop";
 import { authApi } from "./auth";
 import { projectsApi } from "./projects";
 import { tasksApi } from "./tasks";
-import { agentTemplatesApi, agentInstancesApi, sessionsApi } from "./agents";
+import { agentTemplatesApi, agentInstancesApi, sessionsApi, superAgentApi } from "./agents";
 import { orgsApi } from "./orgs";
 import { desktopApi } from "./desktop";
 import { loopApi } from "./loop";
@@ -53,4 +53,5 @@ export const api = {
   activity: activityApi,
   environment: environmentApi,
   swarm: swarmApi,
+  superAgent: superAgentApi,
 };

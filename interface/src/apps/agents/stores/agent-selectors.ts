@@ -62,10 +62,17 @@ export function useSelectedAgent(): SelectedAgentSlice {
   );
 }
 
-/** Agents sorted by most-recent updates. */
+/** Agents sorted by pinned first, then most-recent updates. */
 export function useSortedAgents(): Agent[] {
   const agents = useAgentStore((s) => s.agents);
   return useMemo(() => {
-    return [...agents].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    return [...agents].sort((a, b) => {
+      if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+      return b.updated_at.localeCompare(a.updated_at);
+    });
   }, [agents]);
+}
+
+export function useSuperAgent(): Agent | null {
+  return useAgentStore((s) => s.agents.find((a) => a.tags?.includes("super_agent")) ?? null);
 }

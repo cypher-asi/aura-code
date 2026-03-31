@@ -102,6 +102,12 @@ export function AgentInfoPanel({ variant = "default" }: AgentInfoPanelProps) {
             />
           )}
 
+          {a.tags?.includes("super_agent") && (
+            <div className={styles.section}>
+              <Badge variant="info">CEO SuperAgent</Badge>
+            </div>
+          )}
+
           {a.personality && (
             <div className={styles.section}>
               <Text size="xs" variant="muted" weight="medium">Personality</Text>

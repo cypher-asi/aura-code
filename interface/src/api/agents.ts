@@ -47,6 +47,10 @@ export const agentInstancesApi = {
   sendEventStream,
 };
 
+export const superAgentApi = {
+  setup: () => apiFetch<{ agent: Agent; created: boolean }>("/api/super-agent/setup", { method: "POST" }),
+};
+
 export const sessionsApi = {
   listProjectSessions: (projectId: ProjectId) =>
     apiFetch<Session[]>(`/api/projects/${projectId}/sessions`),

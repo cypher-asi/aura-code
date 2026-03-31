@@ -67,7 +67,10 @@ export const useAgentStore = create<AgentState>()(
         agentsFetchPromise = api.agents
           .list()
           .then((agents) => {
-            const sorted = agents.sort((a, b) => a.name.localeCompare(b.name));
+            const sorted = agents.sort((a, b) => {
+              if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+              return a.name.localeCompare(b.name);
+            });
             agentsFetchedAt = Date.now();
             set({ agents: sorted, agentsStatus: "ready", agentsError: null });
           })

@@ -69,7 +69,7 @@ impl SuperAgentService {
         store: Arc<RocksStore>,
         event_broadcast: broadcast::Sender<serde_json::Value>,
     ) -> Self {
-        let tool_registry = ToolRegistry::new();
+        let tool_registry = ToolRegistry::with_tier1_tools();
         info!(router_url = %router_url, "SuperAgentService initialized");
         Self {
             tool_registry,
