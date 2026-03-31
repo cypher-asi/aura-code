@@ -299,7 +299,7 @@ export function ProjectList() {
   return (
     <div className={styles.root}>
       <div className={styles.explorerWrap} onContextMenu={handleContextMenu} onKeyDown={handleKeyDown}>
-        <Explorer data={filteredExplorerData} expandOnSelect enableDragDrop={false} enableMultiSelect={false} defaultExpandedIds={defaultExpandedIds} defaultSelectedIds={defaultSelectedIds} onSelect={handleSelect} onExpand={handleExpand} />
+        <Explorer data={filteredExplorerData} enableDragDrop={false} enableMultiSelect={false} defaultExpandedIds={defaultExpandedIds} defaultSelectedIds={defaultSelectedIds} onSelect={handleSelect} onExpand={handleExpand} />
       </div>
 
       {actions.ctxMenu && createPortal(

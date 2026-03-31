@@ -28,7 +28,7 @@ function TerminalWrapper({
   return <XTerminal terminal={hook} visible={visible} focused={focused} />;
 }
 
-export function TerminalPanelBody() {
+export function TerminalPanelBody({ embedded }: { embedded?: boolean } = {}) {
   const {
     terminals,
     activeId,
@@ -40,6 +40,28 @@ export function TerminalPanelBody() {
     cwd,
     remoteAgentId,
   } = useTerminalPanel();
+
+  if (embedded) {
+    return (
+      <div className={cn(styles.terminalBodyPanel, styles.terminalBodyPanelContentReady)} style={{ flex: 1, height: "100%" }}>
+        <div className={styles.terminalBody}>
+          {terminals.map((t) => {
+            const isActive = t.id === activeId;
+            return (
+              <TerminalWrapper
+                key={t.id}
+                visible={isActive}
+                focused={isActive}
+                cwd={cwd}
+                remoteAgentId={remoteAgentId}
+                onHook={(hook) => registerHook(t.id, hook)}
+              />
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

@@ -1,9 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
-import { ConnectionTaskbar } from "../../../components/ConnectionTaskbar";
 import { ResponsiveMainLane } from "../../../components/ResponsiveMainLane";
-import { TerminalPanelHeader } from "../../../components/TerminalPanelHeader";
-import { TerminalPanelBody } from "../../../components/TerminalPanelBody";
 import { useTerminalPanelStore } from "../../../stores/terminal-panel-store";
 import { useProjectContext } from "../../../stores/project-action-store";
 import { useTerminalTarget } from "../../../hooks/use-terminal-target";
@@ -26,14 +23,7 @@ export function ProjectMainPanel({ children }: { children?: ReactNode }) {
   }, [remoteAgentId, status, setRemoteAgentId]);
 
   return (
-    <ResponsiveMainLane
-      taskbar={(
-        <ConnectionTaskbar>
-          <TerminalPanelHeader />
-        </ConnectionTaskbar>
-      )}
-      footer={<TerminalPanelBody />}
-    >
+    <ResponsiveMainLane>
       {children}
     </ResponsiveMainLane>
   );

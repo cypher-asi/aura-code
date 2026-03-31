@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Text, Item, ModalConfirm } from "@cypher-asi/zui";
-import { Trash2, Play, Pause, Square, Loader2, Plus, ChevronDown } from "lucide-react";
+import { Trash2, Play, Pause, Square, Loader2, Plus, ChevronDown, X } from "lucide-react";
 import {
   useTaskOutputPanel,
   useTaskOutputPanelStore,
@@ -164,6 +164,35 @@ function PanelTabs({
   );
 }
 
+function TerminalInstanceTabs() {
+  const { terminals, activeId, setActiveId, removeTerminal } = useTerminalPanel();
+
+  if (terminals.length <= 1) return null;
+
+  return (
+    <div className={styles.terminalInstanceTabs}>
+      {terminals.map((t, i) => (
+        <button
+          key={t.id}
+          type="button"
+          className={t.id === activeId ? styles.terminalInstanceTabActive : styles.terminalInstanceTab}
+          onClick={() => setActiveId(t.id)}
+        >
+          {t.title}
+          {i > 0 && (
+            <span
+              className={styles.terminalInstanceTabClose}
+              onClick={(e) => { e.stopPropagation(); removeTerminal(t.id); }}
+            >
+              <X size={9} />
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function TaskOutputPanel() {
   const { panelHeight, collapsed, toggleCollapse, handleMouseDown, activeTab } = useTaskOutputPanel();
   const setActiveTab = useTaskOutputPanelStore((s) => s.setActiveTab);
@@ -252,7 +281,8 @@ export function TaskOutputPanel() {
 
       {activeTab === "terminal" && (
         <div className={styles.terminalContent}>
-          <TerminalPanelBody />
+          <TerminalInstanceTabs />
+          <TerminalPanelBody embedded />
         </div>
       )}
     </div>

@@ -11,7 +11,8 @@
   composes: panel;
 }
 
-.panelCollapsed .content {
+.panelCollapsed .content,
+.panelCollapsed .terminalContent {
   display: none;
 }
 
@@ -55,8 +56,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-2, 8px) 0 var(--space-1, 4px);
-  height: 26px;
-  min-height: 26px;
+  height: 30px;
+  min-height: 30px;
   flex-shrink: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   user-select: none;
@@ -67,6 +68,65 @@
   align-items: center;
   gap: 0;
   min-width: 0;
+}
+
+.headerTabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
+.tab {
+  position: relative;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted, #888);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.1s;
+}
+
+.tab:hover {
+  color: var(--color-text, #d4d4d4);
+}
+
+.tabActive {
+  composes: tab;
+  color: var(--color-text, #d4d4d4);
+}
+
+.tabActive::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 1px;
+  background: var(--color-text, #d4d4d4);
+}
+
+.addTerminalBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted, #888);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.addTerminalBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text, #d4d4d4);
 }
 
 .headerLabel {
@@ -81,6 +141,47 @@
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+.runBtnGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px 2px 4px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted, #888);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+}
+
+.runBtnGroup:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text, #d4d4d4);
+}
+
+.runBtnGroup:disabled {
+  opacity: 0.25;
+  cursor: default;
+  pointer-events: none;
+}
+
+.shortcutBadge {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--color-text-muted, #666);
+  letter-spacing: 0.02em;
+  margin-left: 2px;
+}
+
+.wifiIcon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 2px;
 }
 
 .headerBtn {
@@ -254,4 +355,80 @@
   font-size: 11px;
   color: var(--color-text-muted, #888);
   text-align: center;
+}
+
+/* ── Terminal content area ── */
+
+.terminalContent {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Terminal instance sub-tabs ── */
+
+.terminalInstanceTabs {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.terminalInstanceTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.terminalInstanceTab {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted, #888);
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.terminalInstanceTab:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text, #d4d4d4);
+}
+
+.terminalInstanceTabActive {
+  composes: terminalInstanceTab;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text, #d4d4d4);
+}
+
+.terminalInstanceTabClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s;
+  cursor: pointer;
+}
+
+.terminalInstanceTab:hover .terminalInstanceTabClose,
+.terminalInstanceTabActive .terminalInstanceTabClose {
+  opacity: 0.6;
+}
+
+.terminalInstanceTabClose:hover {
+  opacity: 1 !important;
+  background: rgba(255, 255, 255, 0.1);
 }

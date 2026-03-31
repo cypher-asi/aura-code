@@ -265,7 +265,6 @@ export function TasksProjectList() {
       <div className={styles.explorerWrap} onContextMenu={handleContextMenu} onKeyDown={handleKeyDown}>
         <Explorer
           data={filteredExplorerData}
-          expandOnSelect
           enableDragDrop={false}
           enableMultiSelect={false}
           defaultExpandedIds={defaultExpandedIds}

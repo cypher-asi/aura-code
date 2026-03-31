@@ -1,9 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
-import { ConnectionTaskbar } from "../ConnectionTaskbar";
 import { ResponsiveMainLane } from "../ResponsiveMainLane";
-import { TerminalPanelHeader } from "../TerminalPanelHeader";
-import { TerminalPanelBody } from "../TerminalPanelBody";
 import { useTerminalPanelStore } from "../../stores/terminal-panel-store";
 import { useProjectContext } from "../../stores/project-action-store";
 import { useTerminalTarget } from "../../hooks/use-terminal-target";
@@ -28,14 +25,7 @@ export function SharedMainPanel({ children }: { children?: ReactNode }) {
   }, [remoteAgentId, status, setRemoteAgentId]);
 
   return (
-    <ResponsiveMainLane
-      taskbar={
-        <ConnectionTaskbar>
-          <TerminalPanelHeader />
-        </ConnectionTaskbar>
-      }
-      footer={<TerminalPanelBody />}
-    >
+    <ResponsiveMainLane>
       {children}
     </ResponsiveMainLane>
   );

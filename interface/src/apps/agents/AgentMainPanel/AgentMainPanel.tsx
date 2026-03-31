@@ -1,9 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
-import { ConnectionTaskbar } from "../../../components/ConnectionTaskbar";
 import { ResponsiveMainLane } from "../../../components/ResponsiveMainLane";
-import { TerminalPanelHeader } from "../../../components/TerminalPanelHeader";
-import { TerminalPanelBody } from "../../../components/TerminalPanelBody";
 import { useTerminalPanelStore } from "../../../stores/terminal-panel-store";
 import { AgentInfoPanel } from "../AgentInfoPanel";
 import { LAST_AGENT_ID_KEY, useAgents, useSelectedAgent } from "../stores";
@@ -38,14 +35,7 @@ export function AgentMainPanel({ children }: { children?: ReactNode }) {
   }, [remoteAgentId, status, setRemoteAgentId]);
 
   return (
-    <ResponsiveMainLane
-      taskbar={
-        <ConnectionTaskbar>
-          <TerminalPanelHeader />
-        </ConnectionTaskbar>
-      }
-      footer={<TerminalPanelBody />}
-    >
+    <ResponsiveMainLane>
       {children ?? <AgentInfoPanel />}
     </ResponsiveMainLane>
   );
