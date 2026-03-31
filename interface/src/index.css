@@ -32,7 +32,7 @@ html, body, #root {
   min-width: 0;
   margin: 0;
   background: #000;
-  overflow-x: hidden;
+  overflow: hidden;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
