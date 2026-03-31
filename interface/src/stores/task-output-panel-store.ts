@@ -2,9 +2,21 @@ import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 
 const STORAGE_KEY = "aura-task-output-panel";
+const TASKS_STORAGE_KEY = "aura-task-output-panel-tasks";
 const DEFAULT_HEIGHT = 200;
 const MIN_HEIGHT = 80;
 const MAX_HEIGHT = 500;
+const MAX_PERSISTED_TASKS = 20;
+
+export type PanelTaskStatus = "active" | "completed" | "failed";
+
+export interface PanelTaskEntry {
+  taskId: string;
+  title: string;
+  status: PanelTaskStatus;
+  projectId: string;
+  updatedAt: number;
+}
 
 function loadPanelState(): { height: number; collapsed: boolean } {
   try {
@@ -20,51 +32,106 @@ function savePanelState(height: number, collapsed: boolean) {
   } catch { /* ignore */ }
 }
 
+function loadPersistedTasks(): PanelTaskEntry[] {
+  try {
+    const raw = localStorage.getItem(TASKS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as PanelTaskEntry[];
+      return parsed.filter((t) => t.taskId && t.projectId);
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+function savePersistedTasks(tasks: PanelTaskEntry[]) {
+  try {
+    const trimmed = tasks.slice(-MAX_PERSISTED_TASKS);
+    localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(trimmed));
+  } catch { /* ignore */ }
+}
+
 interface TaskOutputPanelState {
   panelHeight: number;
   collapsed: boolean;
-  activeTaskIds: Set<string>;
-  activeTaskTitles: Map<string, string>;
+  tasks: PanelTaskEntry[];
 
   toggleCollapse: () => void;
-  addTask: (taskId: string, title?: string) => void;
-  removeTask: (taskId: string) => void;
-  clearTasks: () => void;
+  addTask: (taskId: string, projectId: string, title?: string) => void;
+  completeTask: (taskId: string) => void;
+  failTask: (taskId: string) => void;
+  dismissTask: (taskId: string) => void;
+  clearCompleted: () => void;
+  markAllCompleted: () => void;
+  restoreTasks: (entries: PanelTaskEntry[]) => void;
   handleMouseDown: (e: React.MouseEvent) => void;
 }
 
 const saved = loadPanelState();
+const restoredTasks = loadPersistedTasks();
 
 export const useTaskOutputPanelStore = create<TaskOutputPanelState>()((set, get) => ({
   panelHeight: saved.height,
   collapsed: saved.collapsed,
-  activeTaskIds: new Set(),
-  activeTaskTitles: new Map(),
+  tasks: restoredTasks,
 
   toggleCollapse: () => {
     set((s) => ({ collapsed: !s.collapsed }));
   },
 
-  addTask: (taskId, title) => {
+  addTask: (taskId, projectId, title) => {
     set((s) => {
-      const nextIds = new Set(s.activeTaskIds);
-      nextIds.add(taskId);
-      const nextTitles = new Map(s.activeTaskTitles);
-      if (title) nextTitles.set(taskId, title);
-      return { activeTaskIds: nextIds, activeTaskTitles: nextTitles };
+      const existing = s.tasks.find((t) => t.taskId === taskId);
+      if (existing && existing.status === "active") return s;
+      const entry: PanelTaskEntry = {
+        taskId,
+        title: title || existing?.title || taskId,
+        status: "active",
+        projectId,
+        updatedAt: Date.now(),
+      };
+      const filtered = s.tasks.filter((t) => t.taskId !== taskId);
+      return { tasks: [...filtered, entry] };
     });
   },
 
-  removeTask: (taskId) => {
-    set((s) => {
-      const nextIds = new Set(s.activeTaskIds);
-      nextIds.delete(taskId);
-      return { activeTaskIds: nextIds };
-    });
+  completeTask: (taskId) => {
+    set((s) => ({
+      tasks: s.tasks.map((t) =>
+        t.taskId === taskId ? { ...t, status: "completed" as const, updatedAt: Date.now() } : t,
+      ),
+    }));
   },
 
-  clearTasks: () => {
-    set({ activeTaskIds: new Set() });
+  failTask: (taskId) => {
+    set((s) => ({
+      tasks: s.tasks.map((t) =>
+        t.taskId === taskId ? { ...t, status: "failed" as const, updatedAt: Date.now() } : t,
+      ),
+    }));
+  },
+
+  dismissTask: (taskId) => {
+    set((s) => ({ tasks: s.tasks.filter((t) => t.taskId !== taskId) }));
+  },
+
+  clearCompleted: () => {
+    set((s) => ({ tasks: s.tasks.filter((t) => t.status === "active") }));
+  },
+
+  markAllCompleted: () => {
+    set((s) => ({
+      tasks: s.tasks.map((t) =>
+        t.status === "active" ? { ...t, status: "completed" as const, updatedAt: Date.now() } : t,
+      ),
+    }));
+  },
+
+  restoreTasks: (entries) => {
+    set((s) => {
+      const existingIds = new Set(s.tasks.map((t) => t.taskId));
+      const newEntries = entries.filter((e) => !existingIds.has(e.taskId));
+      return { tasks: [...s.tasks, ...newEntries] };
+    });
   },
 
   handleMouseDown: (e) => {
@@ -90,8 +157,15 @@ export const useTaskOutputPanelStore = create<TaskOutputPanelState>()((set, get)
 
 useTaskOutputPanelStore.subscribe((s) => {
   savePanelState(s.panelHeight, s.collapsed);
+  savePersistedTasks(s.tasks);
 });
 
 export function useTaskOutputPanel() {
   return useTaskOutputPanelStore(useShallow((s) => s));
+}
+
+export function useTasksForProject(projectId: string | undefined) {
+  return useTaskOutputPanelStore(
+    useShallow((s) => (projectId ? s.tasks.filter((t) => t.projectId === projectId) : [])),
+  );
 }
