@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Wallet } from "lucide-react";
+import { CreditCard } from "lucide-react";
 import { useCreditBalance } from "../CreditsBadge/useCreditBalance";
 import { formatCredits } from "../../utils/format";
 import { useUIModalStore } from "../../stores/ui-modal-store";
@@ -29,8 +29,8 @@ export function BottomTaskbar() {
           className={styles.creditsButton}
           onClick={openBuyCredits}
         >
-          <Wallet size={14} />
           <span className={styles.creditsLabel}>{display}</span>
+          <CreditCard size={14} />
         </button>
         <div className={styles.divider} />
         <span className={styles.clock}>{time}</span>
