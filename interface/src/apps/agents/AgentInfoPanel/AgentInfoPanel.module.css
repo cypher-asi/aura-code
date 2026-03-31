@@ -78,6 +78,51 @@
   font-size: 11px !important;
 }
 
+.bindingsList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bindingRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: var(--color-overlay-subtle, rgba(255, 255, 255, 0.03));
+}
+
+.bindingName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.removeBinding {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  opacity: 0.5;
+  cursor: pointer;
+  border-radius: 4px;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.removeBinding:hover {
+  opacity: 1;
+  background: var(--color-overlay-medium, rgba(255, 255, 255, 0.08));
+  color: var(--color-danger, #ef4444);
+}
+
 .prompt {
   white-space: pre-wrap;
   word-break: break-word;

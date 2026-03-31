@@ -1,5 +1,7 @@
 use axum::extract::{Path, State};
 use axum::Json;
+use futures_util::future::join_all;
+use serde::Serialize;
 
 use aura_os_core::{Agent, AgentId, HarnessMode};
 
@@ -234,5 +236,58 @@ pub(crate) async fn delete_agent(
         .delete_agent(&agent_id.to_string(), &jwt)
         .await
         .map_err(map_network_error)?;
+    Ok(Json(()))
+}
+
+#[derive(Serialize)]
+pub(crate) struct AgentProjectBinding {
+    pub project_agent_id: String,
+    pub project_id: String,
+    pub project_name: String,
+}
+
+pub(crate) async fn list_agent_project_bindings(
+    State(state): State<AppState>,
+    AuthJwt(jwt): AuthJwt,
+    Path(agent_id): Path<AgentId>,
+) -> ApiResult<Json<Vec<AgentProjectBinding>>> {
+    let storage = state.require_storage_client()?;
+    let all_projects = projects::list_all_projects_from_network(&state, &jwt).await?;
+    let agent_id_str = agent_id.to_string();
+
+    let futs: Vec<_> = all_projects
+        .iter()
+        .map(|p| storage.list_project_agents(&p.project_id.to_string(), &jwt))
+        .collect();
+    let results = join_all(futs).await;
+
+    let mut bindings = Vec::new();
+    for (result, project) in results.into_iter().zip(all_projects.iter()) {
+        if let Ok(agents) = result {
+            for pa in agents {
+                if pa.agent_id.as_deref() == Some(&agent_id_str) {
+                    bindings.push(AgentProjectBinding {
+                        project_agent_id: pa.id.clone(),
+                        project_id: project.project_id.to_string(),
+                        project_name: project.name.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(Json(bindings))
+}
+
+pub(crate) async fn remove_agent_project_binding(
+    State(state): State<AppState>,
+    AuthJwt(jwt): AuthJwt,
+    Path((_agent_id, project_agent_id)): Path<(AgentId, String)>,
+) -> ApiResult<Json<()>> {
+    let storage = state.require_storage_client()?;
+    storage
+        .delete_project_agent(&project_agent_id, &jwt)
+        .await
+        .map_err(|e| ApiError::internal(format!("failed to remove binding: {e}")))?;
     Ok(Json(()))
 }

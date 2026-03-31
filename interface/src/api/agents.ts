@@ -15,6 +15,10 @@ export const agentTemplatesApi = {
   update: (agentId: AgentId, data: { name?: string; role?: string; personality?: string; system_prompt?: string; skills?: string[]; icon?: string | null; machine_type?: string }) =>
     apiFetch<Agent>(`/api/agents/${agentId}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (agentId: AgentId) => apiFetch<void>(`/api/agents/${agentId}`, { method: "DELETE" }),
+  listProjectBindings: (agentId: AgentId) =>
+    apiFetch<{ project_agent_id: string; project_id: string; project_name: string }[]>(`/api/agents/${agentId}/projects`),
+  removeProjectBinding: (agentId: AgentId, projectAgentId: string) =>
+    apiFetch<void>(`/api/agents/${agentId}/projects/${projectAgentId}`, { method: "DELETE" }),
   listEvents: (agentId: AgentId, options?: ApiRequestOptions) =>
     apiFetch<SessionEvent[]>(`/api/agents/${agentId}/events`, { signal: options?.signal }),
   sendEventStream: sendAgentEventStream,

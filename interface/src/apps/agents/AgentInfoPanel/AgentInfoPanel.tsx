@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Text, Badge, Button, Modal } from "@cypher-asi/zui";
-import { Bot, Loader2, Calendar, Monitor, Cloud } from "lucide-react";
+import { Bot, Loader2, Calendar, Monitor, Cloud, FolderOpen, X } from "lucide-react";
 import { EmptyState } from "../../../components/EmptyState";
 import { EntityCard } from "../../../components/EntityCard";
 import { FollowEditButton } from "../../../components/FollowEditButton";
@@ -27,9 +27,17 @@ export function AgentInfoPanel({ variant = "default" }: AgentInfoPanelProps) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [iconFailed, setIconFailed] = useState(false);
+  const [projectBindings, setProjectBindings] = useState<
+    { project_agent_id: string; project_id: string; project_name: string }[]
+  >([]);
 
   useEffect(() => {
     setIconFailed(false);
+    if (selectedAgent) {
+      api.agents.listProjectBindings(selectedAgent.agent_id)
+        .then(setProjectBindings)
+        .catch(() => setProjectBindings([]));
+    }
   }, [selectedAgent?.agent_id]);
 
   const openDeleteConfirm = useCallback(() => {
@@ -105,7 +113,7 @@ export function AgentInfoPanel({ variant = "default" }: AgentInfoPanelProps) {
 
           {a.tags?.includes("super_agent") && (
             <div className={styles.section}>
-              <Badge variant="info">CEO SuperAgent</Badge>
+              <Badge variant="running">CEO SuperAgent</Badge>
             </div>
           )}
 
@@ -141,6 +149,37 @@ export function AgentInfoPanel({ variant = "default" }: AgentInfoPanelProps) {
               <div className={styles.skills}>
                 {a.skills.map((s) => (
                   <Badge key={s} variant="pending" className={styles.skillBadge}>{s}</Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {projectBindings.length > 0 && (
+            <div className={styles.section}>
+              <Text size="xs" variant="muted" weight="medium">Added to Projects</Text>
+              <div className={styles.bindingsList}>
+                {projectBindings.map((b) => (
+                  <div key={b.project_agent_id} className={styles.bindingRow}>
+                    <FolderOpen size={12} className={styles.metaIcon} />
+                    <Text size="xs" className={styles.bindingName}>{b.project_name}</Text>
+                    {isOwnAgent && (
+                      <button
+                        type="button"
+                        className={styles.removeBinding}
+                        title="Remove from project"
+                        onClick={async () => {
+                          try {
+                            await api.agents.removeProjectBinding(a.agent_id, b.project_agent_id);
+                            setProjectBindings((prev) =>
+                              prev.filter((p) => p.project_agent_id !== b.project_agent_id),
+                            );
+                          } catch { /* ignore */ }
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
