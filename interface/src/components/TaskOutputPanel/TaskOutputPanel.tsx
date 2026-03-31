@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { Text, Item, ModalConfirm } from "@cypher-asi/zui";
+import { Text, Item, ModalConfirm, Tabs } from "@cypher-asi/zui";
 import { Trash2, Play, Pause, Square, Loader2, Plus, ChevronDown, X } from "lucide-react";
 import {
   useTaskOutputPanel,
@@ -125,6 +125,11 @@ function AutomationControls({ projectId }: { projectId: string }) {
   );
 }
 
+const PANEL_TABS = [
+  { id: "run", label: "Run" },
+  { id: "terminal", label: "Terminal" },
+] as const;
+
 function PanelTabs({
   activeTab,
   onTabChange,
@@ -136,20 +141,14 @@ function PanelTabs({
 
   return (
     <div className={styles.headerTabs}>
-      <button
-        type="button"
-        className={activeTab === "run" ? styles.tabActive : styles.tab}
-        onClick={() => onTabChange("run")}
-      >
-        Run
-      </button>
-      <button
-        type="button"
-        className={activeTab === "terminal" ? styles.tabActive : styles.tab}
-        onClick={() => onTabChange("terminal")}
-      >
-        Terminal
-      </button>
+      <Tabs
+        tabs={PANEL_TABS as unknown as { id: string; label: string }[]}
+        value={activeTab}
+        onChange={(id) => onTabChange(id as OutputPanelTab)}
+        size="sm"
+        className={styles.panelTabsRoot}
+        tabClassName={styles.panelTabBtn}
+      />
       <button
         type="button"
         className={styles.addTerminalBtn}

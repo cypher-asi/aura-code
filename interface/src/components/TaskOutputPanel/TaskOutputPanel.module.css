@@ -19,7 +19,7 @@
 /* ── Resize handle ── */
 
 .resizeHandle {
-  height: 4px;
+  height: 6.5px;
   cursor: row-resize;
   background: transparent;
   flex-shrink: 0;
@@ -61,6 +61,8 @@
   flex-shrink: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   user-select: none;
+  position: relative;
+  z-index: 1;
 }
 
 .headerLeft {
@@ -77,36 +79,14 @@
   min-width: 0;
 }
 
-.tab {
-  position: relative;
-  font-size: 11px;
-  font-weight: 500;
+.panelTabsRoot {
+  border-bottom: none;
+}
+
+.panelTabBtn {
+  min-height: unset;
   padding: 4px 8px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted, #888);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.1s;
-}
-
-.tab:hover {
-  color: var(--color-text, #d4d4d4);
-}
-
-.tabActive {
-  composes: tab;
-  color: var(--color-text, #d4d4d4);
-}
-
-.tabActive::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 0;
-  height: 1px;
-  background: var(--color-text, #d4d4d4);
+  font-size: 11px;
 }
 
 .addTerminalBtn {

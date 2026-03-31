@@ -255,9 +255,10 @@ pub(crate) async fn list_agent_project_bindings(
     let all_projects = projects::list_all_projects_from_network(&state, &jwt).await?;
     let agent_id_str = agent_id.to_string();
 
-    let futs: Vec<_> = all_projects
+    let project_ids: Vec<String> = all_projects.iter().map(|p| p.project_id.to_string()).collect();
+    let futs: Vec<_> = project_ids
         .iter()
-        .map(|p| storage.list_project_agents(&p.project_id.to_string(), &jwt))
+        .map(|pid| storage.list_project_agents(pid, &jwt))
         .collect();
     let results = join_all(futs).await;
 
