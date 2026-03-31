@@ -534,6 +534,7 @@ dependencies = [
 name = "aura-os-tasks"
 version = "0.1.0"
 dependencies = [
+ "aura-os-billing",
  "aura-os-core",
  "aura-os-storage",
  "aura-os-store",

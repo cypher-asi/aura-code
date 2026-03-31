@@ -1,9 +1,12 @@
 use aura_os_core::*;
-use aura_os_tasks::{CompleteTaskParams, TaskService};
+use aura_os_tasks::TaskService;
 use chrono::Utc;
 
+#[path = "state_machine/claim.rs"]
 mod claim;
+#[path = "state_machine/dependencies.rs"]
 mod dependencies;
+#[path = "state_machine/helpers.rs"]
 mod helpers;
 
 // ---------------------------------------------------------------------------

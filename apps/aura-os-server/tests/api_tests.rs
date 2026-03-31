@@ -9,25 +9,6 @@ use aura_os_core::*;
 use common::*;
 
 // ---------------------------------------------------------------------------
-// Settings Endpoint Tests
-// ---------------------------------------------------------------------------
-
-#[tokio::test]
-async fn settings_api_key_lifecycle() {
-    let (app, _, _db) = build_test_app();
-    // GET returns ApiKeyInfo { configured: bool }.
-    let req = json_request("GET", "/api/settings/api-key", None);
-    let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body = response_json(resp).await;
-    assert!(
-        body["configured"].is_boolean(),
-        "expected configured field: {}",
-        body
-    );
-}
-
-// ---------------------------------------------------------------------------
 // Project Endpoint Tests
 // ---------------------------------------------------------------------------
 

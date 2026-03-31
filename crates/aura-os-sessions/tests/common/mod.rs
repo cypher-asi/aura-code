@@ -25,11 +25,15 @@ async fn create_session_handler(
         project_agent_id: Some(project_agent_id),
         project_id: Some(req.project_id),
         org_id: req.org_id,
+        model: None,
         status: req.status.or(Some("active".to_string())),
         context_usage_estimate: req.context_usage_estimate,
+        total_input_tokens: None,
+        total_output_tokens: None,
         summary_of_previous_context: req.summary_of_previous_context,
         tasks_worked_count: Some(0),
         ended_at: None,
+        started_at: Some(Utc::now().to_rfc3339()),
         created_at: Some(Utc::now().to_rfc3339()),
         updated_at: Some(Utc::now().to_rfc3339()),
     };
@@ -132,6 +136,7 @@ pub fn store_test_jwt(store: &aura_os_store::RocksStore) {
         zero_wallet: "w1".into(),
         wallets: vec![],
         access_token: "test-jwt".into(),
+        is_zero_pro: true,
         created_at: Utc::now(),
         validated_at: Utc::now(),
     })

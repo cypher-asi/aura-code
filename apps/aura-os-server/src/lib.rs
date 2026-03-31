@@ -12,7 +12,7 @@ pub(crate) mod state;
 
 pub use app_builder::build_app_state;
 pub use router::create_router_with_interface;
-pub use state::AppState;
+pub use state::{AppState, CachedSession};
 
 pub mod handlers_test_support {
     use aura_os_core::SessionEvent;

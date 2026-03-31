@@ -92,20 +92,6 @@ pub fn make_session() -> Session {
     }
 }
 
-pub fn make_message(role: ChatRole, content: &str) -> Message {
-    Message {
-        message_id: MessageId::new(),
-        agent_instance_id: AgentInstanceId::new(),
-        project_id: ProjectId::new(),
-        role,
-        content: content.to_string(),
-        content_blocks: None,
-        thinking: None,
-        thinking_duration_ms: None,
-        created_at: Utc::now(),
-    }
-}
-
 pub fn make_agent_instance(name: &str) -> AgentInstance {
     let now = Utc::now();
     AgentInstance {
@@ -118,7 +104,8 @@ pub fn make_agent_instance(name: &str) -> AgentInstance {
         system_prompt: String::new(),
         skills: vec![],
         icon: None,
-        harness: crate::HarnessMode::default(),
+        machine_type: "local".into(),
+        workspace_path: None,
         status: AgentStatus::Idle,
         current_task_id: None,
         current_session_id: None,

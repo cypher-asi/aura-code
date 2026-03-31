@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
@@ -57,7 +57,7 @@ pub async fn build_test_app_with_mocks() -> (Router, AppState, tempfile::TempDir
     let now_post = now.clone();
     let now_put_get = now_put.clone();
     let now_put_put = now_put.clone();
-    let created_ids: Arc<StdMutex<HashSet<String>>> = Arc::new(StdMutex::new(HashSet::new()));
+    let created_ids: Arc<StdMutex<HashMap<String, String>>> = Arc::new(StdMutex::new(HashMap::new()));
     let created_ids_post = created_ids.clone();
     let created_ids_get = created_ids.clone();
     let created_ids_put = created_ids.clone();
@@ -85,7 +85,8 @@ pub async fn build_test_app_with_mocks() -> (Router, AppState, tempfile::TempDir
             .post(move || {
                 let created_ids = created_ids_post.clone();
                 let id = ProjectId::new().to_string();
-                created_ids.lock().unwrap().insert(id.clone());
+                let org_id = OrgId::new().to_string();
+                created_ids.lock().unwrap().insert(id.clone(), org_id.clone());
                 async move {
                     (
                         StatusCode::CREATED,
@@ -93,7 +94,7 @@ pub async fn build_test_app_with_mocks() -> (Router, AppState, tempfile::TempDir
                             "id": id,
                             "name": "Test Project",
                             "description": "A test",
-                            "orgId": OrgId::new().to_string(),
+                            "orgId": org_id,
                             "folder": ".",
                             "createdAt": now_post,
                             "updatedAt": now_post,
@@ -108,14 +109,15 @@ pub async fn build_test_app_with_mocks() -> (Router, AppState, tempfile::TempDir
                 let created_ids = created_ids_get.clone();
                 let now_put = now_put_get.clone();
                 async move {
-                    if created_ids.lock().unwrap().contains(&project_id) {
+                    let org_id = created_ids.lock().unwrap().get(&project_id).cloned();
+                    if let Some(org_id) = org_id {
                         (
                             StatusCode::OK,
                             Json(serde_json::json!({
                                 "id": project_id,
                                 "name": "Test Project",
                                 "description": "A test",
-                                "orgId": "",
+                                "orgId": org_id,
                                 "folder": ".",
                                 "createdAt": now_put,
                                 "updatedAt": now_put,
@@ -132,14 +134,15 @@ pub async fn build_test_app_with_mocks() -> (Router, AppState, tempfile::TempDir
             .put(move |Path(project_id): Path<String>| {
                 let created_ids = created_ids_put.clone();
                 async move {
-                    if created_ids.lock().unwrap().contains(&project_id) {
+                    let org_id = created_ids.lock().unwrap().get(&project_id).cloned();
+                    if let Some(org_id) = org_id {
                         (
                             StatusCode::OK,
                             Json(serde_json::json!({
-                                "id": "",
+                                "id": project_id,
                                 "name": "Updated Name",
                                 "description": "",
-                                "orgId": "",
+                                "orgId": org_id,
                                 "folder": ".",
                                 "createdAt": now_put_put,
                                 "updatedAt": now_put_put,
@@ -157,8 +160,7 @@ pub async fn build_test_app_with_mocks() -> (Router, AppState, tempfile::TempDir
                 let created_ids = created_ids_del.clone();
                 async move {
                     created_ids.lock().unwrap().remove(&project_id);
-                    StatusCode::NO_CONTENT
-                }
+                    StatusCode::NO_CONTENT                }
             }),
         );
     let net_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -230,6 +232,28 @@ pub fn build_test_app_from_store(
 
     let (event_broadcast, _) = broadcast::channel::<serde_json::Value>(256);
 
+    let validation_cache = Arc::new(dashmap::DashMap::new());
+    validation_cache.insert(
+        TEST_JWT.to_string(),
+        aura_os_server::CachedSession {
+            session: ZeroAuthSession {
+                user_id: "u1".into(),
+                network_user_id: None,
+                profile_id: None,
+                display_name: "Test".into(),
+                profile_image: String::new(),
+                primary_zid: "zid-1".into(),
+                zero_wallet: "w1".into(),
+                wallets: vec![],
+                access_token: TEST_JWT.into(),
+                is_zero_pro: true,
+                created_at: chrono::Utc::now(),
+                validated_at: chrono::Utc::now(),
+            },
+            validated_at: std::time::Instant::now(),
+        },
+    );
+
     let state = AppState {
         store,
         data_dir,
@@ -256,7 +280,7 @@ pub fn build_test_app_from_store(
         swarm_base_url,
         task_output_cache: Arc::new(Mutex::new(HashMap::new())),
         orbit_client: None,
-        validation_cache: Arc::new(dashmap::DashMap::new()),
+        validation_cache,
     };
 
     let app = aura_os_server::create_router_with_interface(state.clone(), None);
@@ -272,11 +296,14 @@ pub fn build_test_app() -> (Router, AppState, tempfile::TempDir) {
     (app, state, db_dir)
 }
 
+pub const TEST_JWT: &str = "test-token";
+
 pub fn json_request(method: &str, uri: &str, body: Option<Value>) -> Request<Body> {
     let builder = Request::builder()
         .method(method)
         .uri(uri)
-        .header("content-type", "application/json");
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", TEST_JWT));
 
     match body {
         Some(b) => builder

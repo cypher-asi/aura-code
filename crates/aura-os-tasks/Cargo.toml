@@ -17,3 +17,4 @@ chrono = { version = "0.4", features = ["serde"] }
 tempfile = "3"
 tokio = { version = "1", features = ["full"] }
 aura-os-storage = { path = "../aura-os-storage", features = ["test-utils"] }
+aura-os-billing = { path = "../aura-os-billing", features = ["test-utils"] }
