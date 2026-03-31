@@ -84,7 +84,7 @@ export function TasksMainPanel({ children: _children }: { children?: React.React
     [projectAgents],
   );
 
-  const [addingToLane, setAddingToLane] = useState<TaskStatus | null>(null);
+  const [addingToLane, setAddingToLane] = useState<"backlog" | "to_do" | null>(null);
 
   const handleAddDone = useCallback(() => setAddingToLane(null), []);
 
@@ -123,15 +123,7 @@ export function TasksMainPanel({ children: _children }: { children?: React.React
                     </span>
                   </header>
                   <div className={styles.columnBody}>
-                    {addingToLane === lane.status && (
-                      <AddTaskForm
-                        projectId={projectId}
-                        status={lane.status as "backlog" | "to_do"}
-                        agentInstanceId={agentInstanceId}
-                        onDone={handleAddDone}
-                      />
-                    )}
-                    {laneTasks.length === 0 && addingToLane !== lane.status ? (
+                    {laneTasks.length === 0 ? (
                       <Text size="xs" variant="muted" className={styles.emptyLabel}>No tasks</Text>
                     ) : (
                       laneTasks.map((task) => {
@@ -149,11 +141,11 @@ export function TasksMainPanel({ children: _children }: { children?: React.React
                         );
                       })
                     )}
-                    {lane.canAdd && addingToLane !== lane.status && (
+                    {lane.canAdd && (
                       <button
                         type="button"
                         className={styles.laneAddBtn}
-                        onClick={() => setAddingToLane(lane.status)}
+                        onClick={() => setAddingToLane(lane.status as "backlog" | "to_do")}
                         title={`Add task to ${lane.label}`}
                       >
                         +
@@ -173,6 +165,15 @@ export function TasksMainPanel({ children: _children }: { children?: React.React
           </div>
         )}
       </div>
+
+      <AddTaskForm
+        isOpen={addingToLane !== null}
+        projectId={projectId}
+        status={addingToLane ?? "backlog"}
+        agentInstanceId={agentInstanceId}
+        onDone={handleAddDone}
+        onStatusChange={setAddingToLane}
+      />
     </ResponsiveMainLane>
   );
 }

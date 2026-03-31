@@ -1,43 +1,52 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Button } from "@cypher-asi/zui";
+import { useState, useCallback } from "react";
+import { Modal, Button, Toggle, Spinner } from "@cypher-asi/zui";
+import { useModalInitialFocus } from "../../../hooks/use-modal-initial-focus";
 import { tasksApi } from "../../../api/tasks";
 import { useKanbanStore } from "../stores/kanban-store";
 import { useProjectContext } from "../../../stores/project-action-store";
 import { useProjectsListStore } from "../../../stores/projects-list-store";
-import styles from "./TasksMainPanel.module.css";
+import styles from "./AddTaskForm.module.css";
 
 interface AddTaskFormProps {
+  isOpen: boolean;
   projectId: string;
   status: "backlog" | "to_do";
   agentInstanceId?: string;
   onDone: () => void;
+  onStatusChange: (status: "backlog" | "to_do") => void;
 }
 
-export function AddTaskForm({ projectId, status, agentInstanceId, onDone }: AddTaskFormProps) {
+export function AddTaskForm({
+  isOpen,
+  projectId,
+  status,
+  agentInstanceId,
+  onDone,
+  onStatusChange,
+}: AddTaskFormProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assignee, setAssignee] = useState(agentInstanceId ?? "");
   const [submitting, setSubmitting] = useState(false);
+  const [createMore, setCreateMore] = useState(false);
   const addTask = useKanbanStore((s) => s.addTask);
   const ctx = useProjectContext();
   const specs = ctx?.initialSpecs ?? [];
   const projectAgents = useProjectsListStore((s) => s.agentsByProject[projectId] ?? []);
-  const formRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  const { inputRef, initialFocusRef } = useModalInitialFocus<HTMLInputElement>();
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (formRef.current && !formRef.current.contains(e.target as Node)) {
-        onDone();
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [onDone]);
+  const resetForm = useCallback(() => {
+    setTitle("");
+    setDescription("");
+    setAssignee(agentInstanceId ?? "");
+    setSubmitting(false);
+  }, [agentInstanceId]);
+
+  const handleClose = useCallback(() => {
+    resetForm();
+    onDone();
+  }, [resetForm, onDone]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = title.trim();
@@ -54,71 +63,102 @@ export function AddTaskForm({ projectId, status, agentInstanceId, onDone }: AddT
         assigned_agent_instance_id: assignee || undefined,
       });
       addTask(projectId, task);
-      onDone();
+      if (createMore) {
+        resetForm();
+        inputRef.current?.focus();
+      } else {
+        handleClose();
+      }
     } catch (err) {
       console.error("Failed to create task:", err);
       setSubmitting(false);
     }
-  }, [title, description, assignee, submitting, specs, projectId, status, addTask, onDone]);
+  }, [title, description, assignee, submitting, specs, projectId, status, addTask, createMore, resetForm, handleClose, inputRef]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         void handleSubmit();
-      } else if (e.key === "Escape") {
-        onDone();
       }
     },
-    [handleSubmit, onDone],
+    [handleSubmit],
   );
 
   return (
-    <div ref={formRef} className={styles.addTaskForm} onKeyDown={handleKeyDown}>
-      <input
-        ref={inputRef}
-        className={styles.addTaskInput}
-        placeholder="Task title"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        disabled={submitting}
-      />
-      <textarea
-        className={styles.addTaskTextarea}
-        placeholder="Description (optional)"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        rows={2}
-        disabled={submitting}
-      />
-      {projectAgents.length > 0 && (
-        <select
-          className={styles.addTaskSelect}
-          value={assignee}
-          onChange={(e) => setAssignee(e.target.value)}
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="New Task"
+      size="md"
+      initialFocusRef={initialFocusRef}
+      noPadding
+      footer={
+        <div className={styles.footer}>
+          <div className={styles.footerLeft}>
+            <select
+              className={styles.statusPill}
+              value={status}
+              onChange={(e) => onStatusChange(e.target.value as "backlog" | "to_do")}
+              disabled={submitting}
+            >
+              <option value="backlog">Backlog</option>
+              <option value="to_do">To Do</option>
+            </select>
+            {projectAgents.length > 0 && (
+              <select
+                className={styles.assigneePill}
+                value={assignee}
+                onChange={(e) => setAssignee(e.target.value)}
+                disabled={submitting}
+              >
+                <option value="">Unassigned</option>
+                {projectAgents.map((a) => (
+                  <option key={a.agent_instance_id} value={a.agent_instance_id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className={styles.footerRight}>
+            <Toggle
+              size="sm"
+              label="Create more"
+              labelPosition="left"
+              checked={createMore}
+              onChange={(e) => setCreateMore(e.target.checked)}
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleSubmit}
+              disabled={!title.trim() || submitting || specs.length === 0}
+            >
+              {submitting ? <><Spinner size="sm" /> Creating...</> : "Create Task"}
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      <div className={styles.body} onKeyDown={handleKeyDown}>
+        <input
+          ref={inputRef}
+          className={styles.titleInput}
+          placeholder="Task title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
           disabled={submitting}
-        >
-          <option value="">Unassigned</option>
-          {projectAgents.map((a) => (
-            <option key={a.agent_instance_id} value={a.agent_instance_id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-      )}
-      <div className={styles.addTaskActions}>
-        <Button variant="ghost" size="sm" onClick={onDone} disabled={submitting}>
-          Cancel
-        </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={handleSubmit}
-          disabled={!title.trim() || submitting || specs.length === 0}
-        >
-          {submitting ? "Creating..." : "Create"}
-        </Button>
+        />
+        <textarea
+          className={styles.descriptionInput}
+          placeholder="Add description..."
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={4}
+          disabled={submitting}
+        />
       </div>
-    </div>
+    </Modal>
   );
 }
