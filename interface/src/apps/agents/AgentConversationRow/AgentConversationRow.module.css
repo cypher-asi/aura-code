@@ -92,6 +92,12 @@
   flex-shrink: 0;
 }
 
+.pinIcon {
+  color: var(--color-text-muted, var(--color-text-secondary));
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
 .time {
   font-size: 10px;
   color: var(--color-text-muted, var(--color-text-secondary));

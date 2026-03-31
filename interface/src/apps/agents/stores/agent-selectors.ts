@@ -65,14 +65,36 @@ export function useSelectedAgent(): SelectedAgentSlice {
 /** Agents sorted by pinned first, then most-recent updates. */
 export function useSortedAgents(): Agent[] {
   const agents = useAgentStore((s) => s.agents);
+  const pinnedIds = useAgentStore((s) => s.pinnedAgentIds);
   return useMemo(() => {
     return [...agents].sort((a, b) => {
-      if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+      const aPinned = a.is_pinned || pinnedIds.has(a.agent_id);
+      const bPinned = b.is_pinned || pinnedIds.has(b.agent_id);
+      if (aPinned !== bPinned) return aPinned ? -1 : 1;
       return b.updated_at.localeCompare(a.updated_at);
     });
-  }, [agents]);
+  }, [agents, pinnedIds]);
 }
 
 export function useSuperAgent(): Agent | null {
   return useAgentStore((s) => s.agents.find((a) => a.tags?.includes("super_agent")) ?? null);
+}
+
+export function useIsAgentPinned(agentId: string): boolean {
+  const agent = useAgentStore((s) => s.agents.find((a) => a.agent_id === agentId));
+  const pinnedIds = useAgentStore((s) => s.pinnedAgentIds);
+  return !!(agent?.is_pinned || pinnedIds.has(agentId));
+}
+
+export function useIsAgentFavorite(agentId: string): boolean {
+  return useAgentStore((s) => s.favoriteAgentIds.has(agentId));
+}
+
+export function useFavoriteAgents(): Agent[] {
+  const agents = useAgentStore((s) => s.agents);
+  const favoriteIds = useAgentStore((s) => s.favoriteAgentIds);
+  return useMemo(
+    () => agents.filter((a) => favoriteIds.has(a.agent_id)),
+    [agents, favoriteIds],
+  );
 }

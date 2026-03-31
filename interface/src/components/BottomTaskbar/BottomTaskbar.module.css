@@ -25,6 +25,38 @@
   color: #ffffff !important;
 }
 
+.favorites {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: var(--space-2);
+  overflow: hidden;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.favoriteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.favoriteBtn:hover {
+  background: var(--color-surface-hover);
+}
+
+.contextMenuOverlay {
+  position: fixed;
+  z-index: 9999;
+}
+
 .spacer {
   flex: 1;
   min-width: 0;

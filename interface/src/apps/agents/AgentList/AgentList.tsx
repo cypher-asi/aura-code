@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { ButtonPlus, Menu, Modal, Button } from "@cypher-asi/zui";
 import type { MenuItem } from "@cypher-asi/zui";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Pin, PinOff, Star, StarOff, Trash2 } from "lucide-react";
 import { EmptyState } from "../../../components/EmptyState";
 import { AgentEditorModal } from "../../../components/AgentEditorModal";
 import { AgentConversationRow } from "../AgentConversationRow";
@@ -22,9 +22,32 @@ import { useSidebarSearch } from "../../../context/SidebarSearchContext";
 import type { Agent } from "../../../types";
 import styles from "./AgentList.module.css";
 
-const agentMenuItems: MenuItem[] = [
-  { id: "delete", label: "Delete", icon: <Trash2 size={14} /> },
-];
+function buildAgentMenuItems(agent: Agent, pinnedIds: Set<string>, favoriteIds: Set<string>): MenuItem[] {
+  const isSuperAgent = agent.tags?.includes("super_agent");
+  const isPinned = agent.is_pinned || pinnedIds.has(agent.agent_id);
+  const isFavorite = favoriteIds.has(agent.agent_id);
+  const items: MenuItem[] = [];
+
+  if (!isSuperAgent) {
+    items.push(
+      isPinned
+        ? { id: "unpin", label: "Unpin", icon: <PinOff size={14} /> }
+        : { id: "pin", label: "Pin to top", icon: <Pin size={14} /> },
+    );
+  }
+
+  items.push(
+    isFavorite
+      ? { id: "unfavorite", label: "Remove from taskbar", icon: <StarOff size={14} /> }
+      : { id: "favorite", label: "Add to taskbar", icon: <Star size={14} /> },
+  );
+
+  if (!isSuperAgent) {
+    items.push({ id: "delete", label: "Delete", icon: <Trash2 size={14} /> });
+  }
+
+  return items;
+}
 
 interface CtxMenuState {
   x: number;
@@ -135,16 +158,31 @@ export function AgentList({ mode = "default" }: AgentListProps) {
     [agentMap],
   );
 
+  const togglePin = useAgentStore((s) => s.togglePin);
+  const toggleFavorite = useAgentStore((s) => s.toggleFavorite);
+  const pinnedIds = useAgentStore((s) => s.pinnedAgentIds);
+  const favoriteIds = useAgentStore((s) => s.favoriteAgentIds);
+
   const handleMenuAction = useCallback(
     (actionId: string) => {
       if (!ctxMenu) return;
-      if (actionId === "delete") {
-        setDeleteTarget(ctxMenu.agent);
-        setDeleteError(null);
+      switch (actionId) {
+        case "pin":
+        case "unpin":
+          togglePin(ctxMenu.agent.agent_id);
+          break;
+        case "favorite":
+        case "unfavorite":
+          toggleFavorite(ctxMenu.agent.agent_id);
+          break;
+        case "delete":
+          setDeleteTarget(ctxMenu.agent);
+          setDeleteError(null);
+          break;
       }
       setCtxMenu(null);
     },
-    [ctxMenu],
+    [ctxMenu, togglePin, toggleFavorite],
   );
 
   const handleDelete = useCallback(async () => {
@@ -242,12 +280,12 @@ export function AgentList({ mode = "default" }: AgentListProps) {
             style={{ left: ctxMenu.x, top: ctxMenu.y }}
           >
             <Menu
-              items={agentMenuItems}
+              items={buildAgentMenuItems(ctxMenu.agent, pinnedIds, favoriteIds)}
               onChange={handleMenuAction}
               background="solid"
               border="solid"
               rounded="md"
-              width={180}
+              width={200}
               isOpen
             />
           </div>,

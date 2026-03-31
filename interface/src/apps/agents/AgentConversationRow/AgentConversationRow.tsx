@@ -1,8 +1,10 @@
+import { Pin } from "lucide-react";
 import { formatChatTime } from "../../../utils/format";
 import type { Agent } from "../../../types";
 import type { DisplaySessionEvent } from "../../../types/stream";
 import { Avatar } from "../../../components/Avatar";
 import { useAvatarState } from "../../../hooks/use-avatar-state";
+import { useAgentStore } from "../stores";
 import styles from "./AgentConversationRow.module.css";
 
 function stripMarkdown(text: string): string {
@@ -42,6 +44,8 @@ export function AgentConversationRow({
     ? agentDescription || "Open this agent"
     : agentDescription || messagePreview || "Open this agent";
   const { status, isLocal } = useAvatarState(agent.agent_id);
+  const pinnedIds = useAgentStore((s) => s.pinnedAgentIds);
+  const isPinned = agent.is_pinned || pinnedIds.has(agent.agent_id);
 
   return (
     <button
@@ -67,6 +71,9 @@ export function AgentConversationRow({
             {agent.name}
             {agent.tags?.includes("super_agent") && (
               <span className={styles.ceoBadge}>CEO</span>
+            )}
+            {isPinned && !agent.tags?.includes("super_agent") && (
+              <Pin size={11} className={styles.pinIcon} />
             )}
           </span>
           <span className={styles.time}>{formatChatTime(agent.updated_at)}</span>

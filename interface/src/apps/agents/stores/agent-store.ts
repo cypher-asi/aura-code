@@ -14,6 +14,21 @@ type HistoryEntry = {
   error: string | null;
 };
 
+const PINNED_KEY = "aura:pinnedAgentIds";
+const FAVORITE_KEY = "aura:favoriteAgentIds";
+
+function readIdSet(key: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) return new Set(JSON.parse(raw) as string[]);
+  } catch { /* corrupted – start fresh */ }
+  return new Set();
+}
+
+function persistIdSet(key: string, ids: Set<string>): void {
+  localStorage.setItem(key, JSON.stringify([...ids]));
+}
+
 type AgentState = {
   agents: Agent[];
   agentsStatus: FetchStatus;
@@ -23,12 +38,17 @@ type AgentState = {
 
   selectedAgentId: string | null;
 
+  pinnedAgentIds: Set<string>;
+  favoriteAgentIds: Set<string>;
+
   fetchAgents: (opts?: { force?: boolean }) => Promise<void>;
   patchAgent: (agent: Agent) => void;
   fetchHistory: (agentId: string, opts?: { force?: boolean }) => Promise<void>;
   prefetchHistory: (agentId: string) => void;
   invalidateHistory: (agentId: string) => void;
   setSelectedAgent: (agentId: string | null) => void;
+  togglePin: (agentId: string) => void;
+  toggleFavorite: (agentId: string) => void;
 };
 
 const HISTORY_TTL_MS = 30_000;
@@ -46,6 +66,8 @@ export const useAgentStore = create<AgentState>()(
       agentsError: null,
       history: {},
       selectedAgentId: null,
+      pinnedAgentIds: readIdSet(PINNED_KEY),
+      favoriteAgentIds: readIdSet(FAVORITE_KEY),
 
       fetchAgents: async (opts): Promise<void> => {
         const { agentsStatus } = get();
@@ -190,6 +212,26 @@ export const useAgentStore = create<AgentState>()(
 
       setSelectedAgent: (agentId): void => {
         set({ selectedAgentId: agentId });
+      },
+
+      togglePin: (agentId): void => {
+        set((s) => {
+          const next = new Set(s.pinnedAgentIds);
+          if (next.has(agentId)) next.delete(agentId);
+          else next.add(agentId);
+          persistIdSet(PINNED_KEY, next);
+          return { pinnedAgentIds: next };
+        });
+      },
+
+      toggleFavorite: (agentId): void => {
+        set((s) => {
+          const next = new Set(s.favoriteAgentIds);
+          if (next.has(agentId)) next.delete(agentId);
+          else next.add(agentId);
+          persistIdSet(FAVORITE_KEY, next);
+          return { favoriteAgentIds: next };
+        });
       },
     };
   }),
