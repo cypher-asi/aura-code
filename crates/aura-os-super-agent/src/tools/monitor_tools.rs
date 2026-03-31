@@ -3,12 +3,9 @@ use serde_json::json;
 
 use aura_os_core::ToolDomain;
 
+use super::helpers::{network_get, require_network, require_str, tool_err};
 use super::{SuperAgentContext, SuperAgentTool, ToolResult};
 use crate::SuperAgentError;
-
-fn tool_err(action: &str, e: impl std::fmt::Display) -> SuperAgentError {
-    SuperAgentError::ToolError(format!("{action}: {e}"))
-}
 
 // ---------------------------------------------------------------------------
 // 1. GetFleetStatusTool
@@ -148,5 +145,140 @@ impl SuperAgentTool for GetProjectCostTool {
             }),
             is_error: false,
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 4. GetLeaderboardTool
+// ---------------------------------------------------------------------------
+
+pub struct GetLeaderboardTool;
+
+#[async_trait]
+impl SuperAgentTool for GetLeaderboardTool {
+    fn name(&self) -> &str { "get_leaderboard" }
+    fn description(&self) -> &str { "Get the agent/user leaderboard rankings" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Monitoring }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "period": { "type": "string", "description": "Time period (e.g. daily, weekly, all-time)" }
+            },
+            "required": []
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let path = if let Some(period) = input["period"].as_str() {
+            format!("/api/leaderboard?period={period}")
+        } else {
+            "/api/leaderboard".to_string()
+        };
+        network_get(network, &path, &ctx.jwt).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 5. GetUsageStatsTool
+// ---------------------------------------------------------------------------
+
+pub struct GetUsageStatsTool;
+
+#[async_trait]
+impl SuperAgentTool for GetUsageStatsTool {
+    fn name(&self) -> &str { "get_usage_stats" }
+    fn description(&self) -> &str { "Get usage statistics for the current user and optionally an organization" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Monitoring }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "org_id": { "type": "string", "description": "Organization ID for org-level usage (optional)" }
+            },
+            "required": []
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let user_usage = network_get(network, "/api/users/me/usage", &ctx.jwt).await?;
+
+        if let Some(org_id) = input["org_id"].as_str() {
+            let org_usage = network_get(network, &format!("/api/orgs/{org_id}/usage"), &ctx.jwt).await?;
+            Ok(ToolResult {
+                content: json!({
+                    "user_usage": user_usage.content,
+                    "org_usage": org_usage.content,
+                }),
+                is_error: false,
+            })
+        } else {
+            Ok(user_usage)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 6. ListSessionsTool
+// ---------------------------------------------------------------------------
+
+pub struct ListSessionsTool;
+
+#[async_trait]
+impl SuperAgentTool for ListSessionsTool {
+    fn name(&self) -> &str { "list_sessions" }
+    fn description(&self) -> &str { "List sessions for an agent instance in a project" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Monitoring }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "project_id": { "type": "string", "description": "Project ID" },
+                "agent_instance_id": { "type": "string", "description": "Agent instance ID" }
+            },
+            "required": ["project_id", "agent_instance_id"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let project_id = require_str(&input, "project_id")?;
+        let agent_instance_id = require_str(&input, "agent_instance_id")?;
+        network_get(
+            network,
+            &format!("/api/projects/{project_id}/agents/{agent_instance_id}/sessions"),
+            &ctx.jwt,
+        ).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 7. ListLogEntriesTool
+// ---------------------------------------------------------------------------
+
+pub struct ListLogEntriesTool;
+
+#[async_trait]
+impl SuperAgentTool for ListLogEntriesTool {
+    fn name(&self) -> &str { "list_log_entries" }
+    fn description(&self) -> &str { "List recent log entries across the system" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Monitoring }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
+    }
+
+    async fn execute(&self, _input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        network_get(network, "/api/log-entries", &ctx.jwt).await
     }
 }

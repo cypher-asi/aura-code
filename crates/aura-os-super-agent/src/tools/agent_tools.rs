@@ -3,18 +3,11 @@ use serde_json::json;
 
 use aura_os_core::ToolDomain;
 
+use super::helpers::{
+    network_delete, network_get, network_post, network_put, require_network, require_str, tool_err,
+};
 use super::{SuperAgentContext, SuperAgentTool, ToolResult};
 use crate::SuperAgentError;
-
-fn require_network(ctx: &SuperAgentContext) -> Result<&aura_os_network::NetworkClient, SuperAgentError> {
-    ctx.network_client
-        .as_deref()
-        .ok_or_else(|| SuperAgentError::Internal("network client not available".into()))
-}
-
-fn tool_err(action: &str, e: impl std::fmt::Display) -> SuperAgentError {
-    SuperAgentError::ToolError(format!("{action}: {e}"))
-}
 
 // ---------------------------------------------------------------------------
 // 1. ListAgentsTool
@@ -149,5 +142,272 @@ impl SuperAgentTool for AssignAgentToProjectTool {
             content: result,
             is_error: false,
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 4. CreateAgentTool
+// ---------------------------------------------------------------------------
+
+pub struct CreateAgentTool;
+
+#[async_trait]
+impl SuperAgentTool for CreateAgentTool {
+    fn name(&self) -> &str { "create_agent" }
+    fn description(&self) -> &str { "Create a new agent template" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Agent }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "name": { "type": "string", "description": "Agent name" },
+                "role": { "type": "string", "description": "Agent role (e.g. developer, designer)" },
+                "personality": { "type": "string", "description": "Agent personality description" },
+                "system_prompt": { "type": "string", "description": "System prompt for the agent" },
+                "skills": { "type": "array", "items": { "type": "string" }, "description": "List of skill IDs" },
+                "machine_type": { "type": "string", "description": "VM machine type for remote agents" }
+            },
+            "required": ["name"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let mut body = json!({
+            "name": input["name"].as_str().unwrap_or_default(),
+            "org_id": &ctx.org_id,
+        });
+        for field in &["role", "personality", "system_prompt", "machine_type"] {
+            if let Some(v) = input[field].as_str() {
+                body[field] = json!(v);
+            }
+        }
+        if let Some(skills) = input["skills"].as_array() {
+            body["skills"] = json!(skills);
+        }
+        network_post(network, "/api/agents", &ctx.jwt, &body).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 5. UpdateAgentTool
+// ---------------------------------------------------------------------------
+
+pub struct UpdateAgentTool;
+
+#[async_trait]
+impl SuperAgentTool for UpdateAgentTool {
+    fn name(&self) -> &str { "update_agent" }
+    fn description(&self) -> &str { "Update an agent template's settings" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Agent }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "agent_id": { "type": "string", "description": "Agent ID" },
+                "name": { "type": "string", "description": "New name" },
+                "role": { "type": "string", "description": "New role" },
+                "personality": { "type": "string", "description": "New personality" },
+                "system_prompt": { "type": "string", "description": "New system prompt" },
+                "skills": { "type": "array", "items": { "type": "string" }, "description": "Updated skill IDs" }
+            },
+            "required": ["agent_id"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let agent_id = require_str(&input, "agent_id")?;
+        let mut body = json!({});
+        for field in &["name", "role", "personality", "system_prompt"] {
+            if let Some(v) = input[field].as_str() {
+                body[field] = json!(v);
+            }
+        }
+        if let Some(skills) = input["skills"].as_array() {
+            body["skills"] = json!(skills);
+        }
+        network_put(network, &format!("/api/agents/{agent_id}"), &ctx.jwt, &body).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 6. DeleteAgentTool
+// ---------------------------------------------------------------------------
+
+pub struct DeleteAgentTool;
+
+#[async_trait]
+impl SuperAgentTool for DeleteAgentTool {
+    fn name(&self) -> &str { "delete_agent" }
+    fn description(&self) -> &str { "Delete an agent template" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Agent }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "agent_id": { "type": "string", "description": "Agent ID to delete" }
+            },
+            "required": ["agent_id"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let agent_id = require_str(&input, "agent_id")?;
+        network_delete(network, &format!("/api/agents/{agent_id}"), &ctx.jwt).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 7. ListAgentInstancesTool
+// ---------------------------------------------------------------------------
+
+pub struct ListAgentInstancesTool;
+
+#[async_trait]
+impl SuperAgentTool for ListAgentInstancesTool {
+    fn name(&self) -> &str { "list_agent_instances" }
+    fn description(&self) -> &str { "List all agent instances assigned to a project" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Agent }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "project_id": { "type": "string", "description": "Project ID" }
+            },
+            "required": ["project_id"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let project_id = require_str(&input, "project_id")?;
+        network_get(network, &format!("/api/projects/{project_id}/agents"), &ctx.jwt).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 8. UpdateAgentInstanceTool
+// ---------------------------------------------------------------------------
+
+pub struct UpdateAgentInstanceTool;
+
+#[async_trait]
+impl SuperAgentTool for UpdateAgentInstanceTool {
+    fn name(&self) -> &str { "update_agent_instance" }
+    fn description(&self) -> &str { "Update an agent instance's settings within a project" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Agent }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "project_id": { "type": "string", "description": "Project ID" },
+                "agent_instance_id": { "type": "string", "description": "Agent instance ID" },
+                "name": { "type": "string", "description": "New name" },
+                "role": { "type": "string", "description": "New role" },
+                "personality": { "type": "string", "description": "New personality" },
+                "model": { "type": "string", "description": "LLM model to use" }
+            },
+            "required": ["project_id", "agent_instance_id"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let project_id = require_str(&input, "project_id")?;
+        let agent_instance_id = require_str(&input, "agent_instance_id")?;
+        let mut body = json!({});
+        for field in &["name", "role", "personality", "model"] {
+            if let Some(v) = input[field].as_str() {
+                body[field] = json!(v);
+            }
+        }
+        network_put(
+            network,
+            &format!("/api/projects/{project_id}/agents/{agent_instance_id}"),
+            &ctx.jwt,
+            &body,
+        ).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 9. DeleteAgentInstanceTool
+// ---------------------------------------------------------------------------
+
+pub struct DeleteAgentInstanceTool;
+
+#[async_trait]
+impl SuperAgentTool for DeleteAgentInstanceTool {
+    fn name(&self) -> &str { "delete_agent_instance" }
+    fn description(&self) -> &str { "Remove an agent instance from a project" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Agent }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "project_id": { "type": "string", "description": "Project ID" },
+                "agent_instance_id": { "type": "string", "description": "Agent instance ID" }
+            },
+            "required": ["project_id", "agent_instance_id"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let project_id = require_str(&input, "project_id")?;
+        let agent_instance_id = require_str(&input, "agent_instance_id")?;
+        network_delete(
+            network,
+            &format!("/api/projects/{project_id}/agents/{agent_instance_id}"),
+            &ctx.jwt,
+        ).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 10. RemoteAgentActionTool
+// ---------------------------------------------------------------------------
+
+pub struct RemoteAgentActionTool;
+
+#[async_trait]
+impl SuperAgentTool for RemoteAgentActionTool {
+    fn name(&self) -> &str { "remote_agent_action" }
+    fn description(&self) -> &str { "Perform a lifecycle action on a remote agent (hibernate, stop, restart, wake, start)" }
+    fn domain(&self) -> ToolDomain { ToolDomain::Agent }
+
+    fn parameters_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "agent_id": { "type": "string", "description": "Agent ID" },
+                "action": {
+                    "type": "string",
+                    "enum": ["hibernate", "stop", "restart", "wake", "start"],
+                    "description": "Lifecycle action to perform"
+                }
+            },
+            "required": ["agent_id", "action"]
+        })
+    }
+
+    async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
+        let network = require_network(ctx)?;
+        let agent_id = require_str(&input, "agent_id")?;
+        let action = require_str(&input, "action")?;
+        network_post(
+            network,
+            &format!("/api/agents/{agent_id}/remote_agent/{action}"),
+            &ctx.jwt,
+            &json!({}),
+        ).await
     }
 }
