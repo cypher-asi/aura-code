@@ -46,13 +46,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.divider {
-  width: 1px;
-  height: 14px;
-  background: var(--color-border);
-  flex-shrink: 0;
-}
-
 .clock {
   font-size: var(--text-2xs);
   color: var(--color-text-secondary);

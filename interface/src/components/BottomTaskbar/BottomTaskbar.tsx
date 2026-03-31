@@ -32,7 +32,6 @@ export function BottomTaskbar() {
           <span className={styles.creditsLabel}>{display}</span>
           <CreditCard size={14} />
         </button>
-        <div className={styles.divider} />
         <span className={styles.clock}>{time}</span>
       </div>
     </div>
