@@ -30,10 +30,10 @@ done < <(stack_host_managed_services)
 
 echo
 echo "Attempting auth bootstrap..."
-if curl -fsS "${AURA_STACK_AUTH_SOURCE_URL:-http://127.0.0.1:3100}/api/auth/access-token" >/dev/null 2>&1; then
+if "$script_dir/bootstrap-auth.sh" --check >/dev/null 2>&1; then
   "$script_dir/bootstrap-auth.sh"
 else
-  echo "  skipped: no source Aura session available at ${AURA_STACK_AUTH_SOURCE_URL:-http://127.0.0.1:3100}"
+  echo "  skipped: no source Aura session or token override available"
 fi
 
 echo

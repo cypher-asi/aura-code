@@ -1,0 +1,65 @@
+name: Setup ZUI sibling workspace
+description: Checks out sibling repos needed by Aura CI and links them into the workspace layout expected by local path dependencies.
+
+inputs:
+  repository-owner:
+    description: GitHub org or user that owns the zui repo.
+    required: true
+  include-harness:
+    description: Also check out the public aura-harness repo for Rust path dependencies.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout zui
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.repository-owner }}/zui
+        path: zui
+
+    - name: Checkout aura-harness
+      if: inputs.include-harness == 'true'
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.repository-owner }}/aura-harness
+        path: aura-harness
+
+    - name: Link sibling repositories on Unix
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        rm -rf "$GITHUB_WORKSPACE/../zui"
+        ln -s "$GITHUB_WORKSPACE/zui" "$GITHUB_WORKSPACE/../zui"
+        if [ "${{ inputs.include-harness }}" = "true" ]; then
+          rm -rf "$GITHUB_WORKSPACE/../aura-harness"
+          ln -s "$GITHUB_WORKSPACE/aura-harness" "$GITHUB_WORKSPACE/../aura-harness"
+          ls -ld "$GITHUB_WORKSPACE/aura-harness" "$GITHUB_WORKSPACE/../aura-harness"
+        fi
+        ls -ld "$GITHUB_WORKSPACE/zui" "$GITHUB_WORKSPACE/../zui"
+
+    - name: Link sibling repositories on Windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $workspace = $env:GITHUB_WORKSPACE
+        $parent = Split-Path $workspace -Parent
+        $zuiSibling = Join-Path $parent "zui"
+        if (Test-Path $zuiSibling) {
+          Remove-Item $zuiSibling -Recurse -Force
+        }
+        New-Item -ItemType Junction -Path $zuiSibling -Target (Join-Path $workspace "zui") | Out-Null
+
+        if ("${{ inputs.include-harness }}" -eq "true") {
+          $harnessSibling = Join-Path $parent "aura-harness"
+          if (Test-Path $harnessSibling) {
+            Remove-Item $harnessSibling -Recurse -Force
+          }
+          New-Item -ItemType Junction -Path $harnessSibling -Target (Join-Path $workspace "aura-harness") | Out-Null
+        }
+
+    - name: Install zui dependencies
+      shell: bash
+      run: npm ci
+      working-directory: ../zui

@@ -147,16 +147,23 @@ impl HarnessLink for SwarmHarness {
             agent_body["agent_id"] = serde_json::Value::String(aid.clone());
         }
 
-        let agent_resp: CreateAgentResponse = self
+        let agent_response = self
             .client
             .post(format!("{}/v1/agents", self.base_url))
             .headers(headers.clone())
             .json(&agent_body)
             .send()
-            .await?
-            .error_for_status()?
-            .json()
             .await?;
+        let agent_status = agent_response.status();
+        let agent_body_text = agent_response.text().await?;
+        if !agent_status.is_success() {
+            anyhow::bail!(
+                "swarm create agent failed with {}: {}",
+                agent_status,
+                agent_body_text
+            );
+        }
+        let agent_resp: CreateAgentResponse = serde_json::from_str(&agent_body_text)?;
         let agent_id = &agent_resp.agent_id;
 
         // 2. Wait for agent to reach a runnable state before creating session
@@ -183,16 +190,23 @@ impl HarnessLink for SwarmHarness {
             }
         });
 
-        let session_resp: CreateSessionResponse = self
+        let session_response = self
             .client
             .post(format!("{}/v1/agents/{agent_id}/sessions", self.base_url))
             .headers(headers.clone())
             .json(&session_body)
             .send()
-            .await?
-            .error_for_status()?
-            .json()
             .await?;
+        let session_status = session_response.status();
+        let session_body_text = session_response.text().await?;
+        if !session_status.is_success() {
+            anyhow::bail!(
+                "swarm create session failed with {}: {}",
+                session_status,
+                session_body_text
+            );
+        }
+        let session_resp: CreateSessionResponse = serde_json::from_str(&session_body_text)?;
 
         info!(
             session_id = %session_resp.session_id,

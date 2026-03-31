@@ -7,11 +7,13 @@ on:
       - codex/mobile-android-shell-clean
       - codex/mobile-store-integration
     paths:
+      - .github/actions/**
       - .github/workflows/android-mobile.yml
       - interface/**
       - README.md
   pull_request:
     paths:
+      - .github/actions/**
       - .github/workflows/android-mobile.yml
       - interface/**
       - README.md
@@ -58,6 +60,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare zui sibling workspace
+        uses: ./.github/actions/setup-zui-sibling
+        with:
+          repository-owner: ${{ github.repository_owner }}
+
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
@@ -94,6 +101,27 @@ jobs:
         working-directory: interface/android
         run: ./gradlew assembleDebug
 
+      - name: Summarize Android validation outputs
+        run: |
+          node scripts/mobile-release-summary.mjs \
+            --platform android \
+            --mode validate \
+            --output-dir mobile-release-summary \
+            --roots interface/android/app/build/outputs
+
+      - name: Attach Android validation summary
+        shell: bash
+        run: cat mobile-release-summary/android-validate-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Android validation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-validate-artifacts
+          if-no-files-found: ignore
+          path: |
+            mobile-release-summary/**
+            interface/android/app/build/outputs/apk/debug/*.apk
+
   ship-android:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -111,6 +139,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Prepare zui sibling workspace
+        uses: ./.github/actions/setup-zui-sibling
+        with:
+          repository-owner: ${{ github.repository_owner }}
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -155,3 +188,25 @@ jobs:
       - name: Upload bundle with fastlane
         working-directory: interface/android
         run: bundle exec fastlane android ${{ inputs.lane }}
+
+      - name: Summarize Android release outputs
+        run: |
+          node scripts/mobile-release-summary.mjs \
+            --platform android \
+            --mode ship \
+            --output-dir mobile-release-summary \
+            --roots interface/android/app/build/outputs
+
+      - name: Attach Android release summary
+        shell: bash
+        run: cat mobile-release-summary/android-ship-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Android release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-artifacts
+          if-no-files-found: ignore
+          path: |
+            mobile-release-summary/**
+            interface/android/app/build/outputs/**/*.apk
+            interface/android/app/build/outputs/**/*.aab

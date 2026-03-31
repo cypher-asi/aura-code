@@ -60,7 +60,7 @@ case "$service" in
   aura-os)
     runtime_env="$AURA_STACK_RUNTIME_DIR/aura-os.env"
     workdir="$(stack_service_dir aura-os)"
-    command=(cargo run -p aura-os-server)
+    command=(cargo run -p aura-os-server --bin aura-os-server)
     ;;
   frontend)
     runtime_env="$AURA_STACK_RUNTIME_DIR/aura-os.env"

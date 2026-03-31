@@ -36,23 +36,34 @@ fn main() {
         std::process::exit(1);
     }
 
-    if !interface_dir.join("node_modules").exists() {
+    let use_prebuilt_interface = std::env::var("AURA_DESKTOP_USE_PREBUILT_FRONTEND")
+        .ok()
+        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"));
+
+    if use_prebuilt_interface {
+        assert!(
+            dist_dir.join("index.html").exists(),
+            "AURA_DESKTOP_USE_PREBUILT_FRONTEND=1 was set but interface/dist/index.html is missing"
+        );
+    } else {
+        if !interface_dir.join("node_modules").exists() {
+            let status = npm()
+                .arg("install")
+                .current_dir(&interface_dir)
+                .status()
+                .expect("failed to run npm install — is Node.js installed?");
+
+            assert!(status.success(), "npm install failed");
+        }
+
         let status = npm()
-            .arg("install")
+            .args(["run", "build"])
             .current_dir(&interface_dir)
             .status()
-            .expect("failed to run npm install — is Node.js installed?");
+            .expect("failed to run npm run build — is Node.js installed?");
 
-        assert!(status.success(), "npm install failed");
+        assert!(status.success(), "npm run build failed");
     }
-
-    let status = npm()
-        .args(["run", "build"])
-        .current_dir(&interface_dir)
-        .status()
-        .expect("failed to run npm run build — is Node.js installed?");
-
-    assert!(status.success(), "npm run build failed");
 
     watch_dir(&interface_dir.join("src"));
     println!(
@@ -74,10 +85,14 @@ fn main() {
 
     println!("cargo:rustc-env=INTERFACE_DIST_DIR={}", dist_dir.display());
 
-    // Updater signing public key – set via env var during CI, fall back to a
-    // dev placeholder so local `cargo build` still succeeds.
     let pub_key = std::env::var("UPDATER_PUBLIC_KEY")
         .unwrap_or_else(|_| "NOT_SET__generate_with_cargo_packager_signer_generate".into());
     println!("cargo:rustc-env=UPDATER_PUBLIC_KEY={pub_key}");
     println!("cargo:rerun-if-env-changed=UPDATER_PUBLIC_KEY");
+
+    let update_base_url = std::env::var("AURA_UPDATE_BASE_URL")
+        .unwrap_or_else(|_| "https://n3o.github.io/aura-app".into());
+    println!("cargo:rustc-env=AURA_UPDATE_BASE_URL={update_base_url}");
+    println!("cargo:rerun-if-env-changed=AURA_UPDATE_BASE_URL");
+    println!("cargo:rerun-if-env-changed=AURA_DESKTOP_USE_PREBUILT_FRONTEND");
 }

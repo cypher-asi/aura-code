@@ -112,6 +112,11 @@ write_header "$evals_env"
 write_export "$evals_env" "AURA_EVAL_LIVE" "1"
 write_export "$evals_env" "AURA_EVAL_BASE_URL" "$AURA_STACK_EVAL_BASE_URL"
 write_export "$evals_env" "AURA_EVAL_BUNDLE_ID" "$AURA_STACK_EVAL_BUNDLE_ID"
+if stack_is_local harness; then
+  write_export "$evals_env" "AURA_EVAL_AGENT_MACHINE_TYPE" "local"
+else
+  write_export "$evals_env" "AURA_EVAL_AGENT_MACHINE_TYPE" "remote"
+fi
 
 chmod +x "$network_env" "$storage_env" "$orbit_env" "$aura_os_env" "$evals_env"
 

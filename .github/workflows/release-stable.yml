@@ -14,6 +14,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  AURA_UPDATE_BASE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
 
 jobs:
   build:
@@ -27,7 +28,7 @@ jobs:
           - os: macos-latest
             target: macos
             arch: aarch64
-          - os: macos-13
+          - os: macos-15-intel
             target: macos
             arch: x86_64
           - os: windows-latest
@@ -39,8 +40,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare zui sibling workspace
+        uses: ./.github/actions/setup-zui-sibling
+        with:
+          repository-owner: ${{ github.repository_owner }}
+          include-harness: "true"
+
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action/setup@v1
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -76,6 +83,16 @@ jobs:
       - name: Install cargo-packager
         run: cargo install cargo-packager --locked
 
+      - name: Normalize signing key
+        shell: bash
+        env:
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY }}
+        run: |
+          normalized="$(python scripts/normalize-packager-key.py)"
+          if [ -n "$normalized" ]; then
+            echo "CARGO_PACKAGER_SIGN_PRIVATE_KEY=$normalized" >> "$GITHUB_ENV"
+          fi
+
       - name: Build interface
         working-directory: interface
         run: |
@@ -84,25 +101,53 @@ jobs:
 
       - name: Build release binary
         env:
+          AURA_DESKTOP_USE_PREBUILT_FRONTEND: "1"
+          AURA_UPDATE_BASE_URL: ${{ env.AURA_UPDATE_BASE_URL }}
           UPDATER_PUBLIC_KEY: ${{ secrets.CARGO_PACKAGER_SIGN_PUBLIC_KEY }}
         run: cargo build --release --package aura-os-desktop
 
       - name: Package installer
         env:
-          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY }}
+          AURA_DESKTOP_USE_PREBUILT_FRONTEND: "1"
+          AURA_UPDATE_BASE_URL: ${{ env.AURA_UPDATE_BASE_URL }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ env.CARGO_PACKAGER_SIGN_PRIVATE_KEY }}
           CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD }}
-        run: cargo packager --release --package aura-os-desktop
+        run: cargo packager --release --packages aura-os-desktop
 
       - name: Collect artifacts
         id: artifacts
         shell: bash
         run: |
           mkdir -p dist
+          cp target/release/*.{exe,dmg,AppImage,deb} dist/ 2>/dev/null || true
+          cp target/release/*.app.tar.gz dist/ 2>/dev/null || true
+          cp target/release/*-setup*.exe dist/ 2>/dev/null || true
+          cp target/release/*.sig dist/ 2>/dev/null || true
           cp target/release/bundle/*/*.{exe,dmg,AppImage,deb} dist/ 2>/dev/null || true
+          cp target/release/bundle/*/*.app.tar.gz dist/ 2>/dev/null || true
           cp target/release/bundle/*/*-setup*.exe dist/ 2>/dev/null || true
           cp target/release/bundle/*/*.sig dist/ 2>/dev/null || true
+          if [ "${{ matrix.target }}" = "macos" ]; then
+            for bundle in dist/*.app.tar.gz; do
+              [ -e "$bundle" ] || continue
+              renamed="dist/aura-os-desktop_${{ steps.version.outputs.version }}_${{ matrix.arch }}.app.tar.gz"
+              mv "$bundle" "$renamed"
+              if [ -f "${bundle}.sig" ]; then
+                mv "${bundle}.sig" "${renamed}.sig"
+              fi
+            done
+          fi
           ls -la dist/
           echo "dir=dist" >> "$GITHUB_OUTPUT"
+
+      - name: Generate artifact summary and checksums
+        shell: bash
+        run: |
+          node scripts/desktop-release-summary.mjs dist stable "${{ steps.version.outputs.version }}"
+          mv dist/release-summary.json "dist/release-summary-${{ matrix.target }}-${{ matrix.arch }}.json"
+          mv dist/release-summary.md "dist/release-summary-${{ matrix.target }}-${{ matrix.arch }}.md"
+          mv dist/checksums.txt "dist/checksums-${{ matrix.target }}-${{ matrix.arch }}.txt"
+          cat "dist/release-summary-${{ matrix.target }}-${{ matrix.arch }}.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -143,6 +188,14 @@ jobs:
           prerelease: false
           files: all-artifacts/**/*
 
+      - name: Attach release summary to job
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for file in all-artifacts/release-summary-*.md; do
+            cat "$file" >> "$GITHUB_STEP_SUMMARY"
+          done
+
   publish-manifests:
     needs: [build, release]
     runs-on: ubuntu-latest
@@ -153,6 +206,11 @@ jobs:
         with:
           ref: gh-pages
           fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
       - name: Determine version
         id: version
@@ -182,9 +240,9 @@ jobs:
           generate_manifest() {
             local target=$1 arch=$2 filename=$3 format=$4
             local sig_file="all-artifacts/${filename}.sig"
-            local signature=""
+            local signature='""'
             if [ -f "$sig_file" ]; then
-              signature=$(cat "$sig_file")
+              signature=$(jq -Rs . < "$sig_file")
             fi
 
             mkdir -p "stable/${target}"
@@ -192,16 +250,27 @@ jobs:
           {
             "version": "${VERSION}",
             "url": "${BASE_URL}/${filename}",
-            "signature": "${signature}",
+            "signature": ${signature},
             "format": "${format}"
           }
           MANIFEST
           }
 
-          generate_manifest "windows" "x86_64" "aura-os-desktop_${VERSION}_x64-setup.nsis.exe" "nsis"
-          generate_manifest "macos" "aarch64" "aura-os-desktop_${VERSION}_aarch64.dmg" "dmg"
-          generate_manifest "macos" "x86_64" "aura-os-desktop_${VERSION}_x64.dmg" "dmg"
-          generate_manifest "linux" "x86_64" "aura-os-desktop_${VERSION}_amd64.AppImage" "appimage"
+          generate_manifest "windows" "x86_64" "aura-os-desktop_${VERSION}_x64-setup.exe" "nsis"
+          generate_manifest "macos" "aarch64" "aura-os-desktop_${VERSION}_aarch64.app.tar.gz" "app"
+          generate_manifest "macos" "x86_64" "aura-os-desktop_${VERSION}_x86_64.app.tar.gz" "app"
+          generate_manifest "linux" "x86_64" "aura-os-desktop_${VERSION}_x86_64.AppImage" "appimage"
+
+      - name: Validate stable update manifests
+        run: |
+          node scripts/desktop-manifest-validate.mjs \
+            --root-dir . \
+            --channel stable \
+            --output-dir manifest-validation
+
+      - name: Attach stable manifest summary
+        shell: bash
+        run: cat manifest-validation/desktop-manifests-stable.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit and push manifests
         run: |
