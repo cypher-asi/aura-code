@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { CreditCard } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { CreditCard, Plus } from "lucide-react";
 import { useCreditBalance } from "../CreditsBadge/useCreditBalance";
 import { formatCredits } from "../../utils/format";
 import { useUIModalStore } from "../../stores/ui-modal-store";
@@ -20,9 +21,19 @@ export function BottomTaskbar() {
   const { credits } = useCreditBalance();
   const time = useClock();
   const display = credits !== null ? formatCredits(credits) : "---";
+  const navigate = useNavigate();
 
   return (
     <div className={styles.bar}>
+      <button
+        type="button"
+        className={styles.desktopButton}
+        onClick={() => navigate("/desktop")}
+        title="Desktop"
+        aria-label="Desktop"
+      >
+        <Plus size={14} />
+      </button>
       <div className={styles.spacer} />
       <div className={styles.right}>
         <button

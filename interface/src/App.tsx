@@ -68,6 +68,7 @@ export default function App() {
             <Route path="leaderboard" element={null} />
             <Route path="feed" element={null} />
             <Route path="profile" element={null} />
+            <Route path="desktop" element={null} />
           </Route>
         </Route>
       </Routes>
