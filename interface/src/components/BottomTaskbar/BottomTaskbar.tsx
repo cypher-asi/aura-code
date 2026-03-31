@@ -3,6 +3,7 @@ import { CreditCard } from "lucide-react";
 import { useCreditBalance } from "../CreditsBadge/useCreditBalance";
 import { formatCredits } from "../../utils/format";
 import { useUIModalStore } from "../../stores/ui-modal-store";
+import { ConnectionDot } from "../ConnectionDot/ConnectionDot";
 import styles from "./BottomTaskbar.module.css";
 
 function useClock() {
@@ -32,6 +33,7 @@ export function BottomTaskbar() {
           <span className={styles.creditsLabel}>{display}</span>
           <CreditCard size={14} />
         </button>
+        <span className={styles.wifiIcon}><ConnectionDot /></span>
         <span className={styles.clock}>{time}</span>
       </div>
     </div>

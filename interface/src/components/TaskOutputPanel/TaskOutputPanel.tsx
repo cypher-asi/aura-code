@@ -13,7 +13,6 @@ import { useEventStore } from "../../stores/event-store";
 import { useProjectContext } from "../../stores/project-action-store";
 import { useAutomationStatus } from "../AutomationBar/useAutomationStatus";
 import { EventType } from "../../types/aura-events";
-import { ConnectionDot } from "../ConnectionDot";
 import { TerminalPanelBody } from "../TerminalPanelBody";
 import { ActiveTaskStream } from "./ActiveTaskStream";
 import { CompletedTaskOutput } from "./CompletedTaskOutput";
@@ -252,7 +251,6 @@ export function TaskOutputPanel() {
           <PanelTabs activeTab={activeTab} onTabChange={setActiveTab} isRunning={hasActiveTasks} />
         </div>
         <div className={styles.headerActions}>
-          <span className={styles.wifiIcon}><ConnectionDot /></span>
           {projectId && <AutomationControls projectId={projectId} />}
           {activeTab === "run" && hasCompleted && (
             <button

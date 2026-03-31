@@ -46,6 +46,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+.wifiIcon {
+  display: inline-flex;
+  align-items: center;
+}
+
 .clock {
   font-size: var(--text-2xs);
   color: var(--color-text-secondary);
