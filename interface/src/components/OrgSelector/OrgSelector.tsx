@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useOrgStore } from "../../stores/org-store";
-import { Building2, ChevronDown, Layers, Plus } from "lucide-react";
+import { Building2, ChevronDown, Layers, Plus, Settings } from "lucide-react";
 import { Button, Input, Modal } from "@cypher-asi/zui";
 import { useClickOutside } from "../../hooks/use-click-outside";
 import { useModalInitialFocus } from "../../hooks/use-modal-initial-focus";
@@ -111,6 +111,7 @@ export function OrgSelector({
               openOrgSettings();
             }}
           >
+            <Settings size={12} />
             <span>Team Settings</span>
           </button>
         </div>
