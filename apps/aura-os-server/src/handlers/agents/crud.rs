@@ -155,9 +155,23 @@ pub(crate) async fn list_agents(
     State(state): State<AppState>,
     AuthJwt(jwt): AuthJwt,
 ) -> ApiResult<Json<Vec<Agent>>> {
-    let client = state.require_network_client()?;
-    let net_agents = client.list_agents(&jwt).await.map_err(map_network_error)?;
-    let agents: Vec<Agent> = net_agents.iter().map(agent_from_network).collect();
+    if let Some(ref client) = state.network_client {
+        let net_agents = client.list_agents(&jwt).await.map_err(map_network_error)?;
+        let agents: Vec<Agent> = net_agents
+            .iter()
+            .map(|na| {
+                let agent = agent_from_network(na);
+                let _ = state.agent_service.save_agent_shadow(&agent);
+                agent
+            })
+            .collect();
+        return Ok(Json(agents));
+    }
+
+    let agents = state
+        .agent_service
+        .list_agents()
+        .map_err(|e| ApiError::internal(format!("listing agents: {e}")))?;
     Ok(Json(agents))
 }
 
@@ -166,12 +180,23 @@ pub(crate) async fn get_agent(
     AuthJwt(jwt): AuthJwt,
     Path(agent_id): Path<AgentId>,
 ) -> ApiResult<Json<Agent>> {
-    let client = state.require_network_client()?;
-    let net_agent = client
-        .get_agent(&agent_id.to_string(), &jwt)
-        .await
-        .map_err(map_network_error)?;
-    let agent = agent_from_network(&net_agent);
+    if let Some(ref client) = state.network_client {
+        let net_agent = client
+            .get_agent(&agent_id.to_string(), &jwt)
+            .await
+            .map_err(map_network_error)?;
+        let agent = agent_from_network(&net_agent);
+        let _ = state.agent_service.save_agent_shadow(&agent);
+        return Ok(Json(agent));
+    }
+
+    let agent = state
+        .agent_service
+        .get_agent_local(&agent_id)
+        .map_err(|e| match e {
+            aura_os_agents::AgentError::NotFound => ApiError::not_found("agent not found"),
+            _ => ApiError::internal(format!("fetching agent: {e}")),
+        })?;
     Ok(Json(agent))
 }
 

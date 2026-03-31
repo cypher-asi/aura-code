@@ -45,7 +45,11 @@ fn network_agent_to_core(net: &NetworkAgent) -> Agent {
 }
 
 // ---------------------------------------------------------------------------
-// AgentService – user-level agent templates (aura-network only)
+// AgentService – user-level agent templates
+//
+// Authoritative source is aura-network when available. A local RocksDB
+// shadow (prefix "agent:") is maintained so that reads still work when
+// the network is unreachable (local-first).
 // ---------------------------------------------------------------------------
 
 pub struct AgentService {
@@ -54,6 +58,10 @@ pub struct AgentService {
 }
 
 impl AgentService {
+    fn agent_key(agent_id: &AgentId) -> String {
+        format!("agent:{agent_id}")
+    }
+
     pub fn new(
         store: Arc<RocksStore>,
         network_client: Option<Arc<aura_os_network::NetworkClient>>,
@@ -68,7 +76,51 @@ impl AgentService {
         self.store.get_jwt().ok_or(AgentError::NoSession)
     }
 
-    /// Get agent from aura-network only. Returns error if network is not configured or agent not found.
+    // -- local shadow ----------------------------------------------------------
+
+    /// Persist an agent to the local RocksDB shadow store.
+    pub fn save_agent_shadow(&self, agent: &Agent) -> Result<(), AgentError> {
+        let payload =
+            serde_json::to_vec(agent).map_err(|e| AgentError::Parse(e.to_string()))?;
+        self.store
+            .put_setting(&Self::agent_key(&agent.agent_id), &payload)
+            .map_err(AgentError::Store)
+    }
+
+    fn list_local_agents(&self) -> Result<Vec<Agent>, AgentError> {
+        let entries = self
+            .store
+            .list_settings_with_prefix("agent:")
+            .map_err(AgentError::Store)?;
+        let mut agents = Vec::new();
+        for (_key, value) in entries {
+            if let Ok(agent) = serde_json::from_slice::<Agent>(&value) {
+                agents.push(agent);
+            }
+        }
+        Ok(agents)
+    }
+
+    /// List all agents from the local shadow store.
+    pub fn list_agents(&self) -> Result<Vec<Agent>, AgentError> {
+        self.list_local_agents()
+    }
+
+    /// Get a single agent from the local shadow store.
+    pub fn get_agent_local(&self, agent_id: &AgentId) -> Result<Agent, AgentError> {
+        let bytes = self
+            .store
+            .get_setting(&Self::agent_key(agent_id))
+            .map_err(|e| match e {
+                aura_os_store::StoreError::NotFound(_) => AgentError::NotFound,
+                other => AgentError::Store(other),
+            })?;
+        serde_json::from_slice(&bytes).map_err(|e| AgentError::Parse(e.to_string()))
+    }
+
+    // -- network ---------------------------------------------------------------
+
+    /// Get agent from aura-network. Returns error if network is not configured or agent not found.
     pub async fn get_agent_async(
         &self,
         _user_id: &str,
@@ -86,7 +138,9 @@ impl AgentService {
                 aura_os_network::NetworkError::Server { status: 404, .. } => AgentError::NotFound,
                 _ => AgentError::Network(e),
             })?;
-        Ok(network_agent_to_core(&net))
+        let agent = network_agent_to_core(&net);
+        let _ = self.save_agent_shadow(&agent);
+        Ok(agent)
     }
 }
 

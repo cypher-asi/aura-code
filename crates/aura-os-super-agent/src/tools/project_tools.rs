@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use aura_os_core::ToolDomain;
+use aura_os_core::{OrgId, ProjectId, ToolDomain};
 use aura_os_network::{CreateProjectRequest, UpdateProjectRequest};
 
 use super::{SuperAgentContext, SuperAgentTool, ToolResult};
@@ -124,10 +124,21 @@ impl SuperAgentTool for ListProjectsTool {
     }
 
     async fn execute(&self, _input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
-        let network = require_network(ctx)?;
-        let projects = network
-            .list_projects_by_org(&ctx.org_id, &ctx.jwt)
-            .await
+        if let Some(network) = ctx.network_client.as_deref() {
+            let projects = network
+                .list_projects_by_org(&ctx.org_id, &ctx.jwt)
+                .await
+                .map_err(|e| tool_err("list_projects", e))?;
+            return Ok(ToolResult {
+                content: serde_json::to_value(&projects).unwrap_or_default(),
+                is_error: false,
+            });
+        }
+
+        let org_id: OrgId = ctx.org_id.parse().unwrap_or_default();
+        let projects = ctx
+            .project_service
+            .list_projects_by_org(&org_id)
             .map_err(|e| tool_err("list_projects", e))?;
         Ok(ToolResult {
             content: serde_json::to_value(&projects).unwrap_or_default(),
@@ -159,13 +170,27 @@ impl SuperAgentTool for GetProjectTool {
     }
 
     async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
-        let network = require_network(ctx)?;
-        let project_id = input["project_id"]
+        let project_id_str = input["project_id"]
             .as_str()
             .ok_or_else(|| SuperAgentError::ToolError("project_id is required".into()))?;
-        let project = network
-            .get_project(project_id, &ctx.jwt)
-            .await
+
+        if let Some(network) = ctx.network_client.as_deref() {
+            let project = network
+                .get_project(project_id_str, &ctx.jwt)
+                .await
+                .map_err(|e| tool_err("get_project", e))?;
+            return Ok(ToolResult {
+                content: serde_json::to_value(&project).unwrap_or_default(),
+                is_error: false,
+            });
+        }
+
+        let pid: ProjectId = project_id_str
+            .parse()
+            .map_err(|_| SuperAgentError::ToolError("invalid project_id".into()))?;
+        let project = ctx
+            .project_service
+            .get_project(&pid)
             .map_err(|e| tool_err("get_project", e))?;
         Ok(ToolResult {
             content: serde_json::to_value(&project).unwrap_or_default(),
@@ -324,26 +349,46 @@ impl SuperAgentTool for GetProjectStatsTool {
     }
 
     async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
-        let network = require_network(ctx)?;
-        let project_id = input["project_id"]
+        let project_id_str = input["project_id"]
             .as_str()
             .ok_or_else(|| SuperAgentError::ToolError("project_id is required".into()))?;
 
-        let project = network
-            .get_project(project_id, &ctx.jwt)
-            .await
+        if let Some(network) = ctx.network_client.as_deref() {
+            let project = network
+                .get_project(project_id_str, &ctx.jwt)
+                .await
+                .map_err(|e| tool_err("get_project_stats", e))?;
+
+            let agents = network
+                .list_agents_by_org(&ctx.org_id, &ctx.jwt)
+                .await
+                .unwrap_or_default();
+
+            return Ok(ToolResult {
+                content: json!({
+                    "project_id": project_id_str,
+                    "project_name": project.name,
+                    "agent_count": agents.len(),
+                    "description": project.description,
+                    "git_repo_url": project.git_repo_url,
+                }),
+                is_error: false,
+            });
+        }
+
+        let pid: ProjectId = project_id_str
+            .parse()
+            .map_err(|_| SuperAgentError::ToolError("invalid project_id".into()))?;
+        let project = ctx
+            .project_service
+            .get_project(&pid)
             .map_err(|e| tool_err("get_project_stats", e))?;
 
-        let agents = network
-            .list_agents_by_org(&ctx.org_id, &ctx.jwt)
-            .await
-            .unwrap_or_default();
-
-        let agent_count = agents.len();
+        let agent_count = ctx.agent_service.list_agents().map(|a| a.len()).unwrap_or(0);
 
         Ok(ToolResult {
             content: json!({
-                "project_id": project_id,
+                "project_id": project_id_str,
                 "project_name": project.name,
                 "agent_count": agent_count,
                 "description": project.description,

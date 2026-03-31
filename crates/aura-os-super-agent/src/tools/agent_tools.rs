@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use aura_os_core::ToolDomain;
+use aura_os_core::{AgentId, ToolDomain};
 
 use super::helpers::{
     network_delete, network_get, network_post, network_put, require_network, require_str, tool_err,
@@ -30,10 +30,20 @@ impl SuperAgentTool for ListAgentsTool {
     }
 
     async fn execute(&self, _input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
-        let network = require_network(ctx)?;
-        let agents = network
-            .list_agents_by_org(&ctx.org_id, &ctx.jwt)
-            .await
+        if let Some(network) = ctx.network_client.as_deref() {
+            let agents = network
+                .list_agents_by_org(&ctx.org_id, &ctx.jwt)
+                .await
+                .map_err(|e| tool_err("list_agents", e))?;
+            return Ok(ToolResult {
+                content: serde_json::to_value(&agents).unwrap_or_default(),
+                is_error: false,
+            });
+        }
+
+        let agents = ctx
+            .agent_service
+            .list_agents()
             .map_err(|e| tool_err("list_agents", e))?;
         Ok(ToolResult {
             content: serde_json::to_value(&agents).unwrap_or_default(),
@@ -65,13 +75,27 @@ impl SuperAgentTool for GetAgentTool {
     }
 
     async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
-        let network = require_network(ctx)?;
-        let agent_id = input["agent_id"]
+        let agent_id_str = input["agent_id"]
             .as_str()
             .ok_or_else(|| SuperAgentError::ToolError("agent_id is required".into()))?;
-        let agent = network
-            .get_agent(agent_id, &ctx.jwt)
-            .await
+
+        if let Some(network) = ctx.network_client.as_deref() {
+            let agent = network
+                .get_agent(agent_id_str, &ctx.jwt)
+                .await
+                .map_err(|e| tool_err("get_agent", e))?;
+            return Ok(ToolResult {
+                content: serde_json::to_value(&agent).unwrap_or_default(),
+                is_error: false,
+            });
+        }
+
+        let aid: AgentId = agent_id_str
+            .parse()
+            .map_err(|_| SuperAgentError::ToolError("invalid agent_id".into()))?;
+        let agent = ctx
+            .agent_service
+            .get_agent_local(&aid)
             .map_err(|e| tool_err("get_agent", e))?;
         Ok(ToolResult {
             content: serde_json::to_value(&agent).unwrap_or_default(),
@@ -173,7 +197,12 @@ impl SuperAgentTool for CreateAgentTool {
     }
 
     async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
-        let network = require_network(ctx)?;
+        let Some(network) = ctx.network_client.as_deref() else {
+            return Ok(ToolResult {
+                content: json!({ "error": "Creating agents requires network connectivity. Please connect to aura-network first." }),
+                is_error: true,
+            });
+        };
         let mut body = json!({
             "name": input["name"].as_str().unwrap_or_default(),
             "org_id": &ctx.org_id,
@@ -218,7 +247,12 @@ impl SuperAgentTool for UpdateAgentTool {
     }
 
     async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
-        let network = require_network(ctx)?;
+        let Some(network) = ctx.network_client.as_deref() else {
+            return Ok(ToolResult {
+                content: json!({ "error": "Updating agents requires network connectivity. Please connect to aura-network first." }),
+                is_error: true,
+            });
+        };
         let agent_id = require_str(&input, "agent_id")?;
         let mut body = json!({});
         for field in &["name", "role", "personality", "system_prompt"] {
@@ -256,7 +290,12 @@ impl SuperAgentTool for DeleteAgentTool {
     }
 
     async fn execute(&self, input: serde_json::Value, ctx: &SuperAgentContext) -> Result<ToolResult, SuperAgentError> {
-        let network = require_network(ctx)?;
+        let Some(network) = ctx.network_client.as_deref() else {
+            return Ok(ToolResult {
+                content: json!({ "error": "Deleting agents requires network connectivity. Please connect to aura-network first." }),
+                is_error: true,
+            });
+        };
         let agent_id = require_str(&input, "agent_id")?;
         network_delete(network, &format!("/api/agents/{agent_id}"), &ctx.jwt).await
     }
