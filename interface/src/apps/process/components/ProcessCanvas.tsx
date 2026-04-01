@@ -180,6 +180,7 @@ export function ProcessCanvas({ processId, processNodes, processConnections }: P
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
+        onPaneContextMenu={onPaneContextMenu}
         nodeTypes={nodeTypes}
         fitView
         snapToGrid
@@ -210,48 +211,26 @@ export function ProcessCanvas({ processId, processNodes, processConnections }: P
         />
       </ReactFlow>
 
-      <div style={{ position: "absolute", top: 12, right: 12, zIndex: 10 }}>
-        <div style={{ position: "relative" }}>
-          <Button
-            variant="primary"
-            size="sm"
-            icon={<Plus size={14} />}
-            onClick={() => setShowAddMenu((prev) => !prev)}
-          >
-            Add Node
-          </Button>
-          {showAddMenu && (
-            <div
-              style={{
-                position: "absolute", top: "100%", right: 0, marginTop: 4,
-                background: "var(--color-bg-surface, #1a1a2e)",
-                border: "1px solid var(--color-border, #333)",
-                borderRadius: 8, padding: 4, minWidth: 160,
-                boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
-              }}
-            >
-              {ADD_NODE_TYPES.map((item) => (
-                <button
-                  key={item.type}
-                  type="button"
-                  onClick={() => handleAddNode(item.type, item.label)}
-                  style={{
-                    display: "block", width: "100%", textAlign: "left",
-                    padding: "8px 12px", fontSize: 13,
-                    color: "var(--color-text, #eee)",
-                    background: "transparent", border: "none", borderRadius: 6,
-                    cursor: "pointer",
-                  }}
-                  onMouseEnter={(e) => { (e.target as HTMLElement).style.background = "var(--color-bg-hover, #ffffff10)"; }}
-                  onMouseLeave={(e) => { (e.target as HTMLElement).style.background = "transparent"; }}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      {ctxMenu && createPortal(
+        <div
+          ref={ctxMenuRef}
+          style={{ position: "fixed", left: ctxMenu.x, top: ctxMenu.y, zIndex: 9999 }}
+        >
+          <Menu
+            items={nodeMenuItems}
+            onChange={(id) => {
+              const item = ADD_NODE_TYPES.find((t) => t.type === id);
+              if (item) handleAddNode(item.type as ProcessNodeType, item.label);
+            }}
+            background="solid"
+            border="solid"
+            rounded="md"
+            width={180}
+            isOpen
+          />
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
