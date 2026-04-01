@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { ArrowLeft, Save, Trash2 } from "lucide-react";
+import { X, Save, Trash2 } from "lucide-react";
 import { Button, Text } from "@cypher-asi/zui";
 import type { ProcessNode } from "../../../types";
 import type { ProcessNodeType } from "../../../types/enums";
@@ -8,6 +8,7 @@ import { processApi } from "../../../api/process";
 import { useProcessStore } from "../stores/process-store";
 import { useAgentStore } from "../../agents/stores";
 import { Avatar } from "../../../components/Avatar";
+import styles from "../../../components/Preview/Preview.module.css";
 
 const NODE_TYPE_LABELS: Record<ProcessNodeType, string> = {
   ignition: "Ignition",
@@ -112,76 +113,63 @@ export function NodeInspector({ node, onClose }: NodeInspectorProps) {
   const agent = agentId ? agents.find((a) => a.agent_id === agentId) ?? null : null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div
-        style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "8px 12px", borderBottom: "1px solid var(--color-border)",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Button variant="ghost" size="sm" iconOnly icon={<ArrowLeft size={14} />} onClick={onClose} />
-          <Text size="sm" style={{ fontWeight: 600 }}>{NODE_TYPE_LABELS[node.node_type]} Node</Text>
-        </div>
-        <div style={{ display: "flex", gap: 4 }}>
-          {node.node_type !== "ignition" && (
-            <Button variant="ghost" size="sm" iconOnly icon={<Trash2 size={14} />} title="Delete node" onClick={handleDelete} />
-          )}
-          <Button variant="primary" size="sm" icon={<Save size={14} />} onClick={handleSave} disabled={saving}>
-            {saving ? "Saving..." : "Save"}
-          </Button>
-        </div>
+    <>
+      <div className={styles.previewHeader}>
+        <Text size="sm" className={`${styles.previewTitle} ${styles.previewTitleBold}`}>
+          {NODE_TYPE_LABELS[node.node_type]} Node
+        </Text>
+        {node.node_type !== "ignition" && (
+          <Button variant="ghost" size="sm" iconOnly icon={<Trash2 size={14} />} title="Delete node" onClick={handleDelete} />
+        )}
+        <Button variant="ghost" size="sm" icon={<Save size={14} />} onClick={handleSave} disabled={saving}>
+          {saving ? "Saving..." : "Save"}
+        </Button>
+        <Button variant="ghost" size="sm" iconOnly icon={<X size={14} />} aria-label="Close" onClick={onClose} />
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", padding: 12 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Field label="Label">
-            <input
-              style={inputStyle}
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="Node label"
-            />
-          </Field>
+      <div className={styles.previewBody}>
+        <div className={styles.taskMeta}>
+          <div className={styles.taskField}>
+            <span className={styles.fieldLabel}>Label</span>
+            <input style={inputStyle} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Node label" />
+          </div>
 
           {node.node_type === "ignition" && (
-            <Field label="Schedule (cron expression)">
+            <div className={styles.taskField}>
+              <span className={styles.fieldLabel}>Schedule (cron expression)</span>
               <input
                 style={inputStyle}
                 value={schedule}
                 onChange={(e) => setSchedule(e.target.value)}
                 placeholder="e.g. 0 9 * * * (daily at 9 AM)"
               />
-              <span style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 4 }}>
+              <Text variant="secondary" size="xs" style={{ marginTop: 2 }}>
                 Leave empty for manual-only triggering
-              </span>
-            </Field>
+              </Text>
+            </div>
           )}
 
           {(node.node_type === "action" || node.node_type === "ignition") && (
-            <Field label="Agent">
-              <select
-                style={{ ...inputStyle, cursor: "pointer" }}
-                value={agentId}
-                onChange={(e) => setAgentId(e.target.value)}
-              >
+            <div className={styles.taskField}>
+              <span className={styles.fieldLabel}>Agent</span>
+              <select style={{ ...inputStyle, cursor: "pointer" }} value={agentId} onChange={(e) => setAgentId(e.target.value)}>
                 <option value="">No agent assigned</option>
                 {agents.map((a) => (
                   <option key={a.agent_id} value={a.agent_id}>{a.name}</option>
                 ))}
               </select>
               {agent && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                <div className={styles.agentInline} style={{ marginTop: 6 }}>
                   <Avatar avatarUrl={agent.icon ?? undefined} name={agent.name} type="agent" size={20} />
-                  <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{agent.name}</span>
+                  <Text variant="secondary" size="sm">{agent.name}</Text>
                 </div>
               )}
-            </Field>
+            </div>
           )}
 
           {node.node_type !== "merge" && node.node_type !== "delay" && (
-            <Field label="Prompt">
+            <div className={styles.taskField}>
+              <span className={styles.fieldLabel}>Prompt</span>
               <textarea
                 style={{ ...inputStyle, minHeight: 120, resize: "vertical" }}
                 value={prompt}
@@ -194,77 +182,62 @@ export function NodeInspector({ node, onClose }: NodeInspectorProps) {
                     : "Instructions for the agent to execute"
                 }
               />
-            </Field>
+            </div>
           )}
 
           {node.node_type === "condition" && (
-            <Field label="Condition Expression">
+            <div className={styles.taskField}>
+              <span className={styles.fieldLabel}>Condition Expression</span>
               <input
                 style={inputStyle}
                 value={conditionExpr}
                 onChange={(e) => setConditionExpr(e.target.value)}
                 placeholder='e.g. output contains "success"'
               />
-            </Field>
+            </div>
           )}
 
           {node.node_type === "artifact" && (
             <>
-              <Field label="Artifact Name">
-                <input
-                  style={inputStyle}
-                  value={artifactName}
-                  onChange={(e) => setArtifactName(e.target.value)}
-                  placeholder="e.g. Daily Report"
-                />
-              </Field>
-              <Field label="Artifact Type">
-                <select
-                  style={{ ...inputStyle, cursor: "pointer" }}
-                  value={artifactType}
-                  onChange={(e) => setArtifactType(e.target.value)}
-                >
+              <div className={styles.taskField}>
+                <span className={styles.fieldLabel}>Artifact Name</span>
+                <input style={inputStyle} value={artifactName} onChange={(e) => setArtifactName(e.target.value)} placeholder="e.g. Daily Report" />
+              </div>
+              <div className={styles.taskField}>
+                <span className={styles.fieldLabel}>Artifact Type</span>
+                <select style={{ ...inputStyle, cursor: "pointer" }} value={artifactType} onChange={(e) => setArtifactType(e.target.value)}>
                   <option value="report">Report</option>
                   <option value="data">Data</option>
                   <option value="media">Media</option>
                   <option value="code">Code</option>
                   <option value="custom">Custom</option>
                 </select>
-              </Field>
+              </div>
             </>
           )}
 
           {node.node_type === "delay" && (
-            <Field label="Delay (seconds)">
-              <input
-                style={inputStyle}
-                type="number"
-                min={1}
-                value={delaySeconds}
-                onChange={(e) => setDelaySeconds(e.target.value)}
-              />
-            </Field>
+            <div className={styles.taskField}>
+              <span className={styles.fieldLabel}>Delay (seconds)</span>
+              <input style={inputStyle} type="number" min={1} value={delaySeconds} onChange={(e) => setDelaySeconds(e.target.value)} />
+            </div>
           )}
 
-          <div style={{ fontSize: 11, color: "var(--color-text-muted)", borderTop: "1px solid var(--color-border)", paddingTop: 12, marginTop: 4 }}>
-            <div>Node ID: <span style={{ fontFamily: "monospace" }}>{node.node_id}</span></div>
-            <div style={{ marginTop: 4 }}>Created: {new Date(node.created_at).toLocaleString()}</div>
-            <div style={{ marginTop: 2 }}>Updated: {new Date(node.updated_at).toLocaleString()}</div>
+          <div className={styles.taskField} style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, marginTop: 4 }}>
+            <span className={styles.fieldLabel}>Node ID</span>
+            <Text variant="secondary" size="sm" style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{node.node_id}</Text>
+          </div>
+          <div className={styles.taskField}>
+            <span className={styles.fieldLabel}>Created</span>
+            <Text variant="secondary" size="sm">{new Date(node.created_at).toLocaleString()}</Text>
+          </div>
+          <div className={styles.taskField}>
+            <span className={styles.fieldLabel}>Updated</span>
+            <Text variant="secondary" size="sm">{new Date(node.updated_at).toLocaleString()}</Text>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <label style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-        {label}
-      </label>
-      {children}
-    </div>
+    </>
   );
 }
 
@@ -278,4 +251,5 @@ const inputStyle: React.CSSProperties = {
   fontFamily: "inherit",
   width: "100%",
   outline: "none",
+  boxSizing: "border-box",
 };
