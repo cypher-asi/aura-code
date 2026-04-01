@@ -76,7 +76,9 @@ export function ProcessMainPanel({ children }: { children?: ReactNode }) {
         <div
           style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "10px 16px",
+            padding: "0 16px",
+            height: "var(--control-height-sm, 32px)",
+            minHeight: "var(--control-height-sm, 32px)",
             borderBottom: "1px solid var(--color-border, #333)",
             flexShrink: 0,
           }}
