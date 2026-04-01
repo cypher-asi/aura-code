@@ -115,7 +115,7 @@ export function CronMainPanel({ children }: { children?: ReactNode }) {
           </div>
           <div className={styles.section}>
             <div className={styles.sectionTitle}>Recent Runs</div>
-            {jobRuns.length === 0 && <EmptyState>No runs yet</EmptyState>}
+            {jobRuns.length === 0 && <div className={styles.emptyRuns}>No runs yet</div>}
             {jobRuns.map((run) => (
               <button
                 key={run.run_id}

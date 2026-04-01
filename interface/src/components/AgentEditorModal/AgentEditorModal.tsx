@@ -14,7 +14,7 @@ interface AgentEditorModalProps {
 
 export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEditorModalProps) {
   const {
-    name, setName, role, setRole, personality, setPersonality,
+    name, setName, role, setRole, isSuperAgent, personality, setPersonality,
     systemPrompt, setSystemPrompt, icon, setIcon, machineType, setMachineType,
     saving, error, nameError, setNameError,
     nameRef, initialFocusRef, fileInputRef,
@@ -87,10 +87,14 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
           <div className={styles.fieldGroup}>
             <label className={styles.label}>Role</label>
             <Input
-              value={role}
+              value={isSuperAgent ? "SuperAgent" : role}
               onChange={(e) => setRole(e.target.value)}
               placeholder="e.g. Senior Developer"
+              disabled={isSuperAgent}
             />
+            {isSuperAgent && (
+              <Text variant="muted" size="sm">SuperAgent role cannot be changed</Text>
+            )}
           </div>
 
           <div className={styles.fieldGroup}>

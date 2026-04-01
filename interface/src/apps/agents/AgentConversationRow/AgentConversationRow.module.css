@@ -77,7 +77,8 @@
   color: var(--color-text-primary);
 }
 
-.ceoBadge {
+.ceoBadge,
+.roleBadge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -90,6 +91,7 @@
   background: rgba(255, 255, 255, 0.12);
   color: var(--color-text-secondary);
   flex-shrink: 0;
+  text-transform: uppercase;
 }
 
 .pinIcon {

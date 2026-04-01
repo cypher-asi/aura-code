@@ -34,21 +34,16 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     return cachedProject;
   }, [project, projectId, cachedProject]);
 
-  const [prevProjectId, setPrevProjectId] = useState(projectId);
-  if (projectId !== prevProjectId) {
-    setPrevProjectId(projectId);
-    setInitialSpecs([]);
-    setInitialTasks([]);
-  }
-
-  const [prevCached, setPrevCached] = useState(cachedProject);
-  if (cachedProject !== prevCached) {
-    setPrevCached(cachedProject);
-    if (cachedProject && !project) setProjectRaw(cachedProject);
-  }
+  useEffect(() => {
+    if (cachedProject && !project) {
+      setProjectRaw(cachedProject);
+    }
+  }, [cachedProject, project]);
 
   useEffect(() => {
     if (!projectId) return;
+    setInitialSpecs([]);
+    setInitialTasks([]);
     let cancelled = false;
     Promise.all([
       api.getProject(projectId),
