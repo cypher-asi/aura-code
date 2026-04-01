@@ -1,6 +1,7 @@
 use axum::extract::{Path, Query, State};
 use axum::Json;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use tracing::debug;
 
 use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, SpecId, Task, TaskId, TaskStatus};
@@ -12,6 +13,34 @@ use super::projects_helpers::project_tool_session_config;
 use crate::dto::TransitionTaskRequest;
 use crate::error::{ApiError, ApiResult};
 use crate::state::{AppState, AuthJwt};
+
+const TASK_RESULT_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const TASK_RESULT_POLL_TIMEOUT: Duration = Duration::from_secs(5);
+
+async fn load_extracted_tasks(
+    state: &AppState,
+    project_id: &ProjectId,
+    jwt: &str,
+) -> ApiResult<Vec<Task>> {
+    let storage = state.require_storage_client()?;
+    let started_at = tokio::time::Instant::now();
+    let mut tasks: Vec<Task> = loop {
+        let storage_tasks = storage
+            .list_tasks(&project_id.to_string(), jwt)
+            .await
+            .map_err(|e| ApiError::internal(format!("listing tasks: {e}")))?;
+        let tasks: Vec<Task> = storage_tasks
+            .into_iter()
+            .filter_map(|s| storage_task_to_task(s).ok())
+            .collect();
+        if !tasks.is_empty() || started_at.elapsed() >= TASK_RESULT_POLL_TIMEOUT {
+            break tasks;
+        }
+        tokio::time::sleep(TASK_RESULT_POLL_INTERVAL).await;
+    };
+    tasks.sort_by_key(|t| t.order_index);
+    Ok(tasks)
+}
 
 #[derive(Debug, Deserialize, Default)]
 pub(crate) struct TaskQueryParams {
@@ -96,7 +125,9 @@ pub(crate) async fn extract_tasks(
     session
         .commands_tx
         .send(HarnessInbound::UserMessage(UserMessage {
-            content: format!("Extract tasks for project {project_id}"),
+            content: format!(
+                "Extract tasks for project {project_id}. Review the existing specs, then create or update the project's tasks using the available task tools until the task list is populated."
+            ),
             tool_hints: None,
         }))
         .map_err(|e| ApiError::internal(format!("sending task extract command: {e}")))?;
@@ -105,19 +136,14 @@ pub(crate) async fn extract_tasks(
     while let Ok(event) = rx.recv().await {
         match event {
             HarnessOutbound::AssistantMessageEnd(_) => {
-                let storage = state.require_storage_client()?;
-                let storage_tasks = storage
-                    .list_tasks(&project_id.to_string(), &jwt)
-                    .await
-                    .map_err(|e| ApiError::internal(format!("listing tasks: {e}")))?;
-                let mut tasks: Vec<Task> = storage_tasks
-                    .into_iter()
-                    .filter_map(|s| storage_task_to_task(s).ok())
-                    .collect();
-                tasks.sort_by_key(|t| t.order_index);
+                let tasks = load_extracted_tasks(&state, &project_id, &jwt).await?;
                 return Ok(Json(tasks));
             }
             HarnessOutbound::Error(err) => {
+                let tasks = load_extracted_tasks(&state, &project_id, &jwt).await?;
+                if !tasks.is_empty() {
+                    return Ok(Json(tasks));
+                }
                 return Err(ApiError::internal(err.message));
             }
             _ => continue,

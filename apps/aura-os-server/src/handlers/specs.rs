@@ -5,6 +5,7 @@ use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
 use serde::Deserialize;
+use std::time::Duration;
 use tokio_stream::StreamExt;
 use tracing::info;
 
@@ -14,6 +15,34 @@ use aura_os_link::{HarnessInbound, HarnessOutbound, UserMessage};
 use super::projects_helpers::project_tool_session_config;
 use crate::error::{ApiError, ApiResult};
 use crate::state::{AppState, AuthJwt};
+
+const SPEC_RESULT_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const SPEC_RESULT_POLL_TIMEOUT: Duration = Duration::from_secs(5);
+
+async fn load_generated_specs(
+    state: &AppState,
+    project_id: &ProjectId,
+    jwt: &str,
+) -> ApiResult<Vec<Spec>> {
+    let storage = state.require_storage_client()?;
+    let started_at = tokio::time::Instant::now();
+    let mut specs: Vec<Spec> = loop {
+        let storage_specs = storage
+            .list_specs(&project_id.to_string(), jwt)
+            .await
+            .map_err(|e| ApiError::internal(format!("listing specs: {e}")))?;
+        let specs: Vec<Spec> = storage_specs
+            .into_iter()
+            .filter_map(|s| Spec::try_from(s).ok())
+            .collect();
+        if !specs.is_empty() || started_at.elapsed() >= SPEC_RESULT_POLL_TIMEOUT {
+            break specs;
+        }
+        tokio::time::sleep(SPEC_RESULT_POLL_INTERVAL).await;
+    };
+    specs.sort_by_key(|s| s.order_index);
+    Ok(specs)
+}
 
 #[derive(Debug, Deserialize, Default)]
 pub(crate) struct SpecQueryParams {
@@ -156,7 +185,9 @@ async fn open_spec_gen_session(
     session
         .commands_tx
         .send(HarnessInbound::UserMessage(UserMessage {
-            content: format!("Generate specs for project {project_id}"),
+            content: format!(
+                "Generate specs for project {project_id}. Inspect the project first, then create one or more concrete specs using the available project spec tools. Do not stop until the specs have been created."
+            ),
             tool_hints: None,
         }))
         .map_err(|e| ApiError::internal(format!("sending spec gen command: {e}")))?;
@@ -179,20 +210,22 @@ pub(crate) async fn generate_specs(
     while let Ok(event) = rx.recv().await {
         match event {
             HarnessOutbound::AssistantMessageEnd(_) => {
-                let storage = state.require_storage_client()?;
-                let storage_specs = storage
-                    .list_specs(&project_id.to_string(), &jwt)
-                    .await
-                    .map_err(|e| ApiError::internal(format!("listing specs: {e}")))?;
-                let mut specs: Vec<Spec> = storage_specs
-                    .into_iter()
-                    .filter_map(|s| Spec::try_from(s).ok())
-                    .collect();
+                let mut specs = load_generated_specs(&state, &project_id, &jwt).await?;
                 specs.sort_by_key(|s| s.order_index);
                 info!(%project_id, count = specs.len(), "Spec generation completed");
                 return Ok(Json(specs));
             }
             HarnessOutbound::Error(err) => {
+                let specs = load_generated_specs(&state, &project_id, &jwt).await?;
+                if !specs.is_empty() {
+                    info!(
+                        %project_id,
+                        count = specs.len(),
+                        error = %err.message,
+                        "Spec generation returned stored specs despite harness error"
+                    );
+                    return Ok(Json(specs));
+                }
                 return Err(ApiError::internal(err.message));
             }
             _ => continue,
