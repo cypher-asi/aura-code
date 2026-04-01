@@ -20,9 +20,11 @@ import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import { HostSettingsModal } from "../HostSettingsModal";
 import { MobileAgentLibraryView } from "../../apps/agents/MobileAgentLibraryView";
 import { MobileAgentDetailsView } from "../../apps/agents/MobileAgentDetailsView";
+import { getLastAgent } from "../../utils/storage";
 import {
   getMobileProjectDestination,
   getProjectIdFromPathname,
+  projectAgentChatRoute,
   projectAgentRoute,
   projectStatsRoute,
   projectRootPath,
@@ -34,6 +36,14 @@ import styles from "../AppShell/AppShell.module.css";
 function blurActiveElement() {
   const active = document.activeElement;
   if (active instanceof HTMLElement) active.blur();
+}
+
+function resolveProjectAgentPath(projectId: string) {
+  const lastAgentInstanceId = getLastAgent(projectId);
+  if (lastAgentInstanceId) {
+    return projectAgentChatRoute(projectId, lastAgentInstanceId);
+  }
+  return projectAgentRoute(projectId);
 }
 
 function ProjectNavigationDrawerContent() {
@@ -80,7 +90,7 @@ function ProjectNavigationDrawerContent() {
         return;
       }
 
-      navigate(projectAgentRoute(projectId));
+      navigate(resolveProjectAgentPath(projectId));
     });
   }, [currentProjectId, mobileDestination, navigate, openAfterDrawerClose, sidekick]);
 
@@ -221,7 +231,7 @@ function resolveGlobalProjectPath(state: ReturnType<typeof useMobileShellState>)
   }
 
   if (state.mobileTargetProjectId) {
-    return projectAgentRoute(state.mobileTargetProjectId);
+    return resolveProjectAgentPath(state.mobileTargetProjectId);
   }
 
   return "/projects";
@@ -384,7 +394,12 @@ function MobileTopbar({ state }: { state: ReturnType<typeof useMobileShellState>
       title={
         <span className={styles.mobileTopbarTitle}>
           {state.showProjectTitle ? (
-            <button type="button" className={styles.mobileProjectTitleButton} onClick={() => setNavOpen(true)} aria-label={state.currentProject ? `Open project navigation for ${state.currentProject.name}` : "Open project navigation"}>
+            <button
+              type="button"
+              className={styles.mobileProjectTitleButton}
+              onClick={() => setNavOpen(true)}
+              aria-label={state.currentProject ? `Open project navigation for ${state.currentProject.name}` : "Open project navigation"}
+            >
               <span className={styles.mobileTopbarTitleText}>{state.currentProject?.name ?? "Project"}</span>
               <ChevronDown size={14} />
             </button>
@@ -437,7 +452,7 @@ export function MobileShell() {
 
   const handleMobilePrimaryNavigate = useCallback((id: MobileNavId) => {
     if (!state.mobileTargetProjectId) { navigate("/projects"); return; }
-    if (id === "agent") { navigate(projectAgentRoute(state.mobileTargetProjectId)); return; }
+    if (id === "agent") { navigate(resolveProjectAgentPath(state.mobileTargetProjectId)); return; }
     if (id === "tasks") { navigate(projectWorkRoute(state.mobileTargetProjectId)); return; }
     navigate(projectStatsRoute(state.mobileTargetProjectId));
   }, [state.mobileTargetProjectId, navigate]);
