@@ -197,16 +197,16 @@ test("mobile project navigation opens shared agent, work, and stats routes", asy
 
   await tapPrimaryNav(page, "Execution");
   await expect(page).toHaveURL(/\/projects\/proj-1\/work$/);
-  await expect(page.getByText("Execution", { exact: true })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole("main").getByText("Execution", { exact: true })).toBeVisible({ timeout: 10000 });
   await expect(page.getByText("Specs")).toBeVisible({ timeout: 10000 });
   await expect(page.getByRole("main").getByRole("button", { name: "Tasks" })).toBeVisible();
 
   await tapPrimaryNav(page, "Stats");
   await expect(page).toHaveURL(/\/projects\/proj-1\/stats$/);
-  await expect(page.getByText("Stats", { exact: true })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole("main").getByText("Stats", { exact: true })).toBeVisible({ timeout: 10000 });
 });
 
-test("mobile project agent tab surfaces the active project agent and switches instances", async ({ page }) => {
+test("mobile project agent tab reflects the routed agent instance", async ({ page }) => {
   await mockAuthenticatedMobileApp(page, {
     agentInstances: [
       {
@@ -250,11 +250,12 @@ test("mobile project agent tab surfaces the active project agent and switches in
 
   await page.goto("/projects/proj-1/agents/agent-inst-1");
 
-  const projectAgentSelect = page.getByLabel("Project agent");
-  await expect(projectAgentSelect).toHaveValue("agent-inst-1");
-  await projectAgentSelect.selectOption("agent-inst-2");
+  await expect(page.getByText("Start chatting with Builder Bot.")).toBeVisible();
+  await expect(page.getByPlaceholder("Add a follow-up")).toBeVisible();
+
+  await page.goto("/projects/proj-1/agents/agent-inst-2");
   await expect(page).toHaveURL(/\/projects\/proj-1\/agents\/agent-inst-2$/);
-  await expect(projectAgentSelect).toHaveValue("agent-inst-2");
+  await expect(page.getByText("Start chatting with Research Bot.")).toBeVisible();
 });
 
 test("mobile global app switcher opens feed, leaderboard, and profile", async ({ page }) => {
@@ -321,7 +322,7 @@ test("mobile global surfaces use the app switcher to return to project mode", as
   await expect(page.getByPlaceholder("Add a follow-up")).toBeVisible({ timeout: 10000 });
 });
 
-test("mobile files view shows imported workspace snapshots", async ({ page }) => {
+test("mobile files view explains remote workspace handoff", async ({ page }) => {
   await mockAuthenticatedApp(page, {
     project: {
       project_id: "proj-1",
@@ -339,19 +340,14 @@ test("mobile files view shows imported workspace snapshots", async ({ page }) =>
     specs,
   });
 
-  const directoryLoaded = page.waitForResponse((response) =>
-    response.url().includes("/api/list-directory") && response.request().method() === "POST",
-  );
   await page.goto("/projects/proj-1/files");
 
-  await expect(page.getByPlaceholder("Search files...")).toBeVisible();
-  expect((await directoryLoaded).ok()).toBeTruthy();
-  await expect(page.getByText("No linked workspace")).toHaveCount(0);
-  await expect(page.getByText("Workspace snapshot")).toBeVisible();
-  await expect(page.getByRole("button", { name: /README\.md/i })).toBeVisible({ timeout: 10000 });
-  await expect(page.getByRole("button", { name: /auth\.ts/i })).toBeVisible({ timeout: 10000 });
-  await page.getByRole("button", { name: /README\.md/i }).click();
-  await expect(page.getByText("Preview the imported snapshot here on mobile.")).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText("Files stay on the remote agent")).toBeVisible();
+  await expect(page.getByText("Remote workspace", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open Agent" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open Execution" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open Stats" })).toBeVisible();
+  await expect(page.getByPlaceholder("Search files...")).toHaveCount(0);
 });
 
 test("mobile drawer scales across current, recent, and other projects", async ({ page }) => {
@@ -453,8 +449,10 @@ test("mobile new project modal opens from the project drawer", async ({ page, br
   await page.locator('button[title="New Project"]:visible').click();
 
   await expect(page.getByPlaceholder("Project name")).toBeVisible();
-  await expect(page.getByText("Project path")).toBeVisible();
-  await expect(page.getByText("Environment")).toBeVisible();
+  await expect(page.getByText("Orbit repo")).toBeVisible();
+  await expect(page.getByText(/Sign in to create an Orbit repo\.|orbit\//i)).toBeVisible();
+  await expect(page.getByText("Project path")).toHaveCount(0);
+  await expect(page.getByText("Environment")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Create Project" })).toBeDisabled();
 });
 
@@ -478,7 +476,7 @@ test("mobile work view opens shared preview details for specs and tasks", async 
   await mockAuthenticatedMobileApp(page);
   await page.goto("/projects/proj-1/work");
 
-  await expect(page.getByText("Execution", { exact: true })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole("main").getByText("Execution", { exact: true })).toBeVisible({ timeout: 10000 });
   const specButton = page.getByRole("button", { name: "Open spec Mobile parity spec", exact: true });
   await expect(specButton).toBeVisible({ timeout: 10000 });
   await specButton.click();

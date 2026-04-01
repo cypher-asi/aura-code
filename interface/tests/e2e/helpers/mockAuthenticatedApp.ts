@@ -341,6 +341,11 @@ export async function mockAuthenticatedApp(page: Page, options: MockAuthenticate
     );
     if (matchingAgentInstanceMessages) return json([]);
 
+    const matchingAgentInstanceEvents = agentInstances.find(
+      (instance) => projects.some((candidate) => pathname === `/api/projects/${candidate.project_id}/agents/${instance.agent_instance_id}/events`),
+    );
+    if (matchingAgentInstanceEvents) return json([]);
+
     const matchingAgentInstanceSessions = agentInstances.find(
       (instance) => projects.some((candidate) => pathname === `/api/projects/${candidate.project_id}/agents/${instance.agent_instance_id}/sessions`),
     );
