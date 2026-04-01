@@ -113,11 +113,8 @@ pub(crate) async fn create_agent(
                     warn!(
                         agent_id = %agent_id_str,
                         vm_id = %provisioned.vm_id,
-                        "Remote agent is still provisioning after create"
+                        "Remote agent is still provisioning after create; returning created agent to avoid duplicate retries"
                     );
-                    return Err(ApiError::service_unavailable(
-                        "remote agent was created but is still provisioning; try again in a moment",
-                    ));
                 }
                 Err(SwarmAgentReadyError::ErrorState) => {
                     return Err(ApiError::bad_gateway(format!(

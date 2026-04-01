@@ -957,10 +957,14 @@ pub(crate) async fn start_loop(
             );
             (inst.machine_type, Some(inst.agent_id.to_string()))
         })
-        .unwrap_or_else(|e| {
-            warn!(%project_id, %agent_instance_id, error = %e, "Failed to resolve agent instance; defaulting to local");
-            ("local".to_string(), None)
-        });
+        .map_err(|e| match e {
+            aura_os_agents::AgentError::NotFound => {
+                ApiError::not_found(format!("agent instance {agent_instance_id} not found"))
+            }
+            other => ApiError::internal(format!(
+                "looking up agent instance {agent_instance_id}: {other}"
+            )),
+        })?;
     let harness_mode = HarnessMode::from_machine_type(&machine_type);
     let automaton_client = automaton_client_for_mode(
         &state,
@@ -1438,7 +1442,14 @@ pub(crate) async fn run_single_task(
         .get_instance(&project_id, &agent_instance_id)
         .await
         .map(|inst| (inst.machine_type, Some(inst.agent_id.to_string())))
-        .unwrap_or_else(|_| ("local".to_string(), None));
+        .map_err(|e| match e {
+            aura_os_agents::AgentError::NotFound => {
+                ApiError::not_found(format!("agent instance {agent_instance_id} not found"))
+            }
+            other => ApiError::internal(format!(
+                "looking up agent instance {agent_instance_id}: {other}"
+            )),
+        })?;
     let harness_mode = HarnessMode::from_machine_type(&machine_type);
     let automaton_client = automaton_client_for_mode(
         &state,

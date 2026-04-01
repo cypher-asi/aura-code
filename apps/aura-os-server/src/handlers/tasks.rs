@@ -117,12 +117,17 @@ pub(crate) async fn extract_tasks(
 ) -> ApiResult<Json<Vec<Task>>> {
     let baseline_tasks = load_extracted_tasks(&state, &project_id, &jwt).await?;
     let harness_mode = if let Some(aiid) = params.agent_instance_id {
-        state
+        let instance = state
             .agent_instance_service
             .get_instance(&project_id, &aiid)
             .await
-            .map(|inst| inst.harness_mode())
-            .unwrap_or(HarnessMode::Local)
+            .map_err(|e| match e {
+                aura_os_agents::AgentError::NotFound => {
+                    ApiError::not_found(format!("agent instance {aiid} not found"))
+                }
+                other => ApiError::internal(format!("looking up agent instance {aiid}: {other}")),
+            })?;
+        instance.harness_mode()
     } else {
         HarnessMode::Local
     };

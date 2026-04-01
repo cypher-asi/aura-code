@@ -71,16 +71,21 @@ async fn resolve_harness_mode(
     state: &AppState,
     project_id: &ProjectId,
     params: &SpecQueryParams,
-) -> HarnessMode {
+) -> ApiResult<HarnessMode> {
     if let Some(aiid) = params.agent_instance_id {
-        state
+        let instance = state
             .agent_instance_service
             .get_instance(project_id, &aiid)
             .await
-            .map(|inst| inst.harness_mode())
-            .unwrap_or(HarnessMode::Local)
+            .map_err(|e| match e {
+                aura_os_agents::AgentError::NotFound => {
+                    ApiError::not_found(format!("agent instance {aiid} not found"))
+                }
+                other => ApiError::internal(format!("looking up agent instance {aiid}: {other}")),
+            })?;
+        Ok(instance.harness_mode())
     } else {
-        HarnessMode::Local
+        Ok(HarnessMode::Local)
     }
 }
 
@@ -110,7 +115,7 @@ pub(crate) async fn generate_specs_summary(
 ) -> ApiResult<Json<aura_os_core::Project>> {
     info!(%project_id, "Specs summary regeneration requested");
 
-    let mode = resolve_harness_mode(&state, &project_id, &params).await;
+    let mode = resolve_harness_mode(&state, &project_id, &params).await?;
     let harness = state.harness_for(mode);
     let session_config = project_tool_session_config(
         &state,
@@ -220,7 +225,7 @@ pub(crate) async fn generate_specs(
     Query(params): Query<SpecQueryParams>,
 ) -> ApiResult<Json<Vec<Spec>>> {
     info!(%project_id, "Spec generation requested");
-    let mode = resolve_harness_mode(&state, &project_id, &params).await;
+    let mode = resolve_harness_mode(&state, &project_id, &params).await?;
     let baseline_specs = load_generated_specs(&state, &project_id, &jwt).await?;
     let session =
         open_spec_gen_session(&state, &project_id, mode, params.agent_instance_id, &jwt).await?;
@@ -266,7 +271,7 @@ pub(crate) async fn generate_specs_stream(
     Sse<impl futures_core::Stream<Item = Result<Event, Infallible>>>,
 )> {
     info!(%project_id, "Streaming spec generation requested");
-    let mode = resolve_harness_mode(&state, &project_id, &params).await;
+    let mode = resolve_harness_mode(&state, &project_id, &params).await?;
     let session =
         open_spec_gen_session(&state, &project_id, mode, params.agent_instance_id, &jwt).await?;
 

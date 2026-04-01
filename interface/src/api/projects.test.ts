@@ -156,6 +156,16 @@ describe("projectsApi", () => {
     );
   });
 
+  it("generateSpecs appends agent_instance_id when provided", async () => {
+    const fetchMock = mockFetch(200, []);
+    globalThis.fetch = fetchMock;
+    await projectsApi.generateSpecs("p1" as string, "ai 1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/projects/p1/specs/generate?agent_instance_id=ai%201",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("throws ApiClientError on failure", async () => {
     globalThis.fetch = mockFetch(404, { error: "Not found", code: "not_found", details: null });
     await expect(projectsApi.getProject("nope" as string)).rejects.toThrow(ApiClientError);

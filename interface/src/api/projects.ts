@@ -110,10 +110,12 @@ export const projectsApi = {
     apiFetch<Spec[]>(`/api/projects/${projectId}/specs`),
   getSpec: (projectId: ProjectId, specId: SpecId) =>
     apiFetch<Spec>(`/api/projects/${projectId}/specs/${specId}`),
-  generateSpecs: (projectId: ProjectId) =>
-    apiFetch<Spec[]>(`/api/projects/${projectId}/specs/generate`, {
+  generateSpecs: (projectId: ProjectId, agentInstanceId?: string | null) => {
+    const params = agentInstanceId ? `?agent_instance_id=${encodeURIComponent(agentInstanceId)}` : "";
+    return apiFetch<Spec[]>(`/api/projects/${projectId}/specs/generate${params}`, {
       method: "POST",
-    }),
+    });
+  },
   generateSpecsStream,
   getProjectStats: (projectId: ProjectId) =>
     apiFetch<ProjectStatsData>(`/api/projects/${projectId}/stats`),
