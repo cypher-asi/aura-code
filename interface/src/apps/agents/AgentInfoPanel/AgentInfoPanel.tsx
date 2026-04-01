@@ -1,18 +1,21 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Text, Badge, Button, Modal } from "@cypher-asi/zui";
-import { Bot, Loader2, Calendar, Monitor, Cloud, FolderOpen, MessageSquare, X } from "lucide-react";
+import { Text, Badge, Button, Modal, Explorer } from "@cypher-asi/zui";
+import type { ExplorerNode } from "@cypher-asi/zui";
+import { Bot, Loader2, Calendar, Monitor, Cloud, FolderOpen, X } from "lucide-react";
 import { EmptyState } from "../../../components/EmptyState";
 import { FollowEditButton } from "../../../components/FollowEditButton";
 import { SuperAgentDashboardPanel } from "../../../components/SuperAgentDashboardPanel";
 import { AgentEditorModal } from "../../../components/AgentEditorModal";
+import { StatusBadge } from "../../../components/StatusBadge";
+import { TaskStatusIcon } from "../../../components/TaskStatusIcon";
 import { api, ApiClientError } from "../../../api/client";
 import { useSelectedAgent, useAgentStore } from "../stores";
 import { useAgentSidekick } from "../stores/agent-sidekick-store";
 import { useAuth } from "../../../stores/auth-store";
 import { useProjectsListStore } from "../../../stores/projects-list-store";
-import { useChatHistoryStore, agentHistoryKey } from "../../../stores/chat-history-store";
-import { formatChatTime } from "../../../utils/format";
+import { formatTokens } from "../../../utils/format";
+import type { Session, Task } from "../../../types";
 import styles from "./AgentInfoPanel.module.css";
 
 interface AgentInfoPanelProps {
@@ -45,17 +48,6 @@ export function AgentInfoPanel({ variant = "default" }: AgentInfoPanelProps) {
       api.agents.listProjectBindings(selectedAgent.agent_id)
         .then(setProjectBindings)
         .catch(() => setProjectBindings([]));
-    }
-  }, [selectedAgent?.agent_id]);
-
-  // Prefetch direct chat history for the chats tab
-  useEffect(() => {
-    if (selectedAgent) {
-      const key = agentHistoryKey(selectedAgent.agent_id);
-      useChatHistoryStore.getState().prefetchHistory(
-        key,
-        () => api.agents.listEvents(selectedAgent.agent_id),
-      );
     }
   }, [selectedAgent?.agent_id]);
 
@@ -119,7 +111,6 @@ export function AgentInfoPanel({ variant = "default" }: AgentInfoPanelProps) {
           <ChatsTab
             agent={a}
             projectBindings={projectBindings}
-            navigate={navigate}
           />
         )}
 
@@ -298,69 +289,171 @@ function ProfileTab({
   );
 }
 
-/* ─── Chats Tab ─── */
+/* ─── Chats Tab (sessions as collapsible items) ─── */
+
+type AnnotatedSession = Session & { _projectName: string; _projectId: string; _agentInstanceId: string };
+
+function formatDuration(startedAt: string, endedAt: string | null): string {
+  const start = new Date(startedAt).getTime();
+  const end = endedAt ? new Date(endedAt).getTime() : Date.now();
+  const diffSec = Math.floor((end - start) / 1000);
+  if (diffSec < 60) return `${diffSec}s`;
+  const min = Math.floor(diffSec / 60);
+  const sec = diffSec % 60;
+  if (min < 60) return `${min}m ${sec}s`;
+  const hr = Math.floor(min / 60);
+  return `${hr}h ${min % 60}m`;
+}
+
+function useAgentSessions(
+  agentId: string,
+  projectBindings: { project_agent_id: string; project_id: string; project_name: string }[],
+) {
+  const [sessions, setSessions] = useState<AnnotatedSession[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (projectBindings.length === 0) {
+      setSessions([]);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    Promise.all(
+      projectBindings.map((b) =>
+        api.listSessions(b.project_id, b.project_agent_id)
+          .then((list) =>
+            list.map((s) => ({
+              ...s,
+              _projectName: b.project_name,
+              _projectId: b.project_id,
+              _agentInstanceId: b.project_agent_id,
+            })),
+          )
+          .catch(() => [] as AnnotatedSession[]),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      const all = results
+        .flat()
+        .sort((a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime());
+      setSessions(all);
+      setLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [agentId, projectBindings]);
+
+  return { sessions, loading };
+}
 
 function ChatsTab({
   agent,
   projectBindings,
-  navigate,
 }: {
   agent: import("../../../types").Agent;
   projectBindings: { project_agent_id: string; project_id: string; project_name: string }[];
-  navigate: ReturnType<typeof useNavigate>;
 }) {
-  const directKey = agentHistoryKey(agent.agent_id);
-  const directEntry = useChatHistoryStore((s) => s.entries[directKey]);
-  const directLastMsg = directEntry?.events?.length
-    ? directEntry.events[directEntry.events.length - 1]
-    : undefined;
+  const { sessions, loading } = useAgentSessions(agent.agent_id, projectBindings);
+  const taskCacheRef = useRef<Map<string, Task[]>>(new Map());
+  const [expandedTasks, setExpandedTasks] = useState<Record<string, Task[]>>({});
+  const [loadingTasks, setLoadingTasks] = useState<Set<string>>(new Set());
+
+  const sessionById = useMemo(
+    () => new Map(sessions.map((s) => [s.session_id, s])),
+    [sessions],
+  );
+
+  const explorerData: ExplorerNode[] = useMemo(
+    () =>
+      sessions.map((session, index) => {
+        const totalTokens = session.total_input_tokens + session.total_output_tokens;
+        const tasks = expandedTasks[session.session_id];
+        const isLoading = loadingTasks.has(session.session_id);
+
+        const children: ExplorerNode[] = tasks
+          ? tasks.map((t) => ({
+              id: t.task_id,
+              label: t.title,
+              icon: <TaskStatusIcon status={t.status} />,
+              metadata: { type: "task" },
+            }))
+          : [{ id: `${session.session_id}__placeholder`, label: isLoading ? "Loading..." : "Expand to see tasks", metadata: { type: "placeholder" } }];
+
+        return {
+          id: session.session_id,
+          label: `s.${sessions.length - index}`,
+          icon: <StatusBadge status={session.status} />,
+          suffix: (
+            <span className={styles.sessionMeta}>
+              <span className={styles.sessionProject}>{session._projectName}</span>
+              <span className={styles.sessionDuration}>
+                {formatDuration(session.started_at, session.ended_at)}
+              </span>
+              {totalTokens > 0 && (
+                <span className={styles.sessionCost}>
+                  {formatTokens(totalTokens)}
+                </span>
+              )}
+            </span>
+          ),
+          children,
+          metadata: { type: "session" },
+        };
+      }),
+    [sessions, expandedTasks, loadingTasks],
+  );
+
+  const handleExpand = useCallback(
+    (nodeId: string, expanded: boolean) => {
+      if (!expanded) return;
+      if (taskCacheRef.current.has(nodeId) || loadingTasks.has(nodeId)) return;
+
+      const session = sessionById.get(nodeId);
+      if (!session) return;
+
+      setLoadingTasks((prev) => new Set(prev).add(nodeId));
+
+      api
+        .listSessionTasks(session._projectId, session._agentInstanceId, session.session_id)
+        .then((tasks) => {
+          taskCacheRef.current.set(nodeId, tasks);
+          setExpandedTasks((prev) => ({ ...prev, [nodeId]: tasks }));
+        })
+        .catch(() => {
+          taskCacheRef.current.set(nodeId, []);
+          setExpandedTasks((prev) => ({ ...prev, [nodeId]: [] }));
+        })
+        .finally(() => {
+          setLoadingTasks((prev) => {
+            const next = new Set(prev);
+            next.delete(nodeId);
+            return next;
+          });
+        });
+    },
+    [sessionById, loadingTasks],
+  );
+
+  if (loading) {
+    return <div className={styles.tabEmptyState}>Loading sessions...</div>;
+  }
+
+  if (sessions.length === 0) {
+    return <EmptyState>No sessions yet</EmptyState>;
+  }
 
   return (
-    <>
-      <button
-        type="button"
-        className={styles.chatRow}
-        onClick={() => navigate(`/agents/${agent.agent_id}`)}
-      >
-        <span className={styles.chatIcon}>
-          <MessageSquare size={16} />
-        </span>
-        <span className={styles.chatBody}>
-          <span className={styles.chatTitle}>Direct Chat</span>
-          <span className={styles.chatPreview}>
-            {directLastMsg
-              ? `${directLastMsg.role === "user" ? "You: " : ""}${directLastMsg.content}`.slice(0, 80)
-              : "Start a conversation"}
-          </span>
-        </span>
-        {directEntry?.lastMessageAt && (
-          <span className={styles.chatTime}>
-            {formatChatTime(directEntry.lastMessageAt)}
-          </span>
-        )}
-      </button>
-
-      {projectBindings.map((b) => (
-        <button
-          key={b.project_agent_id}
-          type="button"
-          className={styles.chatRow}
-          onClick={() => navigate(`/projects/${b.project_id}/agents/${b.project_agent_id}`)}
-        >
-          <span className={styles.chatIcon}>
-            <FolderOpen size={16} />
-          </span>
-          <span className={styles.chatBody}>
-            <span className={styles.chatTitle}>{b.project_name}</span>
-            <span className={styles.chatPreview}>Project conversation</span>
-          </span>
-        </button>
-      ))}
-
-      {projectBindings.length === 0 && !directLastMsg && (
-        <div className={styles.tabEmptyState}>No conversations yet</div>
-      )}
-    </>
+    <div className={styles.sessionListWrap}>
+      <Explorer
+        data={explorerData}
+        enableMultiSelect={false}
+        onExpand={handleExpand}
+      />
+    </div>
   );
 }
 
