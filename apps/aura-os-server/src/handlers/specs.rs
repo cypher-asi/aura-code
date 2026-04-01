@@ -65,8 +65,15 @@ pub(crate) async fn generate_specs_summary(
 
     let mode = resolve_harness_mode(&state, &project_id, &params).await;
     let harness = state.harness_for(mode);
-    let session_config =
-        project_tool_session_config(&state, &project_id, "spec-summary", mode, &jwt);
+    let session_config = project_tool_session_config(
+        &state,
+        &project_id,
+        "spec-summary",
+        mode,
+        params.agent_instance_id,
+        &jwt,
+    )
+    .await;
     let session = harness
         .open_session(session_config)
         .await
@@ -126,12 +133,21 @@ async fn open_spec_gen_session(
     state: &AppState,
     project_id: &ProjectId,
     harness_mode: HarnessMode,
+    agent_instance_id: Option<AgentInstanceId>,
     jwt: &str,
 ) -> ApiResult<aura_os_link::HarnessSession> {
     super::billing::require_credits(state, jwt).await?;
 
     let harness = state.harness_for(harness_mode);
-    let session_config = project_tool_session_config(state, project_id, "spec-gen", harness_mode, jwt);
+    let session_config = project_tool_session_config(
+        state,
+        project_id,
+        "spec-gen",
+        harness_mode,
+        agent_instance_id,
+        jwt,
+    )
+    .await;
     let session = harness
         .open_session(session_config)
         .await
@@ -156,7 +172,8 @@ pub(crate) async fn generate_specs(
 ) -> ApiResult<Json<Vec<Spec>>> {
     info!(%project_id, "Spec generation requested");
     let mode = resolve_harness_mode(&state, &project_id, &params).await;
-    let session = open_spec_gen_session(&state, &project_id, mode, &jwt).await?;
+    let session =
+        open_spec_gen_session(&state, &project_id, mode, params.agent_instance_id, &jwt).await?;
     let mut rx = session.events_tx.subscribe();
 
     while let Ok(event) = rx.recv().await {
@@ -198,7 +215,8 @@ pub(crate) async fn generate_specs_stream(
 )> {
     info!(%project_id, "Streaming spec generation requested");
     let mode = resolve_harness_mode(&state, &project_id, &params).await;
-    let session = open_spec_gen_session(&state, &project_id, mode, &jwt).await?;
+    let session =
+        open_spec_gen_session(&state, &project_id, mode, params.agent_instance_id, &jwt).await?;
 
     let stream = tokio_stream::wrappers::BroadcastStream::new(session.events_tx.subscribe())
         .filter_map(|r| r.ok())

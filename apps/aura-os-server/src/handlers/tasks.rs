@@ -79,8 +79,15 @@ pub(crate) async fn extract_tasks(
         HarnessMode::Local
     };
     let harness = state.harness_for(harness_mode);
-    let session_config =
-        project_tool_session_config(&state, &project_id, "task-extract", harness_mode, &jwt);
+    let session_config = project_tool_session_config(
+        &state,
+        &project_id,
+        "task-extract",
+        harness_mode,
+        params.agent_instance_id,
+        &jwt,
+    )
+    .await;
     let session = harness
         .open_session(session_config)
         .await
@@ -235,7 +242,10 @@ async fn fetch_task_output_from_storage(
     cached_session_id: Option<&str>,
 ) -> Option<TaskOutputResponse> {
     let task = storage.get_task(&task_id.to_string(), jwt).await.ok()?;
-    let session_id = match task.session_id.or_else(|| cached_session_id.map(String::from)) {
+    let session_id = match task
+        .session_id
+        .or_else(|| cached_session_id.map(String::from))
+    {
         Some(sid) => sid,
         None => {
             debug!(%task_id, "Task has no session_id in storage; cannot fetch persisted output");
