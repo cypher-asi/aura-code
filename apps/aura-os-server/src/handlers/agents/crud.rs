@@ -100,38 +100,61 @@ pub(crate) async fn create_agent(
         );
 
         if !matches!(provisioned.status.as_str(), "running" | "idle") {
-            match wait_for_swarm_agent_ready(
-                client.http_client(),
-                swarm_base_url,
-                &jwt,
-                &provisioned.agent_id,
-            )
-            .await
-            {
-                Ok(()) => {}
-                Err(SwarmAgentReadyError::Timeout) => {
-                    warn!(
-                        agent_id = %agent_id_str,
-                        vm_id = %provisioned.vm_id,
-                        "Remote agent is still provisioning after create; returning created agent to avoid duplicate retries"
-                    );
+            let bg_http = client.http_client().clone();
+            let bg_swarm_url = swarm_base_url.to_owned();
+            let bg_jwt = jwt.clone();
+            let bg_prov_agent_id = provisioned.agent_id.clone();
+            let bg_vm_id = provisioned.vm_id.clone();
+            let bg_agent_id_str = agent_id_str.clone();
+
+            tokio::spawn(async move {
+                match wait_for_swarm_agent_ready(
+                    &bg_http,
+                    &bg_swarm_url,
+                    &bg_jwt,
+                    &bg_prov_agent_id,
+                )
+                .await
+                {
+                    Ok(()) => {
+                        info!(
+                            agent_id = %bg_agent_id_str,
+                            vm_id = %bg_vm_id,
+                            "Remote agent reached ready state in background"
+                        );
+                    }
+                    Err(SwarmAgentReadyError::Timeout) => {
+                        warn!(
+                            agent_id = %bg_agent_id_str,
+                            vm_id = %bg_vm_id,
+                            "Remote agent still provisioning after background readiness timeout"
+                        );
+                    }
+                    Err(SwarmAgentReadyError::ErrorState) => {
+                        warn!(
+                            agent_id = %bg_agent_id_str,
+                            vm_id = %bg_vm_id,
+                            "Remote agent entered error state during background readiness check"
+                        );
+                    }
+                    Err(SwarmAgentReadyError::Transport(msg)) => {
+                        warn!(
+                            agent_id = %bg_agent_id_str,
+                            vm_id = %bg_vm_id,
+                            error = %msg,
+                            "Background readiness check transport error"
+                        );
+                    }
+                    Err(SwarmAgentReadyError::Parse(msg)) => {
+                        warn!(
+                            agent_id = %bg_agent_id_str,
+                            vm_id = %bg_vm_id,
+                            error = %msg,
+                            "Background readiness check parse error"
+                        );
+                    }
                 }
-                Err(SwarmAgentReadyError::ErrorState) => {
-                    return Err(ApiError::bad_gateway(format!(
-                        "remote agent {agent_id_str} was created but entered an error state"
-                    )));
-                }
-                Err(SwarmAgentReadyError::Transport(message)) => {
-                    return Err(ApiError::bad_gateway(format!(
-                        "remote agent {agent_id_str} was created but readiness checks failed: {message}"
-                    )));
-                }
-                Err(SwarmAgentReadyError::Parse(message)) => {
-                    return Err(ApiError::internal(format!(
-                        "remote agent {agent_id_str} was created but readiness response could not be parsed: {message}"
-                    )));
-                }
-            }
+            });
         }
     }
 

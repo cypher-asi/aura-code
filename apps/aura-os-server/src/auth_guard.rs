@@ -154,9 +154,20 @@ pub(crate) async fn require_verified_session(
 mod tests {
     use super::*;
     use aura_os_core::ZeroAuthSession;
+    use std::sync::OnceLock;
     use chrono::Utc;
     use std::sync::Arc;
     use std::time::Instant;
+
+    fn test_runtime() -> &'static tokio::runtime::Runtime {
+        static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+        RT.get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("failed to build test runtime")
+        })
+    }
 
     fn make_session(is_zero_pro: bool, validated_at: chrono::DateTime<Utc>) -> ZeroAuthSession {
         ZeroAuthSession {
@@ -317,6 +328,7 @@ mod tests {
         use std::sync::atomic::{AtomicU64, Ordering};
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let _rt_guard = test_runtime().enter();
         let store = Arc::new(
             aura_os_store::RocksStore::open(&std::env::temp_dir().join(format!(
                 "aura-test-guard-{}-{id}",
@@ -325,6 +337,27 @@ mod tests {
             .unwrap(),
         );
         let (event_broadcast, _) = tokio::sync::broadcast::channel(16);
+        let super_agent_service = Arc::new(aura_os_super_agent::SuperAgentService::new(
+            "http://localhost:9998".to_string(),
+            Arc::new(aura_os_projects::ProjectService::new(store.clone())),
+            Arc::new(aura_os_agents::AgentService::new(store.clone(), None)),
+            Arc::new(aura_os_agents::AgentInstanceService::new(
+                store.clone(),
+                None,
+                Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+                None,
+            )),
+            Arc::new(aura_os_tasks::TaskService::new(store.clone(), None)),
+            Arc::new(aura_os_sessions::SessionService::new(store.clone(), 0.8, 200_000)),
+            Arc::new(aura_os_orgs::OrgService::new(store.clone())),
+            Arc::new(aura_os_billing::BillingClient::new()),
+            Arc::new(aura_os_link::AutomatonClient::new("http://localhost:9999")),
+            None,
+            None,
+            store.clone(),
+            event_broadcast.clone(),
+        ));
+
         AppState {
             data_dir: std::env::temp_dir(),
             store: store.clone(),
@@ -357,6 +390,8 @@ mod tests {
             task_output_cache: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             orbit_client: None,
             validation_cache: cache,
+            super_agent_service,
+            super_agent_messages: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
