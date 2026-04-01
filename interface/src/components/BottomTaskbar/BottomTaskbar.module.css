@@ -1,5 +1,6 @@
 .bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   width: 100%;
   height: var(--control-height-sm);
@@ -7,6 +8,22 @@
   background: var(--color-bg);
   flex-shrink: 0;
   padding: 0 var(--space-2);
+  column-gap: var(--space-2);
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  justify-self: start;
+  min-width: 0;
+}
+
+.center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  max-width: min(60vw, 520px);
 }
 
 .desktopBtn {
@@ -29,7 +46,6 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-left: var(--space-2);
   overflow: hidden;
   flex-shrink: 1;
   min-width: 0;
@@ -61,15 +77,12 @@
   z-index: 9999;
 }
 
-.spacer {
-  flex: 1;
-  min-width: 0;
-}
-
 .right {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  justify-self: end;
+  min-width: 0;
   flex-shrink: 0;
 }
 

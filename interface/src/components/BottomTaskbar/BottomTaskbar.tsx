@@ -83,41 +83,44 @@ export function BottomTaskbar() {
 
   return (
     <div className={styles.bar}>
-      <Button
-        variant="ghost"
-        size="sm"
-        iconOnly
-        selected={activeApp.id === "desktop"}
-        icon={<Circle size={18} />}
-        title="Desktop"
-        aria-label="Desktop"
-        className={styles.desktopBtn}
-        onClick={() => navigate("/desktop")}
-      />
+      <div className={styles.left}>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          selected={activeApp.id === "desktop"}
+          icon={<Circle size={18} />}
+          title="Desktop"
+          aria-label="Desktop"
+          className={styles.desktopBtn}
+          onClick={() => navigate("/desktop")}
+        />
+      </div>
 
-      {favoriteAgents.length > 0 && (
-        <div className={styles.favorites}>
-          {favoriteAgents.map((agent) => (
-            <button
-              key={agent.agent_id}
-              type="button"
-              className={styles.favoriteBtn}
-              title={agent.name}
-              onClick={() => navigate(`/agents/${agent.agent_id}`)}
-              onContextMenu={(e) => handleFavContextMenu(e, agent.agent_id)}
-            >
-              <Avatar
-                avatarUrl={agent.icon ?? undefined}
-                name={agent.name}
-                type="agent"
-                size={20}
-              />
-            </button>
-          ))}
-        </div>
-      )}
+      <div className={styles.center}>
+        {favoriteAgents.length > 0 && (
+          <div className={styles.favorites}>
+            {favoriteAgents.map((agent) => (
+              <button
+                key={agent.agent_id}
+                type="button"
+                className={styles.favoriteBtn}
+                title={agent.name}
+                onClick={() => navigate(`/agents/${agent.agent_id}`)}
+                onContextMenu={(e) => handleFavContextMenu(e, agent.agent_id)}
+              >
+                <Avatar
+                  avatarUrl={agent.icon ?? undefined}
+                  name={agent.name}
+                  type="agent"
+                  size={20}
+                />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
-      <div className={styles.spacer} />
       <div className={styles.right}>
         <button
           type="button"
