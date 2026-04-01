@@ -1,13 +1,10 @@
-import { Loader2 } from "lucide-react";
-import { Outlet } from "react-router-dom";
-import { useNavigate } from "react-router-dom";
+import { Loader2, FolderGit2, SearchX } from "lucide-react";
+import { Outlet, useNavigate } from "react-router-dom";
 import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { EmptyState } from "../../components/EmptyState";
-import { Button } from "@cypher-asi/zui";
-import { ArrowLeft } from "lucide-react";
+import { PageEmptyState, Button } from "@cypher-asi/zui";
 import { useDelayedLoading } from "../../hooks/use-delayed-loading";
 import { useProjectLayoutData } from "./useProjectLayoutData";
-import styles from "./ProjectLayout.module.css";
 
 export function ProjectLayout() {
   const navigate = useNavigate();
@@ -24,25 +21,25 @@ export function ProjectLayout() {
   if (!displayProject) {
     if (projects.length === 0) {
       return (
-        <EmptyState>
-          <div className={styles.centeredColumn}>
-            <strong>No project selected</strong>
-            <span>Create a project to get started.</span>
-          </div>
-        </EmptyState>
+        <PageEmptyState
+          icon={<FolderGit2 size={32} />}
+          title="No project selected"
+          description="Create a project to get started."
+        />
       );
     }
 
     return (
-      <EmptyState>
-        <div className={styles.centeredColumn}>
-          <strong>Project not found</strong>
-          <span>Choose a project from navigation to continue.</span>
-          <Button variant="secondary" icon={<ArrowLeft size={16} />} onClick={() => navigate("/projects")}>
+      <PageEmptyState
+        icon={<SearchX size={32} />}
+        title="Project not found"
+        description="Choose a project from navigation to continue."
+        actions={
+          <Button variant="secondary" onClick={() => navigate("/projects")}>
             Back to Projects
           </Button>
-        </div>
-      </EmptyState>
+        }
+      />
     );
   }
 

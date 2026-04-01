@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { CreditCard, Grid2x2, StarOff } from "lucide-react";
+import { Circle, CreditCard, StarOff } from "lucide-react";
 import { Button, Menu } from "@cypher-asi/zui";
 import type { MenuItem } from "@cypher-asi/zui";
 import { useCreditBalance } from "../CreditsBadge/useCreditBalance";
@@ -88,7 +88,7 @@ export function BottomTaskbar() {
         size="sm"
         iconOnly
         selected={activeApp.id === "desktop"}
-        icon={<Grid2x2 size={18} />}
+        icon={<Circle size={18} />}
         title="Desktop"
         aria-label="Desktop"
         className={styles.desktopBtn}

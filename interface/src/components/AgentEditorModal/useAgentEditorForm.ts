@@ -9,6 +9,7 @@ interface AgentEditorFormResult {
   setName: (v: string) => void;
   role: string;
   setRole: (v: string) => void;
+  isSuperAgent: boolean;
   personality: string;
   setPersonality: (v: string) => void;
   systemPrompt: string;
@@ -57,7 +58,8 @@ export function useAgentEditorForm(
   useEffect(() => {
     if (!isOpen) return;
     if (agent) {
-      setName(agent.name); setRole(agent.role);
+      const isSuperRole = agent.role === "super_agent" || agent.tags?.includes("super_agent");
+      setName(agent.name); setRole(isSuperRole ? "" : agent.role);
       setPersonality(agent.personality); setSystemPrompt(agent.system_prompt);
       setIcon(agent.icon ?? "");
       setMachineType(agent.machine_type ?? "local");
@@ -98,8 +100,9 @@ export function useAgentEditorForm(
     if (!name.trim()) { setNameError("Name is required"); return; }
     setNameError(""); setSaving(true); setError("");
     try {
+      const isSuperAgent = agent?.role === "super_agent" || agent?.tags?.includes("super_agent");
       const payload = {
-        name: name.trim(), role: role.trim(),
+        name: name.trim(), role: isSuperAgent ? "super_agent" : role.trim(),
         personality: personality.trim(), system_prompt: systemPrompt.trim(),
         icon: icon || (agent?.icon ? null : undefined),
         machine_type: !agent && isMobileLayout ? "remote" : machineType,
@@ -113,8 +116,10 @@ export function useAgentEditorForm(
     } finally { setSaving(false); }
   }, [name, role, personality, systemPrompt, icon, machineType, agent, isMobileLayout, onSaved, onClose]);
 
+  const isSuperAgent = agent?.role === "super_agent" || agent?.tags?.includes("super_agent") || false;
+
   return {
-    name, setName, role, setRole, personality, setPersonality,
+    name, setName, role, setRole, isSuperAgent, personality, setPersonality,
     systemPrompt, setSystemPrompt, icon, setIcon, machineType, setMachineType,
     saving, error, nameError, setNameError,
     nameRef, initialFocusRef, fileInputRef,

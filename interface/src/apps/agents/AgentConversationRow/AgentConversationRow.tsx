@@ -72,6 +72,9 @@ export function AgentConversationRow({
             {agent.tags?.includes("super_agent") && (
               <span className={styles.ceoBadge}>CEO</span>
             )}
+            {!agent.tags?.includes("super_agent") && agentRole && (
+              <span className={styles.roleBadge}>{agentRole}</span>
+            )}
             {isPinned && !agent.tags?.includes("super_agent") && (
               <Pin size={11} className={styles.pinIcon} />
             )}

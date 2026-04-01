@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useMemo } from "react";
+import { useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { ButtonPlus, Explorer, Menu, PageEmptyState } from "@cypher-asi/zui";
@@ -51,6 +51,8 @@ function useTasksProjectListEffects(data: ReturnType<typeof useProjectListData>)
     openNewProjectModal, sidekick, agentInstanceId,
   } = data;
 
+  const recoveredAgentRef = useRef<string | null>(null);
+
   useEffect(() => {
     setAction("tasks", <ButtonPlus onClick={openNewProjectModal} size="sm" title="New Project" />);
     return () => setAction("tasks", null);
@@ -64,8 +66,14 @@ function useTasksProjectListEffects(data: ReturnType<typeof useProjectListData>)
     }
     if (agentInstanceId) {
       const cached = agentsByProject[projectId] ?? [];
-      if (!cached.some((s) => s.agent_instance_id === agentInstanceId))
-        void refreshProjectAgents(projectId);
+      if (!cached.some((s) => s.agent_instance_id === agentInstanceId)) {
+        if (recoveredAgentRef.current !== agentInstanceId) {
+          recoveredAgentRef.current = agentInstanceId;
+          void refreshProjectAgents(projectId);
+        }
+      } else {
+        recoveredAgentRef.current = null;
+      }
     }
   }, [agentInstanceId, agentsByProject, projectId, refreshProjectAgents]);
 
