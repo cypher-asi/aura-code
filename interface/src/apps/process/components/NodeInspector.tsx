@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { X, Save, Trash2 } from "lucide-react";
+import { X, Pencil, Save, Trash2 } from "lucide-react";
 import { Button, Text } from "@cypher-asi/zui";
 import type { ProcessNode } from "../../../types";
 import type { ProcessNodeType } from "../../../types/enums";
@@ -30,25 +30,27 @@ export function NodeInspector({ node, onClose }: NodeInspectorProps) {
   const agents = useAgentStore((s) => s.agents);
   const fetchAgents = useAgentStore((s) => s.fetchAgents);
 
+  const [editing, setEditing] = useState(false);
+
   const [label, setLabel] = useState(node.label);
   const [prompt, setPrompt] = useState(node.prompt);
   const [agentId, setAgentId] = useState(node.agent_id ?? "");
+  const cfg = node.config as Record<string, unknown>;
   const [schedule, setSchedule] = useState(
-    node.node_type === "ignition" ? (node.config as Record<string, unknown>)?.schedule as string ?? "" : "",
+    node.node_type === "ignition" ? cfg?.schedule as string ?? "" : "",
   );
   const [conditionExpr, setConditionExpr] = useState(
-    node.node_type === "condition" ? (node.config as Record<string, unknown>)?.condition_expression as string ?? "" : "",
+    node.node_type === "condition" ? cfg?.condition_expression as string ?? "" : "",
   );
   const [artifactType, setArtifactType] = useState(
-    node.node_type === "artifact" ? (node.config as Record<string, unknown>)?.artifact_type as string ?? "report" : "report",
+    node.node_type === "artifact" ? cfg?.artifact_type as string ?? "report" : "report",
   );
   const [artifactName, setArtifactName] = useState(
-    node.node_type === "artifact" ? (node.config as Record<string, unknown>)?.artifact_name as string ?? "" : "",
+    node.node_type === "artifact" ? cfg?.artifact_name as string ?? "" : "",
   );
   const [delaySeconds, setDelaySeconds] = useState(
-    node.node_type === "delay" ? String((node.config as Record<string, unknown>)?.delay_seconds ?? "60") : "60",
+    node.node_type === "delay" ? String(cfg?.delay_seconds ?? "60") : "60",
   );
-
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { fetchAgents(); }, [fetchAgents]);
@@ -57,47 +59,35 @@ export function NodeInspector({ node, onClose }: NodeInspectorProps) {
     setLabel(node.label);
     setPrompt(node.prompt);
     setAgentId(node.agent_id ?? "");
+    setEditing(false);
   }, [node]);
+
+  const agent = agentId ? agents.find((a) => a.agent_id === agentId) ?? null : null;
 
   const handleSave = useCallback(async () => {
     if (!processId) return;
     setSaving(true);
     try {
       const config: Record<string, unknown> = { ...node.config as Record<string, unknown> };
-
-      if (node.node_type === "ignition" && schedule) {
-        config.schedule = schedule;
-      }
-      if (node.node_type === "condition") {
-        config.condition_expression = conditionExpr;
-      }
-      if (node.node_type === "artifact") {
-        config.artifact_type = artifactType;
-        config.artifact_name = artifactName;
-      }
-      if (node.node_type === "delay") {
-        config.delay_seconds = Number(delaySeconds) || 60;
-      }
+      if (node.node_type === "ignition" && schedule) config.schedule = schedule;
+      if (node.node_type === "condition") config.condition_expression = conditionExpr;
+      if (node.node_type === "artifact") { config.artifact_type = artifactType; config.artifact_name = artifactName; }
+      if (node.node_type === "delay") config.delay_seconds = Number(delaySeconds) || 60;
 
       await processApi.updateNode(processId, node.node_id, {
-        label,
-        prompt,
-        agent_id: agentId || undefined,
-        config,
+        label, prompt, agent_id: agentId || undefined, config,
       });
-
       if (node.node_type === "ignition" && schedule) {
         await processApi.updateProcess(processId, { schedule });
       }
-
       fetchNodes(processId);
-      onClose();
+      setEditing(false);
     } catch (e) {
       console.error("Failed to save node:", e);
     } finally {
       setSaving(false);
     }
-  }, [processId, node, label, prompt, agentId, schedule, conditionExpr, artifactType, artifactName, delaySeconds, fetchNodes, onClose]);
+  }, [processId, node, label, prompt, agentId, schedule, conditionExpr, artifactType, artifactName, delaySeconds, fetchNodes]);
 
   const handleDelete = useCallback(async () => {
     if (!processId || node.node_type === "ignition") return;
@@ -110,7 +100,91 @@ export function NodeInspector({ node, onClose }: NodeInspectorProps) {
     }
   }, [processId, node, fetchNodes, onClose]);
 
-  const agent = agentId ? agents.find((a) => a.agent_id === agentId) ?? null : null;
+  if (editing) {
+    return (
+      <>
+        <div className={styles.previewHeader}>
+          <Text size="sm" className={`${styles.previewTitle} ${styles.previewTitleBold}`}>
+            Edit {NODE_TYPE_LABELS[node.node_type]} Node
+          </Text>
+          {node.node_type !== "ignition" && (
+            <Button variant="ghost" size="sm" iconOnly icon={<Trash2 size={14} />} title="Delete node" onClick={handleDelete} />
+          )}
+          <Button variant="ghost" size="sm" icon={<Save size={14} />} onClick={handleSave} disabled={saving}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+          <Button variant="ghost" size="sm" iconOnly icon={<X size={14} />} aria-label="Cancel" onClick={() => setEditing(false)} />
+        </div>
+        <div className={styles.previewBody}>
+          <div className={styles.taskMeta}>
+            <EditField label="Label">
+              <input style={inputStyle} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Node label" />
+            </EditField>
+
+            {node.node_type === "ignition" && (
+              <EditField label="Schedule (cron expression)">
+                <input style={inputStyle} value={schedule} onChange={(e) => setSchedule(e.target.value)} placeholder="e.g. 0 9 * * * (daily at 9 AM)" />
+                <Text variant="secondary" size="xs" style={{ marginTop: 2 }}>Leave empty for manual-only triggering</Text>
+              </EditField>
+            )}
+
+            {(node.node_type === "action" || node.node_type === "ignition") && (
+              <EditField label="Agent">
+                <select style={{ ...inputStyle, cursor: "pointer" }} value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+                  <option value="">No agent assigned</option>
+                  {agents.map((a) => <option key={a.agent_id} value={a.agent_id}>{a.name}</option>)}
+                </select>
+              </EditField>
+            )}
+
+            {node.node_type !== "merge" && node.node_type !== "delay" && (
+              <EditField label="Prompt">
+                <textarea
+                  style={{ ...inputStyle, minHeight: 120, resize: "vertical" }}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder={
+                    node.node_type === "ignition" ? "Initial context or instructions for the workflow"
+                    : node.node_type === "condition" ? "Condition to evaluate against upstream output"
+                    : "Instructions for the agent to execute"
+                  }
+                />
+              </EditField>
+            )}
+
+            {node.node_type === "condition" && (
+              <EditField label="Condition Expression">
+                <input style={inputStyle} value={conditionExpr} onChange={(e) => setConditionExpr(e.target.value)} placeholder='e.g. output contains "success"' />
+              </EditField>
+            )}
+
+            {node.node_type === "artifact" && (
+              <>
+                <EditField label="Artifact Name">
+                  <input style={inputStyle} value={artifactName} onChange={(e) => setArtifactName(e.target.value)} placeholder="e.g. Daily Report" />
+                </EditField>
+                <EditField label="Artifact Type">
+                  <select style={{ ...inputStyle, cursor: "pointer" }} value={artifactType} onChange={(e) => setArtifactType(e.target.value)}>
+                    <option value="report">Report</option>
+                    <option value="data">Data</option>
+                    <option value="media">Media</option>
+                    <option value="code">Code</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </EditField>
+              </>
+            )}
+
+            {node.node_type === "delay" && (
+              <EditField label="Delay (seconds)">
+                <input style={inputStyle} type="number" min={1} value={delaySeconds} onChange={(e) => setDelaySeconds(e.target.value)} />
+              </EditField>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -118,12 +192,7 @@ export function NodeInspector({ node, onClose }: NodeInspectorProps) {
         <Text size="sm" className={`${styles.previewTitle} ${styles.previewTitleBold}`}>
           {NODE_TYPE_LABELS[node.node_type]} Node
         </Text>
-        {node.node_type !== "ignition" && (
-          <Button variant="ghost" size="sm" iconOnly icon={<Trash2 size={14} />} title="Delete node" onClick={handleDelete} />
-        )}
-        <Button variant="ghost" size="sm" icon={<Save size={14} />} onClick={handleSave} disabled={saving}>
-          {saving ? "Saving..." : "Save"}
-        </Button>
+        <Button variant="ghost" size="sm" iconOnly icon={<Pencil size={14} />} title="Edit" onClick={() => setEditing(true)} />
         <Button variant="ghost" size="sm" iconOnly icon={<X size={14} />} aria-label="Close" onClick={onClose} />
       </div>
 
@@ -131,20 +200,14 @@ export function NodeInspector({ node, onClose }: NodeInspectorProps) {
         <div className={styles.taskMeta}>
           <div className={styles.taskField}>
             <span className={styles.fieldLabel}>Label</span>
-            <input style={inputStyle} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Node label" />
+            <Text size="sm">{node.label}</Text>
           </div>
 
           {node.node_type === "ignition" && (
             <div className={styles.taskField}>
-              <span className={styles.fieldLabel}>Schedule (cron expression)</span>
-              <input
-                style={inputStyle}
-                value={schedule}
-                onChange={(e) => setSchedule(e.target.value)}
-                placeholder="e.g. 0 9 * * * (daily at 9 AM)"
-              />
-              <Text variant="secondary" size="xs" style={{ marginTop: 2 }}>
-                Leave empty for manual-only triggering
+              <span className={styles.fieldLabel}>Schedule</span>
+              <Text variant="secondary" size="sm" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                {(cfg?.schedule as string) || "Manual only"}
               </Text>
             </div>
           )}
@@ -152,74 +215,52 @@ export function NodeInspector({ node, onClose }: NodeInspectorProps) {
           {(node.node_type === "action" || node.node_type === "ignition") && (
             <div className={styles.taskField}>
               <span className={styles.fieldLabel}>Agent</span>
-              <select style={{ ...inputStyle, cursor: "pointer" }} value={agentId} onChange={(e) => setAgentId(e.target.value)}>
-                <option value="">No agent assigned</option>
-                {agents.map((a) => (
-                  <option key={a.agent_id} value={a.agent_id}>{a.name}</option>
-                ))}
-              </select>
-              {agent && (
-                <div className={styles.agentInline} style={{ marginTop: 6 }}>
-                  <Avatar avatarUrl={agent.icon ?? undefined} name={agent.name} type="agent" size={20} />
+              {agent ? (
+                <div className={styles.agentInline}>
+                  <Avatar avatarUrl={agent.icon ?? undefined} name={agent.name} type="agent" size={18} />
                   <Text variant="secondary" size="sm">{agent.name}</Text>
                 </div>
+              ) : (
+                <Text variant="secondary" size="sm">None</Text>
               )}
             </div>
           )}
 
-          {node.node_type !== "merge" && node.node_type !== "delay" && (
+          {node.node_type !== "merge" && node.node_type !== "delay" && node.prompt && (
             <div className={styles.taskField}>
               <span className={styles.fieldLabel}>Prompt</span>
-              <textarea
-                style={{ ...inputStyle, minHeight: 120, resize: "vertical" }}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder={
-                  node.node_type === "ignition"
-                    ? "Initial context or instructions for the workflow"
-                    : node.node_type === "condition"
-                    ? "Condition to evaluate against upstream output"
-                    : "Instructions for the agent to execute"
-                }
-              />
+              <Text variant="secondary" size="sm" className={styles.preWrapText}>{node.prompt}</Text>
             </div>
           )}
 
-          {node.node_type === "condition" && (
+          {node.node_type === "condition" && (cfg?.condition_expression as string) && (
             <div className={styles.taskField}>
-              <span className={styles.fieldLabel}>Condition Expression</span>
-              <input
-                style={inputStyle}
-                value={conditionExpr}
-                onChange={(e) => setConditionExpr(e.target.value)}
-                placeholder='e.g. output contains "success"'
-              />
+              <span className={styles.fieldLabel}>Condition</span>
+              <Text variant="secondary" size="sm" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                {cfg.condition_expression as string}
+              </Text>
             </div>
           )}
 
           {node.node_type === "artifact" && (
             <>
-              <div className={styles.taskField}>
-                <span className={styles.fieldLabel}>Artifact Name</span>
-                <input style={inputStyle} value={artifactName} onChange={(e) => setArtifactName(e.target.value)} placeholder="e.g. Daily Report" />
-              </div>
+              {(cfg?.artifact_name as string) && (
+                <div className={styles.taskField}>
+                  <span className={styles.fieldLabel}>Artifact Name</span>
+                  <Text variant="secondary" size="sm">{cfg.artifact_name as string}</Text>
+                </div>
+              )}
               <div className={styles.taskField}>
                 <span className={styles.fieldLabel}>Artifact Type</span>
-                <select style={{ ...inputStyle, cursor: "pointer" }} value={artifactType} onChange={(e) => setArtifactType(e.target.value)}>
-                  <option value="report">Report</option>
-                  <option value="data">Data</option>
-                  <option value="media">Media</option>
-                  <option value="code">Code</option>
-                  <option value="custom">Custom</option>
-                </select>
+                <Text variant="secondary" size="sm">{(cfg?.artifact_type as string) || "report"}</Text>
               </div>
             </>
           )}
 
           {node.node_type === "delay" && (
             <div className={styles.taskField}>
-              <span className={styles.fieldLabel}>Delay (seconds)</span>
-              <input style={inputStyle} type="number" min={1} value={delaySeconds} onChange={(e) => setDelaySeconds(e.target.value)} />
+              <span className={styles.fieldLabel}>Delay</span>
+              <Text variant="secondary" size="sm">{cfg?.delay_seconds ?? 60} seconds</Text>
             </div>
           )}
 
@@ -238,6 +279,15 @@ export function NodeInspector({ node, onClose }: NodeInspectorProps) {
         </div>
       </div>
     </>
+  );
+}
+
+function EditField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className={styles.taskField}>
+      <span className={styles.fieldLabel}>{label}</span>
+      {children}
+    </div>
   );
 }
 
