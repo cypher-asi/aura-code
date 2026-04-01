@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ButtonPlus, PageEmptyState } from "@cypher-asi/zui";
-import { Clock } from "lucide-react";
+import { Cpu } from "lucide-react";
 import { useCronStore } from "../stores/cron-store";
 import { useSidebarSearch } from "../../../context/SidebarSearchContext";
 import { CronJobForm } from "./CronJobForm";
@@ -36,7 +36,7 @@ export function CronJobList() {
     <div className={styles.container}>
       <div className={styles.list}>
         {jobs.length === 0 && !loading && (
-          <PageEmptyState icon={<Clock size={32} />} title="No cron jobs yet" description="Create a scheduled job to automate tasks on a cron schedule." />
+          <PageEmptyState icon={<Cpu size={32} />} title="No cron jobs yet" description="Create a scheduled job to automate tasks on a cron schedule." />
         )}
         {filteredJobs.map((job) => (
           <button

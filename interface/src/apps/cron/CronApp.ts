@@ -1,4 +1,4 @@
-import { Clock } from "lucide-react";
+import { Cpu } from "lucide-react";
 import { CronJobList } from "./components/CronJobList";
 import { CronMainPanel } from "./components/CronMainPanel";
 import { CronSidekickTaskbar } from "./components/CronSidekickTaskbar";
@@ -9,7 +9,7 @@ import type { AuraApp } from "../types";
 export const CronApp: AuraApp = {
   id: "cron",
   label: "Cron Jobs",
-  icon: Clock,
+  icon: Cpu,
   basePath: "/cron",
   LeftPanel: CronJobList,
   MainPanel: CronMainPanel,

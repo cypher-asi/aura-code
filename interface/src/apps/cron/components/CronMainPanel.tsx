@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { Clock, Play, Pause, Trash2 } from "lucide-react";
+import { Cpu, Play, Pause, Trash2 } from "lucide-react";
 import { Button, PageEmptyState } from "@cypher-asi/zui";
 import { ResponsiveMainLane } from "../../../components/ResponsiveMainLane";
 import { useCronStore } from "../stores/cron-store";
@@ -24,7 +24,7 @@ export function CronMainPanel({ children }: { children?: ReactNode }) {
     return (
       <ResponsiveMainLane>
         <div className={styles.container}>
-          <PageEmptyState icon={<Clock size={32} />} title="Cron Jobs" description="Select a cron job or create one to get started." />
+          <PageEmptyState icon={<Cpu size={32} />} title="Cron Jobs" description="Select a cron job or create one to get started." />
           {children}
         </div>
       </ResponsiveMainLane>
