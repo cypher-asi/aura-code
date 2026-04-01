@@ -33,18 +33,20 @@
 
 .zoomSlider::-webkit-slider-thumb {
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--color-primary);
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--color-primary), 0 1px 3px rgba(0, 0, 0, 0.3);
   cursor: pointer;
 }
 
 .zoomSlider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--color-primary);
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--color-primary), 0 1px 3px rgba(0, 0, 0, 0.3);
   border: none;
   cursor: pointer;
 }
