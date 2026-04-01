@@ -1,7 +1,7 @@
 .process-flow-controls button {
-  background: var(--color-bg-surface, #1a1a2e) !important;
+  background: transparent !important;
   color: var(--color-text, #eee) !important;
-  border-color: var(--color-border, #333) !important;
+  border-color: transparent !important;
   fill: var(--color-text, #eee) !important;
 }
 

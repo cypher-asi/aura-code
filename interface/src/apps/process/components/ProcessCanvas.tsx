@@ -148,10 +148,10 @@ export function ProcessCanvas({ processId, processNodes, processConnections }: P
         <Controls
           showInteractive={false}
           style={{
-            background: "var(--color-bg-surface, #1a1a2e)",
-            border: "1px solid var(--color-border, #333)",
+            background: "transparent",
+            border: "none",
             borderRadius: 8,
-            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            boxShadow: "none",
           }}
           className="process-flow-controls"
         />
