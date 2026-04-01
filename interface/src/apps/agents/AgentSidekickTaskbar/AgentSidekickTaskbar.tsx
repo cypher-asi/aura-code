@@ -1,6 +1,6 @@
-import { useState, useRef, useLayoutEffect } from "react";
+import { useState, useRef, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Button, Menu } from "@cypher-asi/zui";
+import { Button, Menu, type MenuItem } from "@cypher-asi/zui";
 import {
   User,
   MessageSquare,
@@ -18,6 +18,7 @@ import { useAgentSidekick, type AgentSidekickTab } from "../stores/agent-sidekic
 import { useSelectedAgent } from "../stores";
 import { useAuth } from "../../../stores/auth-store";
 import { useClickOutside } from "../../../hooks/use-click-outside";
+import { useOverflowTabs } from "../../../hooks/use-overflow-tabs";
 import styles from "../../../components/Sidekick/Sidekick.module.css";
 
 const TAB_ICONS: { id: AgentSidekickTab; icon: React.ReactNode; title: string }[] = [
@@ -37,6 +38,7 @@ export function AgentSidekickTaskbar() {
   const { user } = useAuth();
   const [moreOpen, setMoreOpen] = useState(false);
   const [menuRect, setMenuRect] = useState<{ top: number; left: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const moreBtnRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
@@ -44,6 +46,31 @@ export function AgentSidekickTaskbar() {
     !!user?.network_user_id &&
     !!selectedAgent &&
     user.network_user_id === selectedAgent.user_id;
+
+  const { visibleItems, overflowItems } = useOverflowTabs(
+    containerRef,
+    TAB_ICONS,
+    isOwnAgent,
+  );
+
+  const showMoreButton = overflowItems.length > 0 || isOwnAgent;
+
+  const menuItems = useMemo<MenuItem[]>(() => {
+    const overflow: MenuItem[] = overflowItems.map(({ id, icon, title }) => ({
+      id,
+      label: title,
+      icon,
+    }));
+    const actions: MenuItem[] = isOwnAgent
+      ? [
+          { id: "edit", label: "Edit", icon: <Pencil size={14} /> },
+          { id: "delete", label: "Delete", icon: <Trash2 size={14} /> },
+        ]
+      : [];
+    const sep: MenuItem[] =
+      overflow.length > 0 && actions.length > 0 ? [{ type: "separator" }] : [];
+    return [...overflow, ...sep, ...actions];
+  }, [overflowItems, isOwnAgent]);
 
   useLayoutEffect(() => {
     if (moreOpen && moreBtnRef.current) {
@@ -56,10 +83,12 @@ export function AgentSidekickTaskbar() {
 
   useClickOutside([moreBtnRef, moreMenuRef], () => setMoreOpen(false), moreOpen);
 
+  const activeInOverflow = overflowItems.some((t) => t.id === activeTab);
+
   return (
-    <div className={styles.sidekickTaskbar}>
+    <div ref={containerRef} className={styles.sidekickTaskbar}>
       <div className={styles.sidekickTabBar}>
-        {TAB_ICONS.map(({ id, icon, title }) => (
+        {visibleItems.map(({ id, icon, title }) => (
           <Button
             key={id}
             variant="ghost"
@@ -74,7 +103,7 @@ export function AgentSidekickTaskbar() {
           />
         ))}
       </div>
-      {isOwnAgent && (
+      {showMoreButton && (
         <div ref={moreBtnRef} className={styles.moreButtonWrap}>
           <Button
             variant="ghost"
@@ -82,8 +111,9 @@ export function AgentSidekickTaskbar() {
             iconOnly
             icon={<Ellipsis size={16} />}
             onClick={() => setMoreOpen((v) => !v)}
-            title="More actions"
-            aria-label="More actions"
+            title="More"
+            aria-label="More"
+            selected={activeInOverflow}
           />
           {moreOpen &&
             menuRect &&
@@ -99,14 +129,13 @@ export function AgentSidekickTaskbar() {
                 }}
               >
                 <Menu
-                  items={[
-                    { id: "edit", label: "Edit", icon: <Pencil size={14} /> },
-                    { id: "delete", label: "Delete", icon: <Trash2 size={14} /> },
-                  ]}
+                  items={menuItems}
+                  value={activeInOverflow ? activeTab : undefined}
                   onChange={(id) => {
                     setMoreOpen(false);
                     if (id === "edit") requestEdit();
-                    if (id === "delete") requestDelete();
+                    else if (id === "delete") requestDelete();
+                    else setActiveTab(id as AgentSidekickTab);
                   }}
                   background="solid"
                   border="solid"

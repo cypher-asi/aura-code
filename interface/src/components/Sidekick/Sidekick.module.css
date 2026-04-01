@@ -63,6 +63,8 @@
   gap: var(--space-1);
   flex: 1;
   min-width: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .sidekickTabBar button:not(:disabled)[aria-pressed="true"],
