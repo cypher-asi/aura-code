@@ -428,6 +428,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "aura-os-process"
+version = "0.1.0"
+dependencies = [
+ "aura-os-core",
+ "aura-os-store",
+ "chrono",
+ "cron",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "aura-os-projects"
 version = "0.1.0"
 dependencies = [
@@ -452,6 +467,7 @@ dependencies = [
  "aura-os-link",
  "aura-os-network",
  "aura-os-orgs",
+ "aura-os-process",
  "aura-os-projects",
  "aura-os-sessions",
  "aura-os-storage",
@@ -542,6 +558,7 @@ dependencies = [
  "aura-os-link",
  "aura-os-network",
  "aura-os-orgs",
+ "aura-os-process",
  "aura-os-projects",
  "aura-os-sessions",
  "aura-os-storage",

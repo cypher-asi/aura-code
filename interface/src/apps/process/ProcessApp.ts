@@ -1,4 +1,4 @@
-import { Workflow } from "lucide-react";
+import { Cpu } from "lucide-react";
 import { ProcessList } from "./components/ProcessList";
 import { ProcessMainPanel } from "./components/ProcessMainPanel";
 import { ProcessSidekickTaskbar } from "./components/ProcessSidekickTaskbar";
@@ -9,7 +9,7 @@ import type { AuraApp } from "../types";
 export const ProcessApp: AuraApp = {
   id: "process",
   label: "Processes",
-  icon: Workflow,
+  icon: Cpu,
   basePath: "/process",
   LeftPanel: ProcessList,
   MainPanel: ProcessMainPanel,

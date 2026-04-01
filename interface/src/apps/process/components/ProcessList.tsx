@@ -1,12 +1,12 @@
 import { useMemo, useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ButtonPlus, PageEmptyState } from "@cypher-asi/zui";
-import { Workflow } from "lucide-react";
+import { Cpu } from "lucide-react";
 import { useProcessStore } from "../stores/process-store";
 import { useSidebarSearch } from "../../../context/SidebarSearchContext";
 import { formatChatTime } from "../../../utils/format";
 import { ProcessForm } from "./ProcessForm";
-import styles from "../../cron/components/CronJobList.module.css";
+import styles from "./ProcessList.module.css";
 
 export function ProcessList() {
   const processes = useProcessStore((s) => s.processes);
@@ -35,7 +35,7 @@ export function ProcessList() {
       <div className={styles.list}>
         {processes.length === 0 && !loading && (
           <PageEmptyState
-            icon={<Workflow size={32} />}
+            icon={<Cpu size={32} />}
             title="No processes yet"
             description="Create a process to build automated workflows."
           />
@@ -51,7 +51,7 @@ export function ProcessList() {
               onClick={() => navigate(`/process/${p.process_id}`)}
             >
               <span className={styles.statusIcon}>
-                <Workflow size={18} />
+                <Cpu size={18} />
               </span>
               <span className={styles.body}>
                 <span className={styles.top}>

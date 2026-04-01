@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Workflow, Play, Pause, Trash2 } from "lucide-react";
+import { Cpu, Play, Pause, Trash2 } from "lucide-react";
 import { Button, PageEmptyState } from "@cypher-asi/zui";
 import { ResponsiveMainLane } from "../../../components/ResponsiveMainLane";
 import { useProcessStore } from "../stores/process-store";
@@ -60,7 +60,7 @@ export function ProcessMainPanel({ children }: { children?: ReactNode }) {
       <ResponsiveMainLane>
         <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
           <PageEmptyState
-            icon={<Workflow size={32} />}
+            icon={<Cpu size={32} />}
             title="Processes"
             description="Select a process or create one to get started."
           />

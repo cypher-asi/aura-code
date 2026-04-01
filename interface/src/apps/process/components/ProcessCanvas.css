@@ -1,0 +1,14 @@
+.process-flow-controls button {
+  background: var(--color-bg-surface, #1a1a2e) !important;
+  color: var(--color-text, #eee) !important;
+  border-color: var(--color-border, #333) !important;
+  fill: var(--color-text, #eee) !important;
+}
+
+.process-flow-controls button:hover {
+  background: var(--color-bg-hover, #ffffff15) !important;
+}
+
+.process-flow-controls button svg {
+  fill: var(--color-text, #eee) !important;
+}

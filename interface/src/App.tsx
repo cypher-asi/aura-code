@@ -65,9 +65,6 @@ export default function App() {
             <Route path="tasks/:projectId" element={null} />
             <Route path="tasks/:projectId/agents/:agentInstanceId" element={null} />
 
-            <Route path="cron" element={null} />
-            <Route path="cron/:cronJobId" element={null} />
-
             <Route path="process" element={null} />
             <Route path="process/:processId" element={null} />
 

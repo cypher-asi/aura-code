@@ -1,29 +1,44 @@
-import { Workflow, History, Activity, ChartNoAxesColumnIncreasing, Logs } from "lucide-react";
+import type { MenuItem } from "@cypher-asi/zui";
+import { Cpu, History, Activity, ChartNoAxesColumnIncreasing, Logs, Pencil, Trash2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useProcessSidekickStore, type ProcessSidekickTab } from "../stores/process-sidekick-store";
 import { SidekickTabBar, type TabItem } from "../../../components/SidekickTabBar";
 
 const TABS: TabItem[] = [
-  { id: "process", icon: <Workflow size={16} />, title: "Process" },
+  { id: "process", icon: <Cpu size={16} />, title: "Process" },
   { id: "runs", icon: <History size={16} />, title: "Runs" },
   { id: "events", icon: <Activity size={16} />, title: "Events" },
   { id: "stats", icon: <ChartNoAxesColumnIncreasing size={16} />, title: "Stats" },
   { id: "log", icon: <Logs size={16} />, title: "Log" },
 ];
 
+const ACTIONS: MenuItem[] = [
+  { id: "edit", label: "Edit", icon: <Pencil size={14} /> },
+  { id: "delete", label: "Delete", icon: <Trash2 size={14} /> },
+];
+
 export function ProcessSidekickTaskbar() {
-  const { activeTab, setActiveTab } = useProcessSidekickStore(
+  const { activeTab, setActiveTab, requestEdit, requestDelete } = useProcessSidekickStore(
     useShallow((s) => ({
       activeTab: s.activeTab,
       setActiveTab: s.setActiveTab,
+      requestEdit: s.requestEdit,
+      requestDelete: s.requestDelete,
     })),
   );
+
+  const handleAction = (id: string) => {
+    if (id === "edit") requestEdit();
+    else if (id === "delete") requestDelete();
+  };
 
   return (
     <SidekickTabBar
       tabs={TABS}
       activeTab={activeTab}
       onTabChange={(id) => setActiveTab(id as ProcessSidekickTab)}
+      actions={ACTIONS}
+      onAction={handleAction}
       alwaysShowMore
     />
   );

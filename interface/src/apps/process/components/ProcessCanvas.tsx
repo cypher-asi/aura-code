@@ -13,6 +13,7 @@ import {
   type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import "./ProcessCanvas.css";
 import { Plus } from "lucide-react";
 import { Button } from "@cypher-asi/zui";
 import type { ProcessNode, ProcessNodeConnection } from "../../../types";
@@ -146,7 +147,13 @@ export function ProcessCanvas({ processId, processNodes, processConnections }: P
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--color-border, #222)" />
         <Controls
           showInteractive={false}
-          style={{ background: "var(--color-bg-surface, #1a1a2e)", border: "1px solid var(--color-border, #333)", borderRadius: 8 }}
+          style={{
+            background: "var(--color-bg-surface, #1a1a2e)",
+            border: "1px solid var(--color-border, #333)",
+            borderRadius: 8,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+          }}
+          className="process-flow-controls"
         />
         <MiniMap
           style={{ background: "var(--color-bg-surface, #1a1a2e)", border: "1px solid var(--color-border, #333)", borderRadius: 8 }}

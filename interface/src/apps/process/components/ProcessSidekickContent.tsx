@@ -5,10 +5,82 @@ import { Button, Text } from "@cypher-asi/zui";
 import { useProcessStore } from "../stores/process-store";
 import { useProcessSidekickStore } from "../stores/process-sidekick-store";
 import { EmptyState } from "../../../components/EmptyState";
+import {
+  StatCard,
+  SectionHeader,
+  StatsGrid,
+  ProgressBar,
+  cx,
+} from "../../../components/StatCard";
 import type { ProcessRun } from "../../../types";
 import styles from "../../../components/Sidekick/Sidekick.module.css";
+import auraStyles from "../../../views/aura.module.css";
 
 const EMPTY_RUNS: ProcessRun[] = [];
+
+function ProcessInfoTab() {
+  const { processId } = useParams<{ processId: string }>();
+  const processes = useProcessStore((s) => s.processes);
+  const process = processes.find((p) => p.process_id === processId);
+
+  if (!process) return <EmptyState>No process selected</EmptyState>;
+
+  return (
+    <div style={{ padding: 12, fontSize: 13 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 12px" }}>
+        <span style={{ color: "var(--color-text-muted)" }}>Name</span>
+        <span style={{ fontWeight: 600 }}>{process.name}</span>
+
+        <span style={{ color: "var(--color-text-muted)" }}>Status</span>
+        <span>
+          <span
+            style={{
+              display: "inline-block",
+              fontSize: 11,
+              padding: "2px 8px",
+              borderRadius: 99,
+              background: process.enabled ? "rgba(16,185,129,0.15)" : "rgba(107,114,128,0.15)",
+              color: process.enabled ? "#10b981" : "#6b7280",
+              fontWeight: 600,
+            }}
+          >
+            {process.enabled ? "Active" : "Paused"}
+          </span>
+        </span>
+
+        {process.description && (
+          <>
+            <span style={{ color: "var(--color-text-muted)" }}>Description</span>
+            <span>{process.description}</span>
+          </>
+        )}
+
+        {process.schedule && (
+          <>
+            <span style={{ color: "var(--color-text-muted)" }}>Schedule</span>
+            <span style={{ fontFamily: "monospace", fontSize: 12 }}>{process.schedule}</span>
+          </>
+        )}
+
+        {process.tags.length > 0 && (
+          <>
+            <span style={{ color: "var(--color-text-muted)" }}>Tags</span>
+            <span>{process.tags.join(", ")}</span>
+          </>
+        )}
+
+        <span style={{ color: "var(--color-text-muted)" }}>Last Run</span>
+        <span>{process.last_run_at ? new Date(process.last_run_at).toLocaleString() : "Never"}</span>
+
+        <span style={{ color: "var(--color-text-muted)" }}>Created</span>
+        <span>{new Date(process.created_at).toLocaleString()}</span>
+
+        <span style={{ color: "var(--color-text-muted)" }}>Updated</span>
+        <span>{new Date(process.updated_at).toLocaleString()}</span>
+      </div>
+    </div>
+  );
+}
 
 function RunList({ runs, onSelect }: { runs: ProcessRun[]; onSelect: (r: ProcessRun) => void }) {
   if (runs.length === 0) return <EmptyState>No runs yet</EmptyState>;
@@ -38,6 +110,29 @@ function RunList({ runs, onSelect }: { runs: ProcessRun[]; onSelect: (r: Process
           </span>
         </button>
       ))}
+    </div>
+  );
+}
+
+function StatsView({ runs }: { runs: ProcessRun[] }) {
+  const total = runs.length;
+  const completed = runs.filter((r) => r.status === "completed").length;
+  const failed = runs.filter((r) => r.status === "failed").length;
+  const running = runs.filter((r) => r.status === "running").length;
+  const successRate = total > 0 ? (completed / total) * 100 : 0;
+
+  return (
+    <div className={cx(auraStyles.dashboardPadding)}>
+      <SectionHeader first>Success Rate</SectionHeader>
+      <ProgressBar percentage={successRate} />
+
+      <SectionHeader>Runs</SectionHeader>
+      <StatsGrid>
+        <StatCard value={total} label="Total" />
+        <StatCard value={completed} label="Completed" />
+        <StatCard value={failed} label="Failed" />
+        <StatCard value={running} label="Running" />
+      </StatsGrid>
     </div>
   );
 }
@@ -102,10 +197,10 @@ export function ProcessSidekickContent() {
     <div className={styles.sidekickBody}>
       <div className={styles.sidekickContent}>
         <div className={styles.tabContent}>
-          {activeTab === "process" && <EmptyState>Process overview</EmptyState>}
+          {activeTab === "process" && <ProcessInfoTab />}
           {activeTab === "runs" && <RunList runs={runs} onSelect={viewRun} />}
           {activeTab === "events" && <EmptyState>Select a run to view events</EmptyState>}
-          {activeTab === "stats" && <EmptyState>Stats coming soon</EmptyState>}
+          {activeTab === "stats" && <StatsView runs={runs} />}
           {activeTab === "log" && <EmptyState>Activity log coming soon</EmptyState>}
         </div>
       </div>
