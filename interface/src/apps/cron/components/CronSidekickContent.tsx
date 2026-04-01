@@ -6,7 +6,15 @@ import type { CronJobRun, CronArtifact } from "../../../types";
 import { ArrowLeft } from "lucide-react";
 import { Button, Text } from "@cypher-asi/zui";
 import { EmptyState } from "../../../components/EmptyState";
+import {
+  StatCard,
+  SectionHeader,
+  StatsGrid,
+  ProgressBar,
+  cx,
+} from "../../../components/StatCard";
 import styles from "../../../components/Sidekick/Sidekick.module.css";
+import auraStyles from "../../../views/aura.module.css";
 
 const EMPTY_RUNS: CronJobRun[] = [];
 const EMPTY_ARTIFACTS: CronArtifact[] = [];
@@ -73,19 +81,27 @@ function StatsView({ runs }: { runs: CronJobRun[] }) {
   const total = runs.length;
   const completed = runs.filter((r) => r.status === "completed").length;
   const failed = runs.filter((r) => r.status === "failed").length;
+  const running = runs.filter((r) => r.status === "running").length;
+  const successRate = total > 0 ? (completed / total) * 100 : 0;
   const totalTokens = runs.reduce((sum, r) => sum + r.input_tokens + r.output_tokens, 0);
 
   return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, fontSize: 13 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 16px" }}>
-        <span style={{ color: "var(--color-text-muted)" }}>Total Runs</span><span>{total}</span>
-        <span style={{ color: "var(--color-text-muted)" }}>Completed</span><span>{completed}</span>
-        <span style={{ color: "var(--color-text-muted)" }}>Failed</span><span>{failed}</span>
-        <span style={{ color: "var(--color-text-muted)" }}>Success Rate</span>
-        <span>{total > 0 ? Math.round((completed / total) * 100) : 0}%</span>
-        <span style={{ color: "var(--color-text-muted)" }}>Total Tokens</span>
-        <span>{totalTokens.toLocaleString()}</span>
-      </div>
+    <div className={cx(auraStyles.dashboardPadding)}>
+      <SectionHeader first>Success Rate</SectionHeader>
+      <ProgressBar percentage={successRate} />
+
+      <SectionHeader>Runs</SectionHeader>
+      <StatsGrid>
+        <StatCard value={total} label="Total" />
+        <StatCard value={completed} label="Completed" />
+        <StatCard value={failed} label="Failed" />
+        <StatCard value={running} label="Running" />
+      </StatsGrid>
+
+      <SectionHeader>Usage</SectionHeader>
+      <StatsGrid>
+        <StatCard value={totalTokens} label="Tokens" fmt />
+      </StatsGrid>
     </div>
   );
 }
