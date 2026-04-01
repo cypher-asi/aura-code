@@ -24,7 +24,7 @@
   transition: border-color var(--transition-fast, 0.15s);
 }
 
-.desktopSidebar:has([data-resize-handle]:hover),
+.desktopSidebar:has([data-lane-resize-handle]:hover),
 .desktopSidebar:has([data-resizing]) {
   border-right-color: #fff;
 }
@@ -604,7 +604,7 @@
   transition: box-shadow var(--transition-fast, 0.15s);
 }
 
-.laneLeftBorder:has([data-resize-handle]:hover),
+.laneLeftBorder:has([data-lane-resize-handle]:hover),
 .laneLeftBorder:has([data-resizing]) {
   box-shadow: -1px 0 0 0 #fff;
 }

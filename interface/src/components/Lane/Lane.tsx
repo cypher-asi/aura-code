@@ -100,6 +100,7 @@ export const Lane = forwardRef<HTMLDivElement, LaneProps>(
         {resizable && (
           <div
             data-resize-handle
+            data-lane-resize-handle
             className={cn(
               styles.resizeHandle,
               resizePosition === "left" ? styles.resizeHandleLeft : styles.resizeHandleRight,
