@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
@@ -23,6 +24,7 @@ import type { ProcessNode, ProcessNodeConnection } from "../../../types";
 import type { ProcessNodeType } from "../../../types/enums";
 import { processApi } from "../../../api/process";
 import { useProcessStore } from "../stores/process-store";
+import { useProcessSidekickStore } from "../stores/process-sidekick-store";
 import { ProcessNodeCard } from "./ProcessNodeCard";
 
 const nodeTypes = { processNode: ProcessNodeCard };
@@ -76,7 +78,15 @@ const nodeMenuItems: MenuItem[] = ADD_NODE_TYPES.map((item) => ({
   icon: NODE_MENU_ICONS[item.type],
 }));
 
-export function ProcessCanvas({ processId, processNodes, processConnections }: ProcessCanvasProps) {
+export function ProcessCanvas(props: ProcessCanvasProps) {
+  return (
+    <ReactFlowProvider>
+      <ProcessCanvasInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function ProcessCanvasInner({ processId, processNodes, processConnections }: ProcessCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(toFlowNodes(processNodes));
   const [edges, setEdges, onEdgesChange] = useEdgesState(toFlowEdges(processConnections));
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
@@ -84,6 +94,7 @@ export function ProcessCanvas({ processId, processNodes, processConnections }: P
   const { screenToFlowPosition } = useReactFlow();
   const fetchNodes = useProcessStore((s) => s.fetchNodes);
   const fetchConnections = useProcessStore((s) => s.fetchConnections);
+  const selectNode = useProcessSidekickStore((s) => s.selectNode);
 
   // Sync when processNodes/processConnections change from the store
   useMemo(() => {
@@ -157,6 +168,14 @@ export function ProcessCanvas({ processId, processNodes, processConnections }: P
     };
   }, [ctxMenu]);
 
+  const onNodeClick = useCallback(
+    (_: unknown, flowNode: Node) => {
+      const processNode = processNodes.find((n) => n.node_id === flowNode.id);
+      if (processNode) selectNode(processNode);
+    },
+    [processNodes, selectNode],
+  );
+
   const onNodeDragStop = useCallback(
     async (_: unknown, node: Node) => {
       try {
@@ -180,6 +199,7 @@ export function ProcessCanvas({ processId, processNodes, processConnections }: P
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
+        onNodeClick={onNodeClick}
         onPaneContextMenu={onPaneContextMenu}
         nodeTypes={nodeTypes}
         fitView
