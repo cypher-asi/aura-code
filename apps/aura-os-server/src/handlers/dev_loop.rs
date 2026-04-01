@@ -12,7 +12,7 @@ use aura_os_network::{NetworkClient, ReportUsageRequest};
 use aura_os_sessions::{CreateSessionParams, UpdateContextUsageParams};
 use aura_os_tasks::TaskService;
 
-use super::agents::conversions_pub::resolve_workspace_path;
+use super::projects_helpers::resolve_agent_instance_workspace_path;
 use crate::dto::LoopStatusResponse;
 use crate::error::{ApiError, ApiResult};
 use crate::persistence;
@@ -943,7 +943,6 @@ pub(crate) async fn start_loop(
 
     let jwt = Some(jwt);
     let project = state.project_service.get_project(&project_id).ok();
-    let project_folder = project.as_ref().map(|p| p.linked_folder_path.clone());
     let project_name = project.as_ref().map(|p| p.name.as_str()).unwrap_or("");
     let (machine_type, swarm_agent_id) = state
         .agent_instance_service
@@ -990,20 +989,19 @@ pub(crate) async fn start_loop(
     )
     .await;
     let project_path = if harness_mode == HarnessMode::Swarm {
-        automaton_client
-            .resolve_workspace(project_name)
-            .await
-            .unwrap_or_else(|e| {
+        match automaton_client.resolve_workspace(project_name).await {
+            Ok(path) => path,
+            Err(e) => {
                 warn!(%project_id, error = %e, "Harness workspace resolve failed; using local computation");
-                resolve_workspace_path(&machine_type, project_folder.as_deref(), &state.data_dir, project_name)
-            })
+                resolve_agent_instance_workspace_path(&state, &project_id, Some(agent_instance_id))
+                    .await
+                    .unwrap_or_else(|| format!("/home/aura/{}", super::projects_helpers::slugify(project_name)))
+            }
+        }
     } else {
-        resolve_workspace_path(
-            &machine_type,
-            project_folder.as_deref(),
-            &state.data_dir,
-            project_name,
-        )
+        resolve_agent_instance_workspace_path(&state, &project_id, Some(agent_instance_id))
+            .await
+            .unwrap_or_default()
     };
 
     let jwt_for_persist = jwt.clone();
@@ -1434,7 +1432,6 @@ pub(crate) async fn run_single_task(
 
     let jwt = Some(jwt);
     let project = state.project_service.get_project(&project_id).ok();
-    let project_folder = project.as_ref().map(|p| p.linked_folder_path.clone());
     let project_name = project.as_ref().map(|p| p.name.as_str()).unwrap_or("");
     let (machine_type, swarm_agent_id) = state
         .agent_instance_service
@@ -1450,20 +1447,19 @@ pub(crate) async fn run_single_task(
         jwt.as_deref(),
     )?;
     let project_path = if harness_mode == HarnessMode::Swarm {
-        automaton_client
-            .resolve_workspace(project_name)
-            .await
-            .unwrap_or_else(|e| {
+        match automaton_client.resolve_workspace(project_name).await {
+            Ok(path) => path,
+            Err(e) => {
                 warn!(%project_id, error = %e, "Harness workspace resolve failed; using local computation");
-                resolve_workspace_path(&machine_type, project_folder.as_deref(), &state.data_dir, project_name)
-            })
+                resolve_agent_instance_workspace_path(&state, &project_id, Some(agent_instance_id))
+                    .await
+                    .unwrap_or_else(|| format!("/home/aura/{}", super::projects_helpers::slugify(project_name)))
+            }
+        }
     } else {
-        resolve_workspace_path(
-            &machine_type,
-            project_folder.as_deref(),
-            &state.data_dir,
-            project_name,
-        )
+        resolve_agent_instance_workspace_path(&state, &project_id, Some(agent_instance_id))
+            .await
+            .unwrap_or_default()
     };
     let usage_reporting = build_usage_reporting_context(
         &state,

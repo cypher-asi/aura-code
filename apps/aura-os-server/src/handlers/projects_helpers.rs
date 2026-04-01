@@ -204,10 +204,23 @@ pub(crate) fn folder_name_from_path(path: &str) -> Option<String> {
         .map(|name| name.to_string())
 }
 
-async fn resolve_project_tool_workspace_path(
+pub(crate) fn resolve_project_workspace_path_for_machine(
+    state: &AppState,
+    project: Option<&Project>,
+    machine_type: &str,
+) -> Option<String> {
+    let project = project?;
+    Some(resolve_workspace_path(
+        machine_type,
+        Some(project.linked_folder_path.as_str()),
+        &state.data_dir,
+        project.name.as_str(),
+    ))
+}
+
+pub(crate) async fn resolve_agent_instance_workspace_path(
     state: &AppState,
     project_id: &ProjectId,
-    harness_mode: HarnessMode,
     agent_instance_id: Option<AgentInstanceId>,
 ) -> Option<String> {
     if let Some(agent_instance_id) = agent_instance_id {
@@ -226,35 +239,28 @@ async fn resolve_project_tool_workspace_path(
             }
 
             let project = state.project_service.get_project(project_id).ok();
-            let project_name = project
-                .as_ref()
-                .map(|project| project.name.as_str())
-                .unwrap_or("");
-            let project_folder = project
-                .as_ref()
-                .map(|project| project.linked_folder_path.as_str());
-            return Some(resolve_workspace_path(
-                &instance.machine_type,
-                project_folder,
-                &state.data_dir,
-                project_name,
-            ));
+            return resolve_project_workspace_path_for_machine(state, project.as_ref(), &instance.machine_type);
         }
+    }
+    None
+}
+
+async fn resolve_project_tool_workspace_path(
+    state: &AppState,
+    project_id: &ProjectId,
+    harness_mode: HarnessMode,
+    agent_instance_id: Option<AgentInstanceId>,
+) -> Option<String> {
+    if let Some(path) = resolve_agent_instance_workspace_path(state, project_id, agent_instance_id).await {
+        return Some(path);
     }
 
     let project = state.project_service.get_project(project_id).ok()?;
-    let project_name = project.name.as_str();
-    let project_folder = Some(project.linked_folder_path.as_str());
     let machine_type = match harness_mode {
         HarnessMode::Local => "local",
         HarnessMode::Swarm => "remote",
     };
-    Some(resolve_workspace_path(
-        machine_type,
-        project_folder,
-        &state.data_dir,
-        project_name,
-    ))
+    resolve_project_workspace_path_for_machine(state, Some(&project), machine_type)
 }
 
 /// Build a standard project tool session config with JWT propagation.
