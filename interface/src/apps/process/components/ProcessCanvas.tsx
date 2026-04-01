@@ -14,6 +14,7 @@ import {
   type Edge,
   type EdgeChange,
   applyEdgeChanges,
+  SelectionMode,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./ProcessCanvas.css";
@@ -44,13 +45,42 @@ function toFlowNodes(nodes: ProcessNode[]): Node[] {
   }));
 }
 
-function toFlowEdges(connections: ProcessNodeConnection[]): Edge[] {
+function normalizeHandleId(
+  rawHandle: string | null,
+  direction: "source" | "target",
+  nodeType: ProcessNodeType | undefined,
+): string | null {
+  const normalized = (rawHandle ?? "").trim().toLowerCase();
+
+  if (direction === "source") {
+    if (nodeType === "condition" && ["out-false", "false", "branch-false"].includes(normalized)) {
+      return "false";
+    }
+    return null;
+  }
+
+  if (nodeType === "merge" && ["in-2", "merge-2", "second", "2"].includes(normalized)) {
+    return "merge-2";
+  }
+  return null;
+}
+
+function toFlowEdges(connections: ProcessNodeConnection[], nodes: ProcessNode[]): Edge[] {
+  const nodeTypeById = new Map(nodes.map((n) => [n.node_id, n.node_type]));
   return connections.map((c) => ({
     id: c.connection_id,
     source: c.source_node_id,
-    sourceHandle: c.source_handle || null,
+    sourceHandle: normalizeHandleId(
+      c.source_handle,
+      "source",
+      nodeTypeById.get(c.source_node_id),
+    ),
     target: c.target_node_id,
-    targetHandle: c.target_handle || null,
+    targetHandle: normalizeHandleId(
+      c.target_handle,
+      "target",
+      nodeTypeById.get(c.target_node_id),
+    ),
     animated: true,
     style: { stroke: "#999", strokeWidth: 2 },
   }));
@@ -101,7 +131,10 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
     setNodes(toFlowNodes(processNodes));
   }, [processNodes, setNodes]);
 
-  const serverEdges = useMemo(() => toFlowEdges(processConnections), [processConnections]);
+  const serverEdges = useMemo(
+    () => toFlowEdges(processConnections, processNodes),
+    [processConnections, processNodes],
+  );
   const edges = useMemo(() => [...serverEdges, ...localEdgeAdds], [serverEdges, localEdgeAdds]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
@@ -231,6 +264,7 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
         connectionLineStyle={{ stroke: "var(--color-text, #eee)", strokeWidth: 2 }}
         proOptions={{ hideAttribution: true }}
         selectionOnDrag
+        selectionMode={SelectionMode.Partial}
         panOnDrag={[1]}
         panActivationKeyCode="Shift"
         selectionKeyCode={null}
