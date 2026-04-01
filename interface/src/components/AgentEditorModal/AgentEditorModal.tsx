@@ -20,6 +20,7 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
     nameRef, initialFocusRef, fileInputRef,
     cropOpen, rawImageSrc,
     handleSave, handleClose, handleFileSelect, handleCropConfirm, handleCropClose,
+    handleAvatarClick, handleAvatarRemove,
   } = useAgentEditorForm(isOpen, agent, onClose, onSaved);
 
   const isEditing = !!agent;
@@ -48,7 +49,7 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
             <button
               type="button"
               className={styles.avatarUpload}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={handleAvatarClick}
             >
               {icon ? (
                 <img src={icon} alt="Agent avatar" className={styles.avatarImg} />
@@ -58,7 +59,7 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
               {icon && (
                 <span
                   className={styles.avatarRemove}
-                  onClick={(e) => { e.stopPropagation(); setIcon(""); }}
+                  onClick={(e) => { e.stopPropagation(); handleAvatarRemove(); }}
                 >
                   <X size={12} />
                 </span>

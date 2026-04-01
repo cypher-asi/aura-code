@@ -39,9 +39,11 @@ export function ProfileEditorModal({ isOpen, profile, onClose, onSave }: Profile
   }, [isOpen, profile]);
 
   const handleClose = useCallback(() => {
+    if (rawImageSrc) URL.revokeObjectURL(rawImageSrc);
+    setRawImageSrc("");
     setNameError("");
     onClose();
-  }, [onClose]);
+  }, [rawImageSrc, onClose]);
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -62,20 +64,35 @@ export function ProfileEditorModal({ isOpen, profile, onClose, onSave }: Profile
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (rawImageSrc) URL.revokeObjectURL(rawImageSrc);
     const objectUrl = URL.createObjectURL(file);
     setRawImageSrc(objectUrl);
     setCropOpen(true);
     e.target.value = "";
-  }, []);
+  }, [rawImageSrc]);
 
   const handleCropConfirm = useCallback((dataUrl: string) => {
     setAvatarUrl(dataUrl);
-    if (rawImageSrc) URL.revokeObjectURL(rawImageSrc);
-    setRawImageSrc("");
-  }, [rawImageSrc]);
+    setCropOpen(false);
+  }, []);
 
   const handleCropClose = useCallback(() => {
     setCropOpen(false);
+  }, []);
+
+  const handleAvatarClick = useCallback(() => {
+    if (rawImageSrc) {
+      setCropOpen(true);
+    } else if (avatarUrl) {
+      setRawImageSrc(avatarUrl);
+      setCropOpen(true);
+    } else {
+      fileInputRef.current?.click();
+    }
+  }, [rawImageSrc, avatarUrl]);
+
+  const handleAvatarRemove = useCallback(() => {
+    setAvatarUrl("");
     if (rawImageSrc) URL.revokeObjectURL(rawImageSrc);
     setRawImageSrc("");
   }, [rawImageSrc]);
@@ -104,7 +121,7 @@ export function ProfileEditorModal({ isOpen, profile, onClose, onSave }: Profile
             <button
               type="button"
               className={styles.avatarUpload}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={handleAvatarClick}
             >
               {avatarUrl ? (
                 <img src={avatarUrl} alt="Profile avatar" className={styles.avatarImg} />
@@ -114,7 +131,7 @@ export function ProfileEditorModal({ isOpen, profile, onClose, onSave }: Profile
               {avatarUrl && (
                 <span
                   className={styles.avatarRemove}
-                  onClick={(e) => { e.stopPropagation(); setAvatarUrl(""); }}
+                  onClick={(e) => { e.stopPropagation(); handleAvatarRemove(); }}
                 >
                   <X size={12} />
                 </span>

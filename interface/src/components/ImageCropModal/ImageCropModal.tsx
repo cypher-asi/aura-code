@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
 import { Modal, Button } from "@cypher-asi/zui";
@@ -28,6 +28,12 @@ export function ImageCropModal({
   const [zoom, setZoom] = useState(1);
   const [croppedArea, setCroppedArea] = useState<Area | null>(null);
 
+  useEffect(() => {
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCroppedArea(null);
+  }, [imageSrc]);
+
   const onCropComplete = useCallback((_: Area, croppedPixels: Area) => {
     setCroppedArea(croppedPixels);
   }, []);
@@ -39,22 +45,15 @@ export function ImageCropModal({
     onClose();
   }, [croppedArea, imageSrc, outputSize, onConfirm, onClose]);
 
-  const handleClose = useCallback(() => {
-    setCrop({ x: 0, y: 0 });
-    setZoom(1);
-    setCroppedArea(null);
-    onClose();
-  }, [onClose]);
-
   return (
     <Modal
       isOpen={isOpen}
-      onClose={handleClose}
+      onClose={onClose}
       title="Crop Image"
       size="md"
       footer={
         <div className={styles.footer}>
-          <Button variant="ghost" onClick={handleClose}>
+          <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button variant="primary" onClick={handleConfirm}>
@@ -69,9 +68,11 @@ export function ImageCropModal({
             image={imageSrc}
             crop={crop}
             zoom={zoom}
+            minZoom={0.5}
             aspect={1}
             cropShape={cropShape}
             showGrid={false}
+            restrictPosition={false}
             onCropChange={setCrop}
             onZoomChange={setZoom}
             onCropComplete={onCropComplete}
@@ -83,7 +84,7 @@ export function ImageCropModal({
         <input
           type="range"
           className={styles.zoomSlider}
-          min={1}
+          min={0.5}
           max={3}
           step={0.05}
           value={zoom}

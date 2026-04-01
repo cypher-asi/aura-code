@@ -32,6 +32,8 @@ interface AgentEditorFormResult {
   handleFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleCropConfirm: (dataUrl: string) => void;
   handleCropClose: () => void;
+  handleAvatarClick: () => void;
+  handleAvatarRemove: () => void;
 }
 
 export function useAgentEditorForm(
@@ -71,27 +73,43 @@ export function useAgentEditorForm(
   }, [isOpen, agent]);
 
   const handleClose = useCallback(() => {
+    if (rawImageSrc) URL.revokeObjectURL(rawImageSrc);
+    setRawImageSrc("");
     setError(""); setNameError(""); setSaving(false); onClose();
-  }, [onClose]);
+  }, [rawImageSrc, onClose]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (rawImageSrc) URL.revokeObjectURL(rawImageSrc);
     const objectUrl = URL.createObjectURL(file);
     setRawImageSrc(objectUrl);
     setCropOpen(true);
     e.target.value = "";
-  }, []);
+  }, [rawImageSrc]);
 
   const handleCropConfirm = useCallback((dataUrl: string) => {
     setIcon(dataUrl);
-    if (rawImageSrc) URL.revokeObjectURL(rawImageSrc);
-    setRawImageSrc("");
     setCropOpen(false);
-  }, [rawImageSrc]);
+  }, []);
 
   const handleCropClose = useCallback(() => {
     setCropOpen(false);
+  }, []);
+
+  const handleAvatarClick = useCallback(() => {
+    if (rawImageSrc) {
+      setCropOpen(true);
+    } else if (icon) {
+      setRawImageSrc(icon);
+      setCropOpen(true);
+    } else {
+      fileInputRef.current?.click();
+    }
+  }, [rawImageSrc, icon]);
+
+  const handleAvatarRemove = useCallback(() => {
+    setIcon("");
     if (rawImageSrc) URL.revokeObjectURL(rawImageSrc);
     setRawImageSrc("");
   }, [rawImageSrc]);
@@ -125,5 +143,6 @@ export function useAgentEditorForm(
     nameRef, initialFocusRef, fileInputRef,
     cropOpen, rawImageSrc,
     handleSave, handleClose, handleFileSelect, handleCropConfirm, handleCropClose,
+    handleAvatarClick, handleAvatarRemove,
   };
 }
