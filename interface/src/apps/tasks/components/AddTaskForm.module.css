@@ -44,22 +44,28 @@
 
 .footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   width: 100%;
+  min-width: 0;
 }
 
 .footerLeft {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 .footerRight {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .statusPill,
