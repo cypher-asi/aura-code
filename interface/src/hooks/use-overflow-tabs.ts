@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useCallback, type RefObject } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useCallback, type RefObject } from "react";
 
 interface OverflowResult<T> {
   visibleItems: readonly T[];
@@ -78,8 +78,8 @@ export function useOverflowTabs<T>(
   }, [containerRef, measure]);
 
   const n = Math.min(maxVisible, items.length);
-  return {
-    visibleItems: items.slice(0, n),
-    overflowItems: items.slice(n),
-  };
+  return useMemo(
+    () => ({ visibleItems: items.slice(0, n), overflowItems: items.slice(n) }),
+    [items, n],
+  );
 }

@@ -55,21 +55,19 @@ export function AgentSidekickTaskbar() {
 
   const showMoreButton = overflowItems.length > 0 || isOwnAgent;
 
-  const [animated, setAnimated] = useState(false);
+  const [enteringIds, setEnteringIds] = useState<Set<string>>(new Set());
   const [exitingTabs, setExitingTabs] = useState<typeof TAB_ICONS>([]);
   const prevVisibleIdsRef = useRef<string[] | null>(null);
-  const exitTimerRef = useRef<ReturnType<typeof setTimeout>>();
-
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setAnimated(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     const currentIds = visibleItems.map((t) => t.id);
     const prevIds = prevVisibleIdsRef.current;
     prevVisibleIdsRef.current = currentIds;
-    if (!animated || !prevIds) return;
+    if (!prevIds) return;
+
+    const added = currentIds.filter((id) => !prevIds.includes(id));
+    if (added.length > 0) setEnteringIds(new Set(added));
 
     const removed = TAB_ICONS.filter(
       (t) => prevIds.includes(t.id) && !currentIds.includes(t.id),
@@ -77,9 +75,22 @@ export function AgentSidekickTaskbar() {
     if (removed.length > 0) {
       clearTimeout(exitTimerRef.current);
       setExitingTabs(removed);
-      exitTimerRef.current = setTimeout(() => setExitingTabs([]), 120);
+      exitTimerRef.current = setTimeout(() => setExitingTabs([]), 150);
     }
-  }, [visibleItems, animated]);
+  }, [visibleItems]);
+
+  useEffect(() => {
+    if (enteringIds.size === 0) return;
+    let id1: number;
+    let id2: number;
+    id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => setEnteringIds(new Set()));
+    });
+    return () => {
+      cancelAnimationFrame(id1);
+      cancelAnimationFrame(id2);
+    };
+  }, [enteringIds]);
 
   const menuItems = useMemo<MenuItem[]>(() => {
     const overflow: MenuItem[] = overflowItems.map(({ id, icon, title }) => ({
@@ -113,7 +124,7 @@ export function AgentSidekickTaskbar() {
 
   return (
     <div ref={containerRef} className={styles.sidekickTaskbar}>
-      <div className={styles.sidekickTabBar} data-animated={animated || undefined}>
+      <div className={styles.sidekickTabBar}>
         {visibleItems.map(({ id, icon, title }) => (
           <Button
             key={id}
@@ -126,6 +137,7 @@ export function AgentSidekickTaskbar() {
             onClick={() => setActiveTab(id)}
             aria-pressed={activeTab === id}
             selected={activeTab === id}
+            style={enteringIds.has(id) ? { opacity: 0 } : undefined}
           />
         ))}
         {exitingTabs.map(({ id, icon }) => (
