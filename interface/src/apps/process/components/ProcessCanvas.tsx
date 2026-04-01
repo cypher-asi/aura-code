@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ReactFlow,
@@ -8,12 +8,13 @@ import {
   MiniMap,
   addEdge,
   useNodesState,
-  useEdgesState,
   useReactFlow,
   BackgroundVariant,
   type Connection,
   type Node,
   type Edge,
+  type EdgeChange,
+  applyEdgeChanges,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./ProcessCanvas.css";
@@ -88,7 +89,7 @@ export function ProcessCanvas(props: ProcessCanvasProps) {
 
 function ProcessCanvasInner({ processId, processNodes, processConnections }: ProcessCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(toFlowNodes(processNodes));
-  const [edges, setEdges, onEdgesChange] = useEdgesState(toFlowEdges(processConnections));
+  const [localEdgeAdds, setLocalEdgeAdds] = useState<Edge[]>([]);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
@@ -100,13 +101,29 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
     setNodes(toFlowNodes(processNodes));
   }, [processNodes, setNodes]);
 
+  const serverEdges = useMemo(() => toFlowEdges(processConnections), [processConnections]);
+  const edges = useMemo(() => [...serverEdges, ...localEdgeAdds], [serverEdges, localEdgeAdds]);
+
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+    setLocalEdgeAdds((prev) => applyEdgeChanges(changes, prev));
+  }, []);
+
   useEffect(() => {
-    setEdges(toFlowEdges(processConnections));
-  }, [processConnections, setEdges]);
+    setLocalEdgeAdds([]);
+  }, [processConnections]);
 
   const onConnect = useCallback(
     async (params: Connection) => {
-      setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: "#999", strokeWidth: 2 } }, eds));
+      const optimisticEdge: Edge = {
+        id: `temp-${Date.now()}`,
+        source: params.source!,
+        target: params.target!,
+        sourceHandle: params.sourceHandle ?? null,
+        targetHandle: params.targetHandle ?? null,
+        animated: true,
+        style: { stroke: "#999", strokeWidth: 2 },
+      };
+      setLocalEdgeAdds((prev) => [...prev, optimisticEdge]);
       try {
         await processApi.createConnection(processId, {
           source_node_id: params.source!,
@@ -117,9 +134,10 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
         fetchConnections(processId);
       } catch (e) {
         console.error("Failed to save connection:", e);
+        setLocalEdgeAdds((prev) => prev.filter((e) => e.id !== optimisticEdge.id));
       }
     },
-    [processId, setEdges, fetchConnections],
+    [processId, fetchConnections],
   );
 
   const handleAddNode = useCallback(
