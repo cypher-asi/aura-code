@@ -123,6 +123,30 @@ impl RocksStore {
         Ok(self.db.get_cf(&cf, key)?)
     }
 
+    pub fn scan_cf_prefix<T: DeserializeOwned>(
+        &self,
+        cf_name: &str,
+        prefix: &str,
+    ) -> StoreResult<Vec<T>> {
+        let cf = self.cf_handle(cf_name)?;
+        let iter = self.db.prefix_iterator_cf(&cf, prefix.as_bytes());
+        let mut results = Vec::new();
+        for item in iter {
+            let (key, value) = item?;
+            if !key.starts_with(prefix.as_bytes()) {
+                break;
+            }
+            match serde_json::from_slice::<T>(&value) {
+                Ok(v) => results.push(v),
+                Err(e) => {
+                    let key_str = String::from_utf8_lossy(&key);
+                    tracing::warn!(key = %key_str, error = %e, "Skipping unreadable entry in prefix scan");
+                }
+            }
+        }
+        Ok(results)
+    }
+
     pub fn scan_cf_all<T: DeserializeOwned>(&self, cf_name: &str) -> StoreResult<Vec<T>> {
         let cf = self.cf_handle(cf_name)?;
         let mut opts = rocksdb::ReadOptions::default();

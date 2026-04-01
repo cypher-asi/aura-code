@@ -85,14 +85,9 @@ impl ProcessStore {
 
     pub fn list_nodes(&self, process_id: &ProcessId) -> Result<Vec<ProcessNode>, ProcessError> {
         let prefix = process_id.to_string();
-        let all: Vec<ProcessNode> = self
-            .store
-            .scan_cf_all(CF_PROCESS_NODES)
-            .map_err(|e| ProcessError::Store(e.to_string()))?;
-        Ok(all
-            .into_iter()
-            .filter(|n| n.process_id == *process_id)
-            .collect())
+        self.store
+            .scan_cf_prefix(CF_PROCESS_NODES, &prefix)
+            .map_err(|e| ProcessError::Store(e.to_string()))
     }
 
     pub fn get_node(
