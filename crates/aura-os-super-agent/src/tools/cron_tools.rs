@@ -115,6 +115,7 @@ impl SuperAgentTool for CreateCronJobTool {
             schedule,
             prompt: prompt.to_string(),
             enabled: true,
+            tag: None,
             input_artifact_refs,
             max_retries,
             timeout_seconds,

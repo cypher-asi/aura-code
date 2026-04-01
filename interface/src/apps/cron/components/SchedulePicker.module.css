@@ -1,0 +1,56 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.frequencyTabs {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.dayButtons {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.select {
+  appearance: none;
+  background: var(--color-bg-elevated, var(--color-bg));
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  padding: 6px 10px;
+  font-size: var(--text-sm);
+  width: 80px;
+  cursor: pointer;
+}
+
+.select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.timeInput {
+  appearance: none;
+  background: var(--color-bg-elevated, var(--color-bg));
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  padding: 6px 10px;
+  font-size: var(--text-sm);
+  width: 140px;
+  color-scheme: dark;
+}
+
+.timeInput:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}

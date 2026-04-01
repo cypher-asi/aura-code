@@ -423,6 +423,11 @@ fn cron_routes() -> Router<AppState> {
             get(cron::list_cron_artifacts),
         )
         .route("/api/artifacts/:id", get(cron::get_artifact))
+        .route(
+            "/api/cron-tags",
+            get(cron::list_cron_tags).post(cron::create_cron_tag),
+        )
+        .route("/api/cron-tags/:tag_id", delete(cron::delete_cron_tag))
 }
 
 fn system_routes() -> Router<AppState> {

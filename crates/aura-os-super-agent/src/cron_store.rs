@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
 use aura_os_core::{
-    Artifact, ArtifactId, ArtifactType, CronJob, CronJobId, CronJobRun, CronJobRunId,
+    Artifact, ArtifactId, ArtifactType, CronJob, CronJobId, CronJobRun, CronJobRunId, CronTag,
+    OrgId,
 };
 use aura_os_store::RocksStore;
 
 const CF_CRON_JOBS: &str = "cron_jobs";
 const CF_CRON_JOB_RUNS: &str = "cron_job_runs";
 const CF_CRON_ARTIFACTS: &str = "cron_artifacts";
+const CF_CRON_TAGS: &str = "cron_tags";
 
 pub struct CronStore {
     store: Arc<RocksStore>,
@@ -147,5 +149,41 @@ impl CronStore {
             artifacts.retain(|a| a.artifact_type == at);
         }
         Ok(artifacts.into_iter().next())
+    }
+
+    // -----------------------------------------------------------------------
+    // Tags (org-scoped)
+    // -----------------------------------------------------------------------
+
+    pub fn save_tag(&self, tag: &CronTag) -> Result<(), String> {
+        let key = format!("{}:{}", tag.org_id, tag.tag_id);
+        let value = serde_json::to_vec(tag).map_err(|e| e.to_string())?;
+        self.store
+            .put_cf_bytes(CF_CRON_TAGS, key.as_bytes(), &value)
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn list_tags_for_org(&self, org_id: &OrgId) -> Result<Vec<CronTag>, String> {
+        let prefix = org_id.to_string();
+        let all: Vec<CronTag> = self
+            .store
+            .scan_cf_all(CF_CRON_TAGS)
+            .map_err(|e| e.to_string())?;
+        let mut filtered: Vec<CronTag> = all
+            .into_iter()
+            .filter(|t| t.org_id.to_string() == prefix)
+            .collect();
+        filtered.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(filtered)
+    }
+
+    pub fn delete_tag(&self, org_id: &OrgId, tag_id: &str) -> Result<(), String> {
+        let key = format!("{org_id}:{tag_id}");
+        self.store
+            .write_batch(vec![aura_os_store::BatchOp::Delete {
+                cf: CF_CRON_TAGS.to_string(),
+                key,
+            }])
+            .map_err(|e| e.to_string())
     }
 }

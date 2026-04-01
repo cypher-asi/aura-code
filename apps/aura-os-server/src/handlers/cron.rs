@@ -5,9 +5,10 @@ use tracing::info;
 
 use aura_os_core::{
     Artifact, ArtifactId, ArtifactRef, CronJob, CronJobId, CronJobRun, CronJobRunId,
-    CronJobTrigger,
+    CronJobTrigger, CronTag,
 };
 use chrono::Utc;
+use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
 use crate::state::{AppState, AuthJwt, AuthSession};
@@ -21,7 +22,9 @@ pub(crate) struct CreateCronJobRequest {
     pub name: String,
     pub description: Option<String>,
     pub schedule: String,
-    pub prompt: String,
+    #[serde(default)]
+    pub prompt: Option<String>,
+    pub tag: Option<String>,
     #[serde(default)]
     pub input_artifact_refs: Vec<ArtifactRef>,
     pub max_retries: Option<u32>,
@@ -34,10 +37,16 @@ pub(crate) struct UpdateCronJobRequest {
     pub description: Option<String>,
     pub schedule: Option<String>,
     pub prompt: Option<String>,
+    pub tag: Option<String>,
     pub enabled: Option<bool>,
     pub input_artifact_refs: Option<Vec<ArtifactRef>>,
     pub max_retries: Option<u32>,
     pub timeout_seconds: Option<u64>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CreateCronTagRequest {
+    pub name: String,
 }
 
 #[derive(Serialize)]
@@ -73,8 +82,9 @@ pub(crate) async fn create_cron_job(
         name: req.name,
         description: req.description.unwrap_or_default(),
         schedule,
-        prompt: req.prompt,
+        prompt: req.prompt.unwrap_or_default(),
         enabled: true,
+        tag: req.tag,
         input_artifact_refs: req.input_artifact_refs,
         max_retries: req.max_retries.unwrap_or(1),
         timeout_seconds: req.timeout_seconds.unwrap_or(300),
@@ -160,6 +170,9 @@ pub(crate) async fn update_cron_job(
     }
     if let Some(prompt) = req.prompt {
         job.prompt = prompt;
+    }
+    if let Some(tag) = req.tag {
+        job.tag = Some(tag);
     }
     if let Some(enabled) = req.enabled {
         job.enabled = enabled;
@@ -369,4 +382,62 @@ pub(crate) async fn get_artifact(
         .ok_or_else(|| ApiError::not_found("artifact not found"))?;
 
     Ok(Json(artifact))
+}
+
+// ---------------------------------------------------------------------------
+// Cron Tag handlers
+// ---------------------------------------------------------------------------
+
+pub(crate) async fn list_cron_tags(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    AuthSession(_session): AuthSession,
+) -> ApiResult<Json<Vec<CronTag>>> {
+    let org_id = "default".parse().unwrap_or_default();
+    let tags = state
+        .super_agent_service
+        .cron_store
+        .list_tags_for_org(&org_id)
+        .map_err(ApiError::internal)?;
+    Ok(Json(tags))
+}
+
+pub(crate) async fn create_cron_tag(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    AuthSession(_session): AuthSession,
+    Json(req): Json<CreateCronTagRequest>,
+) -> ApiResult<Json<CronTag>> {
+    let org_id = "default".parse().unwrap_or_default();
+    let tag = CronTag {
+        tag_id: Uuid::new_v4().to_string(),
+        org_id,
+        name: req.name,
+        created_at: Utc::now(),
+    };
+
+    state
+        .super_agent_service
+        .cron_store
+        .save_tag(&tag)
+        .map_err(ApiError::internal)?;
+
+    info!(tag_id = %tag.tag_id, name = %tag.name, "Cron tag created");
+    Ok(Json(tag))
+}
+
+pub(crate) async fn delete_cron_tag(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    AuthSession(_session): AuthSession,
+    Path(tag_id): Path<String>,
+) -> ApiResult<Json<DeleteResponse>> {
+    let org_id = "default".parse().unwrap_or_default();
+    state
+        .super_agent_service
+        .cron_store
+        .delete_tag(&org_id, &tag_id)
+        .map_err(ApiError::internal)?;
+
+    Ok(Json(DeleteResponse { deleted: true }))
 }

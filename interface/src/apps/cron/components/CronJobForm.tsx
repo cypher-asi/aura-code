@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { Modal, Input, Textarea, Button, Text } from "@cypher-asi/zui";
+import { Modal, Input, Button, Text } from "@cypher-asi/zui";
 import { cronApi } from "../../../api/cron";
 import { useCronStore } from "../stores/cron-store";
+import { SchedulePicker } from "./SchedulePicker";
+import { TagSelector } from "./TagSelector";
 import styles from "./CronJobForm.module.css";
 
 interface Props {
@@ -12,17 +14,22 @@ export function CronJobForm({ onClose }: Props) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [schedule, setSchedule] = useState("0 9 * * *");
-  const [prompt, setPrompt] = useState("");
+  const [tag, setTag] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const addJob = useCronStore((s) => s.addJob);
 
   const handleSubmit = async () => {
-    if (!name.trim() || !prompt.trim()) return;
+    if (!name.trim()) return;
     setSubmitting(true);
     setError(null);
     try {
-      const job = await cronApi.createJob({ name, description, schedule, prompt });
+      const job = await cronApi.createJob({
+        name,
+        description,
+        schedule,
+        tag: tag.trim() || undefined,
+      });
       addJob(job);
       onClose();
     } catch (e) {
@@ -48,7 +55,7 @@ export function CronJobForm({ onClose }: Props) {
           <Button
             variant="primary"
             onClick={handleSubmit}
-            disabled={submitting || !name.trim() || !prompt.trim()}
+            disabled={submitting || !name.trim()}
           >
             {submitting ? "Creating..." : "Create Job"}
           </Button>
@@ -74,24 +81,12 @@ export function CronJobForm({ onClose }: Props) {
           />
         </div>
         <div className={styles.field}>
-          <label className={styles.label}>Schedule (cron expression)</label>
-          <Input
-            value={schedule}
-            onChange={(e) => setSchedule(e.target.value)}
-            placeholder="0 9 * * *"
-          />
-          <span className={styles.hint}>
-            Examples: "0 9 * * *" (daily 9am), "0 */2 * * *" (every 2h), "0 9 * * 1" (Mondays 9am)
-          </span>
+          <label className={styles.label}>Tag</label>
+          <TagSelector value={tag} onChange={setTag} />
         </div>
         <div className={styles.field}>
-          <label className={styles.label}>Prompt (instruction for the CEO)</label>
-          <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="What should the CEO do each time this job runs?"
-            rows={4}
-          />
+          <label className={styles.label}>Schedule</label>
+          <SchedulePicker value={schedule} onChange={setSchedule} />
         </div>
         {error && <Text variant="muted" size="sm" className={styles.error}>{error}</Text>}
       </div>

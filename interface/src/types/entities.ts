@@ -346,6 +346,13 @@ export interface ArtifactRef {
   specific_run_id?: string;
 }
 
+export interface CronTag {
+  tag_id: string;
+  org_id: string;
+  name: string;
+  created_at: string;
+}
+
 export interface CronJob {
   cron_job_id: string;
   org_id: string;
@@ -355,6 +362,7 @@ export interface CronJob {
   schedule: string;
   prompt: string;
   enabled: boolean;
+  tag: string | null;
   input_artifact_refs: ArtifactRef[];
   max_retries: number;
   timeout_seconds: number;

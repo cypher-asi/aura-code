@@ -17,7 +17,8 @@ export interface CreateCronJobRequest {
   name: string;
   description?: string;
   schedule: string;
-  prompt: string;
+  prompt?: string;
+  tag?: string;
   input_artifact_refs?: import("../types").ArtifactRef[];
   max_retries?: number;
   timeout_seconds?: number;
@@ -28,6 +29,7 @@ export interface UpdateCronJobRequest {
   description?: string;
   schedule?: string;
   prompt?: string;
+  tag?: string;
   enabled?: boolean;
   input_artifact_refs?: import("../types").ArtifactRef[];
   max_retries?: number;
@@ -57,4 +59,10 @@ export const cronApi = {
     request<import("../types").CronArtifact[]>(`/cron-jobs/${id}/artifacts`),
   getArtifact: (id: string) =>
     request<import("../types").CronArtifact>(`/artifacts/${id}`),
+
+  listTags: () => request<import("../types").CronTag[]>("/cron-tags"),
+  createTag: (name: string) =>
+    request<import("../types").CronTag>("/cron-tags", { method: "POST", body: JSON.stringify({ name }) }),
+  deleteTag: (tagId: string) =>
+    request<void>(`/cron-tags/${tagId}`, { method: "DELETE" }),
 };

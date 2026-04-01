@@ -423,6 +423,18 @@ pub struct SuperAgentStep {
 }
 
 // ---------------------------------------------------------------------------
+// Cron Tags (org-scoped, reusable labels for cron jobs)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CronTag {
+    pub tag_id: String,
+    pub org_id: OrgId,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+// ---------------------------------------------------------------------------
 // Cron Jobs
 // ---------------------------------------------------------------------------
 
@@ -453,6 +465,8 @@ pub struct CronJob {
     /// Natural-language instruction for the CEO to execute.
     pub prompt: String,
     pub enabled: bool,
+    #[serde(default)]
+    pub tag: Option<String>,
     #[serde(default)]
     pub input_artifact_refs: Vec<ArtifactRef>,
     #[serde(default = "default_max_retries")]
