@@ -59,6 +59,10 @@ pub(crate) fn is_log_worthy(event_type: &str) -> bool {
     LOG_WORTHY_TYPES.contains(&event_type)
 }
 
+pub(crate) fn is_session_event_worthy(event_type: &str) -> bool {
+    matches!(event_type, "assistant_message_end" | "token_usage")
+}
+
 fn log_level_for_event(event_type: &str) -> &'static str {
     match event_type {
         "task_failed" | "error" => "error",
@@ -269,5 +273,47 @@ pub(crate) async fn persist_task_output(
         } else {
             info!(task_id, %session_id, "Persisted task steps event");
         }
+    }
+}
+
+pub(crate) async fn persist_session_event(
+    storage: Option<&Arc<StorageClient>>,
+    jwt: Option<&str>,
+    session_id: &str,
+    event: &serde_json::Value,
+) {
+    let (Some(storage), Some(jwt)) = (storage, jwt) else {
+        return;
+    };
+    if session_id.is_empty() {
+        return;
+    }
+
+    let Some(event_type) = event.get("type").and_then(|t| t.as_str()) else {
+        return;
+    };
+    if !is_session_event_worthy(event_type) {
+        return;
+    }
+
+    let req = aura_os_storage::CreateSessionEventRequest {
+        session_id: Some(session_id.to_string()),
+        user_id: None,
+        agent_id: event
+            .get("agent_instance_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+        sender: Some("agent".to_string()),
+        project_id: event
+            .get("project_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned),
+        org_id: None,
+        event_type: event_type.to_string(),
+        content: Some(event.clone()),
+    };
+
+    if let Err(e) = storage.create_event(session_id, jwt, &req).await {
+        warn!(%session_id, event_type, error = %e, "Failed to persist session event");
     }
 }

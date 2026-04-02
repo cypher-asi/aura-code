@@ -65,6 +65,44 @@ describe("summarizeSessionUsage", () => {
     expect(summary.outputTokens).toBe(120);
     expect(summary.promptInputFootprintTokens).toBe(500);
   });
+
+  it("recognizes storage rows that use type instead of event_type", () => {
+    const summary = summarizeSessionUsage([
+      {
+        type: "assistant_message_end",
+        content: {
+          usage: {
+            input_tokens: 42,
+            output_tokens: 9,
+            cache_creation_input_tokens: 7,
+            cache_read_input_tokens: 11,
+            estimated_context_tokens: 1234,
+            context_utilization: 0.12,
+            model: "claude-sonnet-4-5-20260331",
+            provider: "anthropic",
+          },
+          files_changed: {
+            created: [],
+            modified: ["server.js"],
+            deleted: [],
+          },
+        },
+      },
+    ]);
+
+    expect(summary.source).toBe("assistant_message_end");
+    expect(summary.turnCount).toBe(1);
+    expect(summary.inputTokens).toBe(42);
+    expect(summary.outputTokens).toBe(9);
+    expect(summary.cacheCreationInputTokens).toBe(7);
+    expect(summary.cacheReadInputTokens).toBe(11);
+    expect(summary.promptInputFootprintTokens).toBe(60);
+    expect(summary.maxEstimatedContextTokens).toBe(1234);
+    expect(summary.maxContextUtilization).toBe(0.12);
+    expect(summary.fileChangeCount).toBe(1);
+    expect(summary.models).toEqual(["claude-sonnet-4-5-20260331"]);
+    expect(summary.providers).toEqual(["anthropic"]);
+  });
 });
 
 describe("aggregateUsageSummaries", () => {

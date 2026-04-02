@@ -1,6 +1,7 @@
 export interface RawStorageSessionEvent {
   event_type?: string | null;
   eventType?: string | null;
+  type?: string | null;
   content?: unknown;
 }
 
@@ -139,7 +140,7 @@ function summarizeUsageEvents(
   };
 
   for (const event of events) {
-    const eventType = event.event_type ?? event.eventType ?? "";
+    const eventType = event.event_type ?? event.eventType ?? event.type ?? "";
     if (!eventTypes.includes(eventType)) continue;
 
     const usage = extractTurnUsage(event.content);

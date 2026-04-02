@@ -1070,7 +1070,9 @@ fn forward_automaton_events(params: ForwardParams) {
                                     tokio::spawn(async move {
                                         if let Err(e) = super::agents::generate_session_summary(
                                             &sc, &hclient, &rurl, &j, &sid,
-                                        ).await {
+                                        )
+                                        .await
+                                        {
                                             warn!(session_id = %sid, error = %e, "Background session summary generation failed");
                                         }
                                     });
@@ -1108,6 +1110,26 @@ fn forward_automaton_events(params: ForwardParams) {
                         }
                     }
                     let _ = app_broadcast.send(forwarded.clone());
+
+                    if let Some(session_id) = current_session_id_string.as_deref() {
+                        let event_type =
+                            forwarded.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                        if persistence::is_session_event_worthy(event_type) {
+                            let sc = storage_client.clone();
+                            let j = jwt.clone();
+                            let sid = session_id.to_string();
+                            let ev = forwarded.clone();
+                            tokio::spawn(async move {
+                                persistence::persist_session_event(
+                                    sc.as_ref(),
+                                    j.as_deref(),
+                                    &sid,
+                                    &ev,
+                                )
+                                .await;
+                            });
+                        }
+                    }
 
                     if persistence::is_log_worthy(
                         forwarded.get("type").and_then(|t| t.as_str()).unwrap_or(""),
@@ -1152,7 +1174,9 @@ fn forward_automaton_events(params: ForwardParams) {
                             tokio::spawn(async move {
                                 if let Err(e) = super::agents::generate_session_summary(
                                     &sc, &hclient, &rurl, &j, &sid,
-                                ).await {
+                                )
+                                .await
+                                {
                                     warn!(session_id = %sid, error = %e, "Background session summary generation failed");
                                 }
                             });

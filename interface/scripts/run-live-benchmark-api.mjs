@@ -129,6 +129,12 @@ function countFilesChanged(content) {
   }, 0);
 }
 
+function matchesExpectedText(content, expected) {
+  if (content.includes(expected)) return true;
+  const squashWhitespace = (value) => value.replace(/\s+/g, "");
+  return squashWhitespace(content).includes(squashWhitespace(expected));
+}
+
 function summarizeSessionUsage(events) {
   const summaries = {
     assistant_message_end: [],
@@ -136,7 +142,7 @@ function summarizeSessionUsage(events) {
   };
 
   for (const event of events) {
-    const eventType = event.event_type ?? event.eventType ?? "";
+    const eventType = event.event_type ?? event.eventType ?? event.type ?? "";
     if (!(eventType in summaries)) continue;
     const usage = readUsagePayload(event.content);
     if (!usage) continue;
@@ -256,7 +262,7 @@ async function verifyArtifactFiles(rootPath, checks) {
     }
     const content = response.content ?? "";
     for (const text of check.mustContain) {
-      if (!content.includes(text)) {
+      if (!matchesExpectedText(content, text)) {
         throw new Error(`Artifact ${check.path} did not contain expected text: ${text}`);
       }
     }

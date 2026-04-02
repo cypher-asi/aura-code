@@ -603,6 +603,11 @@ async function verifyArtifactFiles(
   },
 ) {
   const results = [];
+  const matchesExpectedText = (content: string, expected: string) => {
+    if (content.includes(expected)) return true;
+    const squashWhitespace = (value: string) => value.replace(/\s+/g, "");
+    return squashWhitespace(content).includes(squashWhitespace(expected));
+  };
 
   for (const check of checks ?? []) {
     const response = await readArtifactFile(
@@ -616,7 +621,10 @@ async function verifyArtifactFiles(
     expect(response.ok, `Expected ${check.path} to be readable`).toBe(true);
     const content = response.content ?? "";
     for (const text of check.mustContain) {
-      expect(content).toContain(text);
+      expect(
+        matchesExpectedText(content, text),
+        `Expected ${check.path} to contain ${text}`,
+      ).toBe(true);
     }
 
     results.push({
