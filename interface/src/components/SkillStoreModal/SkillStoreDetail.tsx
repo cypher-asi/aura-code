@@ -21,16 +21,20 @@ interface SkillStoreDetailProps {
   entry: SkillStoreCatalogEntry;
   installed: boolean;
   installing: boolean;
+  uninstalling: boolean;
   onBack: () => void;
   onInstall: () => void;
+  onUninstall: () => void;
 }
 
 export function SkillStoreDetail({
   entry,
   installed,
   installing,
+  uninstalling,
   onBack,
   onInstall,
+  onUninstall,
 }: SkillStoreDetailProps) {
   const [sourceOpen, setSourceOpen] = useState(false);
   const [sourceContent, setSourceContent] = useState<string | null>(null);
@@ -82,9 +86,19 @@ export function SkillStoreDetail({
         </div>
         <div className={styles.detailInstallArea}>
           {installed ? (
-            <Badge variant="running" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <Check size={12} /> Installed
-            </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onUninstall}
+              disabled={uninstalling}
+              style={{ background: "transparent", borderColor: "rgba(255,255,255,0.25)", color: "var(--color-text-secondary)" }}
+            >
+              {uninstalling ? (
+                <><Loader2 size={14} className={styles.spin} /> Removing...</>
+              ) : (
+                <><Check size={14} /> Installed</>
+              )}
+            </Button>
           ) : (
             <Button
               variant="ghost"

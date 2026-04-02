@@ -24,6 +24,7 @@ export function SkillStoreModal({ isOpen, agentId, initialInstalledNames, onClos
   const [selected, setSelected] = useState<SkillStoreCatalogEntry | null>(null);
   const [installedNames, setInstalledNames] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState(false);
+  const [uninstalling, setUninstalling] = useState(false);
 
   useEffect(() => {
     if (isOpen && initialInstalledNames) {
@@ -63,6 +64,21 @@ export function SkillStoreModal({ isOpen, agentId, initialInstalledNames, onClos
       onInstalled?.();
     } catch { /* best-effort */ }
     setInstalling(false);
+  }, [agentId, onInstalled]);
+
+  const handleUninstall = useCallback(async (entry: SkillStoreCatalogEntry) => {
+    if (!agentId) return;
+    setUninstalling(true);
+    try {
+      await api.harnessSkills.uninstallAgentSkill(agentId, entry.name);
+      setInstalledNames((prev) => {
+        const next = new Set(prev);
+        next.delete(entry.name);
+        return next;
+      });
+      onInstalled?.();
+    } catch { /* best-effort */ }
+    setUninstalling(false);
   }, [agentId, onInstalled]);
 
   const handleClose = useCallback(() => {
@@ -109,8 +125,10 @@ export function SkillStoreModal({ isOpen, agentId, initialInstalledNames, onClos
                 entry={selected}
                 installed={installedNames.has(selected.name)}
                 installing={installing}
+                uninstalling={uninstalling}
                 onBack={() => setSelected(null)}
                 onInstall={() => handleInstall(selected)}
+                onUninstall={() => handleUninstall(selected)}
               />
             ) : (
               <SkillStoreGrid
