@@ -6,7 +6,6 @@ import {
   Background,
   Controls,
   MiniMap,
-  BaseEdge,
   useNodesState,
   useEdgesState,
   useReactFlow,
@@ -15,8 +14,6 @@ import {
   type Connection,
   type Node,
   type Edge,
-  type EdgeProps,
-  getBezierPath,
   SelectionMode,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -32,27 +29,6 @@ import { useProcessSidekickStore } from "../stores/process-sidekick-store";
 import { ProcessNodeCard } from "./ProcessNodeCard";
 
 const nodeTypes = { processNode: ProcessNodeCard };
-
-function ProcessEdge(props: EdgeProps) {
-  const [edgePath] = getBezierPath({
-    sourceX: props.sourceX,
-    sourceY: props.sourceY,
-    sourcePosition: props.sourcePosition,
-    targetX: props.targetX,
-    targetY: props.targetY,
-    targetPosition: props.targetPosition,
-  });
-
-  return (
-    <BaseEdge
-      {...props}
-      path={edgePath}
-      style={{ stroke: "#b8c4ff", strokeWidth: 2.5 }}
-    />
-  );
-}
-
-const edgeTypes = { processEdge: ProcessEdge };
 
 interface ProcessCanvasProps {
   processId: string;
@@ -109,10 +85,7 @@ function toFlowEdges(connections: ProcessNodeConnection[], nodes: ProcessNode[])
       ...(sourceHandle ? { sourceHandle } : {}),
       target: c.target_node_id,
       ...(targetHandle ? { targetHandle } : {}),
-      type: "processEdge",
       animated: true,
-      zIndex: 10,
-      style: { stroke: "#999", strokeWidth: 2 },
     };
   });
 }
@@ -154,7 +127,7 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
   const ctxMenuRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
   const fetchNodes = useProcessStore((s) => s.fetchNodes);
-  const setConnections = useProcessStore((s) => s.setConnections);
+  const fetchConnections = useProcessStore((s) => s.fetchConnections);
   const selectNode = useProcessSidekickStore((s) => s.selectNode);
   const closeNodeInspector = useProcessSidekickStore((s) => s.closeNodeInspector);
 
@@ -175,27 +148,23 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
         target: params.target!,
         ...(params.sourceHandle ? { sourceHandle: params.sourceHandle } : {}),
         ...(params.targetHandle ? { targetHandle: params.targetHandle } : {}),
-        type: "processEdge",
         animated: true,
       };
       setEdges((prev) => [...prev, optimisticEdge]);
       try {
-        const created = await processApi.createConnection(processId, {
+        await processApi.createConnection(processId, {
           source_node_id: params.source!,
           source_handle: params.sourceHandle ?? undefined,
           target_node_id: params.target!,
           target_handle: params.targetHandle ?? undefined,
         });
-        setConnections(
-          processId,
-          [...processConnections.filter((c) => c.connection_id !== created.connection_id), created],
-        );
+        fetchConnections(processId);
       } catch (e) {
         console.error("Failed to save connection:", e);
         setEdges((prev) => prev.filter((edge) => edge.id !== tempId));
       }
     },
-    [processId, processConnections, setConnections, setEdges],
+    [processId, fetchConnections, setEdges],
   );
 
   const handleAddNode = useCallback(
@@ -282,12 +251,11 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
         onPaneClick={onPaneClick}
         onPaneContextMenu={onPaneContextMenu}
         nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
         connectionMode={ConnectionMode.Loose}
         fitView
         snapToGrid
         snapGrid={[20, 20]}
-        defaultEdgeOptions={{ animated: true, type: "processEdge" }}
+        defaultEdgeOptions={{ animated: true }}
         connectionLineStyle={{ stroke: "var(--color-text, #eee)", strokeWidth: 2 }}
         proOptions={{ hideAttribution: true }}
         selectionOnDrag
