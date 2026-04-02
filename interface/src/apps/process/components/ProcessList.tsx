@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { ButtonPlus, Explorer, Menu, PageEmptyState } from "@cypher-asi/zui";
-import type { ExplorerNode, MenuItem } from "@cypher-asi/zui";
+import type { ExplorerNode, MenuItem, DropPosition } from "@cypher-asi/zui";
 import { Cpu, FolderOpen, Pencil, Trash2, FolderPlus } from "lucide-react";
 import { useProcessStore } from "../stores/process-store";
 import { useSidebarSearch } from "../../../context/SidebarSearchContext";
@@ -220,6 +220,32 @@ export function ProcessList() {
     }
   }, [processMap, navigate]);
 
+  const handleDrop = useCallback(async (draggedId: string, targetId: string, position: DropPosition) => {
+    const draggedProcess = processMap.get(draggedId);
+    if (!draggedProcess) return;
+
+    let newFolderId: string | null;
+    if (position === "inside" && folderMap.has(targetId)) {
+      newFolderId = targetId;
+    } else if (folderMap.has(targetId)) {
+      newFolderId = null;
+    } else {
+      const targetProcess = processMap.get(targetId);
+      if (!targetProcess) return;
+      newFolderId = targetProcess.folder_id;
+    }
+
+    if (newFolderId === draggedProcess.folder_id) return;
+
+    const previous = draggedProcess;
+    updateProcess({ ...draggedProcess, folder_id: newFolderId });
+    try {
+      await processApi.updateProcess(draggedProcess.process_id, { folder_id: newFolderId });
+    } catch {
+      updateProcess(previous);
+    }
+  }, [processMap, folderMap, updateProcess]);
+
   // Context menu
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     const target = (e.target as HTMLElement).closest("button[id]");
@@ -318,11 +344,12 @@ export function ProcessList() {
       <div className={styles.explorerWrap} onContextMenu={handleContextMenu}>
         <Explorer
           data={filteredExplorerData}
-          enableDragDrop={false}
+          enableDragDrop
           enableMultiSelect={false}
           defaultExpandedIds={defaultExpandedIds}
           defaultSelectedIds={defaultSelectedIds}
           onSelect={handleSelect}
+          onDrop={handleDrop}
         />
       </div>
 
