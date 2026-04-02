@@ -61,6 +61,10 @@
   filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.15));
 }
 
+.react-flow__node {
+  outline: none !important;
+}
+
 .react-flow__node.selected .react-flow__resize-control {
   display: none !important;
 }
