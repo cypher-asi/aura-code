@@ -34,6 +34,9 @@ interface ProcessNodeData {
 
 function RenameInput({ value, onSubmit }: { value: string; onSubmit: (v: string) => void }) {
   const [draft, setDraft] = useState(value);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const committedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -41,9 +44,13 @@ function RenameInput({ value, onSubmit }: { value: string; onSubmit: (v: string)
   }, []);
 
   const commit = useCallback(() => {
-    const trimmed = draft.trim();
+    if (committedRef.current) return;
+    committedRef.current = true;
+    const trimmed = draftRef.current.trim();
     onSubmit(trimmed || value);
-  }, [draft, value, onSubmit]);
+  }, [value, onSubmit]);
+
+  useEffect(() => () => { commit(); }, [commit]);
 
   return (
     <input
@@ -54,7 +61,7 @@ function RenameInput({ value, onSubmit }: { value: string; onSubmit: (v: string)
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === "Enter") { e.preventDefault(); commit(); }
-        if (e.key === "Escape") { e.preventDefault(); onSubmit(value); }
+        if (e.key === "Escape") { e.preventDefault(); committedRef.current = true; onSubmit(value); }
       }}
     />
   );
