@@ -220,15 +220,13 @@ export function ProcessList() {
     }
   }, [processMap, navigate]);
 
-  const handleDrop = useCallback(async (draggedId: string, targetId: string, position: DropPosition) => {
+  const handleDrop = useCallback(async (draggedId: string, targetId: string, _position: DropPosition) => {
     const draggedProcess = processMap.get(draggedId);
     if (!draggedProcess) return;
 
     let newFolderId: string | null;
-    if (position === "inside" && folderMap.has(targetId)) {
+    if (folderMap.has(targetId)) {
       newFolderId = targetId;
-    } else if (folderMap.has(targetId)) {
-      newFolderId = null;
     } else {
       const targetProcess = processMap.get(targetId);
       if (!targetProcess) return;
