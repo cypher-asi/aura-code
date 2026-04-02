@@ -21,6 +21,12 @@ function compareScenario(candidate, baseline) {
     cacheWriteTokens:
       candidate.totalCacheCreationInputTokens - baseline.totalCacheCreationInputTokens,
     cacheReadTokens: candidate.totalCacheReadInputTokens - baseline.totalCacheReadInputTokens,
+    estimatedCostUsd: Number((candidate.estimatedCostUsd - baseline.estimatedCostUsd).toFixed(6)),
+    runWallClockMs: candidate.runWallClockMs - baseline.runWallClockMs,
+    averageTurnWallClockMs:
+      Number((candidate.averageTurnWallClockMs - baseline.averageTurnWallClockMs).toFixed(2)),
+    averageTimeToFirstEventMs:
+      Number((candidate.averageTimeToFirstEventMs - baseline.averageTimeToFirstEventMs).toFixed(2)),
     promptInputFootprintTokens:
       candidate.promptInputFootprintTokens - baseline.promptInputFootprintTokens,
     maxContextUtilization:
@@ -32,6 +38,8 @@ function compareScenario(candidate, baseline) {
     device: candidate.device,
     success: candidate.success,
     baselineSuccess: baseline.success,
+    qualityPass: candidate.qualityPass,
+    baselineQualityPass: baseline.qualityPass,
     deltas,
   };
 }
@@ -45,17 +53,19 @@ function toMarkdown(report) {
     "",
     `Aggregate input token delta: ${report.totals.inputTokens}`,
     `Aggregate output token delta: ${report.totals.outputTokens}`,
+    `Aggregate effective cost delta (USD): ${report.totals.estimatedCostUsd.toFixed(4)}`,
+    `Aggregate run wall clock delta (ms): ${report.totals.runWallClockMs}`,
     `Aggregate prompt footprint delta: ${report.totals.promptInputFootprintTokens}`,
     `Aggregate cache read delta: ${report.totals.cacheReadTokens}`,
     `Aggregate cache write delta: ${report.totals.cacheWriteTokens}`,
     "",
-    "| Scenario | Device | Success | Input Δ | Output Δ | Prompt footprint Δ | Cache read Δ | Cache write Δ | Max context util Δ |",
-    "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Scenario | Device | Success | Quality | Cost Δ USD | Run Δ ms | Avg turn Δ ms | TTFE Δ ms | Input Δ | Output Δ | Prompt footprint Δ | Cache read Δ | Cache write Δ | Max context util Δ |",
+    "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   ];
 
   for (const entry of report.comparisons) {
     lines.push(
-      `| ${entry.title} | ${entry.device} | ${entry.success ? "yes" : "no"} | ${entry.deltas.inputTokens} | ${entry.deltas.outputTokens} | ${entry.deltas.promptInputFootprintTokens} | ${entry.deltas.cacheReadTokens} | ${entry.deltas.cacheWriteTokens} | ${entry.deltas.maxContextUtilization.toFixed(4)} |`,
+      `| ${entry.title} | ${entry.device} | ${entry.success ? "yes" : "no"} | ${entry.qualityPass ? "pass" : "fail"} | ${entry.deltas.estimatedCostUsd.toFixed(4)} | ${entry.deltas.runWallClockMs} | ${entry.deltas.averageTurnWallClockMs.toFixed(2)} | ${entry.deltas.averageTimeToFirstEventMs.toFixed(2)} | ${entry.deltas.inputTokens} | ${entry.deltas.outputTokens} | ${entry.deltas.promptInputFootprintTokens} | ${entry.deltas.cacheReadTokens} | ${entry.deltas.cacheWriteTokens} | ${entry.deltas.maxContextUtilization.toFixed(4)} |`,
     );
   }
 
@@ -82,6 +92,8 @@ async function main() {
   const totals = comparisons.reduce((acc, entry) => ({
     inputTokens: acc.inputTokens + entry.deltas.inputTokens,
     outputTokens: acc.outputTokens + entry.deltas.outputTokens,
+    estimatedCostUsd: acc.estimatedCostUsd + entry.deltas.estimatedCostUsd,
+    runWallClockMs: acc.runWallClockMs + entry.deltas.runWallClockMs,
     promptInputFootprintTokens:
       acc.promptInputFootprintTokens + entry.deltas.promptInputFootprintTokens,
     cacheReadTokens: acc.cacheReadTokens + entry.deltas.cacheReadTokens,
@@ -89,6 +101,8 @@ async function main() {
   }), {
     inputTokens: 0,
     outputTokens: 0,
+    estimatedCostUsd: 0,
+    runWallClockMs: 0,
     promptInputFootprintTokens: 0,
     cacheReadTokens: 0,
     cacheWriteTokens: 0,

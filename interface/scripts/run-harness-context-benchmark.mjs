@@ -13,6 +13,75 @@ const scenarioId = process.env.AURA_EVAL_SCENARIO_ID?.trim() || "harness-context
 const title = process.env.AURA_EVAL_SCENARIO_TITLE?.trim() || "Harness Context Static Site";
 const verbose = process.env.AURA_EVAL_VERBOSE === "1";
 
+const ANTHROPIC_MODEL_PRICING_PER_MTOK = {
+  "claude-opus-4-6": {
+    input: 5,
+    output: 25,
+    cacheWrite: 6.25,
+    cacheRead: 0.5,
+  },
+  "claude-opus-4.6": {
+    input: 5,
+    output: 25,
+    cacheWrite: 6.25,
+    cacheRead: 0.5,
+  },
+  "claude-opus-4-5": {
+    input: 5,
+    output: 25,
+    cacheWrite: 6.25,
+    cacheRead: 0.5,
+  },
+  "claude-opus-4.5": {
+    input: 5,
+    output: 25,
+    cacheWrite: 6.25,
+    cacheRead: 0.5,
+  },
+  "claude-opus-4-1": {
+    input: 15,
+    output: 75,
+    cacheWrite: 18.75,
+    cacheRead: 1.5,
+  },
+  "claude-opus-4.1": {
+    input: 15,
+    output: 75,
+    cacheWrite: 18.75,
+    cacheRead: 1.5,
+  },
+  "claude-opus-4": {
+    input: 15,
+    output: 75,
+    cacheWrite: 18.75,
+    cacheRead: 1.5,
+  },
+  "claude-sonnet-4-6": {
+    input: 3,
+    output: 15,
+    cacheWrite: 3.75,
+    cacheRead: 0.3,
+  },
+  "claude-sonnet-4.6": {
+    input: 3,
+    output: 15,
+    cacheWrite: 3.75,
+    cacheRead: 0.3,
+  },
+  "claude-sonnet-4-5": {
+    input: 3,
+    output: 15,
+    cacheWrite: 3.75,
+    cacheRead: 0.3,
+  },
+  "claude-sonnet-4.5": {
+    input: 3,
+    output: 15,
+    cacheWrite: 3.75,
+    cacheRead: 0.3,
+  },
+};
+
 const prompts = [
   "Inspect this small static site project and summarize its current structure. Read the important files first. Do not change any code in this turn.",
   "Implement a stronger landing page. Update the hero copy, add a short three-item features section, and keep the styling simple and clean.",
@@ -35,6 +104,55 @@ function toJsonMessage(type, payload = {}) {
 
 function asRecord(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function normalizeModelKey(model) {
+  return typeof model === "string" ? model.trim().toLowerCase() : "";
+}
+
+function inferProvider(model, provider) {
+  if (typeof provider === "string" && provider.trim()) return provider.trim().toLowerCase();
+  const modelKey = normalizeModelKey(model);
+  if (modelKey.startsWith("claude")) return "anthropic";
+  if (modelKey.startsWith("gpt") || modelKey.startsWith("o1") || modelKey.startsWith("o3")) {
+    return "openai";
+  }
+  return null;
+}
+
+function resolvePricing(model, provider) {
+  const inferredProvider = inferProvider(model, provider);
+  const modelKey = normalizeModelKey(model);
+  if (inferredProvider === "anthropic") {
+    const pricing = ANTHROPIC_MODEL_PRICING_PER_MTOK[modelKey];
+    if (pricing) {
+      return {
+        provider: inferredProvider,
+        model: modelKey,
+        source: "anthropic-pricing",
+        ...pricing,
+      };
+    }
+  }
+  return null;
+}
+
+function calculateEstimatedCostUsd(usage) {
+  const pricing = resolvePricing(usage.model, usage.provider);
+  if (!pricing) {
+    return { estimatedCostUsd: 0, pricing: null };
+  }
+
+  const estimatedCostUsd =
+    (usage.inputTokens / 1_000_000) * pricing.input
+    + (usage.outputTokens / 1_000_000) * pricing.output
+    + (usage.cacheCreationInputTokens / 1_000_000) * pricing.cacheWrite
+    + (usage.cacheReadInputTokens / 1_000_000) * pricing.cacheRead;
+
+  return {
+    estimatedCostUsd: Number(estimatedCostUsd.toFixed(6)),
+    pricing,
+  };
 }
 
 function readUsage(message) {
@@ -69,27 +187,37 @@ function countFilesChanged(message) {
 function summarizeTurns(turns) {
   const models = new Set();
   const providers = new Set();
+  const pricingSources = new Set();
 
   const totals = turns.reduce((acc, turn) => {
     const usage = turn.usage;
-    if (!usage) return acc;
-    if (usage.model) models.add(usage.model);
-    if (usage.provider) providers.add(usage.provider);
+    acc.totalWallClockMs += turn.wallClockMs ?? 0;
+    acc.totalTimeToFirstEventMs += turn.timeToFirstEventMs ?? 0;
+    acc.maxTurnWallClockMs = Math.max(acc.maxTurnWallClockMs, turn.wallClockMs ?? 0);
+    acc.turnsWithErrors += turn.stopReason?.includes("error") ? 1 : 0;
 
-    acc.totalInputTokens += usage.inputTokens;
-    acc.totalOutputTokens += usage.outputTokens;
-    acc.totalCacheCreationInputTokens += usage.cacheCreationInputTokens;
-    acc.totalCacheReadInputTokens += usage.cacheReadInputTokens;
-    acc.promptInputFootprintTokens +=
-      usage.inputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens;
-    acc.maxEstimatedContextTokens = Math.max(
-      acc.maxEstimatedContextTokens,
-      usage.estimatedContextTokens,
-    );
-    acc.maxContextUtilization = Math.max(
-      acc.maxContextUtilization,
-      usage.contextUtilization,
-    );
+    if (usage) {
+      if (usage.model) models.add(usage.model);
+      if (usage.provider) providers.add(usage.provider);
+      if (turn.pricing?.source) pricingSources.add(turn.pricing.source);
+
+      acc.totalInputTokens += usage.inputTokens;
+      acc.totalOutputTokens += usage.outputTokens;
+      acc.totalCacheCreationInputTokens += usage.cacheCreationInputTokens;
+      acc.totalCacheReadInputTokens += usage.cacheReadInputTokens;
+      acc.promptInputFootprintTokens +=
+        usage.inputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens;
+      acc.maxEstimatedContextTokens = Math.max(
+        acc.maxEstimatedContextTokens,
+        usage.estimatedContextTokens,
+      );
+      acc.maxContextUtilization = Math.max(
+        acc.maxContextUtilization,
+        usage.contextUtilization,
+      );
+      acc.estimatedCostUsd += turn.estimatedCostUsd ?? 0;
+    }
+
     acc.fileChangeCount += turn.fileChangeCount;
     return acc;
   }, {
@@ -101,8 +229,14 @@ function summarizeTurns(turns) {
     maxEstimatedContextTokens: 0,
     maxContextUtilization: 0,
     fileChangeCount: 0,
+    estimatedCostUsd: 0,
+    totalWallClockMs: 0,
+    totalTimeToFirstEventMs: 0,
+    maxTurnWallClockMs: 0,
+    turnsWithErrors: 0,
   });
 
+  const completedTurns = turns.length || 1;
   return {
     ...totals,
     totalTokens: totals.totalInputTokens + totals.totalOutputTokens,
@@ -110,12 +244,77 @@ function summarizeTurns(turns) {
     fallbackUsageSessions: 0,
     richUsageTurns: turns.filter((turn) => turn.usage).length,
     fallbackUsageTurns: 0,
-    estimatedCostUsd: 0,
+    estimatedCostUsd: Number(totals.estimatedCostUsd.toFixed(6)),
     models: Array.from(models).sort(),
     providers: Array.from(providers).sort(),
+    pricingSources: Array.from(pricingSources).sort(),
     legacyVisibleInputTokens: totals.totalInputTokens,
     legacyTelemetryGapTokens:
       totals.totalCacheCreationInputTokens + totals.totalCacheReadInputTokens,
+    averageTurnWallClockMs: Number((totals.totalWallClockMs / completedTurns).toFixed(2)),
+    averageTimeToFirstEventMs: Number((totals.totalTimeToFirstEventMs / completedTurns).toFixed(2)),
+  };
+}
+
+async function summarizeWorkspaceQuality(rootDir) {
+  const entries = await fs.readdir(rootDir, { withFileTypes: true });
+  const htmlFiles = entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".html"))
+    .map((entry) => entry.name);
+  const cssFiles = entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".css"))
+    .map((entry) => entry.name);
+
+  const htmlContents = await Promise.all(
+    htmlFiles.map(async (file) => ({
+      file,
+      content: await fs.readFile(path.join(rootDir, file), "utf8"),
+    })),
+  );
+  const cssContents = await Promise.all(
+    cssFiles.map(async (file) => ({
+      file,
+      content: await fs.readFile(path.join(rootDir, file), "utf8"),
+    })),
+  );
+
+  const primaryHtml = htmlContents[0]?.content ?? "";
+  const combinedHtml = htmlContents.map((entry) => entry.content).join("\n");
+  const combinedCss = cssContents.map((entry) => entry.content).join("\n");
+
+  const footerPresent = /<footer\b/i.test(combinedHtml);
+  const ctaChanged =
+    !/>Learn more</i.test(combinedHtml)
+    && /(get started|start shipping|start building|explore features|get started free)/i.test(combinedHtml);
+  const featuresSignal =
+    /features/i.test(combinedHtml)
+    || (combinedHtml.match(/<article\b/gi)?.length ?? 0) >= 3
+    || (combinedHtml.match(/feature/gi)?.length ?? 0) >= 3
+    || (combinedHtml.match(/<li\b/gi)?.length ?? 0) >= 3;
+  const stylesTouchFooter = /\bfooter\b/i.test(combinedCss) || /<style[\s\S]*footer/i.test(combinedHtml);
+  const embeddedStyles = /<style\b/i.test(combinedHtml);
+  const workspaceMaterialized =
+    htmlFiles.length >= 1
+    && primaryHtml.length > 500
+    && (cssFiles.length >= 1 || embeddedStyles);
+  const qualityPass =
+    workspaceMaterialized
+    && footerPresent
+    && featuresSignal
+    && stylesTouchFooter;
+
+  return {
+    workspaceMaterialized,
+    footerPresent,
+    ctaChanged,
+    featuresSignal,
+    stylesTouchFooter,
+    embeddedStyles,
+    qualityPass,
+    htmlFileCount: htmlFiles.length,
+    cssFileCount: cssFiles.length,
+    indexHtmlBytes: Buffer.byteLength(primaryHtml, "utf8"),
+    stylesCssBytes: Buffer.byteLength(combinedCss, "utf8"),
   };
 }
 
@@ -240,12 +439,16 @@ function openHarnessSession() {
 
 async function waitForSessionReady(state, workspacePath) {
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
     const onMessage = (event) => {
       const message = JSON.parse(String(event.data));
       if (message.type === "session_ready") {
         state.sessionReady = true;
         state.socket.removeEventListener("message", onMessage);
-        resolve(message);
+        resolve({
+          ...message,
+          sessionInitMs: Date.now() - startedAt,
+        });
       } else if (message.type === "error") {
         state.socket.removeEventListener("message", onMessage);
         reject(new Error(message.message ?? "session init failed"));
@@ -263,6 +466,7 @@ async function waitForSessionReady(state, workspacePath) {
 
 async function runTurn(state, prompt, turnIndex) {
   return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
     const turn = {
       turnIndex,
       prompt,
@@ -271,23 +475,51 @@ async function runTurn(state, prompt, turnIndex) {
       usage: null,
       fileChangeCount: 0,
       rawEnd: null,
+      firstEventAt: null,
+      completedAt: null,
+      wallClockMs: null,
+      timeToFirstEventMs: null,
+      stopReason: null,
+      estimatedCostUsd: 0,
+      pricing: null,
+    };
+
+    const markFirstEvent = () => {
+      if (turn.firstEventAt == null) {
+        turn.firstEventAt = Date.now();
+        turn.timeToFirstEventMs = turn.firstEventAt - startedAt;
+      }
     };
 
     const onMessage = (event) => {
       const message = JSON.parse(String(event.data));
       switch (message.type) {
         case "text_delta":
+          markFirstEvent();
           turn.text += message.text ?? "";
           break;
+        case "thinking_delta":
+          markFirstEvent();
+          break;
         case "tool_use_start":
+          markFirstEvent();
           if (typeof message.name === "string") {
             turn.toolNames.push(message.name);
           }
           break;
         case "assistant_message_end":
+          markFirstEvent();
           turn.rawEnd = message;
           turn.usage = readUsage(message);
           turn.fileChangeCount = countFilesChanged(message);
+          turn.stopReason = typeof message.stop_reason === "string" ? message.stop_reason : null;
+          turn.completedAt = Date.now();
+          turn.wallClockMs = turn.completedAt - startedAt;
+          if (turn.usage) {
+            const { estimatedCostUsd, pricing } = calculateEstimatedCostUsd(turn.usage);
+            turn.estimatedCostUsd = estimatedCostUsd;
+            turn.pricing = pricing;
+          }
           state.socket.removeEventListener("message", onMessage);
           resolve(turn);
           break;
@@ -312,12 +544,13 @@ async function main() {
 
   const runId = `${scenarioId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const workspaceDir = path.join(os.tmpdir(), runId);
+  const runStartedAt = Date.now();
   await createWorkspace(workspaceDir);
   logStep("workspace prepared", { workspaceDir, harnessBaseUrl });
 
   const session = await openHarnessSession();
   try {
-    await waitForSessionReady(session, workspaceDir);
+    const ready = await waitForSessionReady(session, workspaceDir);
     logStep("session ready");
 
     const turns = [];
@@ -333,7 +566,12 @@ async function main() {
       });
     }
 
-    const metrics = summarizeTurns(turns);
+    const quality = await summarizeWorkspaceQuality(workspaceDir);
+    const metrics = {
+      ...summarizeTurns(turns),
+      runWallClockMs: Date.now() - runStartedAt,
+      sessionInitMs: ready.sessionInitMs ?? 0,
+    };
     const payload = {
       suite: "benchmark",
       scenarioId,
@@ -341,10 +579,11 @@ async function main() {
       device,
       generatedAt: new Date().toISOString(),
       counts: {
-        doneTasks: 1,
-        failedTasks: 0,
+        doneTasks: quality.qualityPass ? 1 : 0,
+        failedTasks: quality.qualityPass ? 0 : 1,
       },
       metrics,
+      quality,
       turns,
       workspaceDir,
       harnessBaseUrl,

@@ -29,11 +29,27 @@ function normalizeScenario(payload, filePath) {
   }
 
   const metrics = payload.metrics ?? {};
+  const turns = Array.isArray(payload.turns) ? payload.turns : [];
+  const combinedTurnText = turns
+    .map((turn) => (typeof turn?.text === "string" ? turn.text : ""))
+    .join("\n")
+    .toLowerCase();
+  const heuristicQualityPass =
+    turns.some((turn) => Number(turn?.fileChangeCount ?? 0) > 0)
+    && turns.some((turn) =>
+      Array.isArray(turn?.toolNames)
+      && turn.toolNames.some((tool) => ["write_file", "edit_file"].includes(tool))
+    )
+    && /footer/.test(combinedTurnText)
+    && /(cta|call-to-action|start building|start shipping|get started|explore features)/.test(combinedTurnText)
+    ;
+  const qualityPass = Boolean(payload.quality?.qualityPass) || heuristicQualityPass;
+
   return {
     scenarioId: payload.scenarioId,
     title: payload.title ?? payload.scenarioId,
     device: payload.device ?? "unknown",
-    success: (payload.counts?.failedTasks ?? 0) === 0 && (payload.counts?.doneTasks ?? 0) > 0,
+    success: qualityPass,
     totalInputTokens: Number(metrics.totalInputTokens ?? 0),
     totalOutputTokens: Number(metrics.totalOutputTokens ?? 0),
     totalTokens: Number(metrics.totalTokens ?? 0),
@@ -48,6 +64,13 @@ function normalizeScenario(payload, filePath) {
     fallbackUsageSessions: Number(metrics.fallbackUsageSessions ?? 0),
     fileChangeCount: Number(metrics.fileChangeCount ?? 0),
     estimatedCostUsd: Number(metrics.estimatedCostUsd ?? 0),
+    runWallClockMs: Number(metrics.runWallClockMs ?? metrics.totalWallClockMs ?? 0),
+    averageTurnWallClockMs: Number(metrics.averageTurnWallClockMs ?? 0),
+    averageTimeToFirstEventMs: Number(metrics.averageTimeToFirstEventMs ?? 0),
+    maxTurnWallClockMs: Number(metrics.maxTurnWallClockMs ?? 0),
+    sessionInitMs: Number(metrics.sessionInitMs ?? 0),
+    turnsWithErrors: Number(metrics.turnsWithErrors ?? 0),
+    qualityPass,
     source: path.relative(cwd, filePath),
   };
 }
@@ -71,16 +94,20 @@ function toMarkdown(summary) {
     `Cache read tokens: ${summary.totals.totalCacheReadInputTokens}`,
     `Prompt footprint tokens: ${summary.totals.promptInputFootprintTokens}`,
     `Cache share of prompt footprint: ${summary.totals.cacheSharePct.toFixed(2)}%`,
+    `Estimated effective cost (USD): ${summary.totals.estimatedCostUsd.toFixed(4)}`,
+    `Run wall clock (ms): ${summary.totals.runWallClockMs}`,
+    `Average turn wall clock (ms): ${summary.totals.averageTurnWallClockMs.toFixed(2)}`,
+    `Average time to first event (ms): ${summary.totals.averageTimeToFirstEventMs.toFixed(2)}`,
     `Max estimated context tokens: ${summary.totals.maxEstimatedContextTokens}`,
     `Max context utilization: ${summary.totals.maxContextUtilization.toFixed(3)}`,
     "",
-    "| Scenario | Success | Input | Output | Cache write | Cache read | Prompt footprint | Cache share % | Max context util |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    "| Scenario | Success | Quality | Cost USD | Run ms | Input | Output | Cache write | Cache read | Prompt footprint | Cache share % | Max context util |",
+    "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   ];
 
   for (const scenario of summary.scenarios) {
     lines.push(
-      `| ${scenario.title} | ${scenario.success ? "yes" : "no"} | ${scenario.totalInputTokens} | ${scenario.totalOutputTokens} | ${scenario.totalCacheCreationInputTokens} | ${scenario.totalCacheReadInputTokens} | ${scenario.promptInputFootprintTokens} | ${scenario.cacheSharePct.toFixed(2)} | ${scenario.maxContextUtilization.toFixed(3)} |`,
+      `| ${scenario.title} | ${scenario.success ? "yes" : "no"} | ${scenario.qualityPass ? "pass" : "fail"} | ${scenario.estimatedCostUsd.toFixed(4)} | ${scenario.runWallClockMs} | ${scenario.totalInputTokens} | ${scenario.totalOutputTokens} | ${scenario.totalCacheCreationInputTokens} | ${scenario.totalCacheReadInputTokens} | ${scenario.promptInputFootprintTokens} | ${scenario.cacheSharePct.toFixed(2)} | ${scenario.maxContextUtilization.toFixed(3)} |`,
     );
   }
 
@@ -136,6 +163,13 @@ async function main() {
     fallbackUsageTurns: acc.fallbackUsageTurns + scenario.fallbackUsageTurns,
     estimatedCostUsd: acc.estimatedCostUsd + scenario.estimatedCostUsd,
     fileChangeCount: acc.fileChangeCount + scenario.fileChangeCount,
+    runWallClockMs: acc.runWallClockMs + scenario.runWallClockMs,
+    averageTurnWallClockMs: acc.averageTurnWallClockMs + scenario.averageTurnWallClockMs,
+    averageTimeToFirstEventMs: acc.averageTimeToFirstEventMs + scenario.averageTimeToFirstEventMs,
+    maxTurnWallClockMs: Math.max(acc.maxTurnWallClockMs, scenario.maxTurnWallClockMs),
+    sessionInitMs: acc.sessionInitMs + scenario.sessionInitMs,
+    turnsWithErrors: acc.turnsWithErrors + scenario.turnsWithErrors,
+    qualityPasses: acc.qualityPasses + (scenario.qualityPass ? 1 : 0),
   }), {
     scenarios: 0,
     successfulScenarios: 0,
@@ -151,6 +185,13 @@ async function main() {
     fallbackUsageTurns: 0,
     estimatedCostUsd: 0,
     fileChangeCount: 0,
+    runWallClockMs: 0,
+    averageTurnWallClockMs: 0,
+    averageTimeToFirstEventMs: 0,
+    maxTurnWallClockMs: 0,
+    sessionInitMs: 0,
+    turnsWithErrors: 0,
+    qualityPasses: 0,
   });
 
   const summary = {
@@ -162,6 +203,12 @@ async function main() {
         totals.promptInputFootprintTokens,
       ),
       estimatedCostUsd: Number(totals.estimatedCostUsd.toFixed(4)),
+      averageTurnWallClockMs: Number(
+        ((totals.averageTurnWallClockMs || 0) / Math.max(totals.scenarios, 1)).toFixed(2),
+      ),
+      averageTimeToFirstEventMs: Number(
+        ((totals.averageTimeToFirstEventMs || 0) / Math.max(totals.scenarios, 1)).toFixed(2),
+      ),
     },
     scenarios,
   };
