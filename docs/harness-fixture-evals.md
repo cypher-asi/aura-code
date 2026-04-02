@@ -67,3 +67,18 @@ Use the fixture suite as the main harness regression lane for:
 
 Keep the older generated-workspace lane for cost and context experiments, but
 do not use it as the only proof path for harness correctness.
+
+## Operational Rules
+
+To keep harness evals trustworthy, we should follow a few rules consistently.
+
+1. Prefer a clean worktree before final benchmark runs.
+2. Use the wrapper scripts in `evals/local-stack/bin/` by default.
+3. If running the Node benchmark directly, source `evals/local-stack/.runtime/auth.env` first.
+4. Treat validator-backed fixture scenarios as pass/fail gates, not just signal.
+5. Use same-system A/B comparisons whenever possible:
+   - cache on vs cache off
+   - current branch vs baseline harness on a second port
+
+These rules matter because many false negatives and false positives come from
+setup drift rather than from the harness changes themselves.
