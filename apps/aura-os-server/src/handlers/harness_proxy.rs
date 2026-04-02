@@ -517,6 +517,13 @@ pub(crate) async fn install_from_store(
     let skill_path = skill_dir.join("SKILL.md");
     std::fs::write(&skill_path, &content).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // Poke the harness so it re-indexes the newly written skill file.
+    let base = harness_base_url();
+    let _ = reqwest::Client::new()
+        .get(format!("{base}/api/skills/{name}"))
+        .send()
+        .await;
+
     let resp_json = serde_json::json!({
         "name": name,
         "path": skill_path.to_string_lossy(),

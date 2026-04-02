@@ -78,7 +78,9 @@ export function SkillsTab({ agent }: SkillsTabProps) {
         api.harnessSkills.listAgentSkills(agentId),
       ]);
       const skills = Array.isArray(skillsData) ? skillsData : (skillsData as any)?.skills ?? [];
-      const installs = Array.isArray(installData) ? installData : [];
+      const installs = Array.isArray(installData)
+        ? installData
+        : (installData as any)?.skills ?? (installData as any)?.installations ?? [];
       setCatalog(skills);
       setInstallations(installs);
     } catch {
@@ -123,26 +125,15 @@ export function SkillsTab({ agent }: SkillsTabProps) {
     [agentId, fetchData],
   );
 
-  if (loading) {
-    return (
-      <div className={styles.skillsListWrap}>
-        <div className={styles.skillsSectionHeader}>
-          <Text size="xs" variant="muted" weight="medium">
-            <Loader2 size={12} className={styles.spin} /> Loading skills...
-          </Text>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={styles.skillsListWrap}>
       {/* Installed section */}
       <div className={styles.skillsSectionHeader}>
         <Text size="xs" variant="muted" weight="medium">
-          Installed ({installedSkills.length})
+          Installed{!loading && ` (${installedSkills.length})`}
         </Text>
         <div className={styles.skillHeaderActions}>
+          {loading && <Loader2 size={12} className={styles.spin} style={{ opacity: 0.5 }} />}
           <button
             type="button"
             className={styles.skillCreateBtn}
@@ -162,7 +153,7 @@ export function SkillsTab({ agent }: SkillsTabProps) {
         </div>
       </div>
 
-      {installedSkills.length === 0 ? (
+      {!loading && (installedSkills.length === 0 ? (
         <div className={styles.skillsEmpty}>No skills installed</div>
       ) : (
         installedSkills.map((skill) => (
@@ -175,7 +166,7 @@ export function SkillsTab({ agent }: SkillsTabProps) {
             onView={viewSkill}
           />
         ))
-      )}
+      ))}
 
       {/* Available section (collapsible) */}
       <button
@@ -185,11 +176,11 @@ export function SkillsTab({ agent }: SkillsTabProps) {
       >
         {showAvailable ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <Text size="xs" variant="muted" weight="medium">
-          Available ({availableSkills.length})
+          Available{!loading && ` (${availableSkills.length})`}
         </Text>
       </button>
 
-      {showAvailable &&
+      {!loading && showAvailable &&
         (availableSkills.length === 0 ? (
           <div className={styles.skillsEmpty}>No additional skills available</div>
         ) : (
@@ -214,6 +205,7 @@ export function SkillsTab({ agent }: SkillsTabProps) {
       <SkillStoreModal
         isOpen={showStore}
         agentId={agentId}
+        initialInstalledNames={installedNames}
         onClose={() => setShowStore(false)}
         onInstalled={fetchData}
       />

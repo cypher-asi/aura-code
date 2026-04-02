@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { X, Search } from "lucide-react";
 import { SkillStoreCategories } from "./SkillStoreCategories";
 import { SkillStoreGrid } from "./SkillStoreGrid";
@@ -13,16 +13,27 @@ const catalog = catalogData as SkillStoreCatalogEntry[];
 interface SkillStoreModalProps {
   isOpen: boolean;
   agentId?: string;
+  initialInstalledNames?: Set<string>;
   onClose: () => void;
   onInstalled?: () => void;
 }
 
-export function SkillStoreModal({ isOpen, agentId, onClose, onInstalled }: SkillStoreModalProps) {
+export function SkillStoreModal({ isOpen, agentId, initialInstalledNames, onClose, onInstalled }: SkillStoreModalProps) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<SkillCategory | "all">("all");
   const [selected, setSelected] = useState<SkillStoreCatalogEntry | null>(null);
   const [installedNames, setInstalledNames] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && initialInstalledNames) {
+      setInstalledNames((prev) => {
+        const merged = new Set(prev);
+        for (const n of initialInstalledNames) merged.add(n);
+        return merged;
+      });
+    }
+  }, [isOpen, initialInstalledNames]);
 
   const filtered = useMemo(() => {
     let result = catalog;
