@@ -335,6 +335,11 @@
   margin-top: 4px;
 }
 
+.detailCategoryLabel {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
 .detailInstallArea {
   flex-shrink: 0;
   margin-left: auto;

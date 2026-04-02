@@ -32,7 +32,7 @@ export function SkillStoreDetail({
         <div className={styles.detailTitleBlock}>
           <div className={styles.detailName}>{entry.name}</div>
           <div className={styles.detailCategory}>
-            <Badge variant="pending">{entry.category}</Badge>
+            <span className={styles.detailCategoryLabel}>{entry.category}</span>
             <SecurityBadge rating={entry.security_rating} size="md" />
           </div>
         </div>
