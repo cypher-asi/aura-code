@@ -51,6 +51,8 @@
   font-size: 16px;
   color: var(--color-text);
   white-space: nowrap;
+  width: 120px;
+  flex-shrink: 0;
 }
 
 .searchWrap {
@@ -92,15 +94,14 @@
 .closeBtn {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 32px;
+  justify-content: flex-end;
+  width: 120px;
   height: 32px;
   border: none;
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
   border-radius: var(--radius-sm, 6px);
-  margin-left: auto;
   flex-shrink: 0;
 }
 
