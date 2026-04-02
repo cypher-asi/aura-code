@@ -133,9 +133,6 @@ function summarizeTurns(turns) {
     models: Array.from(models).sort(),
     providers: Array.from(providers).sort(),
     pricingSources: Array.from(pricingSources).sort(),
-    legacyVisibleInputTokens: totals.totalInputTokens,
-    legacyTelemetryGapTokens:
-      totals.totalCacheCreationInputTokens + totals.totalCacheReadInputTokens,
     averageTurnWallClockMs: Number((totals.totalWallClockMs / completedTurns).toFixed(2)),
     averageTimeToFirstEventMs: Number((totals.totalTimeToFirstEventMs / completedTurns).toFixed(2)),
   };

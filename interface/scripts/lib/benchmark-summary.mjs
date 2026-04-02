@@ -1,3 +1,5 @@
+import path from "node:path";
+
 function asRecord(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
@@ -58,7 +60,7 @@ export function normalizeScenario(payload, filePath, cwd) {
     qualityPass,
     pricingSources,
     hasUnknownPricing: pricingSources.includes("unknown-pricing"),
-    source: filePath.replace(`${cwd}/`, ""),
+    source: path.relative(cwd, filePath),
   };
 }
 
