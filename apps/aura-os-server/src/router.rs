@@ -11,9 +11,9 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::handlers::{
-    agents, auth, billing, cron, dev_loop, feed, files, follows, leaderboard, log, orgs,
-    process, project_stats, projects, remote_files, remote_terminal, specs, super_agent, swarm,
-    system, tasks, terminal, users, ws,
+    agents, auth, billing, cron, dev_loop, feed, files, follows, harness_proxy, leaderboard, log,
+    orgs, process, project_stats, projects, remote_files, remote_terminal, specs, super_agent,
+    swarm, system, tasks, terminal, users, ws,
 };
 use crate::state::AppState;
 
@@ -81,6 +81,7 @@ pub fn create_router_with_interface(state: AppState, interface_dir: Option<PathB
         .merge(super_agent_routes())
         .merge(cron_routes())
         .merge(process_routes())
+        .merge(harness_proxy_routes())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             crate::auth_guard::require_verified_session,
@@ -345,6 +346,10 @@ fn agent_routes() -> Router<AppState> {
             get(agents::list_session_events),
         )
         .route(
+            "/api/projects/:project_id/agents/:agent_instance_id/sessions/:session_id/summarize",
+            post(agents::summarize_session),
+        )
+        .route(
             "/api/projects/:project_id/sessions",
             get(agents::list_project_sessions),
         )
@@ -472,6 +477,76 @@ fn process_routes() -> Router<AppState> {
         .route(
             "/api/processes/:id/runs/:run_id/events",
             get(process::list_run_events),
+        )
+        .route(
+            "/api/process-folders",
+            get(process::list_folders).post(process::create_folder),
+        )
+        .route(
+            "/api/process-folders/:id",
+            put(process::update_folder).delete(process::delete_folder),
+        )
+}
+
+fn harness_proxy_routes() -> Router<AppState> {
+    Router::new()
+        // Memory – Facts
+        .route(
+            "/api/harness/agents/:agent_id/memory/facts",
+            get(harness_proxy::list_facts).post(harness_proxy::create_fact),
+        )
+        .route(
+            "/api/harness/agents/:agent_id/memory/facts/by-key/:key",
+            get(harness_proxy::get_fact_by_key),
+        )
+        .route(
+            "/api/harness/agents/:agent_id/memory/facts/:fact_id",
+            get(harness_proxy::get_fact)
+                .put(harness_proxy::update_fact)
+                .delete(harness_proxy::delete_fact),
+        )
+        // Memory – Events
+        .route(
+            "/api/harness/agents/:agent_id/memory/events",
+            get(harness_proxy::list_events).post(harness_proxy::create_event),
+        )
+        .route(
+            "/api/harness/agents/:agent_id/memory/events/:event_id",
+            delete(harness_proxy::delete_event),
+        )
+        // Memory – Procedures
+        .route(
+            "/api/harness/agents/:agent_id/memory/procedures",
+            get(harness_proxy::list_procedures).post(harness_proxy::create_procedure),
+        )
+        .route(
+            "/api/harness/agents/:agent_id/memory/procedures/:proc_id",
+            get(harness_proxy::get_procedure)
+                .put(harness_proxy::update_procedure)
+                .delete(harness_proxy::delete_procedure),
+        )
+        // Memory – Aggregate
+        .route(
+            "/api/harness/agents/:agent_id/memory",
+            get(harness_proxy::get_memory_snapshot).delete(harness_proxy::wipe_memory),
+        )
+        .route(
+            "/api/harness/agents/:agent_id/memory/stats",
+            get(harness_proxy::get_memory_stats),
+        )
+        .route(
+            "/api/harness/agents/:agent_id/memory/consolidate",
+            post(harness_proxy::trigger_consolidation),
+        )
+        // Skills
+        .route("/api/harness/skills", get(harness_proxy::list_skills))
+        .route(
+            "/api/harness/skills/:name",
+            get(harness_proxy::get_skill),
+        )
+        .route(
+            "/api/harness/skills/:name/activate",
+            post(harness_proxy::activate_skill),
         )
 }
 

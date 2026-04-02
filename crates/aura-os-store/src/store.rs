@@ -17,6 +17,7 @@ pub(crate) const CF_NAMES: &[&str] = &[
     "cron_artifacts",
     "cron_tags",
     "processes",
+    "process_folders",
     "process_nodes",
     "process_node_connections",
     "process_runs",

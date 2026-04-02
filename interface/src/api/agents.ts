@@ -76,4 +76,9 @@ export const sessionsApi = {
     apiFetch<SessionEvent[]>(
       `/api/projects/${projectId}/agents/${agentInstanceId}/sessions/${sessionId}/events`,
     ),
+  summarizeSession: (projectId: ProjectId, agentInstanceId: AgentInstanceId, sessionId: string) =>
+    apiFetch<Session>(
+      `/api/projects/${projectId}/agents/${agentInstanceId}/sessions/${sessionId}/summarize`,
+      { method: "POST" },
+    ),
 };

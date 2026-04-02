@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ReactFlow,
@@ -7,17 +7,18 @@ import {
   Controls,
   MiniMap,
   useNodesState,
+  useEdgesState,
   useReactFlow,
   BackgroundVariant,
+  ConnectionMode,
   type Connection,
   type Node,
   type Edge,
-  type EdgeChange,
-  applyEdgeChanges,
+  SelectionMode,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./ProcessCanvas.css";
-import { Play, GitBranch, FileOutput, Timer, Merge } from "lucide-react";
+import { Play, GitBranch, FileOutput, Timer, Merge, Pencil, Trash2 } from "lucide-react";
 import { Menu } from "@cypher-asi/zui";
 import type { MenuItem } from "@cypher-asi/zui";
 import type { ProcessNode, ProcessNodeConnection } from "../../../types";
@@ -35,25 +36,70 @@ interface ProcessCanvasProps {
   processConnections: ProcessNodeConnection[];
 }
 
-function toFlowNodes(nodes: ProcessNode[]): Node[] {
+interface RenameState {
+  nodeId: string;
+  onRenameSubmit: (newLabel: string) => void;
+}
+
+function toFlowNodes(nodes: ProcessNode[], renaming?: RenameState): Node[] {
   return nodes.map((n) => ({
     id: n.node_id,
     type: "processNode",
     position: { x: n.position_x, y: n.position_y },
-    data: { label: n.label, nodeType: n.node_type, prompt: n.prompt },
+    data: {
+      label: n.label,
+      nodeType: n.node_type,
+      prompt: n.prompt,
+      ...(renaming && renaming.nodeId === n.node_id
+        ? { isRenaming: true, onRenameSubmit: renaming.onRenameSubmit }
+        : {}),
+    },
   }));
 }
 
-function toFlowEdges(connections: ProcessNodeConnection[]): Edge[] {
-  return connections.map((c) => ({
-    id: c.connection_id,
-    source: c.source_node_id,
-    sourceHandle: c.source_handle || null,
-    target: c.target_node_id,
-    targetHandle: c.target_handle || null,
-    animated: true,
-    style: { stroke: "#999", strokeWidth: 2 },
-  }));
+function normalizeHandleId(
+  rawHandle: string | null,
+  direction: "source" | "target",
+  nodeType: ProcessNodeType | undefined,
+): string | undefined {
+  const normalized = (rawHandle ?? "").trim().toLowerCase();
+
+  if (direction === "source") {
+    if (nodeType === "condition" && ["out-false", "false", "branch-false"].includes(normalized)) {
+      return "false";
+    }
+    return undefined;
+  }
+
+  if (nodeType === "merge" && ["in-2", "merge-2", "second", "2"].includes(normalized)) {
+    return "merge-2";
+  }
+  return undefined;
+}
+
+function toFlowEdges(connections: ProcessNodeConnection[], nodes: ProcessNode[]): Edge[] {
+  const nodeTypeById = new Map(nodes.map((n) => [n.node_id, n.node_type]));
+  return connections.map((c) => {
+    const sourceHandle = normalizeHandleId(
+      c.source_handle,
+      "source",
+      nodeTypeById.get(c.source_node_id),
+    );
+    const targetHandle = normalizeHandleId(
+      c.target_handle,
+      "target",
+      nodeTypeById.get(c.target_node_id),
+    );
+
+    return {
+      id: c.connection_id,
+      source: c.source_node_id,
+      ...(sourceHandle ? { sourceHandle } : {}),
+      target: c.target_node_id,
+      ...(targetHandle ? { targetHandle } : {}),
+      animated: true,
+    };
+  });
 }
 
 const ADD_NODE_TYPES: { type: ProcessNodeType; label: string }[] = [
@@ -78,6 +124,12 @@ const nodeMenuItems: MenuItem[] = ADD_NODE_TYPES.map((item) => ({
   icon: NODE_MENU_ICONS[item.type],
 }));
 
+const nodeCtxMenuItems = (isIgnition: boolean): MenuItem[] => [
+  { id: "rename", label: "Rename", icon: <Pencil size={14} /> },
+  { type: "separator" as const },
+  { id: "delete", label: "Delete", icon: <Trash2 size={14} />, disabled: isIgnition },
+];
+
 export function ProcessCanvas(props: ProcessCanvasProps) {
   return (
     <ReactFlowProvider>
@@ -87,43 +139,81 @@ export function ProcessCanvas(props: ProcessCanvasProps) {
 }
 
 function ProcessCanvasInner({ processId, processNodes, processConnections }: ProcessCanvasProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState(toFlowNodes(processNodes));
-  const [localEdgeAdds, setLocalEdgeAdds] = useState<Edge[]>([]);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  const ctxMenuRef = useRef<HTMLDivElement>(null);
+  const [renamingNodeId, setRenamingNodeId] = useState<string | null>(null);
+
   const { screenToFlowPosition } = useReactFlow();
   const fetchNodes = useProcessStore((s) => s.fetchNodes);
   const fetchConnections = useProcessStore((s) => s.fetchConnections);
   const selectNode = useProcessSidekickStore((s) => s.selectNode);
   const closeNodeInspector = useProcessSidekickStore((s) => s.closeNodeInspector);
 
+  const handleRenameSubmit = useCallback(
+    async (nodeId: string, newLabel: string) => {
+      setRenamingNodeId(null);
+      const original = processNodes.find((n) => n.node_id === nodeId);
+      if (!original || original.label === newLabel) return;
+      try {
+        await processApi.updateNode(processId, nodeId, { label: newLabel });
+        fetchNodes(processId);
+      } catch (e) {
+        console.error("Failed to rename node:", e);
+      }
+    },
+    [processId, processNodes, fetchNodes],
+  );
+
+  const renameState: RenameState | undefined = renamingNodeId
+    ? { nodeId: renamingNodeId, onRenameSubmit: (label: string) => handleRenameSubmit(renamingNodeId, label) }
+    : undefined;
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(toFlowNodes(processNodes, renameState));
+  const [edges, setEdges, onEdgesChange] = useEdgesState(toFlowEdges(processConnections, processNodes));
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [nodeCtxMenu, setNodeCtxMenu] = useState<{ x: number; y: number; nodeId: string } | null>(null);
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
+  const nodeCtxMenuRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    setNodes(toFlowNodes(processNodes));
-  }, [processNodes, setNodes]);
-
-  const serverEdges = useMemo(() => toFlowEdges(processConnections), [processConnections]);
-  const edges = useMemo(() => [...serverEdges, ...localEdgeAdds], [serverEdges, localEdgeAdds]);
-
-  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setLocalEdgeAdds((prev) => applyEdgeChanges(changes, prev));
-  }, []);
+    setNodes(toFlowNodes(processNodes, renameState));
+  }, [processNodes, setNodes, renamingNodeId]);
 
   useEffect(() => {
-    setLocalEdgeAdds([]);
-  }, [processConnections]);
+    setEdges(toFlowEdges(processConnections, processNodes));
+  }, [processConnections, processNodes, setEdges]);
+
+  const deleteNodes = useCallback(
+    async (nodeIds: string[]) => {
+      const deletable = nodeIds.filter((id) => {
+        const n = processNodes.find((pn) => pn.node_id === id);
+        return n && n.node_type !== "ignition";
+      });
+      if (deletable.length === 0) return;
+      setNodes((prev) => prev.filter((n) => !deletable.includes(n.id)));
+      setEdges((prev) => prev.filter((e) => !deletable.includes(e.source) && !deletable.includes(e.target)));
+      closeNodeInspector();
+      try {
+        await Promise.all(deletable.map((id) => processApi.deleteNode(processId, id)));
+      } catch (e) {
+        console.error("Failed to delete nodes:", e);
+      }
+      fetchNodes(processId);
+      fetchConnections(processId);
+    },
+    [processId, processNodes, setNodes, setEdges, fetchNodes, fetchConnections, closeNodeInspector],
+  );
 
   const onConnect = useCallback(
     async (params: Connection) => {
+      const tempId = `temp-${Date.now()}`;
       const optimisticEdge: Edge = {
-        id: `temp-${Date.now()}`,
+        id: tempId,
         source: params.source!,
         target: params.target!,
-        sourceHandle: params.sourceHandle ?? null,
-        targetHandle: params.targetHandle ?? null,
+        ...(params.sourceHandle ? { sourceHandle: params.sourceHandle } : {}),
+        ...(params.targetHandle ? { targetHandle: params.targetHandle } : {}),
         animated: true,
-        style: { stroke: "#999", strokeWidth: 2 },
       };
-      setLocalEdgeAdds((prev) => [...prev, optimisticEdge]);
+      setEdges((prev) => [...prev, optimisticEdge]);
       try {
         await processApi.createConnection(processId, {
           source_node_id: params.source!,
@@ -134,10 +224,10 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
         fetchConnections(processId);
       } catch (e) {
         console.error("Failed to save connection:", e);
-        setLocalEdgeAdds((prev) => prev.filter((e) => e.id !== optimisticEdge.id));
+        setEdges((prev) => prev.filter((edge) => edge.id !== tempId));
       }
     },
-    [processId, fetchConnections],
+    [processId, fetchConnections, setEdges],
   );
 
   const handleAddNode = useCallback(
@@ -164,18 +254,42 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
 
   const onPaneContextMenu = useCallback((event: MouseEvent | React.MouseEvent) => {
     event.preventDefault();
+    setNodeCtxMenu(null);
     setCtxMenu({ x: event.clientX, y: event.clientY });
   }, []);
 
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (ctxMenuRef.current && !ctxMenuRef.current.contains(e.target as HTMLElement)) {
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      event.preventDefault();
+      setCtxMenu(null);
+      setNodeCtxMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
+    },
+    [],
+  );
+
+  const onSelectionContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      event.preventDefault();
+      const selected = nodes.filter((n) => n.selected);
+      if (selected.length === 1) {
         setCtxMenu(null);
+        setNodeCtxMenu({ x: event.clientX, y: event.clientY, nodeId: selected[0].id });
+      }
+    },
+    [nodes],
+  );
+
+  useEffect(() => {
+    const activeMenu = ctxMenu ? ctxMenuRef : nodeCtxMenu ? nodeCtxMenuRef : null;
+    if (!activeMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (activeMenu.current && !activeMenu.current.contains(e.target as HTMLElement)) {
+        setCtxMenu(null);
+        setNodeCtxMenu(null);
       }
     };
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setCtxMenu(null);
+      if (e.key === "Escape") { setCtxMenu(null); setNodeCtxMenu(null); }
     };
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleEscape);
@@ -183,12 +297,22 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [ctxMenu]);
+  }, [ctxMenu, nodeCtxMenu]);
 
   const onNodeClick = useCallback(
     (_: unknown, flowNode: Node) => {
       const processNode = processNodes.find((n) => n.node_id === flowNode.id);
       if (processNode) selectNode(processNode);
+    },
+    [processNodes, selectNode],
+  );
+
+  const onSelectionChange = useCallback(
+    ({ nodes: selectedNodes }: { nodes: Node[] }) => {
+      if (selectedNodes.length === 1) {
+        const processNode = processNodes.find((n) => n.node_id === selectedNodes[0].id);
+        if (processNode) selectNode(processNode);
+      }
     },
     [processNodes, selectNode],
   );
@@ -211,8 +335,47 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
     [processId],
   );
 
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const getPane = () => el.querySelector<HTMLElement>(".react-flow__pane");
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Shift") getPane()?.classList.add("dragging");
+
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        const selected = nodes.filter((n) => n.selected).map((n) => n.id);
+        if (selected.length > 0) deleteNodes(selected);
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Shift") getPane()?.classList.remove("dragging");
+    };
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button === 1) getPane()?.classList.add("dragging");
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button === 1) getPane()?.classList.remove("dragging");
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    el.addEventListener("mousedown", onMouseDown);
+    el.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      el.removeEventListener("mousedown", onMouseDown);
+      el.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [nodes, deleteNodes]);
+
   return (
-    <div style={{ width: "100%", height: "100%", position: "relative" }}>
+    <div ref={wrapperRef} style={{ width: "100%", height: "100%", position: "relative" }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -221,22 +384,28 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
         onNodeClick={onNodeClick}
+        onSelectionChange={onSelectionChange}
         onPaneClick={onPaneClick}
         onPaneContextMenu={onPaneContextMenu}
+        onNodeContextMenu={onNodeContextMenu}
+        onSelectionContextMenu={onSelectionContextMenu}
         nodeTypes={nodeTypes}
+        deleteKeyCode={null}
+        connectionMode={ConnectionMode.Strict}
         fitView
         snapToGrid
         snapGrid={[20, 20]}
         defaultEdgeOptions={{ animated: true }}
-        connectionLineStyle={{ stroke: "var(--color-text, #eee)", strokeWidth: 2 }}
+        connectionLineStyle={{ stroke: "rgba(255, 255, 255, 0.55)", strokeWidth: 1 }}
         proOptions={{ hideAttribution: true }}
         selectionOnDrag
+        selectionMode={SelectionMode.Partial}
         panOnDrag={[1]}
         panActivationKeyCode="Shift"
         selectionKeyCode={null}
         style={{ background: "var(--color-bg, #0d0d1a)" }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--color-border, #222)" />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#444" />
         <Controls
           showInteractive={false}
           style={{
@@ -248,9 +417,10 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
           className="process-flow-controls"
         />
         <MiniMap
-          style={{ background: "var(--color-bg-surface, #1a1a2e)", border: "1px solid var(--color-border, #333)", borderRadius: 0, width: 150, height: 112 }}
-          nodeColor="var(--color-text-muted, #666)"
-          maskColor="rgba(0,0,0,0.5)"
+          style={{ background: "#111", border: "1px solid var(--color-border, #333)", borderRadius: 0, width: 150, height: 112 }}
+          nodeColor="#666"
+          maskColor="rgba(0,0,0,0.8)"
+          pannable
         />
       </ReactFlow>
 
@@ -269,6 +439,31 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
             border="solid"
             rounded="md"
             width={180}
+            isOpen
+          />
+        </div>,
+        document.body,
+      )}
+
+      {nodeCtxMenu && createPortal(
+        <div
+          ref={nodeCtxMenuRef}
+          style={{ position: "fixed", left: nodeCtxMenu.x, top: nodeCtxMenu.y, zIndex: 9999 }}
+        >
+          <Menu
+            items={nodeCtxMenuItems(
+              processNodes.find((n) => n.node_id === nodeCtxMenu.nodeId)?.node_type === "ignition",
+            )}
+            onChange={(id) => {
+              const targetId = nodeCtxMenu.nodeId;
+              setNodeCtxMenu(null);
+              if (id === "rename") setRenamingNodeId(targetId);
+              if (id === "delete") deleteNodes([targetId]);
+            }}
+            background="solid"
+            border="solid"
+            rounded="md"
+            width={160}
             isOpen
           />
         </div>,

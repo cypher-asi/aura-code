@@ -14,7 +14,8 @@ pub(crate) use instances::{
     update_agent_instance,
 };
 pub(crate) use sessions::{
-    get_session, list_project_sessions, list_session_events, list_session_tasks, list_sessions,
+    generate_session_summary, get_session, list_project_sessions, list_session_events,
+    list_session_tasks, list_sessions, summarize_session,
 };
 
 pub mod conversions_pub {

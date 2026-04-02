@@ -6,9 +6,10 @@ import { useProcessStore } from "../stores/process-store";
 
 interface ProcessFormProps {
   onClose: () => void;
+  folderId?: string | null;
 }
 
-export function ProcessForm({ onClose }: ProcessFormProps) {
+export function ProcessForm({ onClose, folderId }: ProcessFormProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,6 +25,7 @@ export function ProcessForm({ onClose }: ProcessFormProps) {
       const process = await processApi.createProcess({
         name: name.trim(),
         description: description.trim() || undefined,
+        folder_id: folderId ?? undefined,
       });
       addProcess(process);
       navigate(`/process/${process.process_id}`);

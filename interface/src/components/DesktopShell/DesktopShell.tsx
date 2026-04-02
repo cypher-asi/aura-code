@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useRef } from "react";
-import { useOutlet } from "react-router-dom";
+import { useNavigate, useOutlet } from "react-router-dom";
 import { Topbar, Button } from "@cypher-asi/zui";
-import { Server } from "lucide-react";
+import { CircleUserRound, Server } from "lucide-react";
 import { Lane } from "../Lane";
 import { AppNavRail } from "../AppNavRail";
 import { BottomTaskbar } from "../BottomTaskbar";
+import { OrgSelector } from "../OrgSelector";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { HostSettingsModal } from "../HostSettingsModal";
 import { UpdateBanner } from "../UpdateBanner";
@@ -16,6 +17,7 @@ import { useSidebarSearch } from "../../context/SidebarSearchContext";
 
 import { useAppUIStore } from "../../stores/app-ui-store";
 import { useUIModalStore } from "../../stores/ui-modal-store";
+import { useDesktopBackgroundStore } from "../../stores/desktop-background-store";
 import { useShallow } from "zustand/react/shallow";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import { apps } from "../../apps/registry";
@@ -27,6 +29,21 @@ function blurActiveElement() {
   if (active instanceof HTMLElement) {
     active.blur();
   }
+}
+
+function BackgroundLayer() {
+  const mode = useDesktopBackgroundStore((s) => s.mode);
+  const color = useDesktopBackgroundStore((s) => s.color);
+  const imageDataUrl = useDesktopBackgroundStore((s) => s.imageDataUrl);
+
+  if (mode === "none") return null;
+
+  const style: React.CSSProperties =
+    mode === "color"
+      ? { backgroundColor: color }
+      : { backgroundImage: `url(${imageDataUrl})`, backgroundSize: "cover", backgroundPosition: "center" };
+
+  return <div className={styles.backgroundLayer} style={style} />;
 }
 
 function SidebarSearchInput() {
@@ -46,6 +63,7 @@ function SidebarSearchInput() {
 function SidekickLane() {
   const activeApp = useAppStore((s) => s.activeApp);
   const visitedAppIds = useAppUIStore((s) => s.visitedAppIds);
+  const sidekickCollapsed = useAppUIStore((s) => s.sidekickCollapsed);
   const { SidekickTaskbar } = activeApp;
 
 
@@ -62,6 +80,8 @@ function SidekickLane() {
       minWidth={200}
       maxWidth={1200}
       storageKey="aura-sidekick-v2"
+      collapsible
+      collapsed={sidekickCollapsed}
       header={SidekickTaskbar && <SidekickTaskbar />}
       className={styles.laneLeftBorder}
     >
@@ -89,6 +109,7 @@ export function DesktopShell() {
   const activeApp = useAppStore((s) => s.activeApp);
   const { features } = useAuraCapabilities();
   const visitedAppIds = useAppUIStore((s) => s.visitedAppIds);
+  const navigate = useNavigate();
   const { hostSettingsOpen, openHostSettings, closeHostSettings } = useUIModalStore(
     useShallow((s) => ({
       hostSettingsOpen: s.hostSettingsOpen,
@@ -127,11 +148,12 @@ export function DesktopShell() {
 
   return (
     <>
-      <div className={styles.desktopShell}>
+      <div className={styles.desktopShell} data-desktop-mode={isDesktop || undefined}>
+        {isDesktop && <BackgroundLayer />}
         <Topbar
-          className="titlebar-drag"
+          className={`titlebar-drag ${styles.topbarAlignRail} ${isDesktop ? styles.topbarBlur : ""}`}
           onDoubleClick={() => windowCommand("maximize")}
-          icon={null}
+          icon={<OrgSelector variant="icon" />}
           title={<span className="titlebar-center"><img src="/AURA_logo_text_mark.png" alt="AURA" style={{ height: 11, display: "block" }} /></span>}
           actions={(
             <div className={styles.titleActions}>
@@ -145,6 +167,16 @@ export function DesktopShell() {
                   onClick={openHostSettings}
                 />
               )}
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                selected={activeApp.id === "profile"}
+                icon={<CircleUserRound size={16} />}
+                title="Profile"
+                aria-label="Profile"
+                onClick={() => navigate("/profile")}
+              />
               <WindowControls />
             </div>
           )}

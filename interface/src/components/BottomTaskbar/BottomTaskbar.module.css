@@ -7,15 +7,22 @@
   border-top: 1px solid var(--color-border);
   background: var(--color-bg);
   flex-shrink: 0;
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-2) 0 0;
   column-gap: var(--space-2);
+}
+
+:global([data-desktop-mode]) .bar {
+  background: color-mix(in srgb, var(--color-bg) 90%, transparent);
+  backdrop-filter: blur(40px) saturate(1.4);
+  -webkit-backdrop-filter: blur(40px) saturate(1.4);
 }
 
 .left {
   display: flex;
   align-items: center;
+  justify-content: center;
   justify-self: start;
-  min-width: 0;
+  width: var(--control-height-sm);
 }
 
 .center {
@@ -52,6 +59,7 @@
 }
 
 .favoriteBtn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -68,8 +76,26 @@
   background: var(--color-surface-hover);
 }
 
+.favoriteBtnOpen,
+.favoriteBtnOpen:hover {
+  background: color-mix(in srgb, var(--color-text-secondary) 66%, transparent);
+  border-radius: 3px;
+}
+
+.openIndicator {
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-text-secondary);
+}
+
 .favoriteBtn [data-agent="true"] {
   background: var(--color-overlay-medium, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 0 0 1px #000;
 }
 
 .contextMenuOverlay {
@@ -99,16 +125,28 @@
   font-size: var(--text-2xs);
   cursor: pointer;
   user-select: none;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .creditsButton:hover {
   background: var(--color-surface-hover);
+  color: #ffffff;
 }
 
 .creditsLabel {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+.sidekickToggle {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  color: var(--color-text-secondary) !important;
+}
+
+.sidekickToggle:hover {
+  color: #ffffff !important;
 }
 
 .wifiIcon {
