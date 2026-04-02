@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
 import { Minus, Square, X } from "lucide-react";
 import { useDesktopWindowStore, MIN_WIDTH, MIN_HEIGHT } from "../../stores/desktop-window-store";
 import type { WindowState } from "../../stores/desktop-window-store";
@@ -15,8 +15,36 @@ interface AgentWindowProps {
 }
 
 type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+const DEBUG_RUN_ID = "drag-rootcause-pre";
 
-export function AgentWindow({ win, isFocused }: AgentWindowProps) {
+const AgentChatWindowPanel = memo(function AgentChatWindowPanel({ agentId }: { agentId: string }) {
+  const chatProps = useAgentChatWindow(agentId);
+
+  if (!chatProps.ready) return null;
+
+  return (
+    <ChatPanel
+      key={agentId}
+      streamKey={chatProps.streamKey}
+      onSend={chatProps.onSend}
+      onStop={chatProps.onStop}
+      agentName={chatProps.agentName}
+      machineType={chatProps.machineType}
+      templateAgentId={chatProps.templateAgentId}
+      agentId={chatProps.agentId}
+      isLoading={chatProps.isLoading}
+      historyResolved={chatProps.historyResolved}
+      errorMessage={chatProps.errorMessage}
+      emptyMessage={chatProps.emptyMessage}
+      scrollResetKey={chatProps.scrollResetKey}
+      projects={chatProps.projects}
+      selectedProjectId={chatProps.selectedProjectId}
+      onProjectChange={chatProps.onProjectChange}
+    />
+  );
+});
+
+export const AgentWindow = memo(function AgentWindow({ win, isFocused }: AgentWindowProps) {
   const { agentId, minimized, maximized } = win;
 
   const focusWindow = useDesktopWindowStore((s) => s.focusWindow);
@@ -28,9 +56,10 @@ export function AgentWindow({ win, isFocused }: AgentWindowProps) {
 
   const agent = useAgentStore((s) => s.agents.find((a) => a.agent_id === agentId));
   const { status, isLocal } = useAvatarState(agentId);
-  const chatProps = useAgentChatWindow(agentId);
-
+  const titleBarRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startX: number; startY: number; winX: number; winY: number } | null>(null);
+  const dragMoveCountRef = useRef(0);
+  const renderCountRef = useRef(0);
   const resizeRef = useRef<{
     dir: ResizeDir;
     startX: number;
@@ -41,7 +70,8 @@ export function AgentWindow({ win, isFocused }: AgentWindowProps) {
     winH: number;
   } | null>(null);
 
-  const handlePointerDown = useCallback(() => {
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation();
     if (!isFocused) focusWindow(agentId);
   }, [isFocused, focusWindow, agentId]);
 
@@ -49,14 +79,19 @@ export function AgentWindow({ win, isFocused }: AgentWindowProps) {
     (e: React.PointerEvent) => {
       if ((e.target as HTMLElement).closest("button")) return;
       e.preventDefault();
+      e.stopPropagation();
       focusWindow(agentId);
+      dragMoveCountRef.current = 0;
       dragRef.current = {
         startX: e.clientX,
         startY: e.clientY,
         winX: win.x,
         winY: win.y,
       };
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      titleBarRef.current?.setPointerCapture(e.pointerId);
+      // #region agent log
+      fetch("http://127.0.0.1:7836/ingest/c96ab900-9f38-42f7-81b1-bd596c64b5c4", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "5df55f" }, body: JSON.stringify({ sessionId: "5df55f", runId: DEBUG_RUN_ID, hypothesisId: "H1", location: "AgentWindow.tsx:handleTitleBarPointerDown", message: "drag_start_capture", data: { agentId, pointerId: e.pointerId, hasCapture: !!titleBarRef.current?.hasPointerCapture(e.pointerId), winX: win.x, winY: win.y }, timestamp: Date.now() }) }).catch(() => {});
+      // #endregion
     },
     [agentId, focusWindow, win.x, win.y],
   );
@@ -65,15 +100,27 @@ export function AgentWindow({ win, isFocused }: AgentWindowProps) {
     (e: React.PointerEvent) => {
       const d = dragRef.current;
       if (!d) return;
+      dragMoveCountRef.current += 1;
       const dx = e.clientX - d.startX;
       const dy = e.clientY - d.startY;
-      moveWindow(agentId, d.winX + dx, d.winY + dy);
+      moveWindow(agentId, d.winX + dx, Math.max(0, d.winY + dy));
+      if (dragMoveCountRef.current % 25 === 0) {
+        // #region agent log
+        fetch("http://127.0.0.1:7836/ingest/c96ab900-9f38-42f7-81b1-bd596c64b5c4", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "5df55f" }, body: JSON.stringify({ sessionId: "5df55f", runId: DEBUG_RUN_ID, hypothesisId: "H3", location: "AgentWindow.tsx:handleTitleBarPointerMove", message: "drag_move_sample", data: { agentId, moveCount: dragMoveCountRef.current, dx, dy, hasCapture: !!titleBarRef.current?.hasPointerCapture(e.pointerId) }, timestamp: Date.now() }) }).catch(() => {});
+        // #endregion
+      }
     },
     [agentId, moveWindow],
   );
 
-  const handleTitleBarPointerUp = useCallback(() => {
-    dragRef.current = null;
+  const handleTitleBarPointerUp = useCallback((e: React.PointerEvent) => {
+    if (dragRef.current) {
+      titleBarRef.current?.releasePointerCapture(e.pointerId);
+      // #region agent log
+      fetch("http://127.0.0.1:7836/ingest/c96ab900-9f38-42f7-81b1-bd596c64b5c4", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "5df55f" }, body: JSON.stringify({ sessionId: "5df55f", runId: DEBUG_RUN_ID, hypothesisId: "H1", location: "AgentWindow.tsx:handleTitleBarPointerUp", message: "drag_end_release", data: { agentId, pointerId: e.pointerId, moveCount: dragMoveCountRef.current, stillCapturedAfterRelease: !!titleBarRef.current?.hasPointerCapture(e.pointerId) }, timestamp: Date.now() }) }).catch(() => {});
+      // #endregion
+      dragRef.current = null;
+    }
   }, []);
 
   const handleResizePointerDown = useCallback(
@@ -90,7 +137,7 @@ export function AgentWindow({ win, isFocused }: AgentWindowProps) {
         winW: win.width,
         winH: win.height,
       };
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     },
     [agentId, focusWindow, win.x, win.y, win.width, win.height],
   );
@@ -116,24 +163,38 @@ export function AgentWindow({ win, isFocused }: AgentWindowProps) {
       if (r.dir.includes("s")) newH = r.winH + dy;
       if (r.dir.includes("n")) {
         newH = r.winH - dy;
-        if (newH >= MIN_HEIGHT) newY = r.winY + dy;
+        const candidateY = r.winY + dy;
+        if (newH >= MIN_HEIGHT && candidateY >= 0) newY = candidateY;
+        else if (candidateY < 0) { newH = r.winH + r.winY; newY = 0; }
         else newH = MIN_HEIGHT;
       }
 
       newW = Math.max(MIN_WIDTH, newW);
       newH = Math.max(MIN_HEIGHT, newH);
 
-      moveWindow(agentId, newX, newY);
+      moveWindow(agentId, newX, Math.max(0, newY));
       resizeWindow(agentId, newW, newH);
     },
     [agentId, moveWindow, resizeWindow],
   );
 
-  const handleResizePointerUp = useCallback(() => {
-    resizeRef.current = null;
+  const handleResizePointerUp = useCallback((e: React.PointerEvent) => {
+    if (resizeRef.current) {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      resizeRef.current = null;
+    }
   }, []);
 
   if (minimized) return null;
+
+  useEffect(() => {
+    renderCountRef.current += 1;
+    if (renderCountRef.current % 20 === 0) {
+      // #region agent log
+      fetch("http://127.0.0.1:7836/ingest/c96ab900-9f38-42f7-81b1-bd596c64b5c4", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "5df55f" }, body: JSON.stringify({ sessionId: "5df55f", runId: DEBUG_RUN_ID, hypothesisId: "H2", location: "AgentWindow.tsx:useEffect(render)", message: "window_render_sample", data: { agentId, renderCount: renderCountRef.current, x: win.x, y: win.y, isFocused }, timestamp: Date.now() }) }).catch(() => {});
+      // #endregion
+    }
+  });
 
   const windowStyle: React.CSSProperties = maximized
     ? { inset: 0, width: "100%", height: "100%", zIndex: win.zIndex }
@@ -166,6 +227,7 @@ export function AgentWindow({ win, isFocused }: AgentWindowProps) {
       onPointerDown={handlePointerDown}
     >
       <div
+        ref={titleBarRef}
         className={styles.titleBar}
         onPointerDown={handleTitleBarPointerDown}
         onPointerMove={handleTitleBarPointerMove}
@@ -211,26 +273,7 @@ export function AgentWindow({ win, isFocused }: AgentWindowProps) {
         </div>
       </div>
       <div className={styles.body}>
-        {chatProps.ready && (
-          <ChatPanel
-            key={agentId}
-            streamKey={chatProps.streamKey}
-            onSend={chatProps.onSend}
-            onStop={chatProps.onStop}
-            agentName={chatProps.agentName}
-            machineType={chatProps.machineType}
-            templateAgentId={chatProps.templateAgentId}
-            agentId={chatProps.agentId}
-            isLoading={chatProps.isLoading}
-            historyResolved={chatProps.historyResolved}
-            errorMessage={chatProps.errorMessage}
-            emptyMessage={chatProps.emptyMessage}
-            scrollResetKey={chatProps.scrollResetKey}
-            projects={chatProps.projects}
-            selectedProjectId={chatProps.selectedProjectId}
-            onProjectChange={chatProps.onProjectChange}
-          />
-        )}
+        <AgentChatWindowPanel agentId={agentId} />
       </div>
       {!maximized &&
         resizeHandles.map((dir) => (
@@ -244,4 +287,4 @@ export function AgentWindow({ win, isFocused }: AgentWindowProps) {
         ))}
     </div>
   );
-}
+});

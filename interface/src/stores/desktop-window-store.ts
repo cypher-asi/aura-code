@@ -53,6 +53,15 @@ function persistWindows(windows: Record<string, WindowState>): void {
   } catch { /* ignore */ }
 }
 
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePersist(windows: Record<string, WindowState>): void {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => { persistTimer = null; persistWindows(windows); }, 300);
+}
+
+let moveCount = 0;
+const DEBUG_RUN_ID = "drag-rootcause-pre";
+
 function computeMaxZ(windows: Record<string, WindowState>): number {
   let max = 0;
   for (const w of Object.values(windows)) {
@@ -152,6 +161,9 @@ export const useDesktopWindowStore = create<DesktopWindowState>()(
         const z = s.nextZ;
         const next = { ...s.windows, [agentId]: { ...w, zIndex: z } };
         persistWindows(next);
+        // #region agent log
+        fetch("http://127.0.0.1:7836/ingest/c96ab900-9f38-42f7-81b1-bd596c64b5c4", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "5df55f" }, body: JSON.stringify({ sessionId: "5df55f", runId: DEBUG_RUN_ID, hypothesisId: "H3", location: "desktop-window-store.ts:focusWindow", message: "focus_window", data: { agentId, nextZ: z, windowCount: Object.keys(next).length }, timestamp: Date.now() }) }).catch(() => {});
+        // #endregion
         return { windows: next, nextZ: z + 1 };
       });
     },
@@ -161,7 +173,13 @@ export const useDesktopWindowStore = create<DesktopWindowState>()(
         const w = s.windows[agentId];
         if (!w) return s;
         const next = { ...s.windows, [agentId]: { ...w, x, y } };
-        persistWindows(next);
+        schedulePersist(next);
+        moveCount += 1;
+        if (moveCount % 40 === 0) {
+          // #region agent log
+          fetch("http://127.0.0.1:7836/ingest/c96ab900-9f38-42f7-81b1-bd596c64b5c4", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "5df55f" }, body: JSON.stringify({ sessionId: "5df55f", runId: DEBUG_RUN_ID, hypothesisId: "H3", location: "desktop-window-store.ts:moveWindow", message: "move_window_sample", data: { agentId, moveCount, x, y }, timestamp: Date.now() }) }).catch(() => {});
+          // #endregion
+        }
         return { windows: next };
       });
     },
@@ -175,7 +193,7 @@ export const useDesktopWindowStore = create<DesktopWindowState>()(
           height: Math.max(MIN_HEIGHT, height),
         };
         const next = { ...s.windows, [agentId]: { ...w, ...clamped } };
-        persistWindows(next);
+        schedulePersist(next);
         return { windows: next };
       });
     },

@@ -16,6 +16,7 @@ export function useSelectionMarquee() {
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLElement>) => {
     if (e.button !== 0) return;
+    if (e.target !== e.currentTarget) return;
     const container = e.currentTarget;
     const bounds = container.getBoundingClientRect();
     origin.current = { x: e.clientX - bounds.left, y: e.clientY - bounds.top };

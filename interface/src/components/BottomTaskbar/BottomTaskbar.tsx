@@ -27,6 +27,7 @@ const closeWindowMenuItem: MenuItem = {
   label: "Close window",
   icon: <X size={14} />,
 };
+const DEBUG_RUN_ID = "drag-rootcause-pre";
 
 function useClock() {
   const [now, setNow] = useState(() => new Date());
@@ -102,6 +103,7 @@ export function BottomTaskbar() {
 
   const [favCtx, setFavCtx] = useState<FavCtxMenu | null>(null);
   const favCtxRef = useRef<HTMLDivElement>(null);
+  const desktopWindowChangeCountRef = useRef(0);
 
   useEffect(() => {
     if (!favCtx) return;
@@ -120,6 +122,15 @@ export function BottomTaskbar() {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [favCtx]);
+
+  useEffect(() => {
+    desktopWindowChangeCountRef.current += 1;
+    if (desktopWindowChangeCountRef.current % 20 === 0) {
+      // #region agent log
+      fetch("http://127.0.0.1:7836/ingest/c96ab900-9f38-42f7-81b1-bd596c64b5c4", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "5df55f" }, body: JSON.stringify({ sessionId: "5df55f", runId: DEBUG_RUN_ID, hypothesisId: "H4", location: "BottomTaskbar.tsx:useEffect(desktopWindows)", message: "taskbar_window_state_sample", data: { changeCount: desktopWindowChangeCountRef.current, windowCount: Object.keys(desktopWindows).length, favoriteCount: favoriteAgents.length }, timestamp: Date.now() }) }).catch(() => {});
+      // #endregion
+    }
+  }, [desktopWindows, favoriteAgents.length]);
 
   const handleFavContextMenu = useCallback(
     (e: React.MouseEvent, agentId: string) => {
@@ -174,8 +185,14 @@ export function BottomTaskbar() {
                 agent={agent}
                 hasOpenWindow={!!desktopWindows[agent.agent_id]}
                 onClick={() => {
-                  if (activeApp.id !== "desktop") navigate("/desktop");
-                  openOrFocus(agent.agent_id);
+                  const isOnDesktop = activeApp.id === "desktop";
+                  const hasWindow = !!desktopWindows[agent.agent_id];
+                  if (isOnDesktop && hasWindow) {
+                    closeDesktopWindow(agent.agent_id);
+                  } else {
+                    if (!isOnDesktop) navigate("/desktop");
+                    openOrFocus(agent.agent_id);
+                  }
                 }}
                 onContextMenu={(e) => handleFavContextMenu(e, agent.agent_id)}
               />
