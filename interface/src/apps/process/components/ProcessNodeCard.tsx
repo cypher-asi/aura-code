@@ -36,7 +36,9 @@ function RenameInput({ value, onSubmit }: { value: string; onSubmit: (v: string)
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
+  useEffect(() => {
+    requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.select(); });
+  }, []);
 
   const commit = useCallback(() => {
     const trimmed = draft.trim();
@@ -114,18 +116,20 @@ function ProcessNodeCardInner({ data, selected }: NodeProps & { data: ProcessNod
         >
           {NODE_ICONS[nodeType]}
         </div>
-        {data.isRenaming && data.onRenameSubmit ? (
-          <RenameInput value={data.label} onSubmit={data.onRenameSubmit} />
-        ) : (
-          <div
-            style={{
-              fontSize: 13, fontWeight: 600, color: "var(--color-text, #eee)", lineHeight: 1,
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}
-          >
-            {data.label}
-          </div>
-        )}
+        <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+          {data.isRenaming && data.onRenameSubmit ? (
+            <RenameInput value={data.label} onSubmit={data.onRenameSubmit} />
+          ) : (
+            <div
+              style={{
+                fontSize: 13, fontWeight: 600, color: "var(--color-text, #eee)", lineHeight: 1,
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}
+            >
+              {data.label}
+            </div>
+          )}
+        </div>
       </div>
 
       <Handle
