@@ -55,8 +55,9 @@
 
 .searchWrap {
   flex: 1;
-  max-width: 320px;
+  max-width: 400px;
   position: relative;
+  margin: 0 auto;
 }
 
 .searchIcon {
