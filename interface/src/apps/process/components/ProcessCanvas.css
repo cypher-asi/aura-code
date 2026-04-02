@@ -1,16 +1,18 @@
 .process-flow-controls button {
   background: transparent !important;
-  color: var(--color-text, #eee) !important;
+  color: var(--color-text-muted, #666) !important;
   border-color: transparent !important;
-  fill: var(--color-text, #eee) !important;
+  fill: var(--color-text-muted, #666) !important;
 }
 
 .process-flow-controls button:hover {
-  background: var(--color-bg-hover, #ffffff15) !important;
+  background: transparent !important;
+  color: #fff !important;
+  fill: #fff !important;
 }
 
 .process-flow-controls button svg {
-  fill: var(--color-text, #eee) !important;
+  fill: inherit !important;
 }
 
 .react-flow__selection {
@@ -33,14 +35,16 @@
 }
 
 .react-flow__edge-path {
-  stroke: #b8c4ff !important;
+  stroke: rgba(255, 255, 255, 0.85) !important;
   stroke-width: 1.5px !important;
   stroke-opacity: 1 !important;
   fill: none !important;
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.4));
 }
 
 .react-flow__connection-path {
-  stroke: #b8c4ff !important;
+  stroke: rgba(255, 255, 255, 0.85) !important;
   stroke-opacity: 1 !important;
   fill: none !important;
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.4));
 }

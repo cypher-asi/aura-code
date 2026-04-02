@@ -220,6 +220,16 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
     [processNodes, selectNode],
   );
 
+  const onSelectionChange = useCallback(
+    ({ nodes: selectedNodes }: { nodes: Node[] }) => {
+      if (selectedNodes.length === 1) {
+        const processNode = processNodes.find((n) => n.node_id === selectedNodes[0].id);
+        if (processNode) selectNode(processNode);
+      }
+    },
+    [processNodes, selectNode],
+  );
+
   const onPaneClick = useCallback(() => {
     closeNodeInspector();
   }, [closeNodeInspector]);
@@ -248,6 +258,7 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
         onNodeClick={onNodeClick}
+        onSelectionChange={onSelectionChange}
         onPaneClick={onPaneClick}
         onPaneContextMenu={onPaneContextMenu}
         nodeTypes={nodeTypes}
@@ -265,7 +276,7 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
         selectionKeyCode={null}
         style={{ background: "var(--color-bg, #0d0d1a)" }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--color-border, #222)" />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#444" />
         <Controls
           showInteractive={false}
           style={{
@@ -277,9 +288,9 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
           className="process-flow-controls"
         />
         <MiniMap
-          style={{ background: "var(--color-bg-surface, #1a1a2e)", border: "1px solid var(--color-border, #333)", borderRadius: 0, width: 150, height: 112 }}
-          nodeColor="var(--color-text-muted, #666)"
-          maskColor="rgba(0,0,0,0.5)"
+          style={{ background: "#111", border: "1px solid var(--color-border, #333)", borderRadius: 0, width: 150, height: 112 }}
+          nodeColor="#666"
+          maskColor="rgba(0,0,0,0.8)"
         />
       </ReactFlow>
 

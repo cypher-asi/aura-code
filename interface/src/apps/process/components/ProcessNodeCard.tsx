@@ -15,7 +15,7 @@ const NODE_ICONS: Record<ProcessNodeType, React.ReactNode> = {
 };
 
 const NODE_COLORS: Record<ProcessNodeType, string> = {
-  ignition: "#f59e0b",
+  ignition: "#10b981",
   action: "#3b82f6",
   condition: "#8b5cf6",
   artifact: "#10b981",
@@ -74,8 +74,8 @@ function ProcessNodeCardInner({ data, selected }: NodeProps & { data: ProcessNod
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: data.prompt ? 6 : 0 }}>
         <div
           style={{
-            width: 28, height: 28, borderRadius: 8,
-            background: `${color}20`, color,
+            width: 28, height: 28,
+            background: "transparent", color,
             display: "flex", alignItems: "center", justifyContent: "center",
             flexShrink: 0,
           }}

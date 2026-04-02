@@ -41,7 +41,7 @@ function ProcessInfoTab() {
               display: "inline-block",
               fontSize: 11,
               padding: "2px 8px",
-              borderRadius: 99,
+              borderRadius: 0,
               background: process.enabled ? "rgba(16,185,129,0.15)" : "rgba(107,114,128,0.15)",
               color: process.enabled ? "#10b981" : "#6b7280",
               fontWeight: 600,
