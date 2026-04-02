@@ -33,6 +33,7 @@ interface DesktopWindowState {
   focusWindow: (agentId: string) => void;
   moveWindow: (agentId: string, x: number, y: number) => void;
   resizeWindow: (agentId: string, width: number, height: number) => void;
+  setWindowRect: (agentId: string, x: number, y: number, width: number, height: number) => void;
   openOrFocus: (agentId: string) => void;
   isOpen: (agentId: string) => boolean;
 }
@@ -59,15 +60,6 @@ function schedulePersist(windows: Record<string, WindowState>): void {
   persistTimer = setTimeout(() => { persistTimer = null; persistWindows(windows); }, 300);
 }
 
-let moveCount = 0;
-const DEBUG_RUN_ID = "drag-rootcause-pre";
-function debugConsole(hypothesisId: string, message: string, data: Record<string, unknown>) {
-  const payload = { runId: DEBUG_RUN_ID, hypothesisId, message, ...data, timestamp: Date.now() };
-  // #region agent log
-  console.debug("[drag-debug]", payload);
-  console.debug("[drag-debug-json]", JSON.stringify(payload));
-  // #endregion
-}
 
 function computeMaxZ(windows: Record<string, WindowState>): number {
   let max = 0;
@@ -168,15 +160,6 @@ export const useDesktopWindowStore = create<DesktopWindowState>()(
         const z = s.nextZ;
         const next = { ...s.windows, [agentId]: { ...w, zIndex: z } };
         persistWindows(next);
-        debugConsole("H3", "focus_window", {
-          location: "desktop-window-store.ts:focusWindow",
-          agentId,
-          nextZ: z,
-          windowCount: Object.keys(next).length,
-        });
-        // #region agent log
-        fetch("http://127.0.0.1:7836/ingest/c96ab900-9f38-42f7-81b1-bd596c64b5c4", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "5df55f" }, body: JSON.stringify({ sessionId: "5df55f", runId: DEBUG_RUN_ID, hypothesisId: "H3", location: "desktop-window-store.ts:focusWindow", message: "focus_window", data: { agentId, nextZ: z, windowCount: Object.keys(next).length }, timestamp: Date.now() }) }).catch(() => {});
-        // #endregion
         return { windows: next, nextZ: z + 1 };
       });
     },
@@ -187,19 +170,6 @@ export const useDesktopWindowStore = create<DesktopWindowState>()(
         if (!w) return s;
         const next = { ...s.windows, [agentId]: { ...w, x, y } };
         schedulePersist(next);
-        moveCount += 1;
-        if (moveCount % 40 === 0) {
-          debugConsole("H3", "move_window_sample", {
-            location: "desktop-window-store.ts:moveWindow",
-            agentId,
-            moveCount,
-            x,
-            y,
-          });
-          // #region agent log
-          fetch("http://127.0.0.1:7836/ingest/c96ab900-9f38-42f7-81b1-bd596c64b5c4", { method: "POST", headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "5df55f" }, body: JSON.stringify({ sessionId: "5df55f", runId: DEBUG_RUN_ID, hypothesisId: "H3", location: "desktop-window-store.ts:moveWindow", message: "move_window_sample", data: { agentId, moveCount, x, y }, timestamp: Date.now() }) }).catch(() => {});
-          // #endregion
-        }
         return { windows: next };
       });
     },
@@ -213,6 +183,30 @@ export const useDesktopWindowStore = create<DesktopWindowState>()(
           height: Math.max(MIN_HEIGHT, height),
         };
         const next = { ...s.windows, [agentId]: { ...w, ...clamped } };
+        schedulePersist(next);
+        return { windows: next };
+      });
+    },
+
+    setWindowRect: (agentId, x, y, width, height) => {
+      set((s) => {
+        const w = s.windows[agentId];
+        if (!w) return s;
+        const nextRect = {
+          x,
+          y: Math.max(0, y),
+          width: Math.max(MIN_WIDTH, width),
+          height: Math.max(MIN_HEIGHT, height),
+        };
+        if (
+          w.x === nextRect.x &&
+          w.y === nextRect.y &&
+          w.width === nextRect.width &&
+          w.height === nextRect.height
+        ) {
+          return s;
+        }
+        const next = { ...s.windows, [agentId]: { ...w, ...nextRect } };
         schedulePersist(next);
         return { windows: next };
       });
