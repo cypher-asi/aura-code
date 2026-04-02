@@ -46,6 +46,7 @@ function SidebarSearchInput() {
 function SidekickLane() {
   const activeApp = useAppStore((s) => s.activeApp);
   const visitedAppIds = useAppUIStore((s) => s.visitedAppIds);
+  const sidekickCollapsed = useAppUIStore((s) => s.sidekickCollapsed);
   const { SidekickTaskbar } = activeApp;
 
 
@@ -62,6 +63,8 @@ function SidekickLane() {
       minWidth={200}
       maxWidth={1200}
       storageKey="aura-sidekick-v2"
+      collapsible
+      collapsed={sidekickCollapsed}
       header={SidekickTaskbar && <SidekickTaskbar />}
       className={styles.laneLeftBorder}
     >

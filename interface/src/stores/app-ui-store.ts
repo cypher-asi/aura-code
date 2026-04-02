@@ -5,16 +5,19 @@ type AppUIState = {
   visitedAppIds: Set<string>;
   sidebarQuery: string;
   sidebarActions: Record<string, ReactNode>;
+  sidekickCollapsed: boolean;
 
   markAppVisited: (appId: string) => void;
   setSidebarQuery: (query: string) => void;
   setSidebarAction: (appId: string, node: ReactNode | null) => void;
+  toggleSidekick: () => void;
 };
 
 export const useAppUIStore = create<AppUIState>()((set) => ({
   visitedAppIds: new Set<string>(),
   sidebarQuery: "",
   sidebarActions: {},
+  sidekickCollapsed: false,
 
   markAppVisited: (appId): void => {
     set((s) => {
@@ -27,6 +30,10 @@ export const useAppUIStore = create<AppUIState>()((set) => ({
 
   setSidebarQuery: (query): void => {
     set({ sidebarQuery: query });
+  },
+
+  toggleSidekick: (): void => {
+    set((s) => ({ sidekickCollapsed: !s.sidekickCollapsed }));
   },
 
   setSidebarAction: (appId, node): void => {
