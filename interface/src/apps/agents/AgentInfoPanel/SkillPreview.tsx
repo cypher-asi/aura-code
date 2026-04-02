@@ -1,6 +1,9 @@
+import { useState, useEffect } from "react";
 import { Text, Badge } from "@cypher-asi/zui";
+import { Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { api } from "../../../api/client";
 import type { HarnessSkill } from "../../../types";
 import previewStyles from "../../../components/Preview/Preview.module.css";
 
@@ -8,7 +11,29 @@ interface SkillPreviewProps {
   skill: HarnessSkill;
 }
 
-export function SkillPreview({ skill }: SkillPreviewProps) {
+export function SkillPreview({ skill: initial }: SkillPreviewProps) {
+  const [skill, setSkill] = useState(initial);
+  const [loading, setLoading] = useState(!initial.body);
+
+  useEffect(() => {
+    setSkill(initial);
+    if (initial.body && initial.description) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    api.harnessSkills.getSkill(initial.name).then((full) => {
+      if (!cancelled) {
+        setSkill((prev) => ({ ...prev, ...full }));
+        setLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [initial]);
+
   return (
     <>
       <div className={previewStyles.taskMeta}>
@@ -16,13 +41,15 @@ export function SkillPreview({ skill }: SkillPreviewProps) {
           <span className={previewStyles.fieldLabel}>Name</span>
           <Text size="sm">{skill.name}</Text>
         </div>
-        <div className={previewStyles.taskField}>
-          <span className={previewStyles.fieldLabel}>Description</span>
-          <Text size="sm" variant="secondary">{skill.description}</Text>
-        </div>
+        {skill.description && (
+          <div className={previewStyles.taskField}>
+            <span className={previewStyles.fieldLabel}>Description</span>
+            <Text size="sm" variant="secondary">{skill.description}</Text>
+          </div>
+        )}
         <div className={previewStyles.taskField}>
           <span className={previewStyles.fieldLabel}>Source</span>
-          <Badge variant="pending">{skill.source}</Badge>
+          <Badge variant="stopped">{skill.source}</Badge>
         </div>
         {skill.frontmatter?.["allowed-tools"] && (
           <div className={previewStyles.taskField}>
@@ -45,7 +72,17 @@ export function SkillPreview({ skill }: SkillPreviewProps) {
           </div>
         )}
       </div>
-      {skill.body && (
+      {loading && (
+        <div className={previewStyles.taskMeta} style={{ alignItems: "center", padding: "var(--space-4) 0" }}>
+          <Loader2 size={16} style={{ animation: "spin 1s linear infinite", opacity: 0.5 }} />
+        </div>
+      )}
+      {!loading && skill.body && (
+        <div className={previewStyles.taskMeta}>
+          <span className={previewStyles.fieldLabel}>Skill File</span>
+        </div>
+      )}
+      {!loading && skill.body && (
         <div className={previewStyles.specMarkdown}>
           <div className={previewStyles.markdown}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>

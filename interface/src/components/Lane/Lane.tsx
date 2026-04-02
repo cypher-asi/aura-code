@@ -87,6 +87,7 @@ export const Lane = forwardRef<HTMLDivElement, LaneProps>(
     return (
       <div
         ref={laneRef}
+        data-lane
         data-resizing={isResizing || undefined}
         className={cn(
           styles.lane,
