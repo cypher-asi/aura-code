@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { ReactNode } from "react";
+import { PREVIOUS_PATH_KEY } from "../constants";
 
 type AppUIState = {
   visitedAppIds: Set<string>;
@@ -20,7 +21,7 @@ export const useAppUIStore = create<AppUIState>()((set) => ({
   sidebarQuery: "",
   sidebarActions: {},
   sidekickCollapsed: false,
-  previousPath: null,
+  previousPath: localStorage.getItem(PREVIOUS_PATH_KEY),
 
   markAppVisited: (appId): void => {
     set((s) => {
@@ -40,6 +41,7 @@ export const useAppUIStore = create<AppUIState>()((set) => ({
   },
 
   setPreviousPath: (path): void => {
+    localStorage.setItem(PREVIOUS_PATH_KEY, path);
     set({ previousPath: path });
   },
 
