@@ -32,6 +32,11 @@
   transform: scale(1.12);
 }
 
+.swatchDefault {
+  background: var(--color-bg);
+  border-color: var(--color-border);
+}
+
 .swatchActive {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 40%, transparent);
@@ -80,7 +85,3 @@
   background: var(--color-border);
 }
 
-.footer {
-  display: flex;
-  justify-content: flex-end;
-}

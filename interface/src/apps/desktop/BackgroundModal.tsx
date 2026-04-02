@@ -1,6 +1,6 @@
 import { useRef, useCallback } from "react";
 import { Modal, Heading, Button, Text } from "@cypher-asi/zui";
-import { Upload, Trash2 } from "lucide-react";
+import { Upload } from "lucide-react";
 import { useDesktopBackgroundStore } from "../../stores/desktop-background-store";
 import styles from "./BackgroundModal.module.css";
 
@@ -48,6 +48,11 @@ export function BackgroundModal({
         <div className={styles.section}>
           <Heading level={4}>Color</Heading>
           <div className={styles.swatches}>
+            <button
+              className={`${styles.swatch} ${styles.swatchDefault} ${mode === "none" ? styles.swatchActive : ""}`}
+              onClick={() => clearBackground()}
+              aria-label="Reset to default background"
+            />
             {PRESET_COLORS.map((c) => (
               <button
                 key={c}
@@ -96,21 +101,6 @@ export function BackgroundModal({
           />
         </div>
 
-        <div className={styles.divider} />
-
-        <div className={styles.footer}>
-          <Button
-            variant="danger"
-            size="sm"
-            icon={<Trash2 size={14} />}
-            onClick={() => {
-              clearBackground();
-              onClose();
-            }}
-          >
-            Clear Background
-          </Button>
-        </div>
       </div>
     </Modal>
   );
