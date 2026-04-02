@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { X } from "lucide-react";
 import { api } from "../../api/client";
 import { useChatStreamAdapter } from "../../hooks/use-chat-stream-adapter";
 import { useChatHistorySync } from "../../hooks/use-chat-history-sync";
@@ -29,15 +30,21 @@ function persistAgentProject(agentId: string, projectId: string) {
 
 type ChatMode = "project" | "agent";
 
+const noopSend = () => {};
+
 export function AgentChatView() {
   const { projectId, agentInstanceId, agentId } = useParams<{
     projectId: string;
     agentInstanceId: string;
     agentId: string;
   }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const sessionId = searchParams.get("session");
 
   const mode: ChatMode = projectId && agentInstanceId ? "project" : "agent";
   const entityId = mode === "project" ? agentInstanceId : agentId;
+  const isSessionView = !!(sessionId && mode === "project");
 
   // ── Derive project list for the dropdown ─────────────────────────────
   const allProjects = useProjectsListStore((s) => s.projects);
@@ -91,6 +98,9 @@ export function AgentChatView() {
 
   // ── History key ─────────────────────────────────────────────────────
   const historyKey = useMemo(() => {
+    if (isSessionView && projectId && agentInstanceId && sessionId) {
+      return `session:${projectId}:${agentInstanceId}:${sessionId}`;
+    }
     if (mode === "project" && projectId && agentInstanceId) {
       return projectChatHistoryKey(projectId, agentInstanceId);
     }
@@ -98,10 +108,13 @@ export function AgentChatView() {
       return agentHistoryKey(agentId);
     }
     return undefined;
-  }, [mode, projectId, agentInstanceId, agentId]);
+  }, [mode, projectId, agentInstanceId, agentId, isSessionView, sessionId]);
 
   // ── History fetch function ──────────────────────────────────────────
   const fetchFn = useMemo(() => {
+    if (isSessionView && projectId && agentInstanceId && sessionId) {
+      return () => api.listSessionEvents(projectId, agentInstanceId, sessionId);
+    }
     if (mode === "project" && projectId && agentInstanceId) {
       return () => api.getEvents(projectId, agentInstanceId);
     }
@@ -109,7 +122,7 @@ export function AgentChatView() {
       return () => api.agents.listEvents(agentId);
     }
     return undefined;
-  }, [mode, projectId, agentInstanceId, agentId]);
+  }, [mode, projectId, agentInstanceId, agentId, isSessionView, sessionId]);
 
   // ── Agent-mode: selection persistence ───────────────────────────────
   const { setSelectedAgent } = useSelectedAgent();
@@ -130,13 +143,21 @@ export function AgentChatView() {
     resetEvents([], { allowWhileStreaming: true });
   }, [resetEvents]);
 
+  const exitSessionView = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("session");
+      return next;
+    });
+  }, [setSearchParams]);
+
   // ── Shared history sync ─────────────────────────────────────────────
   const { historyResolved, isLoading, historyError, wrapSend } = useChatHistorySync({
     historyKey,
     streamKey,
     fetchFn,
     resetEvents,
-    invalidateBeforeFetch: mode === "agent",
+    invalidateBeforeFetch: mode === "agent" || isSessionView,
     onSwitch: mode === "project" ? onProjectSwitch : onAgentSwitch,
     onClear,
   });
@@ -151,24 +172,61 @@ export function AgentChatView() {
   // ── Render ──────────────────────────────────────────────────────────
   if (!entityId) return null;
 
+  const panelKey = isSessionView ? `${entityId}:${sessionId}` : entityId;
+
   return (
-    <ChatPanel
-      key={entityId}
-      streamKey={streamKey}
-      onSend={wrappedSend}
-      onStop={stopStreaming}
-      agentName={agentName}
-      machineType={machineType}
-      templateAgentId={templateAgentId}
-      agentId={entityId}
-      isLoading={deferredLoading}
-      historyResolved={historyResolved}
-      errorMessage={historyError ? historyError : null}
-      emptyMessage={mode === "agent" ? "Send a message" : undefined}
-      scrollResetKey={entityId}
-      projects={mode === "agent" ? agentProjects : currentProject}
-      selectedProjectId={mode === "agent" ? effectiveProjectId : projectId}
-      onProjectChange={mode === "agent" ? handleProjectChange : undefined}
-    />
+    <>
+      {isSessionView && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "6px 12px",
+          background: "var(--color-bg-hover)",
+          borderBottom: "1px solid var(--color-border)",
+          fontSize: 12,
+          color: "var(--color-text-secondary)",
+        }}>
+          <span>Viewing historical session</span>
+          <button
+            type="button"
+            onClick={exitSessionView}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              marginLeft: "auto",
+              background: "none",
+              border: "none",
+              color: "var(--color-text-secondary)",
+              cursor: "pointer",
+              padding: "2px 6px",
+              borderRadius: 4,
+              fontSize: 12,
+            }}
+          >
+            Back to live <X size={12} />
+          </button>
+        </div>
+      )}
+      <ChatPanel
+        key={panelKey}
+        streamKey={streamKey}
+        onSend={isSessionView ? noopSend : wrappedSend}
+        onStop={stopStreaming}
+        agentName={agentName}
+        machineType={machineType}
+        templateAgentId={templateAgentId}
+        agentId={entityId}
+        isLoading={deferredLoading}
+        historyResolved={historyResolved}
+        errorMessage={historyError ? historyError : null}
+        emptyMessage={isSessionView ? "No events in this session" : mode === "agent" ? "Send a message" : undefined}
+        scrollResetKey={panelKey}
+        projects={mode === "agent" ? agentProjects : currentProject}
+        selectedProjectId={mode === "agent" ? effectiveProjectId : projectId}
+        onProjectChange={mode === "agent" ? handleProjectChange : undefined}
+      />
+    </>
   );
 }

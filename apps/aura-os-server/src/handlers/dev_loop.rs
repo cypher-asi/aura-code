@@ -407,6 +407,8 @@ struct ForwardParams {
     session_service: std::sync::Arc<aura_os_sessions::SessionService>,
     agent_instance_service: std::sync::Arc<aura_os_agents::AgentInstanceService>,
     usage_reporting: Option<UsageReportingContext>,
+    router_url: String,
+    http_client: reqwest::Client,
 }
 
 async fn resolve_active_task_id(
@@ -460,6 +462,8 @@ fn forward_automaton_events(params: ForwardParams) {
         session_service,
         agent_instance_service,
         usage_reporting,
+        router_url,
+        http_client,
     } = params;
 
     let mut rx = automaton_events_tx.subscribe();
@@ -850,6 +854,19 @@ fn forward_automaton_events(params: ForwardParams) {
                                     session_status,
                                 )
                                 .await;
+
+                                if let (Some(sc), Some(j)) = (storage_client.clone(), jwt.clone()) {
+                                    let sid = session_id.to_string();
+                                    let rurl = router_url.clone();
+                                    let hclient = http_client.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(e) = super::agents::generate_session_summary(
+                                            &sc, &hclient, &rurl, &j, &sid,
+                                        ).await {
+                                            warn!(session_id = %sid, error = %e, "Background session summary generation failed");
+                                        }
+                                    });
+                                }
                             }
                             emit_domain_event(
                                 &app_broadcast,
@@ -913,6 +930,19 @@ fn forward_automaton_events(params: ForwardParams) {
                             session_status,
                         )
                         .await;
+
+                        if let (Some(sc), Some(j)) = (storage_client.clone(), jwt.clone()) {
+                            let sid = session_id.to_string();
+                            let rurl = router_url.clone();
+                            let hclient = http_client.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = super::agents::generate_session_summary(
+                                    &sc, &hclient, &rurl, &j, &sid,
+                                ).await {
+                                    warn!(session_id = %sid, error = %e, "Background session summary generation failed");
+                                }
+                            });
+                        }
                     }
                     emit_domain_event(
                         &app_broadcast,
@@ -1240,6 +1270,8 @@ pub(crate) async fn start_loop(
         session_service: state.session_service.clone(),
         agent_instance_service: state.agent_instance_service.clone(),
         usage_reporting,
+        router_url: state.super_agent_service.router_url.clone(),
+        http_client: state.super_agent_service.http_client.clone(),
     });
 
     emit_domain_event(
@@ -1594,6 +1626,8 @@ pub(crate) async fn run_single_task(
             session_service: state.session_service.clone(),
             agent_instance_service: state.agent_instance_service.clone(),
             usage_reporting,
+            router_url: state.super_agent_service.router_url.clone(),
+            http_client: state.super_agent_service.http_client.clone(),
         });
     } else {
         warn!(

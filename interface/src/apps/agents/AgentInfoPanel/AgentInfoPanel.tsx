@@ -1,8 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Text, Badge, Button, Modal, Explorer } from "@cypher-asi/zui";
-import type { ExplorerNode } from "@cypher-asi/zui";
-import { Bot, Loader2, Calendar, Monitor, Cloud, FolderOpen, X } from "lucide-react";
+import { Text, Badge, Button, Modal } from "@cypher-asi/zui";
+import { Bot, Loader2, Calendar, Monitor, Cloud, FolderOpen, X, ChevronRight, ChevronDown } from "lucide-react";
 import { EmptyState } from "../../../components/EmptyState";
 import { FollowEditButton } from "../../../components/FollowEditButton";
 import { SuperAgentDashboardPanel } from "../../../components/SuperAgentDashboardPanel";
@@ -368,85 +367,79 @@ function ChatsTab({
   agent: import("../../../types").Agent;
   projectBindings: { project_agent_id: string; project_id: string; project_name: string }[];
 }) {
+  const navigate = useNavigate();
   const { sessions, loading } = useAgentSessions(agent.agent_id, projectBindings);
   const taskCacheRef = useRef<Map<string, Task[]>>(new Map());
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const [expandedTasks, setExpandedTasks] = useState<Record<string, Task[]>>({});
   const [loadingTasks, setLoadingTasks] = useState<Set<string>>(new Set());
+  const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const summarizingRef = useRef<Set<string>>(new Set());
 
-  const sessionById = useMemo(
-    () => new Map(sessions.map((s) => [s.session_id, s])),
-    [sessions],
-  );
+  useEffect(() => {
+    for (const session of sessions) {
+      if (session.summary_of_previous_context) {
+        setSummaries((prev) => ({ ...prev, [session.session_id]: session.summary_of_previous_context }));
+      } else if (
+        session.status !== "active" &&
+        !summarizingRef.current.has(session.session_id)
+      ) {
+        summarizingRef.current.add(session.session_id);
+        api
+          .summarizeSession(session._projectId, session._agentInstanceId, session.session_id)
+          .then((updated) => {
+            if (updated.summary_of_previous_context) {
+              setSummaries((prev) => ({ ...prev, [session.session_id]: updated.summary_of_previous_context }));
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [sessions]);
 
-  const explorerData: ExplorerNode[] = useMemo(
-    () =>
-      sessions.map((session, index) => {
-        const totalTokens = session.total_input_tokens + session.total_output_tokens;
-        const tasks = expandedTasks[session.session_id];
-        const isLoading = loadingTasks.has(session.session_id);
-
-        const children: ExplorerNode[] = tasks
-          ? tasks.map((t) => ({
-              id: t.task_id,
-              label: t.title,
-              icon: <TaskStatusIcon status={t.status} />,
-              metadata: { type: "task" },
-            }))
-          : [{ id: `${session.session_id}__placeholder`, label: isLoading ? "Loading..." : "Expand to see tasks", metadata: { type: "placeholder" } }];
-
-        return {
-          id: session.session_id,
-          label: `s.${sessions.length - index}`,
-          icon: <StatusBadge status={session.status} />,
-          suffix: (
-            <span className={styles.sessionMeta}>
-              <span className={styles.sessionProject}>{session._projectName}</span>
-              <span className={styles.sessionDuration}>
-                {formatDuration(session.started_at, session.ended_at)}
-              </span>
-              {totalTokens > 0 && (
-                <span className={styles.sessionCost}>
-                  {formatTokens(totalTokens)}
-                </span>
-              )}
-            </span>
-          ),
-          children,
-          metadata: { type: "session" },
-        };
-      }),
-    [sessions, expandedTasks, loadingTasks],
-  );
-
-  const handleExpand = useCallback(
-    (nodeId: string, expanded: boolean) => {
-      if (!expanded) return;
-      if (taskCacheRef.current.has(nodeId) || loadingTasks.has(nodeId)) return;
-
-      const session = sessionById.get(nodeId);
-      if (!session) return;
-
-      setLoadingTasks((prev) => new Set(prev).add(nodeId));
-
-      api
-        .listSessionTasks(session._projectId, session._agentInstanceId, session.session_id)
-        .then((tasks) => {
-          taskCacheRef.current.set(nodeId, tasks);
-          setExpandedTasks((prev) => ({ ...prev, [nodeId]: tasks }));
-        })
-        .catch(() => {
-          taskCacheRef.current.set(nodeId, []);
-          setExpandedTasks((prev) => ({ ...prev, [nodeId]: [] }));
-        })
-        .finally(() => {
-          setLoadingTasks((prev) => {
-            const next = new Set(prev);
-            next.delete(nodeId);
-            return next;
-          });
-        });
+  const toggleExpand = useCallback(
+    (sessionId: string) => {
+      setExpandedSessions((prev) => {
+        const next = new Set(prev);
+        if (next.has(sessionId)) {
+          next.delete(sessionId);
+        } else {
+          next.add(sessionId);
+          if (!taskCacheRef.current.has(sessionId) && !loadingTasks.has(sessionId)) {
+            const session = sessions.find((s) => s.session_id === sessionId);
+            if (session) {
+              setLoadingTasks((p) => new Set(p).add(sessionId));
+              api
+                .listSessionTasks(session._projectId, session._agentInstanceId, session.session_id)
+                .then((tasks) => {
+                  taskCacheRef.current.set(sessionId, tasks);
+                  setExpandedTasks((p) => ({ ...p, [sessionId]: tasks }));
+                })
+                .catch(() => {
+                  taskCacheRef.current.set(sessionId, []);
+                  setExpandedTasks((p) => ({ ...p, [sessionId]: [] }));
+                })
+                .finally(() => {
+                  setLoadingTasks((p) => {
+                    const n = new Set(p);
+                    n.delete(sessionId);
+                    return n;
+                  });
+                });
+            }
+          }
+        }
+        return next;
+      });
     },
-    [sessionById, loadingTasks],
+    [sessions, loadingTasks],
+  );
+
+  const handleSessionClick = useCallback(
+    (session: AnnotatedSession) => {
+      navigate(`/projects/${session._projectId}/agents/${session._agentInstanceId}?session=${session.session_id}`);
+    },
+    [navigate],
   );
 
   if (loading) {
@@ -459,11 +452,75 @@ function ChatsTab({
 
   return (
     <div className={styles.sessionListWrap}>
-      <Explorer
-        data={explorerData}
-        enableMultiSelect={false}
-        onExpand={handleExpand}
-      />
+      {sessions.map((session, index) => {
+        const totalTokens = session.total_input_tokens + session.total_output_tokens;
+        const number = sessions.length - index;
+        const expanded = expandedSessions.has(session.session_id);
+        const tasks = expandedTasks[session.session_id];
+        const isLoadingTasks = loadingTasks.has(session.session_id);
+        const summary = summaries[session.session_id];
+
+        return (
+          <div key={session.session_id} className={styles.sessionCard}>
+            <div className={styles.sessionCardHeader}>
+              <button
+                type="button"
+                className={styles.sessionExpandBtn}
+                onClick={() => toggleExpand(session.session_id)}
+              >
+                {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              </button>
+              <StatusBadge status={session.status} />
+              <button
+                type="button"
+                className={styles.sessionNumber}
+                onClick={() => handleSessionClick(session)}
+              >
+                S{number}
+              </button>
+              <span className={styles.sessionMeta}>
+                <span className={styles.sessionProject}>{session._projectName}</span>
+                <span className={styles.sessionDuration}>
+                  {formatDuration(session.started_at, session.ended_at)}
+                </span>
+                {totalTokens > 0 && (
+                  <span className={styles.sessionCost}>
+                    {formatTokens(totalTokens)}
+                  </span>
+                )}
+              </span>
+            </div>
+            {summary && (
+              <div
+                className={styles.sessionSummary}
+                onClick={() => handleSessionClick(session)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSessionClick(session); }}
+              >
+                {summary}
+              </div>
+            )}
+            {!summary && session.status !== "active" && summarizingRef.current.has(session.session_id) && (
+              <div className={styles.sessionSummaryPlaceholder}>Generating summary...</div>
+            )}
+            {expanded && (
+              <div className={styles.sessionTaskList}>
+                {isLoadingTasks && <span className={styles.sessionTaskLoading}>Loading tasks...</span>}
+                {tasks && tasks.length === 0 && !isLoadingTasks && (
+                  <span className={styles.sessionTaskLoading}>No tasks</span>
+                )}
+                {tasks?.map((t) => (
+                  <div key={t.task_id} className={styles.sessionTaskItem}>
+                    <TaskStatusIcon status={t.status} />
+                    <span className={styles.sessionTaskTitle}>{t.title}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
