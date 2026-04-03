@@ -556,3 +556,40 @@ export interface HarnessSkillActivation {
   allowed_tools: string[];
   fork_context: boolean;
 }
+
+export interface HarnessSkillInstallation {
+  agent_id: string;
+  skill_name: string;
+  source_url: string | null;
+  installed_at: string;
+  version: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Skill Shop catalog
+// ---------------------------------------------------------------------------
+
+export type SkillCategory =
+  | "development"
+  | "communication"
+  | "productivity"
+  | "media"
+  | "ai-ml"
+  | "smart-home"
+  | "security"
+  | "notes"
+  | "automation"
+  | "utilities";
+
+export interface SkillShopCatalogEntry {
+  name: string;
+  description: string;
+  emoji: string;
+  category: SkillCategory;
+  tags: string[];
+  security_rating: "safe" | "caution" | "warning";
+  security_notes: string;
+  source_url: string;
+  requires?: { bins?: string[]; env?: string[]; config?: string[] };
+  install_methods?: { kind: string; formula?: string; package?: string }[];
+}

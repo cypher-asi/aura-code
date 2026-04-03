@@ -24,6 +24,7 @@ use aura_os_storage::StorageClient;
 
 use crate::dto::SendChatRequest;
 use crate::error::{map_storage_error, ApiError, ApiResult};
+use crate::handlers::harness_proxy::to_harness_agent_id;
 use crate::handlers::{projects, projects_helpers::resolve_agent_instance_workspace_path};
 use crate::state::{AppState, AuthJwt, ChatSession};
 
@@ -1037,9 +1038,10 @@ pub(crate) async fn send_agent_event_stream(
         None
     };
 
+    let harness_id = to_harness_agent_id(&agent_id.to_string());
     let config = SessionConfig {
         system_prompt: Some(agent.system_prompt.clone()),
-        agent_id: Some(agent_id.to_string()),
+        agent_id: Some(harness_id),
         agent_name: Some(agent.name.clone()),
         model: body.model.clone(),
         token: Some(jwt.clone()),
@@ -1128,9 +1130,10 @@ pub(crate) async fn send_event_stream(
         project_path.as_deref(),
     );
 
+    let harness_id = to_harness_agent_id(&instance.agent_id.to_string());
     let config = SessionConfig {
         system_prompt: Some(system_prompt),
-        agent_id: Some(instance.agent_id.to_string()),
+        agent_id: Some(harness_id),
         agent_name: Some(instance.name.clone()),
         model: body.model.clone(),
         token: Some(jwt),

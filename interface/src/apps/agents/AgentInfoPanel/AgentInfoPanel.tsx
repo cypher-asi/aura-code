@@ -186,6 +186,7 @@ export function AgentInfoPanel({ variant = "default" }: AgentInfoPanelProps) {
           canGoBack={canGoBack}
           onBack={goBackPreview}
           onClose={closePreview}
+          fullLane
         >
           {previewItem.kind === "skill" && <SkillPreview skill={previewItem.skill} />}
           {previewItem.kind === "memory_fact" && <FactPreview fact={previewItem.fact} />}
