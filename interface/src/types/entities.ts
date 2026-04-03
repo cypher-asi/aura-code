@@ -588,7 +588,6 @@ export type SkillOS = "any" | "windows" | "mac" | "linux";
 export interface SkillShopCatalogEntry {
   name: string;
   description: string;
-  emoji: string;
   category: SkillCategory;
   os: SkillOS;
   tags: string[];

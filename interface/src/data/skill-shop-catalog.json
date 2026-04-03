@@ -2,7 +2,6 @@
   {
     "name": "1password",
     "description": "Set up and use 1Password CLI (op). Use when installing the CLI, enabling desktop app integration, signing in (single or multi-account), or reading/injecting/running secrets via op.",
-    "emoji": null,
     "category": "security",
     "os": "any",
     "tags": [
@@ -16,7 +15,6 @@
   {
     "name": "apple-notes",
     "description": "Manage Apple Notes via the `memo` CLI on macOS (create, view, edit, delete, search, move, and export notes). Use when a user asks OpenClaw to add a note, list notes, search notes, or manage note folders.",
-    "emoji": null,
     "category": "notes",
     "os": "mac",
     "tags": [
@@ -31,7 +29,6 @@
   {
     "name": "apple-reminders",
     "description": "Manage Apple Reminders via remindctl CLI (list, add, edit, complete, delete). Supports lists, date filters, and JSON/plain output.",
-    "emoji": null,
     "category": "productivity",
     "os": "mac",
     "tags": [
@@ -47,7 +44,6 @@
   {
     "name": "bear-notes",
     "description": "Create, search, and manage Bear notes via grizzly CLI.",
-    "emoji": null,
     "category": "notes",
     "os": "mac",
     "tags": [
@@ -62,7 +58,6 @@
   {
     "name": "blogwatcher",
     "description": "Monitor blogs and RSS/Atom feeds for updates using the blogwatcher CLI.",
-    "emoji": null,
     "category": "automation",
     "os": "any",
     "tags": [
@@ -76,7 +71,6 @@
   {
     "name": "blucli",
     "description": "BluOS CLI (blu) for discovery, playback, grouping, and volume.",
-    "emoji": null,
     "category": "communication",
     "os": "mac",
     "tags": [
@@ -90,7 +84,6 @@
   {
     "name": "bluebubbles",
     "description": "Use when you need to send or manage iMessages via BlueBubbles (recommended iMessage integration). Calls go through the generic message tool with channel=\"bluebubbles\".",
-    "emoji": null,
     "category": "communication",
     "os": "mac",
     "tags": [
@@ -103,7 +96,6 @@
   {
     "name": "camsnap",
     "description": "Capture frames or clips from RTSP/ONVIF cameras.",
-    "emoji": null,
     "category": "media",
     "os": "mac",
     "tags": [
@@ -117,7 +109,6 @@
   {
     "name": "canvas",
     "description": "canvas skill",
-    "emoji": null,
     "category": "development",
     "os": "any",
     "tags": [
@@ -130,7 +121,6 @@
   {
     "name": "clawhub",
     "description": "Use the ClawHub CLI to search, install, update, and publish agent skills from clawhub.com. Use when you need to fetch new skills on the fly, sync installed skills to latest or a specific version, or publish new/updated skill folders with the npm-installed clawhub CLI.",
-    "emoji": null,
     "category": "utilities",
     "os": "any",
     "tags": [
@@ -144,7 +134,6 @@
   {
     "name": "coding-agent",
     "description": "'Delegate coding tasks to Codex, Claude Code, or Pi agents via background process. Use when: (1) building/creating new features or apps, (2) reviewing PRs (spawn in temp dir), (3) refactoring large codebases, (4) iterative coding that needs file exploration. NOT for: simple one-liner fixes (just edit), reading code (use read tool), thread-bound ACP harness requests in chat (for example spawn/run Codex or Claude Code in a Discord thread; use sessions_spawn with runtime:\"acp\"), or any work in ~/clawd workspace (never spawn agents here). Claude Code: use --print --permission-mode bypassPermissions (no PTY). Codex/Pi/OpenCode: pty:true required.'",
-    "emoji": null,
     "category": "development",
     "os": "any",
     "tags": [
@@ -158,7 +147,6 @@
   {
     "name": "discord",
     "description": "Discord ops via the message tool (channel=discord).",
-    "emoji": null,
     "category": "communication",
     "os": "any",
     "tags": [
@@ -176,7 +164,6 @@
   {
     "name": "eightctl",
     "description": "Control Eight Sleep pods (status, temperature, alarms, schedules).",
-    "emoji": null,
     "category": "automation",
     "os": "any",
     "tags": [
@@ -189,7 +176,6 @@
   {
     "name": "gemini",
     "description": "Gemini CLI for one-shot Q&A, summaries, and generation.",
-    "emoji": null,
     "category": "ai-ml",
     "os": "any",
     "tags": [
@@ -203,7 +189,6 @@
   {
     "name": "gh-issues",
     "description": "Fetch GitHub issues, spawn sub-agents to implement fixes and open PRs, then monitor and address PR review comments. Usage: /gh-issues [owner/repo] [--label bug] [--limit 5] [--milestone v1.0] [--assignee @me] [--fork user/repo] [--watch] [--interval 5] [--reviews-only] [--cron] [--dry-run] [--model glm-5] [--notify-channel -1002381931352]",
-    "emoji": null,
     "category": "development",
     "os": "any",
     "tags": [
@@ -216,7 +201,6 @@
   {
     "name": "gifgrep",
     "description": "Search GIF providers with CLI/TUI, download results, and extract stills/sheets.",
-    "emoji": null,
     "category": "media",
     "os": "any",
     "tags": [
@@ -230,7 +214,6 @@
   {
     "name": "github",
     "description": "GitHub operations via `gh` CLI: issues, PRs, CI runs, code review, API queries. Use when: (1) checking PR status or CI, (2) creating/commenting on issues, (3) listing/filtering PRs or issues, (4) viewing run logs. NOT for: complex web UI interactions requiring manual browser flows (use browser tooling when available), bulk operations across many repos (script with gh api), or when gh auth is not configured.",
-    "emoji": null,
     "category": "development",
     "os": "any",
     "tags": [
@@ -245,7 +228,6 @@
   {
     "name": "gog",
     "description": "Google Workspace CLI for Gmail, Calendar, Drive, Contacts, Sheets, and Docs.",
-    "emoji": null,
     "category": "automation",
     "os": "any",
     "tags": [
@@ -260,7 +242,6 @@
   {
     "name": "goplaces",
     "description": "Query Google Places API (New) via the goplaces CLI for text search, place details, resolve, and reviews. Use for human-friendly place lookup or JSON output for scripts.",
-    "emoji": null,
     "category": "smart-home",
     "os": "any",
     "tags": [
@@ -276,7 +257,6 @@
   {
     "name": "healthcheck",
     "description": "Host security hardening and risk-tolerance configuration for OpenClaw deployments. Use when a user asks for security audits, firewall/SSH/update hardening, risk posture, exposure review, OpenClaw cron scheduling for periodic checks, or version status checks on a machine running OpenClaw (laptop, workstation, Pi, VPS).",
-    "emoji": null,
     "category": "automation",
     "os": "any",
     "tags": [
@@ -289,7 +269,6 @@
   {
     "name": "himalaya",
     "description": "CLI to manage emails via IMAP/SMTP. Use `himalaya` to list, read, write, reply, forward, search, and organize emails from the terminal. Supports multiple accounts and message composition with MML (MIME Meta Language).",
-    "emoji": null,
     "category": "utilities",
     "os": "any",
     "tags": [
@@ -304,7 +283,6 @@
   {
     "name": "imsg",
     "description": "iMessage/SMS CLI for listing chats, history, and sending messages via Messages.app.",
-    "emoji": null,
     "category": "communication",
     "os": "mac",
     "tags": [
@@ -318,7 +296,6 @@
   {
     "name": "mcporter",
     "description": "Use the mcporter CLI to list, configure, auth, and call MCP servers/tools directly (HTTP or stdio), including ad-hoc servers, config edits, and CLI/type generation.",
-    "emoji": null,
     "category": "development",
     "os": "any",
     "tags": [
@@ -332,7 +309,6 @@
   {
     "name": "model-usage",
     "description": "Use CodexBar CLI local cost usage to summarize per-model usage for Codex or Claude, including the current (most recent) model or a full model breakdown. Trigger when asked for model-level usage/cost data from codexbar, or when you need a scriptable per-model summary from codexbar cost JSON.",
-    "emoji": null,
     "category": "ai-ml",
     "os": "mac",
     "tags": [
@@ -347,7 +323,6 @@
   {
     "name": "nano-pdf",
     "description": "Edit PDFs with natural-language instructions using the nano-pdf CLI.",
-    "emoji": null,
     "category": "automation",
     "os": "any",
     "tags": [
@@ -362,7 +337,6 @@
   {
     "name": "node-connect",
     "description": "Diagnose OpenClaw node connection and pairing failures for Android, iOS, and macOS companion apps. Use when QR/setup code/manual connect fails, local Wi-Fi works but VPS/tailnet does not, or errors mention pairing required, unauthorized, bootstrap token invalid or expired, gateway.bind, gateway.remote.url, Tailscale, or plugins.entries.device-pair.config.publicUrl.",
-    "emoji": null,
     "category": "automation",
     "os": "any",
     "tags": [
@@ -377,7 +351,6 @@
   {
     "name": "notion",
     "description": "Notion API for creating and managing pages, databases, and blocks.",
-    "emoji": null,
     "category": "productivity",
     "os": "any",
     "tags": [
@@ -391,7 +364,6 @@
   {
     "name": "obsidian",
     "description": "Create, read, search, and link notes in a local Obsidian vault on Windows. Uses direct file I/O — no external CLI required.",
-    "emoji": null,
     "category": "notes",
     "os": "windows",
     "tags": [
@@ -415,7 +387,6 @@
   {
     "name": "openai-whisper",
     "description": "Local speech-to-text with the Whisper CLI (no API key).",
-    "emoji": null,
     "category": "ai-ml",
     "os": "any",
     "tags": [
@@ -431,7 +402,6 @@
   {
     "name": "openai-whisper-api",
     "description": "Transcribe audio via OpenAI Audio Transcriptions API (Whisper).",
-    "emoji": null,
     "category": "ai-ml",
     "os": "any",
     "tags": [
@@ -447,7 +417,6 @@
   {
     "name": "openhue",
     "description": "Control Philips Hue lights and scenes via the OpenHue CLI.",
-    "emoji": null,
     "category": "smart-home",
     "os": "any",
     "tags": [
@@ -461,7 +430,6 @@
   {
     "name": "oracle",
     "description": "Best practices for using the oracle CLI (prompt + file bundling, engines, sessions, and file attachment patterns).",
-    "emoji": null,
     "category": "utilities",
     "os": "any",
     "tags": [
@@ -475,7 +443,6 @@
   {
     "name": "ordercli",
     "description": "Foodora-only CLI for checking past orders and active order status (Deliveroo WIP).",
-    "emoji": null,
     "category": "productivity",
     "os": "any",
     "tags": [
@@ -489,7 +456,6 @@
   {
     "name": "peekaboo",
     "description": "Capture and automate macOS UI with the Peekaboo CLI.",
-    "emoji": null,
     "category": "media",
     "os": "mac",
     "tags": [
@@ -503,7 +469,6 @@
   {
     "name": "sag",
     "description": "ElevenLabs text-to-speech with mac-style say UX.",
-    "emoji": null,
     "category": "automation",
     "os": "any",
     "tags": [
@@ -516,7 +481,6 @@
   {
     "name": "session-logs",
     "description": "Search and analyze your own session logs (older/parent conversations) using jq.",
-    "emoji": null,
     "category": "development",
     "os": "any",
     "tags": [
@@ -530,7 +494,6 @@
   {
     "name": "sherpa-onnx-tts",
     "description": "Local text-to-speech via sherpa-onnx (offline, no cloud)",
-    "emoji": null,
     "category": "ai-ml",
     "os": "any",
     "tags": [
@@ -545,7 +508,6 @@
   {
     "name": "skill-creator",
     "description": "Create, edit, improve, or audit AgentSkills. Use when creating a new skill from scratch or when asked to improve, review, audit, tidy up, or clean up an existing skill or SKILL.md file. Also use when editing or restructuring a skill directory (moving files to references/ or scripts/, removing stale content, validating against the AgentSkills spec). Triggers on phrases like \"create a skill\", \"author a skill\", \"tidy up a skill\", \"improve this skill\", \"review the skill\", \"clean up the skill\", \"audit the skill\".",
-    "emoji": null,
     "category": "utilities",
     "os": "any",
     "tags": [
@@ -559,7 +521,6 @@
   {
     "name": "slack",
     "description": "Use when you need to control Slack from OpenClaw via the slack tool, including reacting to messages or pinning/unpinning items in Slack channels or DMs.",
-    "emoji": null,
     "category": "communication",
     "os": "any",
     "tags": [
@@ -572,7 +533,6 @@
   {
     "name": "songsee",
     "description": "Generate spectrograms and feature-panel visualizations from audio with the songsee CLI.",
-    "emoji": null,
     "category": "media",
     "os": "any",
     "tags": [
@@ -586,7 +546,6 @@
   {
     "name": "sonoscli",
     "description": "Control Sonos speakers (discover/status/play/volume/group).",
-    "emoji": null,
     "category": "media",
     "os": "mac",
     "tags": [
@@ -599,7 +558,6 @@
   {
     "name": "spotify-player",
     "description": "Terminal Spotify playback/search via spogo (preferred) or spotify_player.",
-    "emoji": null,
     "category": "media",
     "os": "any",
     "tags": [
@@ -613,7 +571,6 @@
   {
     "name": "summarize",
     "description": "Summarize or extract text/transcripts from URLs, podcasts, and local files (great fallback for “transcribe this YouTube/video”).",
-    "emoji": null,
     "category": "ai-ml",
     "os": "any",
     "tags": [
@@ -626,7 +583,6 @@
   {
     "name": "taskflow",
     "description": "taskflow skill",
-    "emoji": null,
     "category": "productivity",
     "os": "any",
     "tags": [
@@ -639,7 +595,6 @@
   {
     "name": "taskflow-inbox-triage",
     "description": "taskflow-inbox-triage skill",
-    "emoji": null,
     "category": "productivity",
     "os": "any",
     "tags": [
@@ -654,7 +609,6 @@
   {
     "name": "things-mac",
     "description": "Manage Things 3 via the `things` CLI on macOS (add/update projects+todos via URL scheme; read/search/list from the local Things database). Use when a user asks OpenClaw to add a task to Things, list inbox/today/upcoming, search tasks, or inspect projects/areas/tags.",
-    "emoji": null,
     "category": "productivity",
     "os": "mac",
     "tags": [
@@ -669,7 +623,6 @@
   {
     "name": "tmux",
     "description": "Remote-control tmux sessions for interactive CLIs by sending keystrokes and scraping pane output.",
-    "emoji": null,
     "category": "development",
     "os": "linux",
     "tags": [
@@ -684,7 +637,6 @@
   {
     "name": "trello",
     "description": "Manage Trello boards, lists, and cards via the Trello REST API.",
-    "emoji": null,
     "category": "productivity",
     "os": "any",
     "tags": [
@@ -698,7 +650,6 @@
   {
     "name": "video-frames",
     "description": "Extract frames or short clips from videos using ffmpeg.",
-    "emoji": null,
     "category": "media",
     "os": "any",
     "tags": [
@@ -713,7 +664,6 @@
   {
     "name": "voice-call",
     "description": "Start voice calls via the OpenClaw voice-call plugin.",
-    "emoji": null,
     "category": "communication",
     "os": "any",
     "tags": [
@@ -727,7 +677,6 @@
   {
     "name": "wacli",
     "description": "Send WhatsApp messages to other people or search/sync WhatsApp history via the wacli CLI (not for normal user chats).",
-    "emoji": null,
     "category": "automation",
     "os": "any",
     "tags": [
@@ -741,7 +690,6 @@
   {
     "name": "weather",
     "description": "Get current weather and forecasts via wttr.in or Open-Meteo. Use when: user asks about weather, temperature, or forecasts for any location. NOT for: historical weather data, severe weather alerts, or detailed meteorological analysis. No API key needed.",
-    "emoji": null,
     "category": "smart-home",
     "os": "any",
     "tags": [
@@ -754,7 +702,6 @@
   {
     "name": "xurl",
     "description": "A CLI tool for making authenticated requests to the X (Twitter) API. Use this skill when you need to post tweets, reply, quote, search, read posts, manage followers, send DMs, upload media, or interact with any X API v2 endpoint.",
-    "emoji": null,
     "category": "automation",
     "os": "any",
     "tags": [
