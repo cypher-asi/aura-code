@@ -1,5 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
-import { Loader2, FileText, Clock, GitBranch, RefreshCw } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
+import { Loader2, FileText, Clock, GitBranch, RefreshCw, Trash2 } from "lucide-react";
+import { Menu } from "@cypher-asi/zui";
+import type { MenuItem } from "@cypher-asi/zui";
 import { api, ApiClientError } from "../../../api/client";
 import { useAgentSidekickStore } from "../stores/agent-sidekick-store";
 import type { Agent, MemorySnapshot } from "../../../types";
@@ -7,6 +10,20 @@ import styles from "./AgentInfoPanel.module.css";
 
 type MemoryFilter = "all" | "facts" | "events" | "procedures";
 type MemoryError = "connection" | "unknown" | null;
+type MemoryTarget =
+  | { kind: "fact"; id: string }
+  | { kind: "event"; id: string }
+  | { kind: "procedure"; id: string };
+
+interface CtxMenuState {
+  x: number;
+  y: number;
+  target: MemoryTarget;
+}
+
+const DELETE_MENU_ITEMS: MenuItem[] = [
+  { id: "delete", label: "Delete", icon: <Trash2 size={14} /> },
+];
 
 interface MemoryTabProps {
   agent: Agent;
@@ -17,6 +34,8 @@ export function MemoryTab({ agent }: MemoryTabProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<MemoryError>(null);
   const [filter, setFilter] = useState<MemoryFilter>("all");
+  const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
   const { viewMemoryFact, viewMemoryEvent, viewMemoryProcedure } = useAgentSidekickStore();
 
   const fetchMemory = useCallback(() => {
@@ -49,6 +68,57 @@ export function MemoryTab({ agent }: MemoryTabProps) {
   useEffect(() => {
     return fetchMemory();
   }, [fetchMemory]);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      if (ctxMenuRef.current && !ctxMenuRef.current.contains(e.target as Node)) {
+        setCtxMenu(null);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCtxMenu(null);
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [ctxMenu]);
+
+  const handleDeleteMemory = useCallback(async (target: MemoryTarget) => {
+    try {
+      switch (target.kind) {
+        case "fact":
+          await api.memory.deleteFact(agent.agent_id, target.id);
+          setSnapshot((prev) => prev ? { ...prev, facts: prev.facts.filter((f) => f.fact_id !== target.id) } : prev);
+          break;
+        case "event":
+          await api.memory.deleteEvent(agent.agent_id, target.id);
+          setSnapshot((prev) => prev ? { ...prev, events: prev.events.filter((e) => e.event_id !== target.id) } : prev);
+          break;
+        case "procedure":
+          await api.memory.deleteProcedure(agent.agent_id, target.id);
+          setSnapshot((prev) => prev ? { ...prev, procedures: prev.procedures.filter((p) => p.procedure_id !== target.id) } : prev);
+          break;
+      }
+    } catch {
+      // silent — row stays if delete fails
+    }
+  }, [agent.agent_id]);
+
+  const handleMenuAction = useCallback((actionId: string) => {
+    if (actionId === "delete" && ctxMenu) {
+      handleDeleteMemory(ctxMenu.target);
+    }
+    setCtxMenu(null);
+  }, [ctxMenu, handleDeleteMemory]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, target: MemoryTarget) => {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY, target });
+  }, []);
 
   const counts = useMemo(() => {
     if (!snapshot) return { facts: 0, events: 0, procedures: 0 };
@@ -128,6 +198,7 @@ export function MemoryTab({ agent }: MemoryTabProps) {
             detail={typeof fact.value === "string" ? fact.value : JSON.stringify(fact.value)}
             badge={`${Math.round(fact.confidence * 100)}%`}
             onClick={() => viewMemoryFact(fact)}
+            onContextMenu={(e) => handleContextMenu(e, { kind: "fact", id: fact.fact_id })}
           />
         ))}
         {(filter === "all" || filter === "events") && snapshot.events?.map((event) => (
@@ -138,6 +209,7 @@ export function MemoryTab({ agent }: MemoryTabProps) {
             detail={event.summary}
             badge={new Date(event.timestamp).toLocaleDateString()}
             onClick={() => viewMemoryEvent(event)}
+            onContextMenu={(e) => handleContextMenu(e, { kind: "event", id: event.event_id })}
           />
         ))}
         {(filter === "all" || filter === "procedures") && snapshot.procedures?.map((proc) => (
@@ -148,9 +220,26 @@ export function MemoryTab({ agent }: MemoryTabProps) {
             detail={`${proc.steps.length} steps`}
             badge={`${Math.round(proc.success_rate * 100)}%`}
             onClick={() => viewMemoryProcedure(proc)}
+            onContextMenu={(e) => handleContextMenu(e, { kind: "procedure", id: proc.procedure_id })}
           />
         ))}
       </div>
+
+      {ctxMenu &&
+        createPortal(
+          <div
+            ref={ctxMenuRef}
+            className={styles.contextMenuOverlay}
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          >
+            <Menu
+              items={DELETE_MENU_ITEMS}
+              onChange={handleMenuAction}
+              isOpen
+            />
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -161,17 +250,20 @@ function MemoryRow({
   detail,
   badge,
   onClick,
+  onContextMenu,
 }: {
   icon: React.ReactNode;
   label: string;
   detail: string;
   badge: string;
   onClick: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      onContextMenu={onContextMenu}
       style={{
         display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
         border: "none", borderBottom: "1px solid var(--color-border)",

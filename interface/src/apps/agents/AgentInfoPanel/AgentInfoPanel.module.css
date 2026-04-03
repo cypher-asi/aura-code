@@ -432,6 +432,13 @@
   padding: 0 var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
 }
 
+/* ── Context menu overlay ── */
+
+.contextMenuOverlay {
+  position: fixed;
+  z-index: 9999;
+}
+
 /* ── Empty state for placeholder tabs ── */
 
 .tabEmptyState {
