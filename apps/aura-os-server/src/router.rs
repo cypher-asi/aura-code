@@ -479,6 +479,18 @@ fn process_routes() -> Router<AppState> {
             get(process::list_run_events),
         )
         .route(
+            "/api/processes/:id/runs/:run_id/artifacts",
+            get(process::list_run_artifacts),
+        )
+        .route(
+            "/api/process-artifacts/:id",
+            get(process::get_artifact),
+        )
+        .route(
+            "/api/process-artifacts/:id/content",
+            get(process::get_artifact_content),
+        )
+        .route(
             "/api/process-folders",
             get(process::list_folders).post(process::create_folder),
         )

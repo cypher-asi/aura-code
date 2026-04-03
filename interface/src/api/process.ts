@@ -6,6 +6,7 @@ import type {
   ProcessNodeConnection,
   ProcessRun,
   ProcessEvent,
+  ProcessArtifact,
 } from "../types";
 import type { ProcessNodeType } from "../types/enums";
 
@@ -90,6 +91,14 @@ export const processApi = {
     apiFetch<ProcessRun>(`/api/processes/${processId}/runs/${runId}`),
   listRunEvents: (processId: string, runId: string) =>
     apiFetch<ProcessEvent[]>(`/api/processes/${processId}/runs/${runId}/events`),
+
+  // Artifacts
+  listRunArtifacts: (processId: string, runId: string) =>
+    apiFetch<ProcessArtifact[]>(`/api/processes/${processId}/runs/${runId}/artifacts`),
+  getArtifact: (artifactId: string) =>
+    apiFetch<ProcessArtifact>(`/api/process-artifacts/${artifactId}`),
+  getArtifactContent: (artifactId: string) =>
+    apiFetch<string>(`/api/process-artifacts/${artifactId}/content`),
 
   // Folders
   listFolders: () => apiFetch<ProcessFolder[]>("/api/process-folders"),

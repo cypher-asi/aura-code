@@ -7,8 +7,9 @@ use tokio::sync::broadcast;
 use tracing::{info, warn};
 
 use aura_os_core::{
-    ProcessEvent, ProcessEventId, ProcessEventStatus, ProcessNode, ProcessNodeId,
-    ProcessNodeType, ProcessRun, ProcessRunId, ProcessRunStatus, ProcessRunTrigger, ProcessId,
+    ArtifactType, ProcessArtifact, ProcessArtifactId, ProcessEvent, ProcessEventId,
+    ProcessEventStatus, ProcessNode, ProcessNodeId, ProcessNodeType, ProcessRun, ProcessRunId,
+    ProcessRunStatus, ProcessRunTrigger, ProcessId,
 };
 use aura_os_link::{
     HarnessInbound, HarnessLink, HarnessOutbound, SessionConfig, UserMessage,
@@ -242,8 +243,15 @@ async fn execute_run(
             }
             ProcessNodeType::Delay => execute_delay(node).await,
             ProcessNodeType::Artifact => {
-                execute_artifact(node, &upstream_context, &run.process_id, &run.run_id, data_dir)
-                    .await
+                execute_artifact(
+                    node,
+                    &upstream_context,
+                    &run.process_id,
+                    &run.run_id,
+                    data_dir,
+                    store,
+                )
+                .await
             }
             ProcessNodeType::Merge => Ok(upstream_context.clone()),
         };
@@ -424,17 +432,29 @@ async fn execute_artifact(
     process_id: &ProcessId,
     run_id: &ProcessRunId,
     data_dir: &Path,
+    store: &ProcessStore,
 ) -> Result<String, ProcessError> {
     let cfg = &node.config;
     let artifact_name = cfg
         .get("artifact_name")
         .and_then(|v| v.as_str())
         .unwrap_or(&node.label);
+    let artifact_type_str = cfg
+        .get("artifact_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("report");
+    let artifact_type: ArtifactType =
+        serde_json::from_value(serde_json::Value::String(artifact_type_str.to_string()))
+            .unwrap_or(ArtifactType::Report);
 
     let safe_name = artifact_name
         .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
     let filename = format!("{safe_name}.md");
 
+    let rel_path = format!(
+        "process-artifacts/{}/{}/{}",
+        process_id, run_id, filename
+    );
     let dir = data_dir
         .join("process-artifacts")
         .join(process_id.to_string())
@@ -449,14 +469,28 @@ async fn execute_artifact(
         .await
         .map_err(|e| ProcessError::Execution(format!("Failed to write artifact: {e}")))?;
 
+    let artifact = ProcessArtifact {
+        artifact_id: ProcessArtifactId::new(),
+        process_id: *process_id,
+        run_id: *run_id,
+        node_id: node.node_id,
+        artifact_type,
+        name: artifact_name.to_string(),
+        file_path: rel_path,
+        size_bytes: upstream_context.len() as u64,
+        metadata: serde_json::json!({}),
+        created_at: Utc::now(),
+    };
+    store.save_artifact(&artifact)?;
+
     info!(
         node_id = %node.node_id,
+        artifact_id = %artifact.artifact_id,
         path = %file_path.display(),
         bytes = upstream_context.len(),
         "Artifact saved"
     );
 
-    // Pass upstream through to downstream nodes
     Ok(upstream_context.to_string())
 }
 

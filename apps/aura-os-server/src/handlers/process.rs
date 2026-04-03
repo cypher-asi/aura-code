@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use aura_os_core::{
-    Process, ProcessEvent, ProcessFolder, ProcessFolderId, ProcessId, ProcessNode,
-    ProcessNodeConnection, ProcessNodeConnectionId, ProcessNodeId, ProcessNodeType, ProcessRun,
-    ProcessRunId, ProcessRunTrigger,
+    Process, ProcessArtifact, ProcessArtifactId, ProcessEvent, ProcessFolder, ProcessFolderId,
+    ProcessId, ProcessNode, ProcessNodeConnection, ProcessNodeConnectionId, ProcessNodeId,
+    ProcessNodeType, ProcessRun, ProcessRunId, ProcessRunTrigger,
 };
 use chrono::Utc;
 
@@ -617,6 +617,77 @@ pub(crate) async fn update_folder(
         .map_err(|e| ApiError::internal(e.to_string()))?;
 
     Ok(Json(folder))
+}
+
+// ---------------------------------------------------------------------------
+// Artifacts
+// ---------------------------------------------------------------------------
+
+pub(crate) async fn list_run_artifacts(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    AuthSession(_session): AuthSession,
+    Path((id, run_id_str)): Path<(String, String)>,
+) -> ApiResult<Json<Vec<ProcessArtifact>>> {
+    let process_id: ProcessId = id
+        .parse()
+        .map_err(|_| ApiError::bad_request("invalid process ID"))?;
+    let run_id: ProcessRunId = run_id_str
+        .parse()
+        .map_err(|_| ApiError::bad_request("invalid run ID"))?;
+
+    let artifacts = state
+        .super_agent_service
+        .process_store
+        .list_artifacts_for_run(&process_id, &run_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+
+    Ok(Json(artifacts))
+}
+
+pub(crate) async fn get_artifact(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    AuthSession(_session): AuthSession,
+    Path(artifact_id_str): Path<String>,
+) -> ApiResult<Json<ProcessArtifact>> {
+    let artifact_id: ProcessArtifactId = artifact_id_str
+        .parse()
+        .map_err(|_| ApiError::bad_request("invalid artifact ID"))?;
+
+    let artifact = state
+        .super_agent_service
+        .process_store
+        .get_artifact(&artifact_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .ok_or_else(|| ApiError::not_found("artifact not found"))?;
+
+    Ok(Json(artifact))
+}
+
+pub(crate) async fn get_artifact_content(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    AuthSession(_session): AuthSession,
+    Path(artifact_id_str): Path<String>,
+) -> ApiResult<String> {
+    let artifact_id: ProcessArtifactId = artifact_id_str
+        .parse()
+        .map_err(|_| ApiError::bad_request("invalid artifact ID"))?;
+
+    let artifact = state
+        .super_agent_service
+        .process_store
+        .get_artifact(&artifact_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .ok_or_else(|| ApiError::not_found("artifact not found"))?;
+
+    let file_path = state.data_dir.join(&artifact.file_path);
+    let content = tokio::fs::read_to_string(&file_path)
+        .await
+        .map_err(|e| ApiError::internal(format!("Failed to read artifact file: {e}")))?;
+
+    Ok(content)
 }
 
 pub(crate) async fn delete_folder(

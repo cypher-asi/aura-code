@@ -7,10 +7,9 @@ use crate::enums::{
     SessionStatus, TaskStatus,
 };
 use crate::ids::{
-    AgentId, AgentInstanceId, ArtifactId, CronJobId, CronJobRunId, OrgId, ProcessEventId,
-    ProcessFolderId, ProcessId, ProcessNodeConnectionId, ProcessNodeId, ProcessRunId, ProfileId,
-    ProjectId,
-    SessionEventId, SessionId, SpecId, TaskId, UserId,
+    AgentId, AgentInstanceId, ArtifactId, CronJobId, CronJobRunId, OrgId, ProcessArtifactId,
+    ProcessEventId, ProcessFolderId, ProcessId, ProcessNodeConnectionId, ProcessNodeId,
+    ProcessRunId, ProfileId, ProjectId, SessionEventId, SessionId, SpecId, TaskId, UserId,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -633,4 +632,20 @@ pub struct ProcessEvent {
     pub started_at: DateTime<Utc>,
     #[serde(default)]
     pub completed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProcessArtifact {
+    pub artifact_id: ProcessArtifactId,
+    pub process_id: ProcessId,
+    pub run_id: ProcessRunId,
+    pub node_id: ProcessNodeId,
+    pub artifact_type: ArtifactType,
+    pub name: String,
+    /// Relative path under data_dir
+    pub file_path: String,
+    pub size_bytes: u64,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+    pub created_at: DateTime<Utc>,
 }

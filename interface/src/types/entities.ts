@@ -480,6 +480,19 @@ export interface ProcessEvent {
   completed_at: string | null;
 }
 
+export interface ProcessArtifact {
+  artifact_id: string;
+  process_id: string;
+  run_id: string;
+  node_id: string;
+  artifact_type: ArtifactType;
+  name: string;
+  file_path: string;
+  size_bytes: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
 // ---------------------------------------------------------------------------
 // Memory entities (harness API)
 // ---------------------------------------------------------------------------
