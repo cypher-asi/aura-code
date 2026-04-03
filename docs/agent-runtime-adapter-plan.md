@@ -1,18 +1,144 @@
 # Agent Runtime Adapter Plan
 
-This document is the simplified proposal for how Aura should support multiple agent runtimes cleanly.
+This is the simple proposal I would pitch for Aura.
 
-The core idea is simple:
+There are only **three concepts**:
 
-- **integrations** answer: "what credentials / endpoints / environment can I use?"
-- **adapters** answer: "which runtime engine is this agent using?"
-- **execution mode** answers: "where is that runtime actually running?"
+1. **Adapter**
+   Which runtime does the work?
+2. **Integration**
+   What provider/auth/model config does that runtime use?
+3. **Execution mode**
+   Where does that runtime run?
 
-This is the clearest model I see for Aura.
+That is the clearest model I see.
 
-## Why this change is needed
+## The three concepts
 
-Today Aura is still mostly shaped around:
+## 1. Adapter
+
+An adapter is the runtime engine that executes the agent.
+
+Examples:
+
+- `aura_harness`
+- `claude_code`
+- `codex`
+
+This should be selected at the **agent level**.
+
+Why:
+
+- one agent may use Aura harness
+- another may use Claude Code
+- another may use Codex
+
+## 2. Integration
+
+An integration is the provider/auth/config that the adapter uses.
+
+Examples:
+
+- `anthropic_default`
+- `openai_default`
+- later maybe `vertex_default`
+
+For v1, I would keep this mostly **organization-level**.
+
+Important point:
+
+- **Aura harness also uses integrations**
+
+It is not special here.
+
+Examples:
+
+- Claude Code + Anthropic integration
+- Codex + OpenAI integration
+- Aura harness + Anthropic integration
+
+So adapters do the work, and integrations tell them how to authenticate and which model/provider setup to use.
+
+## 3. Execution mode
+
+Execution mode describes where the adapter runs.
+
+For Aura v1, I think we only need:
+
+- `local_host`
+- `swarm_microvm`
+
+This is the part that maps to the old `machine_type` concept.
+
+So the old harness/swarm story still matters:
+
+- Aura Harness = runtime engine
+- Aura Swarm = remote isolated execution mode
+
+## The core model
+
+```mermaid
+flowchart LR
+    A["Adapter\n(runtime engine)"]
+    I["Integration\n(provider, auth, model config)"]
+    E["Execution Mode\n(where it runs)"]
+    R["Resolved runtime for an agent"]
+
+    A --> R
+    I --> R
+    E --> R
+```
+
+## Simple examples
+
+### Example 1: Aura harness agent
+
+- Adapter: `aura_harness`
+- Integration: `anthropic_default`
+- Execution mode: `local_host`
+
+Meaning:
+
+- run Aura harness locally
+- Aura harness uses Anthropic credentials/model from the integration
+
+### Example 2: Claude Code agent
+
+- Adapter: `claude_code`
+- Integration: `anthropic_default`
+- Execution mode: `local_host`
+
+Meaning:
+
+- run Claude Code locally
+- use Anthropic credentials/model from the integration
+
+### Example 3: Codex agent
+
+- Adapter: `codex`
+- Integration: `openai_default`
+- Execution mode: `local_host`
+
+Meaning:
+
+- run Codex locally
+- use OpenAI credentials/model from the integration
+
+### Example 4: Remote Aura agent
+
+- Adapter: `aura_harness`
+- Integration: `anthropic_default`
+- Execution mode: `swarm_microvm`
+
+Meaning:
+
+- run Aura harness remotely
+- use the same provider integration pattern
+- place the runtime in isolated swarm infra
+
+## Why this is better than the current model
+
+Today Aura mostly thinks in terms of:
 
 - `machine_type`
 - `HarnessMode`
@@ -23,238 +149,54 @@ That works for:
 - local Aura harness
 - remote Aura swarm
 
-But it does not scale well to:
+But it does not scale cleanly to:
 
 - Claude Code
 - Codex
-- OpenCode
-- local OSS model runners
-- adapter-specific auth, diagnostics, and session behavior
+- future vendor runtimes
 
-The old model bundled too much into one concept.
+The problem is that the old model mixes:
 
-## The three concepts
+- runtime choice
+- provider config
+- deployment placement
 
-## 1. Integrations
+The new model separates those concerns cleanly.
 
-Integrations are reusable connections and credentials.
+## What happens to `machine_type`?
 
-Examples:
+I would not keep `machine_type` as the main user-facing concept.
 
-- Anthropic API key
-- OpenAI API key
-- Vertex / Google project config
-- remote gateway URL + token
-- local model server URL
-- MCP credentials
-- workspace-specific env bundle
+But I would keep its meaning.
 
-Best scope:
+Recommended mapping:
 
-- **organization-level by default**
-- **workspace-level when the integration is truly workspace-specific**
+- `machine_type = local` -> `execution_mode = local_host`
+- `machine_type = remote` -> `execution_mode = swarm_microvm`
 
-What integrations are **not**:
+So:
 
-- they are not the runtime
-- they are not the agent
-- they are not the deployment mode
+- we are not deleting the old concept
+- we are clarifying it
 
-## 2. Adapters
-
-Adapters are the runtime engines that actually execute agent work.
-
-Examples:
-
-- `aura_harness`
-- `claude_code`
-- `codex`
-- `opencode`
-
-Best scope:
-
-- **agent-level**
-
-Why:
-
-- one agent might use Aura harness
-- another might use Claude Code
-- another might use Codex
-
-That flexibility is valuable.
-
-## 3. Execution mode
-
-Execution mode describes where/how an adapter runs.
-
-Examples:
-
-- `local_host`
-- `swarm_microvm`
-- `remote_gateway`
-
-This is the part that maps most closely to the old `machine_type` idea.
-
-So I do **not** think we should delete the old harness/swarm concept.
-I think we should rename and clarify it.
-
-Old idea:
-
-- `machine_type = local | remote`
-
-Better new idea:
-
-- `execution_mode = local_host | swarm_microvm | remote_gateway`
-
-That keeps the original Aura Harness / Aura Swarm meaning intact:
-
-- **Aura Harness** = runtime engine
-- **Aura Swarm** = isolated remote placement mode
-
-## Simple model
-
-```mermaid
-flowchart LR
-    I["Integration\n(credentials, endpoints, env)"]
-    A["Adapter\n(runtime engine)"]
-    E["Execution Mode\n(where it runs)"]
-    R["Resolved Runtime\nfor an agent run"]
-
-    I --> R
-    A --> R
-    E --> R
-```
-
-## Example combinations
-
-Example 1:
-
-- Integration: Anthropic API key
-- Adapter: Claude Code
-- Execution mode: local host
-
-Meaning:
-
-- use the local Claude CLI
-- authenticate with Anthropic
-- run on the user's machine
-
-Example 2:
-
-- Integration: OpenAI API key
-- Adapter: Codex
-- Execution mode: local host
-
-Meaning:
-
-- use local Codex CLI
-- authenticate with OpenAI
-- run on the user's machine
-
-Example 3:
-
-- Integration: org default Aura gateway / auth
-- Adapter: Aura harness
-- Execution mode: swarm microVM
-
-Meaning:
-
-- use Aura runtime
-- run remotely in isolated infrastructure
-- preserve the original swarm deployment story
-
-## How this maps to the current Aura system
-
-After reviewing:
-
-- [aura-harness/README.md](/Users/shahrozkhan/Documents/zero/aura-harness/README.md)
-- [aura-harness/docs/architecture.md](/Users/shahrozkhan/Documents/zero/aura-harness/docs/architecture.md)
-- [aura-swarm/README.md](/Users/shahrozkhan/Documents/zero/aura-swarm/README.md)
-- [01-system-overview.md](/Users/shahrozkhan/Documents/zero/aura-swarm/docs/spec/v0.1.0/01-system-overview.md)
-- [06-agent-runtime.md](/Users/shahrozkhan/Documents/zero/aura-swarm/docs/spec/v0.1.0/06-agent-runtime.md)
-
-my read is:
-
-- the old harness/swarm model is still meaningful
-- it should not be treated as a competing idea
-- it fits naturally as the **execution mode** layer
-
-So in the new world:
-
-- `adapter_type` should choose the runtime engine
-- `execution_mode` should replace the old overloaded meaning of `machine_type`
-
-## Recommended ownership model
-
-I recommend:
-
-- **Integrations**
-  - org-level by default
-  - workspace-level when needed
-- **Adapters**
-  - agent-level
-- **Execution mode**
-  - agent-level or adapter-profile-level
-
-That gives us:
-
-- shared credentials
-- flexible agent runtime choice
-- consistent deployment/isolation semantics
-
-## Adapter profiles
-
-To avoid duplication, I recommend reusable adapter profiles.
-
-Examples:
-
-- "Aura local default"
-- "Aura swarm default"
-- "Claude Code Opus local"
-- "Codex GPT-5.4 local"
-
-An agent should reference a profile, not re-enter everything from scratch.
-
-## Suggested resolved runtime flow
-
-```mermaid
-flowchart TD
-    O["Org Integrations"]
-    W["Workspace Integrations (optional)"]
-    P["Adapter Profile"]
-    G["Agent Config"]
-    X["Execution Mode"]
-    RR["Resolved Runtime Config"]
-
-    O --> RR
-    W --> RR
-    P --> RR
-    G --> RR
-    X --> RR
-```
-
-## Example end-to-end flow
-
-Here is one realistic flow:
+## Suggested flow
 
 ```mermaid
 sequenceDiagram
     participant User
     participant AuraOS
-    participant AgentProfile as Agent Profile
-    participant Runtime as Runtime Adapter
-    participant Infra as Execution Mode
+    participant Config as Agent Config
+    participant Runtime as Adapter Runtime
 
     User->>AuraOS: Start task with agent
-    AuraOS->>AgentProfile: Load adapter + integrations + defaults
-    AgentProfile-->>AuraOS: claude_code + anthropic + local_host
-    AuraOS->>Runtime: Open session with resolved config
-    Runtime->>Infra: Execute in local host mode
+    AuraOS->>Config: Resolve adapter + integration + execution mode
+    Config-->>AuraOS: aura_harness + anthropic_default + local_host
+    AuraOS->>Runtime: Open runtime with resolved config
     Runtime-->>AuraOS: Stream output + usage + files changed
-    AuraOS-->>User: Persist task progress, messages, and results
+    AuraOS-->>User: Persist progress and final result
 ```
 
-Same idea for Aura swarm:
+Remote Aura flow:
 
 ```mermaid
 sequenceDiagram
@@ -263,129 +205,95 @@ sequenceDiagram
     participant Runtime as Aura Harness Adapter
     participant Swarm as Swarm MicroVM
 
-    User->>AuraOS: Start task with remote agent
-    AuraOS->>Runtime: Open session
-    Runtime->>Swarm: Provision/connect remote runtime
+    User->>AuraOS: Start remote agent task
+    AuraOS->>Runtime: Open runtime
+    Runtime->>Swarm: Provision/connect remote Aura runtime
     Swarm-->>Runtime: Session ready
-    Runtime-->>AuraOS: Stream output + usage + files changed
+    Runtime-->>AuraOS: Stream output + usage
     AuraOS-->>User: Persist progress and final result
 ```
 
-## What happens to `machine_type`?
-
-Short answer:
-
-- I would not keep it as the top-level runtime selector
-- I would keep its meaning, but rename it
-
-Recommended migration:
-
-- old `machine_type = local` -> `execution_mode = local_host`
-- old `machine_type = remote` -> `execution_mode = swarm_microvm`
-
-Compatibility mapping:
-
-- `local` -> `aura_harness + local_host`
-- `remote` -> `aura_harness + swarm_microvm`
-
-So yes, the concept still matters. It just becomes more precise.
-
 ## Who owns task / Kanban transitions?
 
-This is important.
-
-I do **not** think task board state should be owned directly by whichever runtime adapter the coding agent is using.
-
-Based on the current system:
-
-- [task_service.rs](/Users/shahrozkhan/Documents/zero/aura-os-external-bench/crates/aura-os-tasks/src/task_service.rs)
-- [task_tools.rs](/Users/shahrozkhan/Documents/zero/aura-os-external-bench/crates/aura-os-super-agent/src/tools/task_tools.rs)
-
-task transitions are already mostly Aura OS service-level actions:
-
-- assign
-- move to in progress
-- move to done
-- fail
-- retry
-- unlock dependent tasks
-
-That is the right direction.
+I do **not** think task board state should be owned by the runtime adapter.
 
 My recommendation:
 
-- runtime adapters do the work
-- Aura OS orchestration owns the authoritative task transitions
+- adapters do the work
+- Aura OS orchestration owns the task transitions
 
-So the agent can propose:
+So the agent can propose things like:
 
-- "task is done"
-- "task is blocked"
-- "retry this"
+- task done
+- task blocked
+- retry task
 
-But the durable board state should still go through Aura OS orchestration.
+But Aura OS should remain the source of truth for:
 
-That gives us:
+- assign
+- in progress
+- done
+- failed
+- retry
+- dependency unlocks
 
-- consistent Kanban semantics
-- easier auditing
-- less adapter-specific business logic
-- cleaner workflow control
+That keeps workflow semantics consistent across Aura, Claude, and Codex.
 
-## How the benchmark work fits this architecture
+## Do the current benchmarks still fit this architecture?
 
-Yes, the benchmarks I already built still fit this architecture very well.
+Yes, very well.
 
-Why:
+The benchmark adapters I already built map directly onto the **adapter** layer:
 
-- the **external benchmark adapters** are already modeling the **adapter layer**
-- the Aura benchmark lane already exercises the **Aura harness adapter**
-- the Claude and Codex benchmark lanes already exercise **vendor adapters**
-- the benchmarks do not block or conflict with adding **integrations** or **execution mode**
+- Aura benchmark adapter
+- Claude benchmark adapter
+- Codex benchmark adapter
 
-In fact, they become more useful under this architecture because they give us:
+That means the benchmark work is still valid and useful.
 
-- a product comparison layer for adapter choices
-- a regression tool as we turn benchmark adapters into real product adapters
+In fact, it becomes more useful under this architecture because it gives us:
 
-So the benchmark work is not throwaway.
-It is a direct stepping stone into the runtime-adapter architecture.
+- a comparison layer for adapter choices
+- a regression harness as we turn these benchmark adapters into real product adapters
 
 ## Recommended v1 scope
 
-Keep v1 small.
+Keep v1 simple.
 
-### Must have
+### Adapters
 
-- `adapter_type`
-- `execution_mode`
-- reusable integration profiles
-- adapter profiles
-- environment-test endpoint
-- Aura harness, Claude Code, and Codex as supported runtime adapters
+- `aura_harness`
+- `claude_code`
+- `codex`
 
-### Not yet
+### Integrations
 
-- deeply nested per-project secret graphs
-- arbitrary runtime composition
-- adapter-specific workflow engines
-- making every board/system action runtime-owned
+- org-level only for now
+- `anthropic`
+- `openai`
+
+### Execution modes
+
+- `local_host`
+- `swarm_microvm`
+
+That is enough for a strong first version.
 
 ## Recommended implementation order
 
-1. add `adapter_type` and `execution_mode` with compatibility mapping
-2. keep current Aura local/swarm behavior working
-3. introduce a higher-level runtime adapter abstraction above `HarnessLink`
-4. make Aura local/swarm the first concrete runtime adapters
-5. add integration profiles and adapter profiles
-6. add environment test endpoints
-7. add Claude Code / Codex / OpenCode runtime adapters
-8. wire UI and API for profile selection
+1. add `adapter_type`
+2. add `execution_mode`
+3. keep compatibility with current `machine_type`
+4. introduce a runtime adapter abstraction above `HarnessLink`
+5. make Aura local/swarm the first concrete adapters
+6. add org-level integration profiles
+7. add Claude Code and Codex runtime adapters
+8. wire the API/UI to select adapter + integration + execution mode
 
 ## Final recommendation
 
 If I had to pitch this in one sentence:
 
-> Aura should separate reusable integrations, agent runtime adapters, and execution placement, while keeping task orchestration owned by Aura OS.
+> Aura should separate the runtime that does the work, the integration it uses, and the place where it runs.
 
-That is the model I would move forward with.
+That is the version I would move forward with.
