@@ -8,7 +8,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
 use futures_util::future::join_all;
 use tokio_stream::StreamExt;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 type SseStream = Pin<Box<dyn futures_core::Stream<Item = Result<Event, Infallible>> + Send>>;
 type SseResponse = ([(&'static str, HeaderValue); 1], Sse<SseStream>);
@@ -98,7 +98,12 @@ fn persist_user_message(ctx: &ChatPersistCtx, content: &str) {
             .create_event(&ctx.session_id, &ctx.jwt, &req)
             .await
         {
-            warn!(error = %e, "Failed to persist user message event");
+            error!(
+                error = %e,
+                session_id = %ctx.session_id,
+                project_agent_id = %ctx.project_agent_id,
+                "Failed to persist user message event"
+            );
         }
     });
 }
@@ -136,7 +141,12 @@ fn spawn_chat_persist_task(
                     .create_event(&ctx.session_id, &ctx.jwt, &req)
                     .await
                 {
-                    warn!(error = %e, "Failed to persist chat event");
+                    error!(
+                        error = %e,
+                        session_id = %ctx.session_id,
+                        project_agent_id = %ctx.project_agent_id,
+                        "Failed to persist chat event"
+                    );
                 }
             }
         };
@@ -265,8 +275,9 @@ fn spawn_chat_persist_task(
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    warn!(
+                    error!(
                         session_id = %ctx.session_id,
+                        project_agent_id = %ctx.project_agent_id,
                         skipped = n,
                         "Chat persistence receiver lagged; aborting this turn persistence to avoid partial replay"
                     );
@@ -358,11 +369,10 @@ async fn setup_agent_chat_persistence(
 const SSE_NO_BUFFERING_HEADERS: [(&str, HeaderValue); 1] =
     [("X-Accel-Buffering", HeaderValue::from_static("no"))];
 
-fn has_live_session(state: &AppState, key: &str) -> bool {
-    if let Ok(reg) = state.chat_sessions.try_lock() {
-        if let Some(s) = reg.get(key) {
-            return s.is_alive();
-        }
+async fn has_live_session(state: &AppState, key: &str) -> bool {
+    let reg = state.chat_sessions.lock().await;
+    if let Some(s) = reg.get(key) {
+        return s.is_alive();
     }
     false
 }
@@ -781,7 +791,9 @@ pub(crate) async fn list_agent_events(
     Path(agent_id): Path<AgentId>,
 ) -> ApiResult<Json<Vec<SessionEvent>>> {
     let _ = state.require_storage_client()?;
-    let messages = aggregate_agent_events_from_storage(&state, &agent_id, &jwt).await;
+    let messages = aggregate_agent_events_from_storage_result(&state, &agent_id, &jwt)
+        .await
+        .map_err(map_storage_error)?;
     Ok(Json(messages))
 }
 
@@ -851,6 +863,8 @@ async fn open_harness_chat_stream(
     persist_ctx: Option<ChatPersistCtx>,
     _commands: Option<Vec<String>>,
 ) -> ApiResult<SseResponse> {
+    let persist_unavailable = persist_ctx.is_none();
+
     let (is_new, rx, commands_tx) = get_or_create_chat_session(
         state,
         session_key,
@@ -883,15 +897,25 @@ async fn open_harness_chat_stream(
         spawn_chat_persist_task(prx, ctx);
     }
 
-    let prefix: Vec<Result<Event, Infallible>> = if is_new {
+    let mut prefix: Vec<Result<Event, Infallible>> = Vec::new();
+    if is_new {
         let progress_event = Event::default()
             .event("progress")
             .json_data(&serde_json::json!({"type":"progress","stage":"connecting"}))
             .unwrap();
-        vec![Ok(progress_event)]
-    } else {
-        vec![]
-    };
+        prefix.push(Ok(progress_event));
+    }
+    if persist_unavailable {
+        let warning_event = Event::default()
+            .event("error")
+            .json_data(&serde_json::json!({
+                "type": "error",
+                "message": "Chat history could not be saved — storage is unavailable",
+                "recoverable": true,
+            }))
+            .unwrap();
+        prefix.push(Ok(warning_event));
+    }
 
     let broadcast_stream = tokio_stream::wrappers::BroadcastStream::new(rx)
         .filter_map(|r| r.ok())
@@ -1057,13 +1081,13 @@ pub(crate) async fn send_agent_event_stream(
 
     let persist_ctx = setup_agent_chat_persistence(&state, &agent_id, &agent.name, &jwt).await;
     if persist_ctx.is_none() {
-        warn!(%agent_id, "agent chat: persistence context unavailable — chat will NOT be saved");
+        error!(%agent_id, "agent chat: persistence context unavailable — chat will NOT be saved");
     } else {
         info!(%agent_id, "agent chat: persistence context ready");
     }
 
     let session_key = format!("agent:{agent_id}");
-    let conversation_messages = if !has_live_session(&state, &session_key) {
+    let conversation_messages = if !has_live_session(&state, &session_key).await {
         let stored = aggregate_agent_events_from_storage(&state, &agent_id, &jwt).await;
         if stored.is_empty() {
             None
@@ -1141,7 +1165,7 @@ pub(crate) async fn send_event_stream(
         setup_project_chat_persistence(&state, &project_id, &agent_instance_id, &jwt).await;
 
     let session_key = format!("instance:{agent_instance_id}");
-    let conversation_messages = if !has_live_session(&state, &session_key) {
+    let conversation_messages = if !has_live_session(&state, &session_key).await {
         let stored = load_project_session_history(&state, &agent_instance_id, &jwt)
             .await
             .map_err(map_storage_error)?;
