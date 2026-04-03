@@ -625,6 +625,29 @@
     "source_url": "https://raw.githubusercontent.com/openclaw/openclaw/main/skills/summarize/SKILL.md"
   },
   {
+    "name": "tavily",
+    "description": "Web search, URL content extraction, site crawling, sitemap discovery, and AI-powered deep research using the Tavily CLI (tvly). Use when you need to search the web, extract clean content from URLs, crawl websites, discover site structure, or produce cited research reports.",
+    "emoji": null,
+    "category": "automation",
+    "os": "any",
+    "tags": [
+      "tavily",
+      "web-search",
+      "research",
+      "cli"
+    ],
+    "security_rating": "caution",
+    "security_notes": "Skill executes shell commands for its operations.",
+    "source_url": "https://raw.githubusercontent.com/openclaw/openclaw/main/skills/tavily/SKILL.md",
+    "requires": {
+      "bins": ["tvly"],
+      "env": ["TAVILY_API_KEY"]
+    },
+    "permissions": {
+      "commands": ["tvly"]
+    }
+  },
+  {
     "name": "taskflow",
     "description": "taskflow skill",
     "emoji": null,
