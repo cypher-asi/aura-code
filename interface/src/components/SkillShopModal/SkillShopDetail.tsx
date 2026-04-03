@@ -5,6 +5,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { SkillIcon } from "./SkillIcon";
 import { SecurityBadge } from "./SecurityBadge";
+import { authHeaders } from "../../lib/auth-token";
+import { resolveApiUrl } from "../../lib/host-config";
 import type { SkillShopCatalogEntry } from "../../types";
 import styles from "./SkillShopModal.module.css";
 import mdStyles from "../Preview/Preview.module.css";
@@ -50,7 +52,9 @@ export function SkillShopDetail({
     let cancelled = false;
     setSourceLoading(true);
     setSourceError(false);
-    fetch(`/api/skills/${entry.category}/${entry.name}/content`)
+    fetch(resolveApiUrl(`/api/skills/${entry.category}/${entry.name}/content`), {
+        headers: authHeaders(),
+      })
       .then((r) => {
         if (!r.ok) throw new Error(r.statusText);
         return r.text();
