@@ -500,7 +500,8 @@ fn discover_obsidian_vaults() -> Vec<String> {
         }
     };
 
-    let config_path = appdata.join("obsidian").join("obsidian.json");
+    let obsidian_config_dir = appdata.join("obsidian");
+    let config_path = obsidian_config_dir.join("obsidian.json");
     let content = match std::fs::read_to_string(&config_path) {
         Ok(c) => c,
         Err(_) => return vec![],
@@ -515,14 +516,14 @@ fn discover_obsidian_vaults() -> Vec<String> {
         return vec![];
     };
 
-    vaults
-        .values()
-        .filter_map(|v| {
-            let open = v.get("open").and_then(|o| o.as_bool()).unwrap_or(false);
-            let path = v.get("path").and_then(|p| p.as_str()).map(String::from);
-            if open { path } else { None }
-        })
-        .collect()
+    let mut paths: Vec<String> = vec![obsidian_config_dir.to_string_lossy().to_string()];
+    for v in vaults.values() {
+        let open = v.get("open").and_then(|o| o.as_bool()).unwrap_or(false);
+        if let (true, Some(path)) = (open, v.get("path").and_then(|p| p.as_str())) {
+            paths.push(path.to_string());
+        }
+    }
+    paths
 }
 
 pub(crate) async fn get_skill_content(
