@@ -14,6 +14,8 @@ pub enum ProcessError {
     InvalidGraph(String),
     #[error("Store error: {0}")]
     Store(String),
+    #[error("A run is already active for this process")]
+    RunAlreadyActive,
     #[error("Execution error: {0}")]
     Execution(String),
     #[error("Serialization error: {0}")]

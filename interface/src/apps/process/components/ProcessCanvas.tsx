@@ -157,9 +157,12 @@ function ProcessCanvasInner({ processId, processNodes, processConnections, onTri
   const { screenToFlowPosition } = useReactFlow();
   const fetchNodes = useProcessStore((s) => s.fetchNodes);
   const fetchConnections = useProcessStore((s) => s.fetchConnections);
+  const runs = useProcessStore((s) => s.runs[processId] ?? []);
   const selectNode = useProcessSidekickStore((s) => s.selectNode);
   const closeNodeInspector = useProcessSidekickStore((s) => s.closeNodeInspector);
   const nodeStatuses = useProcessSidekickStore((s) => s.nodeStatuses);
+
+  const isRunActive = runs.length > 0 && (runs[0].status === "running" || runs[0].status === "pending");
 
   const handleRenameSubmit = useCallback(
     async (nodeId: string, newLabel: string) => {
@@ -489,7 +492,7 @@ function ProcessCanvasInner({ processId, processNodes, processConnections, onTri
           className="process-flow-controls"
         />
         <MiniMap
-          style={{ background: "#111", border: "1px solid var(--color-border, #333)", borderRadius: 0, width: 150, height: 112 }}
+          style={{ background: "#111", borderRadius: 0, width: 150, height: 112 }}
           nodeColor="#666"
           maskColor="rgba(0,0,0,0.8)"
           pannable
@@ -498,7 +501,7 @@ function ProcessCanvasInner({ processId, processNodes, processConnections, onTri
 
       {onTrigger && (
         <div className="process-floating-toolbar">
-          <Button variant="ghost" size="sm" iconOnly icon={<Play size={14} />} title="Trigger" onClick={onTrigger} />
+          <Button variant="ghost" size="sm" iconOnly icon={<Play size={14} />} title={isRunActive ? "Run in progress" : "Trigger"} onClick={onTrigger} disabled={isRunActive} />
           <Button
             variant="ghost"
             size="sm"

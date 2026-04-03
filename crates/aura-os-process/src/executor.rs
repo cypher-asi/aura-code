@@ -54,6 +54,16 @@ impl ProcessExecutor {
             .get_process(process_id)?
             .ok_or_else(|| ProcessError::NotFound(process_id.to_string()))?;
 
+        let existing_runs = self.store.list_runs(process_id)?;
+        if existing_runs.iter().any(|r| {
+            matches!(
+                r.status,
+                ProcessRunStatus::Pending | ProcessRunStatus::Running
+            )
+        }) {
+            return Err(ProcessError::RunAlreadyActive);
+        }
+
         let now = Utc::now();
         let run = ProcessRun {
             run_id: ProcessRunId::new(),
@@ -283,6 +293,19 @@ async fn execute_run(
                     condition_results.insert(node_id, parse_condition_result(&output));
                 }
 
+                let event_output = match node.node_type {
+                    ProcessNodeType::Merge => {
+                        format!("Merged {} upstream output(s) ({} bytes)", incoming.len(), output.len())
+                    }
+                    ProcessNodeType::Artifact => {
+                        let name = node.config.get("artifact_name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&node.label);
+                        format!("Artifact saved: {} ({} bytes)", name, output.len())
+                    }
+                    _ => output.clone(),
+                };
+
                 record_event(
                     store,
                     broadcast,
@@ -290,7 +313,7 @@ async fn execute_run(
                     node,
                     ProcessEventStatus::Completed,
                     &upstream_context,
-                    &output,
+                    &event_output,
                 );
                 node_outputs.insert(node_id, output);
             }
