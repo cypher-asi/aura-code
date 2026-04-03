@@ -9,8 +9,15 @@ model_invocable: true
 
 # Obsidian (Windows)
 
-Work with Obsidian vaults using direct file operations. Obsidian vaults are
-plain folders of Markdown files — no special tools needed.
+Work with Obsidian vaults using **direct file operations** (`read_file`,
+`write_file`, `list_files`). Obsidian vaults are plain folders of Markdown
+files — no CLI tool is needed or available.
+
+**IMPORTANT**: There is no `obsidian` CLI binary. Do NOT attempt to run
+`obsidian`, `obsidian-cli`, or any similar command. All note operations
+use `read_file` and `write_file` against the vault directory. The only
+shell command available is `start obsidian://...` to open notes in the
+Obsidian desktop app via its URI protocol.
 
 ## Vault discovery
 
@@ -18,15 +25,17 @@ Obsidian stores vault config at:
 
     %APPDATA%/obsidian/obsidian.json
 
-Read this JSON file. It is a map of vault IDs to objects. Look for entries
-where `"open": true`. The `path` field is the absolute vault root directory.
+Read this JSON file with `read_file`. It is a map of vault IDs to objects.
+Look for entries where `"open": true`. The `path` field is the absolute
+vault root directory.
 
 **Shortcut**: check agent memory (facts) for key `obsidian_vault_path` first.
 If not set, discover it from the config file and store as a fact for next time.
 
 ## Creating notes
 
-Write `.md` files directly into the vault. Always include YAML frontmatter:
+Use `write_file` to write `.md` files directly into the vault. Always include
+YAML frontmatter:
 
     ---
     created: YYYY-MM-DD
@@ -42,30 +51,32 @@ Rules:
 - Use `[[Note Name]]` for internal links (wikilinks), never `[text](path.md)`.
 - Use `#tags` inline; mirror them in frontmatter `tags` array.
 - Place new notes at the vault root unless the user specifies a subfolder.
+- Obsidian picks up new files instantly — no reload needed.
 
 ## Reading notes
 
-Read `.md` files directly using the vault path + relative note path.
+Use `read_file` with the vault path + relative note path.
 
 ## Searching the vault
 
-List `*.md` files recursively in the vault directory. Skip the `.obsidian/`
-config folder. Grep file contents for search terms.
+Use `list_files` recursively in the vault directory. Skip the `.obsidian/`
+config folder. Read and grep file contents for search terms.
 
 ## Daily notes
 
 Convention: `Daily/YYYY-MM-DD.md`. Create the `Daily/` folder if needed.
 
-## Opening notes in Obsidian
+## Opening notes in the Obsidian app
 
-Use the URI protocol to open a note in the running Obsidian app:
+To open a note in the running Obsidian desktop app, use `run_command` with
+the Windows `start` command and the `obsidian://` URI protocol:
 
-    obsidian://open?vault=VAULT_NAME&file=PATH_INSIDE_VAULT
+    start "obsidian://open?vault=VAULT_NAME&file=PATH_INSIDE_VAULT"
 
-Execute via: `start "obsidian://open?vault=MyVault&file=Folder/Note"`
-
-The vault name is typically the folder name (last segment of the vault path).
+The vault name is the folder name (last segment of the vault path).
 The file path is relative to the vault root, without the `.md` extension.
+
+This is the ONLY allowed shell command. Do not run any other commands.
 
 ## Canvases
 
