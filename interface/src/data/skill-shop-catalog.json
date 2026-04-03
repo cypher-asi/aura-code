@@ -403,8 +403,7 @@
     "source_url": "https://raw.githubusercontent.com/openclaw/openclaw/main/skills/obsidian/SKILL.md",
     "permissions": {
       "commands": [
-        "obsidian",
-        "start obsidian://"
+        "obsidian"
       ],
       "tools": [
         "read_file",
