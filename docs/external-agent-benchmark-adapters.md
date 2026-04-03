@@ -2,6 +2,8 @@
 
 This document defines the next evaluation layer for Aura: black-box benchmark adapters that run the same coding task against different agent runtimes and normalize the results into one comparison format.
 
+For the latest measured results and practical benchmark notes, see `docs/external-agent-benchmark-findings.md`.
+
 ## Why this exists
 
 Aura already has strong internal benchmark lanes:
