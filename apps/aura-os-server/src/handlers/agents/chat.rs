@@ -649,29 +649,55 @@ async fn collect_session_events(
     jwt: &str,
     sessions: &[aura_os_storage::StorageSession],
 ) -> EventCollectOutcome {
-    let evt_futs: Vec<_> = sessions
-        .iter()
-        .map(|s| storage.list_events(&s.id, jwt, None, None))
-        .collect();
-    let evt_results: Vec<Result<Vec<aura_os_storage::StorageSessionEvent>, _>> =
-        join_all(evt_futs).await;
+    const PAGE_SIZE: u32 = 500;
+
     let mut messages = Vec::new();
     let mut failed_sessions = 0usize;
     let mut first_error: Option<aura_os_storage::StorageError> = None;
-    for (result, session) in evt_results.into_iter().zip(sessions.iter()) {
-        match result {
-            Ok(events) => {
-                let pai = session.project_agent_id.as_deref().unwrap_or_default();
-                let pid = session.project_id.as_deref().unwrap_or_default();
-                messages.extend(events_to_session_history(&events, pai, pid));
-            }
-            Err(e) => {
-                failed_sessions += 1;
-                tracing::debug!(session_id = %session.id, error = %e, "Failed to list session events");
-                if first_error.is_none() {
-                    first_error = Some(e);
+
+    for session in sessions {
+        let mut all_events: Vec<aura_os_storage::StorageSessionEvent> = Vec::new();
+        let mut offset: u32 = 0;
+        let mut failed = false;
+
+        loop {
+            match storage.list_events(&session.id, jwt, Some(PAGE_SIZE), Some(offset)).await {
+                Ok(page) => {
+                    let page_len = page.len() as u32;
+                    all_events.extend(page);
+                    if page_len < PAGE_SIZE {
+                        break;
+                    }
+                    offset += page_len;
+                }
+                Err(e) => {
+                    if all_events.is_empty() {
+                        failed = true;
+                        failed_sessions += 1;
+                        warn!(session_id = %session.id, error = %e, "collect_session_events: failed to list events");
+                        if first_error.is_none() {
+                            first_error = Some(e);
+                        }
+                    } else {
+                        warn!(session_id = %session.id, %offset, error = %e, "collect_session_events: pagination error, using partial results");
+                    }
+                    break;
                 }
             }
+        }
+
+        if !failed {
+            let pai = session.project_agent_id.as_deref().unwrap_or_default();
+            let pid = session.project_id.as_deref().unwrap_or_default();
+            let raw_count = all_events.len();
+            let converted = events_to_session_history(&all_events, pai, pid);
+            info!(
+                session_id = %session.id,
+                raw_events = raw_count,
+                converted_events = converted.len(),
+                "collect_session_events: loaded"
+            );
+            messages.extend(converted);
         }
     }
     EventCollectOutcome {
