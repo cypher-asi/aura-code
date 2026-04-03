@@ -212,8 +212,10 @@ export function ChatPanel({
     const container = messageAreaRef.current;
     const spacer = spacerRef.current;
     if (!container) return;
+    const content = container.firstElementChild as HTMLElement | null;
+    if (!content) return;
     const spacerH = spacer?.offsetHeight ?? 0;
-    const contentH = container.scrollHeight - spacerH;
+    const contentH = content.scrollHeight - spacerH;
     setNeedsSpacer(contentH > container.clientHeight);
   }, []);
 
