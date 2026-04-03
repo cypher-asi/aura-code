@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef } from "react";
 import { useNavigate, useOutlet } from "react-router-dom";
 import { Topbar, Button } from "@cypher-asi/zui";
-import { CircleUserRound, Server } from "lucide-react";
+import { CircleUserRound, PanelRight, Server } from "lucide-react";
 import { Lane } from "../Lane";
 import { AppNavRail } from "../AppNavRail";
 import { BottomTaskbar } from "../BottomTaskbar";
@@ -109,6 +109,8 @@ export function DesktopShell() {
   const activeApp = useAppStore((s) => s.activeApp);
   const { features } = useAuraCapabilities();
   const visitedAppIds = useAppUIStore((s) => s.visitedAppIds);
+  const sidekickCollapsed = useAppUIStore((s) => s.sidekickCollapsed);
+  const toggleSidekick = useAppUIStore((s) => s.toggleSidekick);
   const navigate = useNavigate();
   const { hostSettingsOpen, openHostSettings, closeHostSettings } = useUIModalStore(
     useShallow((s) => ({
@@ -176,6 +178,16 @@ export function DesktopShell() {
                 title="Profile"
                 aria-label="Profile"
                 onClick={() => navigate("/profile")}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                icon={<PanelRight size={16} />}
+                title="Toggle sidekick"
+                aria-label="Toggle sidekick"
+                selected={!sidekickCollapsed}
+                onClick={toggleSidekick}
               />
               <WindowControls />
             </div>
