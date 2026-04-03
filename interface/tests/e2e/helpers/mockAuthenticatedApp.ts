@@ -126,6 +126,10 @@ export async function mockAuthenticatedApp(page: Page, options: MockAuthenticate
     const pathname = url.pathname !== "/" ? url.pathname.replace(/\/+$/, "") : url.pathname;
     const path = `${pathname}${url.search}`;
 
+    if (pathname !== "/api" && !pathname.startsWith("/api/")) {
+      return route.fallback();
+    }
+
     const session = {
       user_id: "user-1",
       display_name: "Test User",

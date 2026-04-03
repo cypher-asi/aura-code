@@ -247,19 +247,30 @@ async function resolveEvalOrg() {
 
 function resolveAgentRuntimeConfig(scenario) {
   const template = scenario.agentTemplate ?? {};
+  const adapterType =
+    process.env.AURA_EVAL_AGENT_ADAPTER_TYPE?.trim()
+    || template.adapterType
+    || "aura_harness";
+  const integrationProvider =
+    process.env.AURA_EVAL_AGENT_INTEGRATION_PROVIDER?.trim()
+    || template.integrationProvider
+    || "";
+
   return {
-    adapterType:
-      process.env.AURA_EVAL_AGENT_ADAPTER_TYPE?.trim()
-      || template.adapterType
-      || "aura_harness",
+    adapterType,
     environment:
       process.env.AURA_EVAL_AGENT_ENVIRONMENT?.trim()
       || template.environment
       || (template.machineType === "remote" ? "swarm_microvm" : "local_host"),
-    integrationProvider:
-      process.env.AURA_EVAL_AGENT_INTEGRATION_PROVIDER?.trim()
-      || template.integrationProvider
-      || "",
+    authSource:
+      process.env.AURA_EVAL_AGENT_AUTH_SOURCE?.trim()
+      || template.authSource
+      || (adapterType === "aura_harness"
+        ? "aura_managed"
+        : integrationProvider
+          ? "org_integration"
+          : "local_cli_auth"),
+    integrationProvider,
     integrationName:
       process.env.AURA_EVAL_AGENT_INTEGRATION_NAME?.trim()
       || template.integrationName
@@ -275,7 +286,7 @@ function resolveAgentRuntimeConfig(scenario) {
 }
 
 async function createEvalIntegration(orgId, runtimeConfig) {
-  if (!runtimeConfig.integrationProvider) return null;
+  if (runtimeConfig.authSource !== "org_integration" || !runtimeConfig.integrationProvider) return null;
 
   const payload = {
     name:
@@ -434,7 +445,8 @@ async function runScenario(scenario) {
       machine_type: process.env.AURA_EVAL_AGENT_MACHINE_TYPE ?? scenario.agentTemplate.machineType ?? "local",
       adapter_type: runtimeConfig.adapterType,
       environment: runtimeConfig.environment,
-      integration_id: integration?.integration_id ?? null,
+      auth_source: runtimeConfig.authSource,
+      integration_id: runtimeConfig.authSource === "org_integration" ? (integration?.integration_id ?? null) : null,
       default_model: runtimeConfig.defaultModel || null,
       skills: [],
       icon: null,

@@ -34,9 +34,16 @@ function inferProvider() {
   return "";
 }
 
-const integrationProvider = process.env.AURA_RUNTIME_EVAL_PROVIDER?.trim() || inferProvider();
+const requestedAuthSource = process.env.AURA_RUNTIME_EVAL_AUTH_SOURCE?.trim() || "";
+const authSource = requestedAuthSource
+  || (adapterType === "aura_harness" ? "aura_managed" : "local_cli_auth");
+const integrationProvider = authSource === "org_integration"
+  ? (process.env.AURA_RUNTIME_EVAL_PROVIDER?.trim() || inferProvider())
+  : (process.env.AURA_RUNTIME_EVAL_PROVIDER?.trim() || "");
 const integrationName = process.env.AURA_RUNTIME_EVAL_INTEGRATION_NAME?.trim()
-  || (integrationProvider ? `${adapterType}-${integrationProvider}-runtime-eval` : "");
+  || (authSource === "org_integration" && integrationProvider
+    ? `${adapterType}-${integrationProvider}-runtime-eval`
+    : "");
 const apiKey = process.env.AURA_RUNTIME_EVAL_API_KEY?.trim() || "";
 
 function authHeaders(extra = {}) {
@@ -101,7 +108,7 @@ async function resolveEvalOrg() {
 }
 
 async function maybeCreateIntegration(orgId) {
-  if (!integrationProvider) return null;
+  if (authSource !== "org_integration" || !integrationProvider) return null;
   return apiJson("POST", `/api/orgs/${orgId}/integrations`, {
     name: integrationName,
     provider: integrationProvider,
@@ -258,6 +265,7 @@ async function main() {
     suite: "runtime-adapter-eval",
     adapterType,
     environment,
+    authSource,
     defaultModel: defaultModel || null,
     apiBaseUrl,
     startedAt: new Date(startedAt).toISOString(),
@@ -281,7 +289,8 @@ async function main() {
       machine_type: environment === "swarm_microvm" ? "remote" : "local",
       adapter_type: adapterType,
       environment,
-      integration_id: integration?.integration_id ?? null,
+      auth_source: authSource,
+      integration_id: authSource === "org_integration" ? (integration?.integration_id ?? null) : null,
       default_model: defaultModel || null,
       skills: [],
       icon: null,
