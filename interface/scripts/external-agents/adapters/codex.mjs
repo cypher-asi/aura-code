@@ -6,6 +6,7 @@ import {
   runValidation,
   writeWorkspaceDiffArtifacts,
 } from "../lib/external-agent-utils.mjs";
+import { extractCodexUsageFromJsonl } from "../lib/external-agent-usage.mjs";
 
 export async function runCodexAdapter(context) {
   const {
@@ -40,6 +41,7 @@ export async function runCodexAdapter(context) {
   });
 
   await fs.writeFile(transcriptPath, processResult.stdout, "utf8");
+  const parsed = extractCodexUsageFromJsonl(processResult.stdout, model || null);
 
   const validation = await runValidation(workspaceDir, scenario);
   const workspaceArtifacts = await writeWorkspaceDiffArtifacts(
@@ -61,8 +63,8 @@ export async function runCodexAdapter(context) {
     workspaceArtifacts,
     transcriptPath,
     workspaceDir,
-    usage: null,
-    provider: "openai",
-    model: model || null,
+    usage: parsed?.usage ?? null,
+    provider: parsed?.provider ?? "openai",
+    model: parsed?.model ?? (model || null),
   });
 }

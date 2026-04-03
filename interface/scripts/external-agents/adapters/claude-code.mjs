@@ -6,6 +6,7 @@ import {
   runValidation,
   writeWorkspaceDiffArtifacts,
 } from "../lib/external-agent-utils.mjs";
+import { extractClaudeCodeUsageFromStreamJson } from "../lib/external-agent-usage.mjs";
 
 export async function runClaudeCodeAdapter(context) {
   const {
@@ -41,6 +42,7 @@ export async function runClaudeCodeAdapter(context) {
   });
 
   await fs.writeFile(transcriptPath, processResult.stdout, "utf8");
+  const parsed = extractClaudeCodeUsageFromStreamJson(processResult.stdout);
 
   const validation = await runValidation(workspaceDir, scenario);
   const workspaceArtifacts = await writeWorkspaceDiffArtifacts(
@@ -62,8 +64,8 @@ export async function runClaudeCodeAdapter(context) {
     workspaceArtifacts,
     transcriptPath,
     workspaceDir,
-    usage: null,
-    provider: "anthropic",
-    model: model || null,
+    usage: parsed?.usage ?? null,
+    provider: parsed?.provider ?? "anthropic",
+    model: parsed?.model ?? (model || null),
   });
 }
