@@ -6,7 +6,7 @@ import type { StreamEventHandler } from "../api/streams";
 import type { AuraEvent } from "../types/aura-events";
 import { EventType } from "../types/aura-events";
 import type { ChatAttachment } from "../api/streams";
-import { useChatHistoryStore, projectChatHistoryKey } from "../stores/chat-history-store";
+
 import {
   useStreamCore,
   resetStreamBuffers,
@@ -508,11 +508,6 @@ export function useChatStream({ projectId, agentInstanceId }: UseChatStreamOptio
           sidekickRef.current.setStreamingAgentInstanceId(null);
           controller.abort();
           abortRef.current = null;
-        }
-        if (projectId && agentInstanceId) {
-          useChatHistoryStore.getState().invalidateHistory(
-            projectChatHistoryKey(projectId, agentInstanceId),
-          );
         }
       }
     },
