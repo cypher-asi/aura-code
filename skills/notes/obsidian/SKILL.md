@@ -1,4 +1,5 @@
 ---
+name: obsidian
 description: "Create, read, search, and link notes in a local Obsidian vault on Windows. Uses direct file I/O — no external CLI required."
 allowed_tools: [read_file, write_file, list_directory, shell]
 allowed-paths: []
