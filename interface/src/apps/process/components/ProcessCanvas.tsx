@@ -352,12 +352,25 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
     };
   }, [ctxMenu, nodeCtxMenu, edgeCtxMenu]);
 
+  const requestEdit = useProcessSidekickStore((s) => s.requestEdit);
+
   const onNodeClick = useCallback(
     (_: unknown, flowNode: Node) => {
       const processNode = processNodes.find((n) => n.node_id === flowNode.id);
       if (processNode) selectNode(processNode);
     },
     [processNodes, selectNode],
+  );
+
+  const onNodeDoubleClick = useCallback(
+    (_: unknown, flowNode: Node) => {
+      const processNode = processNodes.find((n) => n.node_id === flowNode.id);
+      if (processNode) {
+        selectNode(processNode);
+        requestEdit();
+      }
+    },
+    [processNodes, selectNode, requestEdit],
   );
 
   const onSelectionChange = useCallback(
@@ -437,6 +450,7 @@ function ProcessCanvasInner({ processId, processNodes, processConnections }: Pro
         onConnect={onConnect}
         onNodeDragStop={onNodeDragStop}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         onSelectionChange={onSelectionChange}
         onPaneClick={onPaneClick}
         onPaneContextMenu={onPaneContextMenu}
