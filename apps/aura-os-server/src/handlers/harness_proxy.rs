@@ -11,7 +11,7 @@ pub(crate) fn harness_base_url() -> String {
 }
 
 /// Convert a UUID string to the harness's AgentId format (blake3 hash, 64 hex chars).
-fn to_harness_agent_id(uuid_str: &str) -> String {
+pub(crate) fn to_harness_agent_id(uuid_str: &str) -> String {
     match uuid::Uuid::parse_str(uuid_str) {
         Ok(uuid) => blake3::hash(uuid.as_bytes()).to_hex().to_string(),
         Err(_) => uuid_str.to_string(),
