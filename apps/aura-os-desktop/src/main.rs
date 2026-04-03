@@ -290,6 +290,22 @@ mod tests {
     }
 }
 
+fn set_black_background(_window: &tao::window::Window) {
+    #[cfg(target_os = "windows")]
+    {
+        use tao::platform::windows::WindowExtWindows;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::Graphics::Gdi::{GetStockObject, BLACK_BRUSH};
+        use windows::Win32::UI::WindowsAndMessaging::{SetClassLongPtrW, GCL_HBRBACKGROUND};
+
+        let hwnd = HWND(_window.hwnd() as *mut std::ffi::c_void);
+        unsafe {
+            let black = GetStockObject(BLACK_BRUSH);
+            SetClassLongPtrW(hwnd, GCL_HBRBACKGROUND, black.0 as isize);
+        }
+    }
+}
+
 fn create_main_window(
     event_loop: &tao::event_loop::EventLoop<UserEvent>,
     icon_data: &IconData,
@@ -304,6 +320,7 @@ fn create_main_window(
         .expect("failed to build window");
 
     set_square_corners(&window);
+    set_black_background(&window);
 
     let id = window.id();
     info!("window created");
