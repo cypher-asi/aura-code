@@ -6,8 +6,9 @@ use axum::extract::{Path, State};
 use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
+use futures_util::stream;
 use futures_util::future::join_all;
-use tokio_stream::StreamExt;
+use futures_util::StreamExt as FuturesStreamExt;
 use tracing::{info, warn};
 
 pub(crate) type SseStream =
@@ -404,6 +405,31 @@ pub(crate) async fn setup_agent_chat_persistence(
 
 const SSE_NO_BUFFERING_HEADERS: [(&str, HeaderValue); 1] =
     [("X-Accel-Buffering", HeaderValue::from_static("no"))];
+
+fn harness_broadcast_to_sse(
+    rx: tokio::sync::broadcast::Receiver<HarnessOutbound>,
+) -> impl futures_core::Stream<Item = Result<Event, Infallible>> + Send {
+    stream::unfold((rx, false), |(mut rx, done)| async move {
+        if done {
+            return None;
+        }
+
+        loop {
+            match rx.recv().await {
+                Ok(evt) => {
+                    let should_close = matches!(
+                        evt,
+                        HarnessOutbound::AssistantMessageEnd(_) | HarnessOutbound::Error(_)
+                    );
+                    let event = super::super::sse::harness_event_to_sse(&evt);
+                    return Some((event, (rx, should_close)));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    })
+}
 
 fn has_live_session(state: &AppState, key: &str) -> bool {
     if let Ok(reg) = state.chat_sessions.try_lock() {
@@ -940,11 +966,9 @@ async fn open_harness_chat_stream(
         vec![]
     };
 
-    let broadcast_stream = tokio_stream::wrappers::BroadcastStream::new(rx)
-        .filter_map(|r| r.ok())
-        .map(|evt| super::super::sse::harness_event_to_sse(&evt));
+    let broadcast_stream = harness_broadcast_to_sse(rx);
 
-    let stream = futures_util::stream::iter(prefix).chain(broadcast_stream);
+    let stream = FuturesStreamExt::chain(futures_util::stream::iter(prefix), broadcast_stream);
     let boxed: SseStream = Box::pin(stream);
 
     Ok((
@@ -1069,9 +1093,7 @@ async fn handle_super_agent_stream(
         spawn_chat_persist_task(prx, pctx);
     }
 
-    let broadcast_stream = tokio_stream::wrappers::BroadcastStream::new(rx)
-        .filter_map(|r| r.ok())
-        .map(|evt| super::super::sse::harness_event_to_sse(&evt));
+    let broadcast_stream = harness_broadcast_to_sse(rx);
 
     let boxed: SseStream = Box::pin(broadcast_stream);
     Ok((
