@@ -24,6 +24,11 @@ vi.mock("../../api/client", () => ({
   },
 }));
 
+vi.mock("../../stores/org-store", () => ({
+  useOrgStore: (selector: (state: { activeOrg: null; integrations: never[] }) => unknown) =>
+    selector({ activeOrg: null, integrations: [] }),
+}));
+
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
   return {
     agent_id: "agent-1" as Agent["agent_id"],
@@ -34,7 +39,12 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     system_prompt: "Help out",
     skills: [],
     icon: null,
+    org_id: "org-1",
     machine_type: "local",
+    adapter_type: "aura_harness",
+    environment: "local_host",
+    integration_id: null,
+    default_model: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
     ...overrides,
@@ -47,31 +57,32 @@ describe("useAgentEditorForm", () => {
     mockUseAuraCapabilities.mockReturnValue({ isMobileLayout: false });
   });
 
-  it("defaults new desktop agents to local", () => {
+  it("defaults new desktop agents to local_host aura harness", () => {
     const { result } = renderHook(() =>
       useAgentEditorForm(true, undefined, vi.fn(), vi.fn()),
     );
 
-    expect(result.current.machineType).toBe("local");
+    expect(result.current.adapterType).toBe("aura_harness");
+    expect(result.current.environment).toBe("local_host");
   });
 
-  it("defaults new mobile agents to remote", () => {
+  it("defaults new mobile agents to swarm microvm", () => {
     mockUseAuraCapabilities.mockReturnValue({ isMobileLayout: true });
 
     const { result } = renderHook(() =>
       useAgentEditorForm(true, undefined, vi.fn(), vi.fn()),
     );
 
-    expect(result.current.machineType).toBe("remote");
+    expect(result.current.environment).toBe("swarm_microvm");
   });
 
-  it("preserves an existing agent machine type while editing on mobile", () => {
+  it("preserves an existing agent environment while editing on mobile", () => {
     mockUseAuraCapabilities.mockReturnValue({ isMobileLayout: true });
 
     const { result } = renderHook(() =>
-      useAgentEditorForm(true, makeAgent({ machine_type: "local" }), vi.fn(), vi.fn()),
+      useAgentEditorForm(true, makeAgent({ machine_type: "local", environment: "local_host" }), vi.fn(), vi.fn()),
     );
 
-    expect(result.current.machineType).toBe("local");
+    expect(result.current.environment).toBe("local_host");
   });
 });

@@ -61,6 +61,8 @@ export function AgentInfoPanel({ variant = "default" }: AgentInfoPanelProps) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [iconFailed, setIconFailed] = useState(false);
+  const [runtimeTesting, setRuntimeTesting] = useState(false);
+  const [runtimeTestMessage, setRuntimeTestMessage] = useState<string | null>(null);
   const [projectBindings, setProjectBindings] = useState<
     { project_agent_id: string; project_id: string; project_name: string }[]
   >([]);
@@ -105,6 +107,20 @@ export function AgentInfoPanel({ variant = "default" }: AgentInfoPanelProps) {
     }
   }, [selectedAgent, setSelectedAgent, navigate, handleCloseDeleteConfirm]);
 
+  const handleRuntimeTest = useCallback(async () => {
+    if (!selectedAgent) return;
+    setRuntimeTesting(true);
+    setRuntimeTestMessage(null);
+    try {
+      const result = await api.agents.testRuntime(selectedAgent.agent_id);
+      setRuntimeTestMessage(result.message || "Runtime test passed.");
+    } catch (err) {
+      setRuntimeTestMessage(err instanceof Error ? err.message : "Runtime test failed.");
+    } finally {
+      setRuntimeTesting(false);
+    }
+  }, [selectedAgent]);
+
   if (!selectedAgent) {
     return (
       <EmptyState>Select an agent to see details</EmptyState>
@@ -127,6 +143,9 @@ export function AgentInfoPanel({ variant = "default" }: AgentInfoPanelProps) {
             imageUrl={imageUrl}
             isOwnAgent={isOwnAgent}
             onIconError={() => setIconFailed(true)}
+            runtimeTesting={runtimeTesting}
+            runtimeTestMessage={runtimeTestMessage}
+            onRuntimeTest={handleRuntimeTest}
           />
         )}
 
@@ -252,11 +271,17 @@ function ProfileTab({
   imageUrl,
   isOwnAgent,
   onIconError,
+  runtimeTesting,
+  runtimeTestMessage,
+  onRuntimeTest,
 }: {
   agent: import("../../../types").Agent;
   imageUrl: string | undefined;
   isOwnAgent: boolean;
   onIconError: () => void;
+  runtimeTesting: boolean;
+  runtimeTestMessage: string | null;
+  onRuntimeTest: () => void;
 }) {
   return (
     <>
@@ -317,11 +342,34 @@ function ProfileTab({
           </span>
         </div>
         <div className={styles.metaRow}>
+          <Bot size={13} className={styles.metaIcon} />
+          <span className={styles.metaValue}>{a.adapter_type || "aura_harness"}</span>
+        </div>
+        <div className={styles.metaRow}>
+          <FolderOpen size={13} className={styles.metaIcon} />
+          <span className={styles.metaValue}>{a.integration_id ? "Org integration attached" : "No integration attached"}</span>
+        </div>
+        <div className={styles.metaRow}>
           <Calendar size={13} className={styles.metaIcon} />
           <span className={styles.metaValue}>
             Birthed {new Date(a.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
           </span>
         </div>
+      </div>
+
+      <div className={styles.section}>
+        <Text size="xs" variant="muted" weight="medium">Runtime</Text>
+        <Text size="sm">
+          Adapter: {a.adapter_type || "aura_harness"} • Environment: {a.environment || (a.machine_type === "remote" ? "swarm_microvm" : "local_host")}
+        </Text>
+        <div className={styles.nameAction} style={{ marginTop: 8 }}>
+          <Button variant="secondary" size="sm" onClick={onRuntimeTest} disabled={runtimeTesting}>
+            {runtimeTesting ? "Testing..." : "Test Runtime"}
+          </Button>
+        </div>
+        {runtimeTestMessage && (
+          <Text size="xs" variant="muted">{runtimeTestMessage}</Text>
+        )}
       </div>
 
       {a.system_prompt && (

@@ -10,15 +10,16 @@ use futures_util::future::join_all;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
-type SseStream = Pin<Box<dyn futures_core::Stream<Item = Result<Event, Infallible>> + Send>>;
-type SseResponse = ([(&'static str, HeaderValue); 1], Sse<SseStream>);
+pub(crate) type SseStream =
+    Pin<Box<dyn futures_core::Stream<Item = Result<Event, Infallible>> + Send>>;
+pub(crate) type SseResponse = ([(&'static str, HeaderValue); 1], Sse<SseStream>);
 
 use aura_os_core::{
     Agent, AgentId, AgentInstanceId, ChatContentBlock, ChatRole, HarnessMode, ProjectId,
     SessionEvent,
 };
 use aura_os_link::{
-    ConversationMessage, HarnessInbound, HarnessOutbound, SessionConfig, UserMessage,
+    ConversationMessage, HarnessInbound, HarnessOutbound, SessionConfig, SessionUsage, UserMessage,
 };
 use aura_os_storage::StorageClient;
 
@@ -29,13 +30,14 @@ use crate::handlers::{projects, projects_helpers::resolve_agent_instance_workspa
 use crate::state::{AppState, AuthJwt, ChatSession};
 
 use super::conversions::events_to_session_history;
+use super::runtime::send_external_agent_event_stream;
 
 // ---------------------------------------------------------------------------
 // Chat persistence helpers
 // ---------------------------------------------------------------------------
 
 #[derive(Clone)]
-struct ChatPersistCtx {
+pub(crate) struct ChatPersistCtx {
     storage: Arc<StorageClient>,
     jwt: String,
     session_id: String,
@@ -80,7 +82,7 @@ async fn resolve_chat_session(
     }
 }
 
-fn persist_user_message(ctx: &ChatPersistCtx, content: &str) {
+pub(crate) fn persist_user_message(ctx: &ChatPersistCtx, content: &str) {
     let ctx = ctx.clone();
     let content = content.to_string();
     tokio::spawn(async move {
@@ -278,6 +280,47 @@ fn spawn_chat_persist_task(
     });
 }
 
+pub(crate) fn persist_external_agent_turn(ctx: &ChatPersistCtx, text: &str, usage: &SessionUsage) {
+    let ctx = ctx.clone();
+    let text = text.to_string();
+    let usage = usage.clone();
+    tokio::spawn(async move {
+        let text_block = text.clone();
+        let req = aura_os_storage::CreateSessionEventRequest {
+            session_id: Some(ctx.session_id.clone()),
+            user_id: None,
+            agent_id: Some(ctx.project_agent_id.clone()),
+            sender: Some("agent".to_string()),
+            project_id: Some(ctx.project_id.clone()),
+            org_id: None,
+            event_type: "assistant_message_end".to_string(),
+            content: Some(serde_json::json!({
+                "message_id": uuid::Uuid::new_v4().to_string(),
+                "text": text,
+                "thinking": serde_json::Value::Null,
+                "content_blocks": [{
+                    "type": "text",
+                    "text": text_block
+                }],
+                "usage": usage,
+                "files_changed": {
+                    "created": [],
+                    "modified": [],
+                    "deleted": []
+                },
+                "stop_reason": "end_turn"
+            })),
+        };
+        if let Err(e) = ctx
+            .storage
+            .create_event(&ctx.session_id, &ctx.jwt, &req)
+            .await
+        {
+            warn!(error = %e, "Failed to persist external agent message");
+        }
+    });
+}
+
 async fn setup_project_chat_persistence(
     state: &AppState,
     project_id: &ProjectId,
@@ -298,7 +341,7 @@ async fn setup_project_chat_persistence(
     })
 }
 
-async fn setup_agent_chat_persistence(
+pub(crate) async fn setup_agent_chat_persistence(
     state: &AppState,
     agent_id: &AgentId,
     agent_name: &str,
@@ -1017,6 +1060,11 @@ pub(crate) async fn send_agent_event_stream(
     if agent.role == "super_agent" || agent.tags.contains(&"super_agent".to_string()) {
         info!(%agent_id, "SuperAgent detected — routing to SuperAgent handler");
         return handle_super_agent_stream(&state, &jwt, &agent, body).await;
+    }
+
+    if agent.adapter_type != "aura_harness" {
+        info!(%agent_id, adapter = %agent.adapter_type, "Routing direct agent chat through external runtime");
+        return send_external_agent_event_stream(&state, &jwt, &agent, body).await;
     }
 
     let persist_ctx = setup_agent_chat_persistence(&state, &agent_id, &agent.name, &jwt).await;

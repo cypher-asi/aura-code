@@ -15,7 +15,9 @@ interface AgentEditorModalProps {
 export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEditorModalProps) {
   const {
     name, setName, role, setRole, isSuperAgent, personality, setPersonality,
-    systemPrompt, setSystemPrompt, icon, machineType, setMachineType,
+    systemPrompt, setSystemPrompt, icon,
+    adapterType, setAdapterType, environment, setEnvironment,
+    integrationId, setIntegrationId, defaultModel, setDefaultModel, availableIntegrations,
     saving, error, nameError, setNameError,
     nameRef, initialFocusRef, fileInputRef,
     cropOpen, rawImageSrc,
@@ -99,25 +101,94 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
           </div>
 
           <div className={styles.fieldGroup}>
-            <label className={styles.label}>Machine Type</label>
+            <label className={styles.label}>Adapter</label>
             <div className={styles.machineTypeToggle}>
               <button
                 type="button"
-                className={`${styles.machineTypeOption} ${machineType === "remote" ? styles.machineTypeActive : ""}`}
-                onClick={() => setMachineType("remote")}
+                className={`${styles.machineTypeOption} ${adapterType === "aura_harness" ? styles.machineTypeActive : ""}`}
+                onClick={() => setAdapterType("aura_harness")}
               >
-                <Cloud size={14} />
-                Remote
+                Aura Harness
               </button>
               <button
                 type="button"
-                className={`${styles.machineTypeOption} ${machineType === "local" ? styles.machineTypeActive : ""}`}
-                onClick={() => setMachineType("local")}
+                className={`${styles.machineTypeOption} ${adapterType === "claude_code" ? styles.machineTypeActive : ""}`}
+                onClick={() => setAdapterType("claude_code")}
               >
-                <Monitor size={14} />
-                Local
+                Claude Code
+              </button>
+              <button
+                type="button"
+                className={`${styles.machineTypeOption} ${adapterType === "codex" ? styles.machineTypeActive : ""}`}
+                onClick={() => setAdapterType("codex")}
+              >
+                Codex
               </button>
             </div>
+          </div>
+
+          <div className={styles.fieldGroup}>
+            <label className={styles.label}>Environment</label>
+            <div className={styles.machineTypeToggle}>
+              <button
+                type="button"
+                className={`${styles.machineTypeOption} ${environment === "local_host" ? styles.machineTypeActive : ""}`}
+                onClick={() => setEnvironment("local_host")}
+              >
+                <Monitor size={14} />
+                Local Host
+              </button>
+              <button
+                type="button"
+                className={`${styles.machineTypeOption} ${environment === "swarm_microvm" ? styles.machineTypeActive : ""}`}
+                onClick={() => setEnvironment("swarm_microvm")}
+                disabled={adapterType !== "aura_harness"}
+              >
+                <Cloud size={14} />
+                Swarm MicroVM
+              </button>
+            </div>
+            {adapterType !== "aura_harness" && (
+              <Text variant="muted" size="sm">Claude Code and Codex currently run on the local host.</Text>
+            )}
+          </div>
+
+          <div className={styles.fieldGroup}>
+            <label className={styles.label}>Org Integration</label>
+            <div className={styles.integrationList}>
+              {availableIntegrations
+                .filter((integration) => adapterType === "aura_harness"
+                  ? true
+                  : adapterType === "claude_code"
+                    ? integration.provider === "anthropic"
+                    : integration.provider === "openai")
+                .map((integration) => (
+                  <button
+                    key={integration.integration_id}
+                    type="button"
+                    className={`${styles.integrationOption} ${integrationId === integration.integration_id ? styles.machineTypeActive : ""}`}
+                    onClick={() => setIntegrationId(integration.integration_id === integrationId ? "" : integration.integration_id)}
+                  >
+                    <span>{integration.name}</span>
+                    <span className={styles.integrationMeta}>
+                      {integration.provider}
+                      {integration.default_model ? ` • ${integration.default_model}` : ""}
+                    </span>
+                  </button>
+                ))}
+            </div>
+            {availableIntegrations.length === 0 && (
+              <Text variant="muted" size="sm">Add an org integration in Team Settings before attaching it to an agent.</Text>
+            )}
+          </div>
+
+          <div className={styles.fieldGroup}>
+            <label className={styles.label}>Default Model</label>
+            <Input
+              value={defaultModel}
+              onChange={(e) => setDefaultModel(e.target.value)}
+              placeholder="Optional override (otherwise uses the integration default)"
+            />
           </div>
 
           <div className={styles.fieldGroup}>

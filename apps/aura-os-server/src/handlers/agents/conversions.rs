@@ -19,6 +19,7 @@ pub(crate) fn get_user_id(session: &ZeroAuthSession) -> String {
 pub(crate) fn agent_from_network(net: &NetworkAgent) -> Agent {
     let agent_id = net.id.parse::<AgentId>().unwrap_or_else(|_| AgentId::new());
     let profile_id: Option<ProfileId> = net.profile_id_typed();
+    let org_id: Option<aura_os_core::OrgId> = net.org_id.as_ref().and_then(|s| s.parse().ok());
     let epoch = DateTime::<Utc>::from(std::time::UNIX_EPOCH);
     let created_at = net
         .created_at
@@ -35,19 +36,31 @@ pub(crate) fn agent_from_network(net: &NetworkAgent) -> Agent {
 
     let is_super = net.role.as_deref() == Some("super_agent");
 
+    let machine_type = net
+        .machine_type
+        .clone()
+        .unwrap_or_else(|| "local".to_string());
+    let environment = if machine_type == "remote" {
+        "swarm_microvm".to_string()
+    } else {
+        "local_host".to_string()
+    };
+
     Agent {
         agent_id,
         user_id: net.user_id.clone(),
+        org_id,
         name: net.name.clone(),
         role: net.role.clone().unwrap_or_default(),
         personality: net.personality.clone().unwrap_or_default(),
         system_prompt: net.system_prompt.clone().unwrap_or_default(),
         skills: net.skills.clone().unwrap_or_default(),
         icon: net.icon.clone(),
-        machine_type: net
-            .machine_type
-            .clone()
-            .unwrap_or_else(|| "local".to_string()),
+        machine_type,
+        adapter_type: "aura_harness".to_string(),
+        environment,
+        integration_id: None,
+        default_model: None,
         vm_id: net.vm_id.clone(),
         network_agent_id: net.id.parse().ok(),
         profile_id,

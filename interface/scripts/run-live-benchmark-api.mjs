@@ -52,6 +52,27 @@ async function apiJson(method, endpoint, body) {
   return text ? JSON.parse(text) : null;
 }
 
+async function ensureImportedAccessToken() {
+  const response = await fetch(`${apiBaseUrl}/api/auth/import-access-token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ access_token: accessToken }),
+  });
+
+  if (response.ok) {
+    logStep("access token imported", { apiBaseUrl });
+    return;
+  }
+
+  if ([403, 404, 405].includes(response.status)) {
+    logStep("access token import skipped", { status: response.status });
+    return;
+  }
+
+  const text = await response.text();
+  throw new Error(`POST /api/auth/import-access-token failed with ${response.status}: ${text}`);
+}
+
 async function storageJson(sessionId) {
   if (!storageUrl) return [];
   const response = await fetch(`${storageUrl}/api/sessions/${sessionId}/events`, {
@@ -331,6 +352,7 @@ async function runScenario(scenario) {
   let artifactChecks = [];
 
   try {
+    await ensureImportedAccessToken();
     const files = await walkFixtureDir(path.join(fixturesDir, scenario.project.fixtureDir));
     logStep("fixture prepared", { scenarioId: scenario.id, fileCount: files.length });
 
