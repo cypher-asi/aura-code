@@ -1,10 +1,14 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Project } from "../../types";
 import styles from "../ProjectList/ProjectList.module.css";
 
+export interface InlineRenameTarget {
+  id: string;
+  name: string;
+}
+
 interface InlineRenameInputProps {
-  target: Project;
+  target: InlineRenameTarget;
   onSave: (name: string) => void;
   onCancel: () => void;
 }
@@ -18,7 +22,7 @@ export function InlineRenameInput({ target, onSave, onCancel }: InlineRenameInpu
     const input = inputRef.current;
     if (!input) return;
 
-    const row = document.getElementById(target.project_id);
+    const row = document.getElementById(target.id);
     const label = row?.querySelector<HTMLElement>("[class*='label']");
     if (!label) return;
 
@@ -36,7 +40,7 @@ export function InlineRenameInput({ target, onSave, onCancel }: InlineRenameInpu
       label.style.visibility = "";
       input.style.visibility = "";
     };
-  }, [target.project_id]);
+  }, [target.id]);
 
   const commit = useCallback(() => {
     if (saved.current) return;
