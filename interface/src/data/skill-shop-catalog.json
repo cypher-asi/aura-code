@@ -390,18 +390,20 @@
   },
   {
     "name": "obsidian",
-    "description": "Create, read, search, and link notes in a local Obsidian vault on Windows. Uses direct file I/O — no external CLI required.",
+    "description": "Manage notes in Obsidian vaults using the official Obsidian CLI. Create, read, search, append, and organize notes. Requires Obsidian desktop app running with CLI enabled.",
     "emoji": null,
     "category": "notes",
     "os": "windows",
     "tags": [
-      "obsidian"
+      "obsidian",
+      "cli"
     ],
     "security_rating": "caution",
     "security_notes": "Skill executes shell commands for its operations.",
     "source_url": "https://raw.githubusercontent.com/openclaw/openclaw/main/skills/obsidian/SKILL.md",
     "permissions": {
       "commands": [
+        "obsidian",
         "start obsidian://"
       ],
       "tools": [
