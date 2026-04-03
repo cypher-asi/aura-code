@@ -110,51 +110,23 @@ export function ProcessMainPanel({ children }: { children?: ReactNode }) {
 
   return (
     <ResponsiveMainLane>
-      <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-        <div
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "0 16px",
-            height: "var(--control-height-sm, 32px)",
-            minHeight: "var(--control-height-sm, 32px)",
-            borderBottom: "1px solid var(--color-border, #333)",
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text, #eee)" }}>
-              {process.name}
-            </span>
-            <span
-              style={{
-                fontSize: 11, padding: "2px 8px", borderRadius: 0,
-                background: process.enabled ? "rgba(16,185,129,0.15)" : "rgba(107,114,128,0.15)",
-                color: process.enabled ? "#10b981" : "#6b7280",
-                fontWeight: 600,
-              }}
-            >
-              {process.enabled ? "Active" : "Paused"}
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            <Button variant="ghost" size="sm" iconOnly icon={<Play size={14} />} title="Trigger" onClick={handleTrigger} />
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              icon={process.enabled ? <Pause size={14} /> : <Play size={14} />}
-              title={process.enabled ? "Pause" : "Resume"}
-              onClick={handleToggle}
-            />
-            <Button variant="ghost" size="sm" iconOnly icon={<Trash2 size={14} />} title="Delete" onClick={handleDelete} />
-          </div>
-        </div>
-        <div style={{ flex: 1, minHeight: 0 }}>
-          <ProcessCanvas
-            processId={processId}
-            processNodes={processNodes}
-            processConnections={processConnections}
+      <div style={{ position: "relative", height: "100%", overflow: "hidden" }}>
+        <ProcessCanvas
+          processId={processId}
+          processNodes={processNodes}
+          processConnections={processConnections}
+        />
+        <div className="process-floating-toolbar">
+          <Button variant="ghost" size="sm" iconOnly icon={<Play size={14} />} title="Trigger" onClick={handleTrigger} />
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            icon={process.enabled ? <Pause size={14} /> : <Play size={14} />}
+            title={process.enabled ? "Pause" : "Resume"}
+            onClick={handleToggle}
           />
+          <Button variant="ghost" size="sm" iconOnly icon={<Trash2 size={14} />} title="Delete" onClick={handleDelete} />
         </div>
         {children}
       </div>
