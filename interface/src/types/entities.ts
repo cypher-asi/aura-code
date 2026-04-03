@@ -597,4 +597,5 @@ export interface SkillShopCatalogEntry {
   source_url: string;
   requires?: { bins?: string[]; env?: string[]; config?: string[]; anyBins?: string[] };
   install_methods?: { kind: string; formula?: string; package?: string }[];
+  permissions?: { paths?: string[]; commands?: string[]; tools?: string[] };
 }

@@ -27,6 +27,12 @@ const MAC_ONLY = new Set([
 const WINDOWS_ONLY = new Set(["obsidian"]);
 const LINUX_ONLY = new Set(["tmux"]);
 
+interface SkillPermissions {
+  paths?: string[];
+  commands?: string[];
+  tools?: string[];
+}
+
 interface CatalogEntry {
   name: string;
   description: string;
@@ -39,6 +45,15 @@ interface CatalogEntry {
   source_url: string;
   requires?: Record<string, string[]>;
   install_methods?: Record<string, unknown>[];
+  permissions?: SkillPermissions;
+}
+
+function parseYamlArray(raw: string): string[] | null {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null;
+  const inner = trimmed.slice(1, -1).trim();
+  if (!inner) return [];
+  return inner.split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
 }
 
 function parseFrontmatter(content: string): Record<string, any> {
@@ -49,8 +64,11 @@ function parseFrontmatter(content: string): Record<string, any> {
   const yaml = trimmed.slice(3, endIdx).trim();
   const result: Record<string, any> = {};
   for (const line of yaml.split("\n")) {
-    const match = line.match(/^(\S+):\s*"?(.+?)"?\s*$/);
-    if (match) result[match[1]] = match[2];
+    const match = line.match(/^(\S+):\s*(.+?)\s*$/);
+    if (!match) continue;
+    const [, key, rawVal] = match;
+    const arr = parseYamlArray(rawVal);
+    result[key] = arr !== null ? arr : rawVal.replace(/^"(.*)"$/, "$1");
   }
   return result;
 }
@@ -113,6 +131,21 @@ function main() {
       const requires = fm.requires as Record<string, string[]> | undefined;
       const { rating, notes } = inferSecurityRating(content, requires);
 
+      const permPaths = (fm["allowed-paths"] ?? fm["allowed_paths"]) as string[] | undefined;
+      const permCommands = (fm["allowed-commands"] ?? fm["allowed_commands"]) as string[] | undefined;
+      const permTools = (fm["allowed-tools"] ?? fm["allowed_tools"]) as string[] | undefined;
+      const hasPerms =
+        (permPaths && permPaths.length > 0) ||
+        (permCommands && permCommands.length > 0) ||
+        (permTools && permTools.length > 0);
+      const permissions: SkillPermissions | undefined = hasPerms
+        ? {
+            ...(permPaths?.length ? { paths: permPaths } : {}),
+            ...(permCommands?.length ? { commands: permCommands } : {}),
+            ...(permTools?.length ? { tools: permTools } : {}),
+          }
+        : undefined;
+
       catalog.push({
         name,
         description,
@@ -124,6 +157,7 @@ function main() {
         security_notes: notes,
         source_url: `${REPO_RAW_BASE}/${name}/SKILL.md`,
         ...(requires ? { requires } : {}),
+        ...(permissions ? { permissions } : {}),
       });
     }
   }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Text, Badge, Button } from "@cypher-asi/zui";
-import { ArrowLeft, Check, Loader2, Terminal, Key, Settings, FileText } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Terminal, Key, Settings, FileText, FolderOpen, Wrench } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { SkillIcon } from "./SkillIcon";
@@ -137,6 +137,35 @@ export function SkillShopDetail({
             <Text size="sm" variant="secondary">{entry.security_notes}</Text>
           </div>
         </div>
+
+        {entry.permissions && (
+          <div className={styles.detailSection}>
+            <Text size="xs" variant="muted" weight="medium">Permissions</Text>
+            <div className={styles.detailRequirements}>
+              {entry.permissions.paths?.map((p) => (
+                <div key={p} className={styles.requirementItem}>
+                  <FolderOpen size={12} />
+                  <Text size="sm">{p}</Text>
+                  <Badge variant="pending" style={{ fontSize: 9 }}>path</Badge>
+                </div>
+              ))}
+              {entry.permissions.commands?.map((c) => (
+                <div key={c} className={styles.requirementItem}>
+                  <Terminal size={12} />
+                  <Text size="sm">{c}</Text>
+                  <Badge variant="pending" style={{ fontSize: 9 }}>command</Badge>
+                </div>
+              ))}
+              {entry.permissions.tools?.map((t) => (
+                <div key={t} className={styles.requirementItem}>
+                  <Wrench size={12} />
+                  <Text size="sm">{t}</Text>
+                  <Badge variant="pending" style={{ fontSize: 9 }}>tool</Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {entry.requires && (
           <div className={styles.detailSection}>

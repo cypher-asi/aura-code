@@ -73,7 +73,13 @@ export function SkillShopModal({ isOpen, agentId, initialInstalledNames, onClose
     try {
       await api.harnessSkills.installFromShop(entry.name, entry.category);
       if (agentId) {
-        await api.harnessSkills.installAgentSkill(agentId, entry.name);
+        await api.harnessSkills.installAgentSkill(
+          agentId,
+          entry.name,
+          undefined,
+          entry.permissions?.paths,
+          entry.permissions?.commands,
+        );
       }
       setInstalledNames((prev) => new Set(prev).add(entry.name));
       onInstalled?.();

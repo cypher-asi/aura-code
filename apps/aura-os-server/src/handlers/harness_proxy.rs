@@ -358,8 +358,17 @@ pub(crate) async fn install_agent_skill(
 
     let clean_body = serde_json::from_str::<serde_json::Value>(&body)
         .ok()
-        .and_then(|v| v.get("name")?.as_str().map(String::from))
-        .map(|name| format!(r#"{{"name":"{}"}}"#, name));
+        .map(|v| {
+            let name = v.get("name").and_then(|n| n.as_str()).unwrap_or_default();
+            let approved_paths = v.get("approved_paths").cloned().unwrap_or(serde_json::json!([]));
+            let approved_commands = v.get("approved_commands").cloned().unwrap_or(serde_json::json!([]));
+            serde_json::json!({
+                "name": name,
+                "approved_paths": approved_paths,
+                "approved_commands": approved_commands,
+            })
+            .to_string()
+        });
 
     let send_body = clean_body.unwrap_or(body);
     proxy_to_harness(Method::POST, &path, None, Some(send_body)).await
