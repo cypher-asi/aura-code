@@ -188,13 +188,6 @@ export function ChatPanel({
         <Text variant="muted" size="sm">{errorMessage}</Text>
       </div>
     );
-  } else if (isLoading) {
-    emptyState = (
-      <div className={styles.emptyState}>
-        <MessageSquare size={40} />
-        <Text variant="muted" size="sm">Loading conversation...</Text>
-      </div>
-    );
   } else if (historyResolved) {
     emptyState = (
       <div className={styles.emptyState}>
