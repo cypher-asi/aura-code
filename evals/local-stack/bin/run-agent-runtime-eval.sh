@@ -9,8 +9,7 @@ source "$script_dir/common.sh"
 stack_load_env
 stack_validate_modes
 
-grep_pattern="${1:-}"
-baseline_path="${AURA_EVAL_BENCHMARK_BASELINE:-}"
+adapter="${1:-${AURA_RUNTIME_EVAL_ADAPTER:-aura_harness}}"
 api_base_url_override="${AURA_EVAL_API_BASE_URL:-}"
 base_url_override="${AURA_EVAL_BASE_URL:-}"
 
@@ -41,22 +40,12 @@ if [[ -z "${AURA_EVAL_ACCESS_TOKEN:-}" ]]; then
 fi
 
 if [[ -z "${AURA_EVAL_ACCESS_TOKEN:-}" ]]; then
-  echo "No access token available for the API benchmark." >&2
+  echo "No access token available for the runtime adapter eval." >&2
   echo "Run bootstrap-auth.sh, or set AURA_STACK_SOURCE_ACCESS_TOKEN / AURA_EVAL_ACCESS_TOKEN." >&2
   exit 1
 fi
 
-export AURA_EVAL_KEEP_ENTITIES="${AURA_EVAL_KEEP_ENTITIES:-0}"
+export AURA_RUNTIME_EVAL_ADAPTER="$adapter"
 
 cd "$AURA_STACK_REPO_ROOT/interface"
-
-node ./scripts/run-live-benchmark-api.mjs "$grep_pattern"
-node ./scripts/summarize-evals.mjs
-node ./scripts/summarize-benchmark-usage.mjs
-
-if [[ -n "$baseline_path" ]]; then
-  node ./scripts/compare-benchmark-usage.mjs \
-    test-results/aura-benchmark-usage-summary.json \
-    "$baseline_path" \
-    aura-benchmark-usage-compare
-fi
+node ./scripts/run-agent-runtime-eval.mjs
