@@ -256,8 +256,9 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--color-success, #22c55e);
-  color: #fff;
+  background: #000;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  color: #22c55e;
   flex-shrink: 0;
 }
 

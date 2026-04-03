@@ -11,6 +11,8 @@
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
 }
 
 .scrollArea::-webkit-scrollbar {
@@ -445,6 +447,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 1;
   padding: var(--space-6) var(--space-4);
   color: var(--color-text-muted);
   font-size: var(--font-size-sm, 13px);

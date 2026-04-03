@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
+import { Text } from "@cypher-asi/zui";
 import { useProcessStore } from "../stores/process-store";
 import { useProcessSidekickStore } from "../stores/process-sidekick-store";
 import type { ProcessArtifact } from "../../../types";
@@ -20,6 +21,7 @@ import {
 } from "../../../components/StatCard";
 import type { ProcessRun } from "../../../types";
 import styles from "../../../components/Sidekick/Sidekick.module.css";
+import previewStyles from "../../../components/Preview/Preview.module.css";
 import auraStyles from "../../../views/aura.module.css";
 
 const EMPTY_RUNS: ProcessRun[] = [];
@@ -32,57 +34,78 @@ function ProcessInfoTab() {
   if (!process) return <EmptyState>No process selected</EmptyState>;
 
   return (
-    <div style={{ padding: 12, fontSize: 13 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 12px" }}>
-        <span style={{ color: "var(--color-text-muted)" }}>Name</span>
-        <span style={{ fontWeight: 600 }}>{process.name}</span>
+    <div className={previewStyles.previewBody}>
+      <div className={previewStyles.taskMeta}>
+        <div className={previewStyles.taskField}>
+          <span className={previewStyles.fieldLabel}>Name</span>
+          <Text size="sm" style={{ fontWeight: 600 }}>{process.name}</Text>
+        </div>
 
-        <span style={{ color: "var(--color-text-muted)" }}>Status</span>
-        <span>
-          <span
-            style={{
-              display: "inline-block",
-              fontSize: 11,
-              padding: "2px 8px",
-              borderRadius: 0,
-              background: process.enabled ? "rgba(16,185,129,0.15)" : "rgba(107,114,128,0.15)",
-              color: process.enabled ? "#10b981" : "#6b7280",
-              fontWeight: 600,
-            }}
-          >
-            {process.enabled ? "Active" : "Paused"}
+        <div className={previewStyles.taskField}>
+          <span className={previewStyles.fieldLabel}>Status</span>
+          <span>
+            <span
+              style={{
+                display: "inline-block",
+                fontSize: 11,
+                padding: "2px 8px",
+                borderRadius: 0,
+                background: process.enabled ? "rgba(16,185,129,0.15)" : "rgba(107,114,128,0.15)",
+                color: process.enabled ? "#10b981" : "#6b7280",
+                fontWeight: 600,
+              }}
+            >
+              {process.enabled ? "Active" : "Paused"}
+            </span>
           </span>
-        </span>
+        </div>
 
         {process.description && (
-          <>
-            <span style={{ color: "var(--color-text-muted)" }}>Description</span>
-            <span>{process.description}</span>
-          </>
+          <div className={previewStyles.taskField}>
+            <span className={previewStyles.fieldLabel}>Description</span>
+            <Text variant="secondary" size="sm">{process.description}</Text>
+          </div>
         )}
 
         {process.schedule && (
-          <>
-            <span style={{ color: "var(--color-text-muted)" }}>Schedule</span>
-            <span style={{ fontFamily: "monospace", fontSize: 12 }}>{process.schedule}</span>
-          </>
+          <div className={previewStyles.taskField}>
+            <span className={previewStyles.fieldLabel}>Schedule</span>
+            <Text variant="secondary" size="sm" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
+              {process.schedule}
+            </Text>
+          </div>
         )}
 
         {process.tags.length > 0 && (
-          <>
-            <span style={{ color: "var(--color-text-muted)" }}>Tags</span>
-            <span>{process.tags.join(", ")}</span>
-          </>
+          <div className={previewStyles.taskField}>
+            <span className={previewStyles.fieldLabel}>Tags</span>
+            <Text variant="secondary" size="sm">{process.tags.join(", ")}</Text>
+          </div>
         )}
 
-        <span style={{ color: "var(--color-text-muted)" }}>Last Run</span>
-        <span>{process.last_run_at ? new Date(process.last_run_at).toLocaleString() : "Never"}</span>
+        <div className={previewStyles.taskField}>
+          <span className={previewStyles.fieldLabel}>Last Run</span>
+          <Text variant="secondary" size="sm">
+            {process.last_run_at ? new Date(process.last_run_at).toLocaleString() : "Never"}
+          </Text>
+        </div>
 
-        <span style={{ color: "var(--color-text-muted)" }}>Created</span>
-        <span>{new Date(process.created_at).toLocaleString()}</span>
+        <div className={previewStyles.taskField} style={{ borderTop: "1px solid var(--color-border)", paddingTop: 12, marginTop: 4 }}>
+          <span className={previewStyles.fieldLabel}>Process ID</span>
+          <Text variant="secondary" size="sm" style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>
+            {process.process_id}
+          </Text>
+        </div>
 
-        <span style={{ color: "var(--color-text-muted)" }}>Updated</span>
-        <span>{new Date(process.updated_at).toLocaleString()}</span>
+        <div className={previewStyles.taskField}>
+          <span className={previewStyles.fieldLabel}>Created</span>
+          <Text variant="secondary" size="sm">{new Date(process.created_at).toLocaleString()}</Text>
+        </div>
+
+        <div className={previewStyles.taskField}>
+          <span className={previewStyles.fieldLabel}>Updated</span>
+          <Text variant="secondary" size="sm">{new Date(process.updated_at).toLocaleString()}</Text>
+        </div>
       </div>
     </div>
   );
