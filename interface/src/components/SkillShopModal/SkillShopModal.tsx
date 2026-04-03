@@ -134,8 +134,8 @@ export function SkillShopModal({ isOpen, agentId, initialInstalledNames, onClose
             />
           </div>
           <OsFilterBar selected={osFilter} onSelect={setOsFilter} />
-          <button type="button" className={styles.closeBtn} onClick={handleClose}>
-            <X size={18} />
+          <button type="button" className={styles.closeBtn} title="Close" onClick={handleClose}>
+            <X size={13} />
           </button>
         </div>
 
