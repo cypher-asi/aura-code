@@ -50,26 +50,14 @@ async fn resolve_chat_session(
 ) -> Option<String> {
     match storage.list_sessions(project_agent_id, jwt).await {
         Ok(sessions) => {
-            info!(
-                %project_agent_id,
-                count = sessions.len(),
-                "resolve_chat_session: listed existing sessions"
-            );
             for session in sessions.iter().rev() {
                 match storage.list_events(&session.id, jwt, Some(1), None).await {
-                    Ok(_) => {
-                        info!(
-                            session_id = %session.id,
-                            %project_agent_id,
-                            "resolve_chat_session: reusing existing session"
-                        );
-                        return Some(session.id.clone());
-                    }
+                    Ok(_) => return Some(session.id.clone()),
                     Err(e) => {
-                        warn!(
+                        tracing::debug!(
                             session_id = %session.id,
                             error = %e,
-                            "resolve_chat_session: skipping stale session"
+                            "Skipping stale session during resolution"
                         );
                     }
                 }
@@ -79,7 +67,7 @@ async fn resolve_chat_session(
             warn!(
                 %project_agent_id,
                 error = %e,
-                "resolve_chat_session: failed to list sessions"
+                "Failed to list sessions for chat resolution"
             );
         }
     }
@@ -92,22 +80,9 @@ async fn resolve_chat_session(
         summary_of_previous_context: None,
     };
     match storage.create_session(project_agent_id, jwt, &req).await {
-        Ok(session) => {
-            info!(
-                session_id = %session.id,
-                %project_agent_id,
-                %project_id,
-                "resolve_chat_session: created new session"
-            );
-            Some(session.id)
-        }
+        Ok(session) => Some(session.id),
         Err(e) => {
-            error!(
-                error = %e,
-                %project_agent_id,
-                %project_id,
-                "resolve_chat_session: failed to create session"
-            );
+            error!(error = %e, %project_agent_id, "Failed to create chat session in storage");
             None
         }
     }
@@ -127,27 +102,17 @@ fn persist_user_message(ctx: &ChatPersistCtx, content: &str) {
             event_type: "user_message".to_string(),
             content: Some(serde_json::json!({ "text": content })),
         };
-        match ctx
+        if let Err(e) = ctx
             .storage
             .create_event(&ctx.session_id, &ctx.jwt, &req)
             .await
         {
-            Ok(evt) => {
-                info!(
-                    event_id = %evt.id,
-                    session_id = %ctx.session_id,
-                    project_agent_id = %ctx.project_agent_id,
-                    "Persisted user message event"
-                );
-            }
-            Err(e) => {
-                error!(
-                    error = %e,
-                    session_id = %ctx.session_id,
-                    project_agent_id = %ctx.project_agent_id,
-                    "Failed to persist user message event"
-                );
-            }
+            error!(
+                error = %e,
+                session_id = %ctx.session_id,
+                project_agent_id = %ctx.project_agent_id,
+                "Failed to persist user message event"
+            );
         }
     });
 }
@@ -674,12 +639,12 @@ async fn collect_session_events(
                     if all_events.is_empty() {
                         failed = true;
                         failed_sessions += 1;
-                        warn!(session_id = %session.id, error = %e, "collect_session_events: failed to list events");
+                        warn!(session_id = %session.id, error = %e, "Failed to list session events");
                         if first_error.is_none() {
                             first_error = Some(e);
                         }
                     } else {
-                        warn!(session_id = %session.id, %offset, error = %e, "collect_session_events: pagination error, using partial results");
+                        warn!(session_id = %session.id, %offset, error = %e, "Pagination error listing session events, using partial results");
                     }
                     break;
                 }
@@ -689,15 +654,7 @@ async fn collect_session_events(
         if !failed {
             let pai = session.project_agent_id.as_deref().unwrap_or_default();
             let pid = session.project_id.as_deref().unwrap_or_default();
-            let raw_count = all_events.len();
-            let converted = events_to_session_history(&all_events, pai, pid);
-            info!(
-                session_id = %session.id,
-                raw_events = raw_count,
-                converted_events = converted.len(),
-                "collect_session_events: loaded"
-            );
-            messages.extend(converted);
+            messages.extend(events_to_session_history(&all_events, pai, pid));
         }
     }
     EventCollectOutcome {
