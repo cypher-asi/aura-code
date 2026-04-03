@@ -61,17 +61,21 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
   return (
     <div>
       <h2 className={styles.sectionTitle}>Integrations</h2>
+      <p className={styles.sectionIntro}>
+        Manage shared provider connections for this organization. Create a new integration below,
+        then attach the right one to an agent only when that runtime should use org-managed auth.
+      </p>
 
       <div className={styles.settingsGroup}>
-        <div className={styles.settingsGroupLabel}>Create Integration</div>
-        <div className={styles.formRow}>
-          <div className={styles.rowInfo}>
-            <div className={styles.rowLabel}>Connection details</div>
+        <div className={styles.settingsGroupLabel}>Create New Integration</div>
+        <div className={`${styles.formRow} ${styles.integrationRow}`}>
+          <div className={`${styles.rowInfo} ${styles.integrationMeta}`}>
+            <div className={styles.rowLabel}>New integration</div>
             <div className={styles.rowDescription}>
               Store reusable provider credentials once at the organization level, then attach them only where API-backed runtime auth is needed.
             </div>
           </div>
-          <div className={styles.rowControl} style={{ flexDirection: "column", alignItems: "stretch", width: "360px", maxWidth: "100%" }}>
+          <div className={styles.integrationFields}>
             <Input
               value={newIntegration.name}
               onChange={(e) => setNewIntegration((prev) => ({ ...prev, name: e.target.value }))}
@@ -126,15 +130,15 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
             const draft = mergedDrafts[integration.integration_id];
             const isBusy = busyId === integration.integration_id;
             return (
-              <div key={integration.integration_id} className={styles.formRow}>
-                <div className={styles.rowInfo}>
+              <div key={integration.integration_id} className={`${styles.formRow} ${styles.integrationRow}`}>
+                <div className={`${styles.rowInfo} ${styles.integrationMeta}`}>
                   <div className={styles.rowLabel}>{integration.name}</div>
                   <div className={styles.rowDescription}>
                     {integration.provider}
                     {integration.secret_last4 ? ` • key ending in ${integration.secret_last4}` : " • no key saved"}
                   </div>
                 </div>
-                <div className={styles.rowControl} style={{ flexDirection: "column", alignItems: "stretch", width: "360px", maxWidth: "100%" }}>
+                <div className={styles.integrationFields}>
                   <Input
                     value={draft.name}
                     onChange={(e) => setDrafts((prev) => ({
@@ -167,7 +171,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                     }))}
                     placeholder={integration.has_secret ? "Leave blank to keep existing key" : "API key"}
                   />
-                  <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                  <div className={styles.integrationActions}>
                     <Button variant="ghost" onClick={() => onDelete(integration.integration_id)} disabled={isBusy}>
                       Delete
                     </Button>
@@ -206,7 +210,7 @@ function ProviderButtons({
   onChange: (value: string) => void;
 }) {
   return (
-    <div style={{ display: "flex", gap: "8px" }}>
+    <div className={styles.providerButtonRow}>
       {PROVIDERS.map((provider) => (
         <Button
           key={provider.id}

@@ -52,6 +52,14 @@
   margin: 0 0 var(--space-6) 0;
 }
 
+.sectionIntro {
+  margin: calc(var(--space-6) * -1 + var(--space-2)) 0 var(--space-5);
+  max-width: 720px;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
 /* ── Settings group (card-like container) ── */
 
 .settingsGroup {
@@ -190,6 +198,36 @@
 
 .formRow + .formRow {
   border-top: 1px solid var(--color-border);
+}
+
+.integrationRow {
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.integrationMeta {
+  max-width: 560px;
+}
+
+.integrationFields {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.integrationActions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.providerButtonRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
 }
 
 /* ── GitHub integration ── */
