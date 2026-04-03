@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
-import { useProcessStore } from "../stores/process-store";
+import { useProcessStore, LAST_PROCESS_ID_KEY } from "../stores/process-store";
 
 export function ProcessProvider({ children }: { children: ReactNode }) {
   const fetchProcesses = useProcessStore((s) => s.fetchProcesses);
@@ -14,6 +14,7 @@ export function ProcessProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (processId) {
+      localStorage.setItem(LAST_PROCESS_ID_KEY, processId);
       fetchNodes(processId);
       fetchConnections(processId);
       fetchRuns(processId);

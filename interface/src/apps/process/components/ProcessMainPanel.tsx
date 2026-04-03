@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Cpu, Play, Pause, Trash2 } from "lucide-react";
 import { Button, PageEmptyState } from "@cypher-asi/zui";
 import { ResponsiveMainLane } from "../../../components/ResponsiveMainLane";
-import { useProcessStore } from "../stores/process-store";
+import { useProcessStore, LAST_PROCESS_ID_KEY } from "../stores/process-store";
 import { processApi } from "../../../api/process";
 import { ProcessCanvas } from "./ProcessCanvas";
 import type { ReactNode } from "react";
@@ -52,6 +52,9 @@ export function ProcessMainPanel({ children }: { children?: ReactNode }) {
     try {
       await processApi.deleteProcess(process.process_id);
       removeProcess(process.process_id);
+      if (localStorage.getItem(LAST_PROCESS_ID_KEY) === process.process_id) {
+        localStorage.removeItem(LAST_PROCESS_ID_KEY);
+      }
       navigate("/process");
     } catch (e) {
       console.error("Failed to delete process:", e);
