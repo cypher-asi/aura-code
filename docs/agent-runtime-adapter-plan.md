@@ -241,6 +241,92 @@ But Aura OS should remain the source of truth for:
 
 That keeps workflow semantics consistent across Aura, Claude, and Codex.
 
+## Control plane layer
+
+I think there should be a clear control-plane layer above the runtime adapters.
+
+The clean model is:
+
+1. **Control plane**
+   The orchestrator
+2. **Aura OS services**
+   The system of record and workflow services
+3. **Runtime adapters**
+   The execution layer
+
+That means:
+
+- the control plane decides what should happen
+- Aura OS persists and governs what happened
+- runtime adapters actually do the work
+
+## Where SuperAgent / CEO fits
+
+I think the SuperAgent / CEO belongs in the **control plane**.
+
+That is a good fit if its job is:
+
+- planning
+- routing
+- delegating
+- choosing which agent/adapter should run
+- deciding retries / escalation / task splitting
+
+That is **not** the same as being the runtime itself.
+
+So I would keep this distinction:
+
+- **SuperAgent / CEO**
+  - control-plane orchestrator
+- **Aura OS**
+  - state, workflows, services, task transitions
+- **Aura harness / Claude Code / Codex**
+  - runtime executors
+
+## Why this separation is healthy
+
+Without this split, one "super agent" can easily become:
+
+- planner
+- worker
+- persistence layer
+- workflow engine
+- task board controller
+- adapter manager
+
+That usually becomes messy fast.
+
+The cleaner version is:
+
+- control plane thinks
+- Aura OS governs
+- adapters execute
+
+## Simple control-plane view
+
+```mermaid
+flowchart TD
+    U["User intent"]
+    C["Control Plane\n(SuperAgent / CEO)"]
+    O["Aura OS\n(tasks, sessions, state, workflows)"]
+    R["Runtime Adapters\n(Aura Harness / Claude / Codex)"]
+
+    U --> C
+    C --> O
+    C --> R
+    R --> O
+```
+
+## Practical interpretation
+
+The control plane should not replace Aura OS.
+
+It should sit above Aura OS and the adapters, coordinating them.
+
+So the best way to phrase it is:
+
+> the control plane acts on behalf of the user's goals, Aura OS remains the system of record, and the adapters remain the execution layer.
+
 ## Do the current benchmarks still fit this architecture?
 
 Yes, very well.
