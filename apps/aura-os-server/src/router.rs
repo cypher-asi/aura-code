@@ -138,7 +138,7 @@ fn protected_auth_routes() -> Router<AppState> {
             "/api/auth/redeem-access-code",
             post(auth::redeem_access_code),
         )
-        .route("/api/auth/access-codes", get(auth::list_access_codes))
+        .route("/api/auth/access-codes", get(auth::get_access_code))
 }
 
 fn user_routes() -> Router<AppState> {

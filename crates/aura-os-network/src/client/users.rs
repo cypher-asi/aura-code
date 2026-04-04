@@ -60,10 +60,28 @@ impl NetworkClient {
         .await
     }
 
-    pub async fn list_access_codes(
+    pub async fn grant_access(&self, jwt: &str) -> Result<(), NetworkError> {
+        let url = format!("{}/api/access-codes/grant", self.base_url);
+        let resp = self
+            .http
+            .post(&url)
+            .header("Authorization", format!("Bearer {jwt}"))
+            .send()
+            .await
+            .map_err(NetworkError::Request)?;
+
+        if !resp.status().is_success() {
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(NetworkError::Server { status, body });
+        }
+        Ok(())
+    }
+
+    pub async fn get_access_code(
         &self,
         jwt: &str,
-    ) -> Result<Vec<serde_json::Value>, NetworkError> {
+    ) -> Result<serde_json::Value, NetworkError> {
         self.get_authed(
             &format!("{}/api/access-codes", self.base_url),
             jwt,

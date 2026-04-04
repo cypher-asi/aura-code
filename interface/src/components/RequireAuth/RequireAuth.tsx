@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { Spinner } from "@cypher-asi/zui";
 import { useAuth } from "../../stores/auth-store";
 import { authApi } from "../../api/auth";
+import { ApiClientError } from "../../api/client";
 import styles from "./RequireAuth.module.css";
 
 export function RequireAuth() {
@@ -30,9 +31,19 @@ export function RequireAuth() {
       await authApi.redeemAccessCode(accessCode.trim());
       await refreshSession();
     } catch (err) {
-      setAccessCodeError(
-        err instanceof Error ? err.message : "Invalid access code",
-      );
+      let msg = "Invalid access code";
+      if (err instanceof ApiClientError) {
+        // Parse nested error from aura-network proxy
+        try {
+          const nested = JSON.parse(err.body.error);
+          msg = nested?.error?.message?.replace(/^Bad request: /, "") ?? msg;
+        } catch {
+          msg = err.body.error;
+        }
+      } else if (err instanceof Error) {
+        msg = err.message;
+      }
+      setAccessCodeError(msg);
     } finally {
       setIsRedeemingCode(false);
     }
@@ -108,10 +119,10 @@ export function RequireAuth() {
                 disabled={!accessCode.trim() || isRedeemingCode}
                 style={{
                   padding: "10px 24px",
-                  background: "var(--color-accent, #7c3aed)",
-                  color: "#fff",
+                  background: "transparent",
+                  color: "var(--color-text-primary)",
                   borderRadius: 8,
-                  border: "none",
+                  border: "1px solid var(--color-border-default, rgba(255,255,255,0.2))",
                   cursor: accessCode.trim() && !isRedeemingCode ? "pointer" : "not-allowed",
                   fontWeight: 600,
                   fontSize: 14,

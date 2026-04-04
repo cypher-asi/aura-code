@@ -187,22 +187,22 @@ pub(crate) async fn redeem_access_code(
     Ok(Json(result))
 }
 
-/// GET /api/auth/access-codes — list the current user's access codes.
-pub(crate) async fn list_access_codes(
+/// GET /api/auth/access-codes — get the current user's access code.
+pub(crate) async fn get_access_code(
     State(state): State<AppState>,
     AuthJwt(jwt): AuthJwt,
-) -> ApiResult<Json<Vec<serde_json::Value>>> {
+) -> ApiResult<Json<serde_json::Value>> {
     let client = state
         .network_client
         .as_ref()
         .ok_or_else(|| ApiError::internal("network service not configured"))?;
 
-    let codes = client
-        .list_access_codes(&jwt)
+    let code = client
+        .get_access_code(&jwt)
         .await
         .map_err(map_network_error)?;
 
-    Ok(Json(codes))
+    Ok(Json(code))
 }
 
 /// GET /api/auth/session — return the current session from the middleware-validated auth.

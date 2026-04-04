@@ -23,10 +23,10 @@ export const authApi = {
       body: JSON.stringify({ email }),
     }),
   redeemAccessCode: (code: string) =>
-    apiFetch<unknown>("/api/auth/redeem-access-code", {
+    apiFetch<{ code: string; maxUses: number; useCount: number }>("/api/auth/redeem-access-code", {
       method: "POST",
       body: JSON.stringify({ code }),
     }),
-  listAccessCodes: () =>
-    apiFetch<Array<{ code: string; status: string; redeemedBy: string | null }>>("/api/auth/access-codes"),
+  getAccessCode: () =>
+    apiFetch<{ code: string; maxUses: number; useCount: number } | null>("/api/auth/access-codes"),
 };
