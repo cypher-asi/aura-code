@@ -1,4 +1,4 @@
-import { apiFetch } from "./core";
+import { apiFetch, apiFetchText } from "./core";
 import type {
   Process,
   ProcessFolder,
@@ -98,7 +98,9 @@ export const processApi = {
   getArtifact: (artifactId: string) =>
     apiFetch<ProcessArtifact>(`/api/process-artifacts/${artifactId}`),
   getArtifactContent: (artifactId: string) =>
-    apiFetch<string>(`/api/process-artifacts/${artifactId}/content`),
+    apiFetchText(`/api/process-artifacts/${artifactId}/content`),
+  getArtifactPath: (artifactId: string) =>
+    apiFetch<{ path: string }>(`/api/process-artifacts/${artifactId}/path`),
 
   // Folders
   listFolders: () => apiFetch<ProcessFolder[]>("/api/process-folders"),

@@ -495,6 +495,10 @@ fn process_routes() -> Router<AppState> {
             get(process::get_artifact_content),
         )
         .route(
+            "/api/process-artifacts/:id/path",
+            get(process::get_artifact_path),
+        )
+        .route(
             "/api/process-folders",
             get(process::list_folders).post(process::create_folder),
         )

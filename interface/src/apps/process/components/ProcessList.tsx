@@ -217,10 +217,11 @@ export function ProcessList() {
     () => explorerData.filter((n) => n.children && n.children.length > 0).map((n) => n.id),
     [explorerData],
   );
-  const activeId = pendingSelectId ?? processId;
+  const lastStoredId = useMemo(() => localStorage.getItem(LAST_PROCESS_ID_KEY), []);
+  const activeId = pendingSelectId ?? processId ?? lastStoredId;
   const explorerKey = useMemo(
-    () => folders.map((f) => f.folder_id).join() + ":" + (pendingSelectId ?? ""),
-    [folders, pendingSelectId],
+    () => folders.map((f) => f.folder_id).join() + ":" + processes.length + ":" + (pendingSelectId ?? ""),
+    [folders, processes.length, pendingSelectId],
   );
   const defaultSelectedIds = useMemo(() => (activeId ? [activeId] : []), [activeId]);
 

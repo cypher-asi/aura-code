@@ -312,10 +312,82 @@ function formatDuration(startedAt: string, completedAt: string | null): string {
   return `${seconds}s`;
 }
 
-function artifactFilename(a: ProcessArtifact): string {
-  const ext = a.file_path?.includes(".") ? a.file_path.slice(a.file_path.lastIndexOf(".")) : ".md";
-  const base = a.name?.trim() || "artifact";
-  return base.includes(".") ? base : `${base}${ext}`;
+function ArtifactCard({ artifact }: { artifact: ProcessArtifact }) {
+  const [content, setContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const displayName = artifact.name?.trim() || artifact.file_path?.split("/").pop() || "Untitled artifact";
+
+  const loadAndExpand = useCallback(async () => {
+    if (expanded) { setExpanded(false); return; }
+    if (content !== null) { setExpanded(true); return; }
+    setLoading(true);
+    try {
+      const text = await processApi.getArtifactContent(artifact.artifact_id);
+      setContent(text);
+      setExpanded(true);
+    } catch (err) {
+      console.error("Failed to load artifact content:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [artifact.artifact_id, content, expanded]);
+
+  const handleShowInFolder = useCallback(async () => {
+    try {
+      const { path } = await processApi.getArtifactPath(artifact.artifact_id);
+      const parentDir = path.replace(/[\\/][^\\/]*$/, "");
+      await desktopApi.openPath(parentDir);
+    } catch (err) {
+      console.error("Failed to show artifact in folder:", err);
+    }
+  }, [artifact.artifact_id]);
+
+  const btnStyle: React.CSSProperties = {
+    background: "transparent", border: "1px solid var(--color-border)",
+    borderRadius: "var(--radius-sm)", padding: "4px 8px", cursor: "pointer",
+    fontSize: 11, color: "var(--color-text)",
+  };
+
+  return (
+    <div style={{ border: "1px solid var(--color-border)", borderRadius: "var(--radius-sm)", fontSize: 12, overflow: "hidden" }}>
+      <button
+        type="button"
+        onClick={loadAndExpand}
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "6px 8px", width: "100%", background: "transparent",
+          border: "none", cursor: "pointer", color: "var(--color-text)", textAlign: "left",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600 }}>{displayName}</div>
+          <div style={{ color: "var(--color-text-muted)", fontSize: 11 }}>
+            {artifact.artifact_type} &middot; {(artifact.size_bytes / 1024).toFixed(1)} KB
+          </div>
+        </div>
+        <span style={{ fontSize: 10, color: "var(--color-text-muted)", flexShrink: 0 }}>
+          {loading ? "\u2026" : expanded ? "\u25B2" : "\u25BC"}
+        </span>
+      </button>
+      {expanded && content !== null && (
+        <div style={{ borderTop: "1px solid var(--color-border)" }}>
+          <div style={{
+            padding: 8, maxHeight: 300, overflow: "auto",
+            whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)",
+            fontSize: 11, lineHeight: 1.5, background: "var(--color-bg-input)",
+          }}>
+            {content}
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 8px", borderTop: "1px solid var(--color-border)" }}>
+            <button type="button" onClick={handleShowInFolder} style={btnStyle}>
+              Show in Folder
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function RunPreviewBody({ run }: { run: ProcessRun }) {
@@ -355,52 +427,9 @@ function RunPreviewBody({ run }: { run: ProcessRun }) {
         <div style={{ marginTop: 16 }}>
           <div style={{ fontWeight: 600, marginBottom: 8 }}>Artifacts</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {artifacts.map((a) => {
-              const displayName = a.name?.trim() || a.file_path?.split("/").pop() || "Untitled artifact";
-              return (
-                <div
-                  key={a.artifact_id}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "6px 8px", border: "1px solid var(--color-border)",
-                    borderRadius: "var(--radius-sm)", fontSize: 12,
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{displayName}</div>
-                    <div style={{ color: "var(--color-text-muted)", fontSize: 11 }}>
-                      {a.artifact_type} &middot; {(a.size_bytes / 1024).toFixed(1)} KB
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        const content = await processApi.getArtifactContent(a.artifact_id);
-                        const blob = new Blob([content], { type: "text/plain" });
-                        const url = URL.createObjectURL(blob);
-                        const link = document.createElement("a");
-                        link.href = url;
-                        link.download = artifactFilename(a);
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        URL.revokeObjectURL(url);
-                      } catch (err) {
-                        console.error("Failed to download artifact:", err);
-                      }
-                    }}
-                    style={{
-                      background: "transparent", border: "1px solid var(--color-border)",
-                      borderRadius: "var(--radius-sm)", padding: "4px 8px", cursor: "pointer",
-                      fontSize: 11, color: "var(--color-text)",
-                    }}
-                  >
-                    Download
-                  </button>
-                </div>
-              );
-            })}
+            {artifacts.map((a) => (
+              <ArtifactCard key={a.artifact_id} artifact={a} />
+            ))}
           </div>
         </div>
       )}

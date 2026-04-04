@@ -35,7 +35,7 @@ interface ProcessState {
 export const useProcessStore = create<ProcessState>()((set) => ({
   processes: [],
   folders: [],
-  loading: false,
+  loading: true,
   nodes: {},
   connections: {},
   runs: {},

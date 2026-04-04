@@ -696,6 +696,27 @@ pub(crate) async fn get_artifact_content(
     Ok(content)
 }
 
+pub(crate) async fn get_artifact_path(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    AuthSession(_session): AuthSession,
+    Path(artifact_id_str): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let artifact_id: ProcessArtifactId = artifact_id_str
+        .parse()
+        .map_err(|_| ApiError::bad_request("invalid artifact ID"))?;
+
+    let artifact = state
+        .super_agent_service
+        .process_store
+        .get_artifact(&artifact_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .ok_or_else(|| ApiError::not_found("artifact not found"))?;
+
+    let resolved = state.data_dir.join(&artifact.file_path);
+    Ok(Json(serde_json::json!({ "path": resolved.to_string_lossy() })))
+}
+
 pub(crate) async fn delete_folder(
     State(state): State<AppState>,
     AuthJwt(_jwt): AuthJwt,

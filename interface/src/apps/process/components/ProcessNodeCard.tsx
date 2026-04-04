@@ -98,7 +98,10 @@ function ProcessNodeCardInner({ data, selected }: NodeProps & { data: ProcessNod
         background: "var(--color-bg, #0d0d1a)",
         border: `1px solid ${borderColor}`,
         borderRadius: 0,
-        padding: "0 12px",
+        paddingTop: 0,
+        paddingBottom: 0,
+        paddingLeft: 12,
+        paddingRight: 12,
         height: "var(--control-height-sm, 32px)",
         display: "flex",
         flexDirection: "column",
@@ -134,7 +137,8 @@ function ProcessNodeCardInner({ data, selected }: NodeProps & { data: ProcessNod
         <div
           style={{
             width: 20, height: 20,
-            background: "transparent", color,
+            background: `${color}20`, color,
+            borderRadius: 4,
             display: "flex", alignItems: "center", justifyContent: "center",
             flexShrink: 0,
           }}
