@@ -49,7 +49,7 @@ fn build_runtime_config(
 ) -> ApiResult<AgentRuntimeConfig> {
     let adapter_type = adapter_type.unwrap_or_else(|| "aura_harness".to_string());
     match adapter_type.as_str() {
-        "aura_harness" | "claude_code" | "codex" => {}
+        "aura_harness" | "claude_code" | "codex" | "gemini_cli" | "opencode" | "cursor" => {}
         other => {
             return Err(ApiError::bad_request(format!(
                 "unsupported adapter `{other}`"
@@ -66,7 +66,8 @@ fn build_runtime_config(
 
     match (adapter_type.as_str(), auth_source.as_str()) {
         ("aura_harness", "aura_managed" | "org_integration") => {}
-        ("claude_code" | "codex", "local_cli_auth" | "org_integration") => {}
+        ("claude_code" | "codex" | "gemini_cli" | "opencode", "local_cli_auth" | "org_integration") => {}
+        ("cursor", "local_cli_auth") => {}
         ("aura_harness", other) => {
             return Err(ApiError::bad_request(format!(
                 "adapter `{adapter_type}` does not support auth source `{other}`"
@@ -608,6 +609,38 @@ mod tests {
 
         assert_eq!(config.auth_source, "org_integration");
         assert_eq!(config.integration_id.as_deref(), Some("int-openai"));
+    }
+
+    #[test]
+    fn gemini_cli_supports_org_integration() {
+        let config = build_runtime_config(
+            Some("gemini_cli".to_string()),
+            Some("local_host".to_string()),
+            None,
+            Some("int-gemini".to_string()),
+            Some("gemini-2.5-pro".to_string()),
+            Some("local".to_string()),
+        )
+        .expect("runtime config");
+
+        assert_eq!(config.auth_source, "org_integration");
+        assert_eq!(config.integration_id.as_deref(), Some("int-gemini"));
+        assert_eq!(config.default_model.as_deref(), Some("gemini-2.5-pro"));
+    }
+
+    #[test]
+    fn cursor_allows_only_local_cli_auth() {
+        let error = build_runtime_config(
+            Some("cursor".to_string()),
+            Some("local_host".to_string()),
+            Some("org_integration".to_string()),
+            Some("int-openai".to_string()),
+            None,
+            Some("local".to_string()),
+        )
+        .expect_err("cursor org integration should fail");
+
+        assert!(format!("{error:?}").contains("does not support auth source"));
     }
 
     #[test]

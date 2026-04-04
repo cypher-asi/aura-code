@@ -34,6 +34,12 @@ function formatAdapterLabel(adapterType?: string | null): string {
       return "Claude Code";
     case "codex":
       return "Codex";
+    case "gemini_cli":
+      return "Gemini CLI";
+    case "opencode":
+      return "OpenCode";
+    case "cursor":
+      return "Cursor";
     case "aura_harness":
     default:
       return "Aura";
@@ -90,7 +96,7 @@ function describeRuntimeReadiness(
   }
 
   if (agent.auth_source === "local_cli_auth") {
-    const runtimeName = agent.adapter_type === "claude_code" ? "Claude Code" : "Codex";
+    const runtimeName = formatAdapterLabel(agent.adapter_type);
     return {
       tone: "info",
       title: "Uses a local login",

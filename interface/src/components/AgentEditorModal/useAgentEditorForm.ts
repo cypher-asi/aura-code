@@ -4,7 +4,11 @@ import { api } from "../../api/client";
 import type { Agent, OrgIntegration } from "../../types";
 import { useModalInitialFocus } from "../../hooks/use-modal-initial-focus";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
-import { runtimeAuthProviderForAdapter } from "../../lib/integrationCatalog";
+import {
+  runtimeAuthProvidersForAdapter,
+  supportsLocalCliAuth,
+  supportsOrgIntegrationAuth,
+} from "../../lib/integrationCatalog";
 import { useOrgStore } from "../../stores/org-store";
 
 interface AgentEditorFormResult {
@@ -113,7 +117,10 @@ export function useAgentEditorForm(
   useEffect(() => {
     const allowedAuthSources = adapterType === "aura_harness"
       ? ["aura_managed", "org_integration"]
-      : ["local_cli_auth", "org_integration"];
+      : [
+          ...(supportsLocalCliAuth(adapterType) ? ["local_cli_auth"] : []),
+          ...(supportsOrgIntegrationAuth(adapterType) ? ["org_integration"] : []),
+        ];
 
     if (adapterType !== "aura_harness") {
       setEnvironment("local_host");
@@ -135,13 +142,13 @@ export function useAgentEditorForm(
       return;
     }
 
-    const requiredProvider = runtimeAuthProviderForAdapter(adapterType);
+    const requiredProviders = new Set(runtimeAuthProvidersForAdapter(adapterType));
     const selected = integrations.find((integration) => integration.integration_id === integrationId);
-    if (!selected || selected.provider !== requiredProvider) {
+    if (!selected || !requiredProviders.has(selected.provider)) {
       const remembered = rememberedIntegrationIdsRef.current[adapterType];
       const fallback = integrations.find((integration) => (
-        integration.integration_id === remembered && integration.provider === requiredProvider
-      )) ?? integrations.find((integration) => integration.provider === requiredProvider);
+        integration.integration_id === remembered && requiredProviders.has(integration.provider)
+      )) ?? integrations.find((integration) => requiredProviders.has(integration.provider));
       setIntegrationId(fallback?.integration_id ?? "");
     }
   }, [adapterType, authSource, integrationId, integrations]);

@@ -6,7 +6,9 @@ import { ImageCropModal } from "../ImageCropModal";
 import {
   filterRuntimeCompatibleIntegrations,
   getIntegrationLabel,
-  runtimeAuthProviderForAdapter,
+  runtimeAuthProvidersForAdapter,
+  supportsLocalCliAuth,
+  supportsOrgIntegrationAuth,
 } from "../../lib/integrationCatalog";
 import styles from "./AgentEditorModal.module.css";
 
@@ -18,6 +20,38 @@ interface AgentEditorModalProps {
 }
 
 type ReadinessTone = "info" | "success" | "warning";
+
+function formatRuntimeLabel(adapterType: string): string {
+  switch (adapterType) {
+    case "claude_code":
+      return "Claude Code";
+    case "codex":
+      return "Codex";
+    case "gemini_cli":
+      return "Gemini CLI";
+    case "opencode":
+      return "OpenCode";
+    case "cursor":
+      return "Cursor";
+    case "aura_harness":
+    default:
+      return "Aura";
+  }
+}
+
+function describeRuntimeIntegrationRequirement(adapterType: string): string {
+  const providers = runtimeAuthProvidersForAdapter(adapterType).map(getIntegrationLabel);
+  if (providers.length === 0) {
+    return "supported";
+  }
+  if (providers.length === 1) {
+    return providers[0];
+  }
+  if (providers.length === 2) {
+    return `${providers[0]} or ${providers[1]}`;
+  }
+  return "supported model-provider";
+}
 
 function describeAuthReadiness(
   adapterType: string,
@@ -47,7 +81,7 @@ function describeAuthReadiness(
   }
 
   if (authSource === "local_cli_auth") {
-    const runtimeName = adapterType === "claude_code" ? "Claude Code" : "Codex";
+    const runtimeName = formatRuntimeLabel(adapterType);
     return {
       tone: "info",
       title: "Uses a local login",
@@ -78,10 +112,11 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
 
   const isEditing = !!agent;
   const integrationChoices = filterRuntimeCompatibleIntegrations(adapterType, availableIntegrations);
-  const showsIntegrationPicker = authSource === "org_integration";
+  const supportsTeamIntegration = supportsOrgIntegrationAuth(adapterType);
+  const supportsLocalLogin = supportsLocalCliAuth(adapterType);
+  const showsIntegrationPicker = authSource === "org_integration" && supportsTeamIntegration;
   const selectedIntegration = integrationChoices.find((integration) => integration.integration_id === integrationId);
-  const requiredProvider = runtimeAuthProviderForAdapter(adapterType);
-  const requiredProviderLabel = requiredProvider ? getIntegrationLabel(requiredProvider) : "matching";
+  const requiredProviderLabel = describeRuntimeIntegrationRequirement(adapterType);
   const authReadiness = describeAuthReadiness(adapterType, authSource, selectedIntegration);
   const readinessClassName =
     authReadiness.tone === "success" ? styles.readinessSuccess
@@ -185,6 +220,27 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
               >
                 Codex
               </button>
+              <button
+                type="button"
+                className={`${styles.machineTypeOption} ${adapterType === "gemini_cli" ? styles.machineTypeActive : ""}`}
+                onClick={() => setAdapterType("gemini_cli")}
+              >
+                Gemini CLI
+              </button>
+              <button
+                type="button"
+                className={`${styles.machineTypeOption} ${adapterType === "opencode" ? styles.machineTypeActive : ""}`}
+                onClick={() => setAdapterType("opencode")}
+              >
+                OpenCode
+              </button>
+              <button
+                type="button"
+                className={`${styles.machineTypeOption} ${adapterType === "cursor" ? styles.machineTypeActive : ""}`}
+                onClick={() => setAdapterType("cursor")}
+              >
+                Cursor
+              </button>
             </div>
           </div>
 
@@ -210,7 +266,9 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
               </button>
             </div>
             {adapterType !== "aura_harness" && (
-              <Text variant="muted" size="sm">Claude Code and Codex currently run on this machine.</Text>
+              <Text variant="muted" size="sm">
+                External runtimes currently run on this machine. Aura is still the control plane while the selected runtime acts as the execution layer.
+              </Text>
             )}
             {adapterType === "aura_harness" && environment === "swarm_microvm" && (
               <Text variant="muted" size="sm">
@@ -239,15 +297,17 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
                     Use Team Integration
                   </button>
                 </>
-              ) : (
+              ) : supportsTeamIntegration ? (
                 <>
-                  <button
-                    type="button"
-                    className={`${styles.machineTypeOption} ${authSource === "local_cli_auth" ? styles.machineTypeActive : ""}`}
-                    onClick={() => setAuthSource("local_cli_auth")}
-                  >
-                    Use Local Login
-                  </button>
+                  {supportsLocalLogin && (
+                    <button
+                      type="button"
+                      className={`${styles.machineTypeOption} ${authSource === "local_cli_auth" ? styles.machineTypeActive : ""}`}
+                      onClick={() => setAuthSource("local_cli_auth")}
+                    >
+                      Use Local Login
+                    </button>
+                  )}
                   <button
                     type="button"
                     className={`${styles.machineTypeOption} ${authSource === "org_integration" ? styles.machineTypeActive : ""}`}
@@ -256,6 +316,14 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
                     Use Team Integration
                   </button>
                 </>
+              ) : (
+                <button
+                  type="button"
+                  className={`${styles.machineTypeOption} ${styles.machineTypeActive}`}
+                  onClick={() => setAuthSource("local_cli_auth")}
+                >
+                  Use Local Login
+                </button>
               )}
             </div>
             {adapterType === "aura_harness" ? (
@@ -319,7 +387,9 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
           {!showsIntegrationPicker && adapterType !== "aura_harness" && integrationChoices.length === 0 && (
             <div className={styles.fieldGroup}>
               <Text variant="muted" size="sm">
-                Team integrations are optional for Claude Code and Codex. You can keep using local login.
+                {supportsTeamIntegration
+                  ? `Team integrations are optional for ${formatRuntimeLabel(adapterType)}. You can keep using local login.`
+                  : `${formatRuntimeLabel(adapterType)} currently uses local CLI auth only.`}
               </Text>
             </div>
           )}

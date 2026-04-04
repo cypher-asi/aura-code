@@ -20,108 +20,117 @@ export interface IntegrationDefinition {
   runtimeCompatibleAdapters: string[];
 }
 
+export const MODEL_RUNTIME_ADAPTERS = [
+  "aura_harness",
+  "claude_code",
+  "codex",
+  "gemini_cli",
+  "opencode",
+  "cursor",
+] as const;
+
 export const INTEGRATION_CATALOG: IntegrationDefinition[] = [
   {
     id: "anthropic",
     label: "Anthropic",
     kind: "model",
     surface: "runtime_auth_provider",
-    description: "Claude models for Aura and Claude Code runtime execution.",
+    description: "Claude models for Aura, Claude Code, and multi-provider runtime execution.",
     secretLabel: "Anthropic API Key",
     secretPlaceholder: "Paste the Anthropic API key",
     authHint: "Use an org-owned Anthropic API key for shared BYOK execution.",
     supportsDefaultModel: true,
-    runtimeCompatibleAdapters: ["aura_harness", "claude_code"],
+    runtimeCompatibleAdapters: ["aura_harness", "claude_code", "opencode"],
   },
   {
     id: "openai",
     label: "OpenAI",
     kind: "model",
     surface: "runtime_auth_provider",
-    description: "OpenAI-backed models and API credentials for Codex-style execution.",
+    description: "OpenAI-backed models and API credentials for Codex-style or multi-provider execution.",
     secretLabel: "OpenAI API Key",
     secretPlaceholder: "Paste the OpenAI API key",
     authHint: "Use an OpenAI platform API key for Codex-style team execution.",
     supportsDefaultModel: true,
-    runtimeCompatibleAdapters: ["codex"],
+    runtimeCompatibleAdapters: ["codex", "opencode"],
   },
   {
     id: "google_gemini",
     label: "Google Gemini",
     kind: "model",
-    surface: "future_runtime_provider",
-    description: "Gemini model access for future runtime support and shared org setup.",
+    surface: "runtime_auth_provider",
+    description: "Gemini model access for Gemini CLI and multi-provider runtime execution.",
     secretLabel: "Gemini API Key",
     secretPlaceholder: "Paste the Gemini API key",
     supportsDefaultModel: true,
-    runtimeCompatibleAdapters: [],
+    runtimeCompatibleAdapters: ["gemini_cli", "opencode"],
   },
   {
     id: "xai",
     label: "xAI",
     kind: "model",
-    surface: "future_runtime_provider",
-    description: "Grok model access for future runtime support.",
+    surface: "runtime_auth_provider",
+    description: "Grok model access for multi-provider runtime execution.",
     secretLabel: "xAI API Key",
     secretPlaceholder: "Paste the xAI API key",
     supportsDefaultModel: true,
-    runtimeCompatibleAdapters: [],
+    runtimeCompatibleAdapters: ["opencode"],
   },
   {
     id: "groq",
     label: "Groq",
     kind: "model",
-    surface: "future_runtime_provider",
-    description: "Fast hosted inference with a shared org-level key.",
+    surface: "runtime_auth_provider",
+    description: "Fast hosted inference with a shared org-level key for multi-provider runtime execution.",
     secretLabel: "Groq API Key",
     secretPlaceholder: "Paste the Groq API key",
     supportsDefaultModel: true,
-    runtimeCompatibleAdapters: [],
+    runtimeCompatibleAdapters: ["opencode"],
   },
   {
     id: "openrouter",
     label: "OpenRouter",
     kind: "model",
-    surface: "future_runtime_provider",
-    description: "Aggregator access to multiple model vendors through one integration.",
+    surface: "runtime_auth_provider",
+    description: "Aggregator access to multiple model vendors through one integration for multi-provider runtime execution.",
     secretLabel: "OpenRouter API Key",
     secretPlaceholder: "Paste the OpenRouter API key",
     supportsDefaultModel: true,
-    runtimeCompatibleAdapters: [],
+    runtimeCompatibleAdapters: ["opencode"],
   },
   {
     id: "together",
     label: "Together AI",
     kind: "model",
-    surface: "future_runtime_provider",
-    description: "Hosted open-weight model access for future runtime support.",
+    surface: "runtime_auth_provider",
+    description: "Hosted open-weight model access for multi-provider runtime execution.",
     secretLabel: "Together API Key",
     secretPlaceholder: "Paste the Together API key",
     supportsDefaultModel: true,
-    runtimeCompatibleAdapters: [],
+    runtimeCompatibleAdapters: ["opencode"],
   },
   {
     id: "mistral",
     label: "Mistral",
     kind: "model",
-    surface: "future_runtime_provider",
-    description: "Mistral-hosted model access for future runtime support.",
+    surface: "runtime_auth_provider",
+    description: "Mistral-hosted model access for multi-provider runtime execution.",
     secretLabel: "Mistral API Key",
     secretPlaceholder: "Paste the Mistral API key",
     supportsDefaultModel: true,
-    runtimeCompatibleAdapters: [],
+    runtimeCompatibleAdapters: ["opencode"],
   },
   {
     id: "perplexity",
     label: "Perplexity",
     kind: "model",
-    surface: "future_runtime_provider",
-    description: "Perplexity-hosted model and search-backed answer access for future runtime support.",
+    surface: "runtime_auth_provider",
+    description: "Perplexity-hosted model and search-backed answer access for multi-provider runtime execution.",
     secretLabel: "Perplexity API Key",
     secretPlaceholder: "Paste the Perplexity API key",
     authHint: "Store a Perplexity API key for future research-oriented runtime use.",
     supportsDefaultModel: true,
-    runtimeCompatibleAdapters: [],
+    runtimeCompatibleAdapters: ["opencode"],
   },
   {
     id: "github",
@@ -435,20 +444,27 @@ export function supportsDefaultModel(provider: string): boolean {
   return getIntegrationDefinition(provider)?.supportsDefaultModel ?? true;
 }
 
-export function runtimeAuthProviderForAdapter(adapterType: string): string | null {
-  if (adapterType === "aura_harness") return "anthropic";
-  if (adapterType === "claude_code") return "anthropic";
-  if (adapterType === "codex") return "openai";
-  return null;
+export function runtimeAuthProvidersForAdapter(adapterType: string): string[] {
+  return INTEGRATION_CATALOG
+    .filter((definition) => definition.runtimeCompatibleAdapters.includes(adapterType))
+    .map((definition) => definition.id);
+}
+
+export function supportsOrgIntegrationAuth(adapterType: string): boolean {
+  return runtimeAuthProvidersForAdapter(adapterType).length > 0;
+}
+
+export function supportsLocalCliAuth(adapterType: string): boolean {
+  return adapterType !== "aura_harness";
 }
 
 export function filterRuntimeCompatibleIntegrations(
   adapterType: string,
   integrations: OrgIntegration[],
 ): OrgIntegration[] {
-  const requiredProvider = runtimeAuthProviderForAdapter(adapterType);
-  if (!requiredProvider) return [];
-  return integrations.filter((integration) => integration.provider === requiredProvider);
+  const requiredProviders = new Set(runtimeAuthProvidersForAdapter(adapterType));
+  if (requiredProviders.size === 0) return [];
+  return integrations.filter((integration) => requiredProviders.has(integration.provider));
 }
 
 export function integrationSections(): Array<{
