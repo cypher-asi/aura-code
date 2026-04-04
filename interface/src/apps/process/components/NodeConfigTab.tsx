@@ -1,4 +1,4 @@
-import { Pencil } from "lucide-react";
+import { Pencil, Pin } from "lucide-react";
 import { Button, Text } from "@cypher-asi/zui";
 import type { ProcessNode } from "../../../types";
 import type { ProcessNodeType } from "../../../types/enums";
@@ -42,6 +42,27 @@ export function NodeConfigTab({ node }: NodeConfigTabProps) {
             <span className={styles.fieldLabel}>Label</span>
             <Text size="sm">{node.label}</Text>
           </div>
+
+          {!!cfg?.pinned_output && (
+            <div className={styles.taskField}>
+              <span className={styles.fieldLabel}>Status</span>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: "2px 8px",
+                  borderRadius: 0,
+                  background: "rgba(245,158,11,0.1)",
+                  color: "#f59e0b",
+                }}
+              >
+                <Pin size={10} /> Pinned — will skip execution
+              </span>
+            </div>
+          )}
 
           {node.node_type === "ignition" && (
             <div className={styles.taskField}>

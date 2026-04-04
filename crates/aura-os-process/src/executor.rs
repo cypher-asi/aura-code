@@ -421,6 +421,31 @@ async fn execute_run(
             None, None,
         );
 
+        // ── check for pinned output (skip execution) ──────────────────
+        if let Some(pinned) = node.config.get("pinned_output").and_then(|v| v.as_str()) {
+            if let Some(ref rid) = running_event_id {
+                let _ = store.delete_event(rid);
+            }
+            record_event(
+                store, broadcast, run, node,
+                ProcessEventStatus::Completed,
+                &upstream_context, pinned,
+                Some(node_started_at), Some(Utc::now()),
+                None, None,
+            );
+            node_outputs.insert(node_id, pinned.to_string());
+
+            let _ = broadcast.send(serde_json::json!({
+                "type": "process_run_progress",
+                "process_id": run.process_id.to_string(),
+                "run_id": run.run_id.to_string(),
+                "total_input_tokens": run_input_tokens,
+                "total_output_tokens": run_output_tokens,
+                "cost_usd": estimate_cost_usd(run_input_tokens, run_output_tokens),
+            }));
+            continue;
+        }
+
         // ── execute node ───────────────────────────────────────────────
         let fwd = DeltaForwarder {
             broadcast,

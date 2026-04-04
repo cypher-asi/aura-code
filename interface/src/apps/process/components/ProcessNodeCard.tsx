@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
-  Zap, Play, GitBranch, FileOutput, Timer, Merge,
+  Zap, Play, GitBranch, FileOutput, Timer, Merge, Pin,
 } from "lucide-react";
 import type { ProcessNodeType } from "../../../types/enums";
 import { useAgentStore } from "../../agents/stores";
@@ -30,6 +30,7 @@ interface ProcessNodeData {
   nodeType: ProcessNodeType;
   prompt?: string;
   agentId?: string;
+  isPinned?: boolean;
   runStatus?: "running" | "completed" | "failed" | "skipped";
   isRenaming?: boolean;
   onRenameSubmit?: (newLabel: string) => void;
@@ -159,6 +160,9 @@ function ProcessNodeCardInner({ data, selected }: NodeProps & { data: ProcessNod
             </div>
           )}
         </div>
+        {data.isPinned && (
+          <Pin size={12} style={{ color: "#f59e0b", flexShrink: 0 }} />
+        )}
         {agent && (
           <Avatar avatarUrl={agent.icon ?? undefined} name={agent.name} type="agent" size={20} />
         )}

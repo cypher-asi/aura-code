@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Text } from "@cypher-asi/zui";
+import { Pin, PinOff } from "lucide-react";
 import type { ProcessNode, ProcessEvent, ProcessEventContentBlock, ProcessArtifact, ProcessRun } from "../../../types";
 import type { ToolCallEntry, TimelineItem } from "../../../types/stream";
 import { processApi } from "../../../api/process";
@@ -70,6 +71,54 @@ function contentBlocksToTimeline(blocks: ProcessEventContentBlock[]): {
   }
 
   return { timeline, toolCalls, thinkingText };
+}
+
+function PinOutputButton({ node, output }: { node: ProcessNode; output: string }) {
+  const { processId } = useParams<{ processId: string }>();
+  const fetchNodes = useProcessStore((s) => s.fetchNodes);
+  const isPinned = !!node.config?.pinned_output;
+  const [busy, setBusy] = useState(false);
+
+  const handleToggle = useCallback(async () => {
+    if (!processId || busy) return;
+    setBusy(true);
+    try {
+      const newConfig = { ...node.config };
+      if (isPinned) {
+        delete newConfig.pinned_output;
+      } else {
+        newConfig.pinned_output = output;
+      }
+      await processApi.updateNode(processId, node.node_id, { config: newConfig });
+      await fetchNodes(processId);
+    } finally {
+      setBusy(false);
+    }
+  }, [processId, node, output, isPinned, busy, fetchNodes]);
+
+  return (
+    <button
+      onClick={handleToggle}
+      disabled={busy}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "4px 10px",
+        fontSize: 11,
+        fontWeight: 600,
+        border: isPinned ? "1px solid #f59e0b40" : "1px solid var(--color-border)",
+        borderRadius: 0,
+        background: isPinned ? "rgba(245,158,11,0.1)" : "transparent",
+        color: isPinned ? "#f59e0b" : "var(--color-text-muted)",
+        cursor: busy ? "wait" : "pointer",
+        transition: "all 0.15s",
+      }}
+    >
+      {isPinned ? <PinOff size={12} /> : <Pin size={12} />}
+      {isPinned ? "Unpin Output" : "Pin Output"}
+    </button>
+  );
 }
 
 export function NodeOutputTab({ node }: NodeOutputTabProps) {
@@ -184,6 +233,12 @@ export function NodeOutputTab({ node }: NodeOutputTabProps) {
                 {nodeEvent.status}
               </span>
             </div>
+
+            {nodeEvent.status === "completed" && nodeEvent.output && (
+              <div className={styles.taskField}>
+                <PinOutputButton node={node} output={nodeEvent.output} />
+              </div>
+            )}
 
             {hasBlocks ? (
               <div className={styles.taskField}>

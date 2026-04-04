@@ -63,6 +63,7 @@ function toFlowNodes(
       nodeType: n.node_type,
       prompt: n.prompt,
       agentId: n.agent_id,
+      isPinned: !!n.config?.pinned_output,
       runStatus: nodeStatuses?.[n.node_id],
       ...(renaming && renaming.nodeId === n.node_id
         ? { isRenaming: true, onRenameSubmit: renaming.onRenameSubmit }
