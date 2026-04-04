@@ -14,9 +14,10 @@ import { desktopApi } from "../../../api/desktop";
 import { EmptyState } from "../../../components/EmptyState";
 import { PreviewOverlay } from "../../../components/PreviewOverlay";
 import { StreamingBubble } from "../../../components/StreamingBubble";
+import { MessageBubble } from "../../../components/MessageBubble";
 import { ActivityTimeline } from "../../../components/ActivityTimeline";
 import { useProcessNodeStream } from "../../../hooks/use-process-node-stream";
-import { useStreamingText, useThinkingText, useThinkingDurationMs, useActiveToolCalls, useTimeline, useIsStreaming } from "../../../hooks/stream/hooks";
+import { useStreamEvents, useStreamingText, useThinkingText, useThinkingDurationMs, useActiveToolCalls, useTimeline, useIsStreaming } from "../../../hooks/stream/hooks";
 import type { ToolCallEntry, TimelineItem } from "../../../types/stream";
 import type { ProcessEventContentBlock } from "../../../types";
 import { ProcessEditorModal } from "./ProcessEditorModal";
@@ -770,6 +771,7 @@ function CopyAllOutputButton({ events, nodes }: { events: ProcessEvent[]; nodes:
 
 function ProcessNodeLiveOutput({ runId, nodeId, isActive }: { runId: string; nodeId: string; isActive: boolean }) {
   const { streamKey } = useProcessNodeStream(runId, nodeId, isActive);
+  const events = useStreamEvents(streamKey);
   const isStreaming = useIsStreaming(streamKey);
   const streamingText = useStreamingText(streamKey);
   const thinkingText = useThinkingText(streamKey);
@@ -777,7 +779,8 @@ function ProcessNodeLiveOutput({ runId, nodeId, isActive }: { runId: string; nod
   const activeToolCalls = useActiveToolCalls(streamKey);
   const timeline = useTimeline(streamKey);
 
-  const hasContent = isStreaming || streamingText || thinkingText || activeToolCalls.length > 0 || timeline.length > 0;
+  const hasLive = isStreaming || streamingText || thinkingText || activeToolCalls.length > 0 || timeline.length > 0;
+  const hasContent = hasLive || events.length > 0;
 
   if (!hasContent) {
     return (
@@ -788,14 +791,21 @@ function ProcessNodeLiveOutput({ runId, nodeId, isActive }: { runId: string; nod
   }
 
   return (
-    <StreamingBubble
-      isStreaming={isStreaming}
-      text={streamingText}
-      toolCalls={activeToolCalls}
-      thinkingText={thinkingText}
-      thinkingDurationMs={thinkingDurationMs}
-      timeline={timeline}
-    />
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {events.map((msg) => (
+        <MessageBubble key={msg.id} message={msg} />
+      ))}
+      {hasLive && (
+        <StreamingBubble
+          isStreaming={isStreaming}
+          text={streamingText}
+          toolCalls={activeToolCalls}
+          thinkingText={thinkingText}
+          thinkingDurationMs={thinkingDurationMs}
+          timeline={timeline}
+        />
+      )}
+    </div>
   );
 }
 

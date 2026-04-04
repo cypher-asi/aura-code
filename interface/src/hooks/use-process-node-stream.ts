@@ -6,6 +6,7 @@ import {
   handleTextDelta,
   handleThinkingDelta,
   handleToolCallStarted,
+  handleToolCallSnapshot,
   handleToolResult,
   resetStreamBuffers,
   finalizeStream,
@@ -13,11 +14,12 @@ import {
 import { getThinkingDurationMs } from "./stream/store";
 
 /**
- * Bridges process node execution events into the shared stream store,
- * reusing the same handlers and rendering path as the task/chat UI.
+ * Bridges native harness events (text_delta, thinking_delta, tool_use_start,
+ * tool_call_snapshot, tool_result) into the shared stream store for a single
+ * process node execution.
  *
- * All harness event types (text, thinking, tool_use_start, tool_result)
- * arrive as `ProcessNodeOutputDelta` events with a `delta_type` discriminator.
+ * Events are the same types emitted by agent chat and tasks -- just filtered
+ * by `run_id` + `node_id` context fields instead of `session_id` or `task_id`.
  */
 export function useProcessNodeStream(
   runId: string | undefined,
@@ -36,6 +38,9 @@ export function useProcessNodeStream(
       isStreamingRef.current = true;
     }
 
+    const matchesCtx = (c: Record<string, unknown>) =>
+      c.run_id === runId && c.node_id === nodeId;
+
     const unsubs = [
       subscribe(EventType.ProcessNodeExecuted, (e) => {
         const c = e.content as unknown as Record<string, unknown>;
@@ -51,40 +56,48 @@ export function useProcessNodeStream(
         }
       }),
 
-      subscribe(EventType.ProcessNodeOutputDelta, (e) => {
+      subscribe(EventType.TextDelta, (e) => {
         const c = e.content as unknown as Record<string, unknown>;
-        if (c.run_id !== runId || c.node_id !== nodeId) return;
+        if (!matchesCtx(c)) return;
+        const text = (c.text as string) ?? "";
+        if (text) handleTextDelta(refs, setters, getThinkingDurationMs(key), text);
+      }),
 
-        const deltaType = (c.delta_type as string) ?? "text";
+      subscribe(EventType.ThinkingDelta, (e) => {
+        const c = e.content as unknown as Record<string, unknown>;
+        if (!matchesCtx(c)) return;
+        const thinking = (c.thinking as string) ?? "";
+        if (thinking) handleThinkingDelta(refs, setters, thinking);
+      }),
 
-        switch (deltaType) {
-          case "text": {
-            const text = (c.text as string) ?? "";
-            if (text) handleTextDelta(refs, setters, getThinkingDurationMs(key), text);
-            break;
-          }
-          case "thinking": {
-            const thinking = (c.thinking as string) ?? "";
-            if (thinking) handleThinkingDelta(refs, setters, thinking);
-            break;
-          }
-          case "tool_use_start": {
-            handleToolCallStarted(refs, setters, {
-              id: (c.id as string) ?? crypto.randomUUID(),
-              name: (c.name as string) ?? "unknown",
-            });
-            break;
-          }
-          case "tool_result": {
-            handleToolResult(refs, setters, {
-              id: c.id as string | undefined,
-              name: (c.name as string) ?? "unknown",
-              result: (c.result as string) ?? "",
-              is_error: (c.is_error as boolean) ?? false,
-            });
-            break;
-          }
-        }
+      subscribe(EventType.ToolUseStart, (e) => {
+        const c = e.content as unknown as Record<string, unknown>;
+        if (!matchesCtx(c)) return;
+        handleToolCallStarted(refs, setters, {
+          id: (c.id as string) ?? crypto.randomUUID(),
+          name: (c.name as string) ?? "unknown",
+        });
+      }),
+
+      subscribe(EventType.ToolCallSnapshot, (e) => {
+        const c = e.content as unknown as Record<string, unknown>;
+        if (!matchesCtx(c)) return;
+        handleToolCallSnapshot(refs, setters, {
+          id: (c.id as string) ?? "",
+          name: (c.name as string) ?? "unknown",
+          input: (c.input as Record<string, unknown>) ?? {},
+        });
+      }),
+
+      subscribe(EventType.ToolResult, (e) => {
+        const c = e.content as unknown as Record<string, unknown>;
+        if (!matchesCtx(c)) return;
+        handleToolResult(refs, setters, {
+          id: c.id as string | undefined,
+          name: (c.name as string) ?? "unknown",
+          result: (c.result as string) ?? "",
+          is_error: (c.is_error as boolean) ?? false,
+        });
       }),
 
       subscribe(EventType.ProcessRunCompleted, (e) => {
