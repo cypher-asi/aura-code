@@ -220,8 +220,8 @@ This manifest is the source of truth for:
 - Aura OS runtime code validates the manifest
 - the MCP sidecar uses the same manifest
 
-3. Harness-side registry test
-- the harness tool registry is tested against the shared manifest
+3. Aura-side harness registry test
+- the `aura-os-super-agent` tool registry is tested against the shared manifest
 
 This does not make drift impossible forever, but it makes silent drift much harder.
 
