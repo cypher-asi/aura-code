@@ -50,6 +50,10 @@ function normalizeTitle(args) {
   return title.trim();
 }
 
+function optionalTrimmedString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 async function nextOrderIndex() {
   const specs = await api(`/api/projects/${projectId}/specs`);
   if (!Array.isArray(specs) || specs.length === 0) {
@@ -95,6 +99,17 @@ function normalizeTaskId(args) {
   return taskId.trim();
 }
 
+function normalizeOptionalStatus(args) {
+  const status = args?.status;
+  if (status == null) {
+    return undefined;
+  }
+  if (typeof status !== "string" || !status.trim()) {
+    throw new Error("status must be a non-empty string when provided");
+  }
+  return status.trim();
+}
+
 function normalizeNewStatus(args) {
   const newStatus = args?.status ?? args?.new_status ?? args?.newStatus;
   if (typeof newStatus !== "string" || !newStatus.trim()) {
@@ -107,10 +122,15 @@ function requiredAgentInstanceId() {
   const agentInstanceId = process.env.AURA_MCP_AGENT_INSTANCE_ID?.trim();
   if (!agentInstanceId) {
     throw new Error(
-      "run_task requires AURA_MCP_AGENT_INSTANCE_ID to be set by the Aura OS server",
+      "run_task and loop control require AURA_MCP_AGENT_INSTANCE_ID to be set by the Aura OS server",
     );
   }
   return agentInstanceId;
+}
+
+function currentAgentLoopQuery() {
+  const agentInstanceId = requiredAgentInstanceId();
+  return `?agent_instance_id=${encodeURIComponent(agentInstanceId)}`;
 }
 
 async function listSpecs() {
@@ -126,6 +146,12 @@ async function listSpecs() {
   };
 }
 
+async function getSpec(args) {
+  const specId = normalizeSpecId(args);
+  const spec = await api(`/api/projects/${projectId}/specs/${specId}`);
+  return { spec };
+}
+
 async function createSpec(args) {
   const title = normalizeTitle(args);
   const markdownContents = normalizeMarkdownContents(args);
@@ -139,6 +165,31 @@ async function createSpec(args) {
     }),
   });
   return { spec };
+}
+
+async function updateSpec(args) {
+  const specId = normalizeSpecId(args);
+  const title = optionalTrimmedString(args?.title);
+  const markdownContents = optionalTrimmedString(args?.markdown_contents ?? args?.markdownContents);
+  if (!title && !markdownContents) {
+    throw new Error("update_spec requires at least one of title or markdown_contents");
+  }
+  const spec = await api(`/api/projects/${projectId}/specs/${specId}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      ...(title ? { title } : {}),
+      ...(markdownContents ? { markdown_contents: markdownContents } : {}),
+    }),
+  });
+  return { spec };
+}
+
+async function deleteSpec(args) {
+  const specId = normalizeSpecId(args);
+  await api(`/api/projects/${projectId}/specs/${specId}`, {
+    method: "DELETE",
+  });
+  return { deleted: specId };
 }
 
 async function listTasks(args) {
@@ -158,6 +209,12 @@ async function listTasks(args) {
         }))
       : [],
   };
+}
+
+async function getTask(args) {
+  const taskId = normalizeTaskId(args);
+  const task = await api(`/api/projects/${projectId}/tasks/${taskId}`);
+  return { task };
 }
 
 async function nextTaskOrderIndex(specId) {
@@ -190,6 +247,34 @@ async function createTask(args) {
     }),
   });
   return { task };
+}
+
+async function updateTask(args) {
+  const taskId = normalizeTaskId(args);
+  const title = optionalTrimmedString(args?.title);
+  const description = optionalTrimmedString(args?.description);
+  const status = normalizeOptionalStatus(args);
+  if (!title && !description && !status) {
+    throw new Error("update_task requires at least one of title, description, or status");
+  }
+  const task = await api(`/api/projects/${projectId}/tasks/${taskId}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      ...(title ? { title } : {}),
+      ...(description ? { description } : {}),
+      ...(status ? { status } : {}),
+    }),
+  });
+  return { task };
+}
+
+async function deleteTask(args) {
+  const taskId = normalizeTaskId(args);
+  const specId = normalizeSpecId(args);
+  await api(`/api/projects/${projectId}/tasks/${taskId}`, {
+    method: "DELETE",
+  });
+  return { deleted: taskId, spec_id: specId };
 }
 
 async function transitionTask(args) {
@@ -226,6 +311,64 @@ async function runTask(args) {
       status: "requested",
     },
   };
+}
+
+async function getProject() {
+  const project = await api(`/api/projects/${projectId}`);
+  return { project };
+}
+
+async function updateProject(args) {
+  const name = optionalTrimmedString(args?.name);
+  const description = optionalTrimmedString(args?.description);
+  const buildCommand = optionalTrimmedString(args?.build_command ?? args?.buildCommand);
+  const testCommand = optionalTrimmedString(args?.test_command ?? args?.testCommand);
+  if (!name && !description && !buildCommand && !testCommand) {
+    throw new Error(
+      "update_project requires at least one of name, description, build_command, or test_command",
+    );
+  }
+  const project = await api(`/api/projects/${projectId}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      ...(name ? { name } : {}),
+      ...(description ? { description } : {}),
+      ...(buildCommand ? { build_command: buildCommand } : {}),
+      ...(testCommand ? { test_command: testCommand } : {}),
+    }),
+  });
+  return { project };
+}
+
+async function getProjectStats() {
+  const result = await api(`/api/projects/${projectId}/stats`);
+  return { result };
+}
+
+async function startDevLoop() {
+  const loopStatus = await api(`/api/projects/${projectId}/loop/start${currentAgentLoopQuery()}`, {
+    method: "POST",
+  });
+  return { loop_status: loopStatus };
+}
+
+async function pauseDevLoop() {
+  const loopStatus = await api(`/api/projects/${projectId}/loop/pause${currentAgentLoopQuery()}`, {
+    method: "POST",
+  });
+  return { loop_status: loopStatus };
+}
+
+async function stopDevLoop() {
+  const loopStatus = await api(`/api/projects/${projectId}/loop/stop${currentAgentLoopQuery()}`, {
+    method: "POST",
+  });
+  return { loop_status: loopStatus };
+}
+
+async function getLoopStatus() {
+  const loopStatus = await api(`/api/projects/${projectId}/loop/status${currentAgentLoopQuery()}`);
+  return { loop_status: loopStatus };
 }
 
 const server = new Server(
@@ -273,6 +416,59 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: "get_spec",
+      description: "Fetch one persisted Aura spec by spec_id.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          spec_id: {
+            type: "string",
+            description: "UUID of the spec to fetch.",
+          },
+        },
+        required: ["spec_id"],
+      },
+    },
+    {
+      name: "update_spec",
+      description: "Update an existing Aura spec's title or markdown contents.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          spec_id: {
+            type: "string",
+            description: "UUID of the spec to update.",
+          },
+          title: {
+            type: "string",
+            description: "Optional replacement title.",
+          },
+          markdown_contents: {
+            type: "string",
+            description: "Optional replacement markdown body.",
+          },
+        },
+        required: ["spec_id"],
+      },
+    },
+    {
+      name: "delete_spec",
+      description: "Delete an existing Aura spec and its tasks.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          spec_id: {
+            type: "string",
+            description: "UUID of the spec to delete.",
+          },
+        },
+        required: ["spec_id"],
+      },
+    },
+    {
       name: "list_tasks",
       description: "List persisted Aura tasks for the currently attached project.",
       inputSchema: {
@@ -284,6 +480,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             description: "Optional spec UUID to filter tasks to a single spec.",
           },
         },
+      },
+    },
+    {
+      name: "get_task",
+      description: "Fetch one persisted Aura task by task_id.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          task_id: {
+            type: "string",
+            description: "UUID of the task to fetch.",
+          },
+        },
+        required: ["task_id"],
       },
     },
     {
@@ -312,6 +523,52 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
         },
         required: ["spec_id", "title", "description"],
+      },
+    },
+    {
+      name: "update_task",
+      description: "Update an existing Aura task's title, description, or status.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          task_id: {
+            type: "string",
+            description: "UUID of the task to update.",
+          },
+          title: {
+            type: "string",
+            description: "Optional replacement title.",
+          },
+          description: {
+            type: "string",
+            description: "Optional replacement description.",
+          },
+          status: {
+            type: "string",
+            description: "Optional replacement status.",
+          },
+        },
+        required: ["task_id"],
+      },
+    },
+    {
+      name: "delete_task",
+      description: "Delete an existing Aura task.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          task_id: {
+            type: "string",
+            description: "UUID of the task to delete.",
+          },
+          spec_id: {
+            type: "string",
+            description: "UUID of the parent spec for parity with shared task tool semantics.",
+          },
+        },
+        required: ["task_id", "spec_id"],
       },
     },
     {
@@ -363,6 +620,74 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ["task_id"],
       },
     },
+    {
+      name: "get_project",
+      description: "Fetch the current Aura project details.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    {
+      name: "update_project",
+      description: "Update the current Aura project's name, description, or commands.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string" },
+          description: { type: "string" },
+          build_command: { type: "string" },
+          test_command: { type: "string" },
+        },
+      },
+    },
+    {
+      name: "get_project_stats",
+      description: "Fetch aggregate metrics for the current Aura project.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    {
+      name: "start_dev_loop",
+      description: "Start the Aura autonomous dev loop for the current project agent.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    {
+      name: "pause_dev_loop",
+      description: "Pause the Aura autonomous dev loop for the current project agent.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    {
+      name: "stop_dev_loop",
+      description: "Stop the Aura autonomous dev loop for the current project agent.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    {
+      name: "get_loop_status",
+      description: "Fetch the Aura dev-loop status for the current project agent.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
   ],
 }));
 
@@ -374,18 +699,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       switch (name) {
         case "list_specs":
           return listSpecs();
+        case "get_spec":
+          return getSpec(args ?? {});
         case "create_spec":
           return createSpec(args ?? {});
+        case "update_spec":
+          return updateSpec(args ?? {});
+        case "delete_spec":
+          return deleteSpec(args ?? {});
         case "list_tasks":
           return listTasks(args ?? {});
+        case "get_task":
+          return getTask(args ?? {});
         case "create_task":
           return createTask(args ?? {});
+        case "update_task":
+          return updateTask(args ?? {});
+        case "delete_task":
+          return deleteTask(args ?? {});
         case "transition_task":
           return transitionTask(args ?? {});
         case "retry_task":
           return retryTask(args ?? {});
         case "run_task":
           return runTask(args ?? {});
+        case "get_project":
+          return getProject();
+        case "update_project":
+          return updateProject(args ?? {});
+        case "get_project_stats":
+          return getProjectStats();
+        case "start_dev_loop":
+          return startDevLoop();
+        case "pause_dev_loop":
+          return pauseDevLoop();
+        case "stop_dev_loop":
+          return stopDevLoop();
+        case "get_loop_status":
+          return getLoopStatus();
         default:
           throw new Error(`Unknown tool: ${name}`);
       }

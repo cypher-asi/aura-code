@@ -245,7 +245,9 @@ fn spec_routes() -> Router<AppState> {
         )
         .route(
             "/api/projects/:project_id/specs/:spec_id",
-            get(specs::get_spec),
+            get(specs::get_spec)
+                .put(specs::update_spec)
+                .delete(specs::delete_spec),
         )
 }
 
@@ -266,6 +268,12 @@ fn task_routes() -> Router<AppState> {
         .route(
             "/api/projects/:project_id/tasks/:task_id/transition",
             post(tasks::transition_task),
+        )
+        .route(
+            "/api/projects/:project_id/tasks/:task_id",
+            get(tasks::get_task)
+                .put(tasks::update_task)
+                .delete(tasks::delete_task),
         )
         .route(
             "/api/projects/:project_id/tasks/:task_id/retry",

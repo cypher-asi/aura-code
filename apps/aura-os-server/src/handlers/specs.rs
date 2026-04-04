@@ -210,6 +210,74 @@ pub(crate) async fn get_spec(
     Ok(Json(spec))
 }
 
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateSpecBody {
+    pub title: Option<String>,
+    pub order_index: Option<i32>,
+    pub markdown_contents: Option<String>,
+}
+
+pub(crate) async fn update_spec(
+    State(state): State<AppState>,
+    AuthJwt(jwt): AuthJwt,
+    Path((_project_id, spec_id)): Path<(ProjectId, SpecId)>,
+    Json(req): Json<UpdateSpecBody>,
+) -> ApiResult<Json<Spec>> {
+    let storage = state.require_storage_client()?;
+    storage
+        .update_spec(
+            &spec_id.to_string(),
+            &jwt,
+            &aura_os_storage::types::UpdateSpecRequest {
+                title: req.title,
+                order_index: req.order_index,
+                markdown_contents: req.markdown_contents,
+            },
+        )
+        .await
+        .map_err(|e| match &e {
+            aura_os_storage::StorageError::Server { status: 404, .. } => {
+                ApiError::not_found("spec not found")
+            }
+            aura_os_storage::StorageError::Server { status: 400, body } => {
+                ApiError::bad_request(body.clone())
+            }
+            _ => ApiError::internal(format!("updating spec: {e}")),
+        })?;
+
+    let storage_spec =
+        storage
+            .get_spec(&spec_id.to_string(), &jwt)
+            .await
+            .map_err(|e| match &e {
+                aura_os_storage::StorageError::Server { status: 404, .. } => {
+                    ApiError::not_found("spec not found")
+                }
+                _ => ApiError::internal(format!("fetching updated spec: {e}")),
+            })?;
+    let spec = Spec::try_from(storage_spec).map_err(ApiError::internal)?;
+    Ok(Json(spec))
+}
+
+pub(crate) async fn delete_spec(
+    State(state): State<AppState>,
+    AuthJwt(jwt): AuthJwt,
+    Path((_project_id, spec_id)): Path<(ProjectId, SpecId)>,
+) -> ApiResult<axum::http::StatusCode> {
+    let storage = state.require_storage_client()?;
+    storage
+        .delete_spec(&spec_id.to_string(), &jwt)
+        .await
+        .map_err(|e| match &e {
+            aura_os_storage::StorageError::Server { status: 404, .. } => {
+                ApiError::not_found("spec not found")
+            }
+            _ => ApiError::internal(format!("deleting spec: {e}")),
+        })?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
 const SSE_NO_BUFFERING_HEADERS: [(&str, HeaderValue); 1] =
     [("X-Accel-Buffering", HeaderValue::from_static("no"))];
 
