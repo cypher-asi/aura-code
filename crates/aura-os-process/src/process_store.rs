@@ -271,6 +271,23 @@ impl ProcessStore {
         Ok(filtered)
     }
 
+    pub fn delete_event(&self, event_id: &aura_os_core::ProcessEventId) -> Result<(), ProcessError> {
+        let all: Vec<ProcessEvent> = self
+            .store
+            .scan_cf_all(CF_PROCESS_EVENTS)
+            .map_err(|e| ProcessError::Store(e.to_string()))?;
+        if let Some(evt) = all.iter().find(|e| e.event_id == *event_id) {
+            let key = format!("{}:{}:{}", evt.process_id, evt.run_id, evt.event_id);
+            self.store
+                .write_batch(vec![aura_os_store::BatchOp::Delete {
+                    cf: CF_PROCESS_EVENTS.to_string(),
+                    key,
+                }])
+                .map_err(|e| ProcessError::Store(e.to_string()))?;
+        }
+        Ok(())
+    }
+
     // -- Artifacts -----------------------------------------------------------
 
     pub fn save_artifact(&self, artifact: &ProcessArtifact) -> Result<(), ProcessError> {

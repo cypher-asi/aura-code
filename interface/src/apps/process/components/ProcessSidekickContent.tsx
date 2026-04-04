@@ -836,6 +836,19 @@ function RunPreviewBody({ run: initialRun }: { run: ProcessRun }) {
     return { input, output, total: input + output };
   }, [events]);
 
+  const liveRunNodeId = useProcessSidekickStore((s) => s.liveRunNodeId);
+  const liveNodeLabel = liveRunNodeId
+    ? nodes.find((n) => n.node_id === liveRunNodeId)?.label ?? "Node"
+    : null;
+  const liveStreamRef = useRef<HTMLDivElement>(null);
+  const liveText = liveRunNodeId ? streamingTexts[liveRunNodeId] : undefined;
+
+  useEffect(() => {
+    if (liveStreamRef.current && liveText) {
+      liveStreamRef.current.scrollTop = liveStreamRef.current.scrollHeight;
+    }
+  }, [liveText]);
+
   return (
     <div style={{ fontSize: 13 }}>
       {isActive && (
@@ -844,6 +857,47 @@ function RunPreviewBody({ run: initialRun }: { run: ProcessRun }) {
           events={events}
           totalNodes={nodes.length}
         />
+      )}
+
+      {isActive && liveRunNodeId && (
+        <div style={{ padding: "0 12px 8px" }}>
+          <div style={{ fontSize: 10, color: "#3b82f6", fontWeight: 600, marginBottom: 4 }}>
+            Live Output &mdash; {liveNodeLabel}
+          </div>
+          <div
+            ref={liveStreamRef}
+            style={{
+              background: "var(--color-bg-input)",
+              padding: 8,
+              borderRadius: "var(--radius-sm)",
+              whiteSpace: "pre-wrap",
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              maxHeight: 300,
+              overflow: "auto",
+              lineHeight: 1.4,
+              borderLeft: "2px solid #3b82f6",
+              color: "var(--color-text)",
+            }}
+          >
+            {liveText || (
+              <span style={{ color: "#3b82f6", fontStyle: "italic" }}>Waiting for output...</span>
+            )}
+            {liveText && (
+              <span
+                style={{
+                  display: "inline-block",
+                  width: 6,
+                  height: 14,
+                  marginLeft: 1,
+                  background: "#3b82f6",
+                  animation: "aura-pulse 1s ease-in-out infinite",
+                  verticalAlign: "text-bottom",
+                }}
+              />
+            )}
+          </div>
+        </div>
       )}
 
       <div style={{ padding: 12 }}>

@@ -354,16 +354,15 @@ async fn execute_run(
             }
         }
 
-        // ── broadcast running status ───────────────────────────────────
+        // ── persist + broadcast running status ───────────────────────────
         let node_started_at = Utc::now();
-        let _ = broadcast.send(serde_json::json!({
-            "type": "process_node_executed",
-            "process_id": run.process_id.to_string(),
-            "run_id": run.run_id.to_string(),
-            "node_id": node_id.to_string(),
-            "node_type": format!("{:?}", node.node_type),
-            "status": "running",
-        }));
+        let running_event_id = record_event(
+            store, broadcast, run, node,
+            ProcessEventStatus::Running,
+            &upstream_context, "",
+            Some(node_started_at), None,
+            None, None,
+        );
 
         // ── execute node ───────────────────────────────────────────────
         let fwd = DeltaForwarder {
@@ -425,6 +424,9 @@ async fn execute_run(
                     _ => node_result.output.clone(),
                 };
 
+                if let Some(ref rid) = running_event_id {
+                    let _ = store.delete_event(rid);
+                }
                 record_event(
                     store,
                     broadcast,
@@ -442,6 +444,9 @@ async fn execute_run(
             }
             Err(e) => {
                 let err_msg = e.to_string();
+                if let Some(ref rid) = running_event_id {
+                    let _ = store.delete_event(rid);
+                }
                 record_event(
                     store,
                     broadcast,
@@ -1109,10 +1114,11 @@ fn record_event(
     completed_at: Option<DateTime<Utc>>,
     token_usage: Option<&NodeTokenUsage>,
     content_blocks: Option<&[serde_json::Value]>,
-) {
+) -> Option<ProcessEventId> {
     let now = Utc::now();
+    let event_id = ProcessEventId::new();
     let event = ProcessEvent {
-        event_id: ProcessEventId::new(),
+        event_id,
         run_id: run.run_id,
         node_id: node.node_id,
         process_id: run.process_id,
@@ -1120,7 +1126,7 @@ fn record_event(
         input_snapshot: input.to_string(),
         output: output.to_string(),
         started_at: started_at.unwrap_or(now),
-        completed_at: Some(completed_at.unwrap_or(now)),
+        completed_at: if status == ProcessEventStatus::Running { None } else { Some(completed_at.unwrap_or(now)) },
         input_tokens: token_usage.map(|u| u.input_tokens),
         output_tokens: token_usage.map(|u| u.output_tokens),
         model: token_usage.and_then(|u| u.model.clone()),
@@ -1129,6 +1135,7 @@ fn record_event(
 
     if let Err(e) = store.save_event(&event) {
         warn!(event_id = %event.event_id, error = %e, "Failed to save process event");
+        return None;
     }
 
     let mut payload = serde_json::json!({
@@ -1147,4 +1154,5 @@ fn record_event(
         }
     }
     let _ = broadcast.send(payload);
+    Some(event_id)
 }

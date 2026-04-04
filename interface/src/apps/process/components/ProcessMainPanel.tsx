@@ -82,15 +82,18 @@ export function ProcessMainPanel({ children }: { children?: ReactNode }) {
     }
   }, [process, updateProcess]);
 
+  const viewRun = useProcessSidekickStore((s) => s.viewRun);
+
   const handleTrigger = useCallback(async () => {
     if (!process) return;
     try {
-      await processApi.triggerProcess(process.process_id);
+      const run = await processApi.triggerProcess(process.process_id);
       fetchRuns(process.process_id);
+      viewRun(run);
     } catch (e) {
       console.error("Failed to trigger process:", e);
     }
-  }, [process, fetchRuns]);
+  }, [process, fetchRuns, viewRun]);
 
   const handleStop = useCallback(async () => {
     if (!process || !processId) return;
