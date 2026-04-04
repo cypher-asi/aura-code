@@ -6,8 +6,8 @@ use axum::extract::{Path, State};
 use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
-use futures_util::stream;
 use futures_util::future::join_all;
+use futures_util::stream;
 use futures_util::StreamExt as FuturesStreamExt;
 use tracing::{info, warn};
 
@@ -110,7 +110,7 @@ pub(crate) fn persist_user_message(ctx: &ChatPersistCtx, content: &str) {
     });
 }
 
-fn spawn_chat_persist_task(
+pub(crate) fn spawn_chat_persist_task(
     rx: tokio::sync::broadcast::Receiver<HarnessOutbound>,
     ctx: ChatPersistCtx,
 ) {
@@ -557,18 +557,16 @@ async fn find_matching_project_agents(
             info!(count = p.len(), %agent_id_str, "agent matching: projects discovered from network");
             p
         }
-        Err(_) => {
-            match state.project_service.list_projects() {
-                Ok(local) if !local.is_empty() => {
-                    info!(count = local.len(), %agent_id_str, "agent matching: using local project cache (network unavailable)");
-                    local
-                }
-                _ => {
-                    warn!(%agent_id_str, "agent matching: network unavailable and no local projects");
-                    return Vec::new();
-                }
+        Err(_) => match state.project_service.list_projects() {
+            Ok(local) if !local.is_empty() => {
+                info!(count = local.len(), %agent_id_str, "agent matching: using local project cache (network unavailable)");
+                local
             }
-        }
+            _ => {
+                warn!(%agent_id_str, "agent matching: network unavailable and no local projects");
+                return Vec::new();
+            }
+        },
     };
     let pids: Vec<String> = all_projects
         .iter()
@@ -620,9 +618,7 @@ async fn auto_create_project_agent(
 ) -> Option<aura_os_storage::StorageProjectAgent> {
     let all_projects = match projects::list_all_projects_from_network(state, jwt).await {
         Ok(p) => p,
-        Err(_) => {
-            state.project_service.list_projects().unwrap_or_default()
-        }
+        Err(_) => state.project_service.list_projects().unwrap_or_default(),
     };
     let project = all_projects.first()?;
     let project_id_str = project.project_id.to_string();
@@ -637,7 +633,10 @@ async fn auto_create_project_agent(
         icon: None,
         harness: None,
     };
-    match storage.create_project_agent(&project_id_str, jwt, &req).await {
+    match storage
+        .create_project_agent(&project_id_str, jwt, &req)
+        .await
+    {
         Ok(pa) => {
             info!(
                 %agent_id,
@@ -773,7 +772,9 @@ async fn aggregate_agent_events_from_storage_result(
             .get_agent_local(agent_id)
             .map(|a| a.name)
             .unwrap_or_else(|_| agent_id_str.clone());
-        if let Some(pa) = auto_create_project_agent(state, storage, jwt, agent_id, &agent_name).await {
+        if let Some(pa) =
+            auto_create_project_agent(state, storage, jwt, agent_id, &agent_name).await
+        {
             info!(%agent_id, "aggregate events: auto-created project agent for event retrieval");
             matching.push(pa);
         } else {

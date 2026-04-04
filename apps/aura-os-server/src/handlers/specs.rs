@@ -107,6 +107,38 @@ pub(crate) async fn list_specs(
     Ok(Json(specs))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreateSpecBody {
+    pub title: String,
+    pub markdown_contents: Option<String>,
+    pub order_index: Option<i32>,
+}
+
+pub(crate) async fn create_spec(
+    State(state): State<AppState>,
+    AuthJwt(jwt): AuthJwt,
+    Path(project_id): Path<ProjectId>,
+    Json(req): Json<CreateSpecBody>,
+) -> ApiResult<Json<Spec>> {
+    let storage = state.require_storage_client()?;
+    let created = storage
+        .create_spec(
+            &project_id.to_string(),
+            &jwt,
+            &aura_os_storage::CreateSpecRequest {
+                title: req.title,
+                org_id: None,
+                order_index: req.order_index,
+                markdown_contents: req.markdown_contents,
+            },
+        )
+        .await
+        .map_err(|e| ApiError::internal(format!("creating spec: {e}")))?;
+    let spec = Spec::try_from(created).map_err(ApiError::internal)?;
+    Ok(Json(spec))
+}
+
 pub(crate) async fn generate_specs_summary(
     State(state): State<AppState>,
     AuthJwt(jwt): AuthJwt,

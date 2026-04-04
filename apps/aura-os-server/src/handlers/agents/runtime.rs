@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -8,9 +9,11 @@ use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
 use serde_json::Value;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
+use tokio::sync::{broadcast, mpsc};
 use tokio::time::timeout;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -23,7 +26,9 @@ use aura_os_link::{
 
 use crate::dto::{AgentRuntimeTestResponse, SendChatRequest};
 use crate::error::{ApiError, ApiResult};
-use crate::handlers::agents::chat::{setup_agent_chat_persistence, SseResponse, SseStream};
+use crate::handlers::agents::chat::{
+    setup_agent_chat_persistence, spawn_chat_persist_task, SseResponse, SseStream,
+};
 use crate::handlers::projects_helpers::resolve_project_workspace_path_for_machine;
 use crate::handlers::sse::harness_event_to_sse;
 use crate::state::{AppState, AuthJwt};
@@ -37,6 +42,14 @@ pub(crate) struct ResolvedIntegration {
 struct RuntimeOutcome {
     text: String,
     usage: SessionUsage,
+}
+
+#[derive(Clone)]
+struct CodexProjectMcpConfig {
+    server_name: String,
+    command: String,
+    args: Vec<String>,
+    env: HashMap<String, String>,
 }
 
 pub(crate) async fn test_agent_runtime(
@@ -92,6 +105,10 @@ pub(crate) async fn send_external_agent_event_stream(
     agent: &Agent,
     body: SendChatRequest,
 ) -> ApiResult<SseResponse> {
+    if agent.adapter_type == "codex" && body.project_id.is_some() {
+        return send_codex_project_agent_event_stream(state, jwt, agent, body).await;
+    }
+
     let integration = resolve_integration(state, agent)?;
     let model = effective_model(agent, integration.as_ref(), body.model.clone());
     let persist_ctx = setup_agent_chat_persistence(state, &agent.agent_id, &agent.name, jwt).await;
@@ -145,6 +162,91 @@ pub(crate) async fn send_external_agent_event_stream(
     Ok((
         [("x-accel-buffering", HeaderValue::from_static("no"))],
         Sse::new(boxed).keep_alive(KeepAlive::default()),
+    ))
+}
+
+async fn send_codex_project_agent_event_stream(
+    state: &AppState,
+    jwt: &str,
+    agent: &Agent,
+    body: SendChatRequest,
+) -> ApiResult<SseResponse> {
+    let project_id = body
+        .project_id
+        .clone()
+        .ok_or_else(|| ApiError::bad_request("Codex project chat requires a project id"))?;
+    let integration = resolve_integration(state, agent)?;
+    let model = effective_model(agent, integration.as_ref(), body.model.clone());
+    let persist_ctx = setup_agent_chat_persistence(state, &agent.agent_id, &agent.name, jwt).await;
+    if let Some(ref ctx) = persist_ctx {
+        super::chat::persist_user_message(ctx, &body.content);
+    }
+
+    let prompt = build_external_prompt(state, agent, &body.content, Some(project_id.as_str()));
+    let mcp_config = build_codex_project_mcp_config(&project_id, jwt)?;
+    let (events_tx, _) = broadcast::channel::<HarnessOutbound>(256);
+    let (sse_tx, sse_rx) = mpsc::unbounded_channel::<Result<Event, Infallible>>();
+    let message_id = Uuid::new_v4().to_string();
+
+    if let Some(ctx) = persist_ctx {
+        spawn_chat_persist_task(events_tx.subscribe(), ctx);
+    }
+
+    let sse_stream: SseStream = Box::pin(UnboundedReceiverStream::new(sse_rx));
+    let state = state.clone();
+    let agent = agent.clone();
+    tokio::spawn(async move {
+        emit_harness_event(
+            &events_tx,
+            &sse_tx,
+            HarnessOutbound::SessionReady(SessionReady {
+                session_id: Uuid::new_v4().to_string(),
+                tools: vec![ToolInfo {
+                    name: "create_spec".to_string(),
+                    description: "Create a persisted Aura spec for the attached project"
+                        .to_string(),
+                }],
+                skills: Vec::new(),
+            }),
+        );
+        emit_harness_event(
+            &events_tx,
+            &sse_tx,
+            HarnessOutbound::AssistantMessageStart(AssistantMessageStart {
+                message_id: message_id.clone(),
+            }),
+        );
+
+        if let Err(err) = stream_codex_project_turn(
+            &state,
+            &agent,
+            integration.as_ref(),
+            &prompt,
+            model,
+            &project_id,
+            &message_id,
+            &mcp_config,
+            &events_tx,
+            &sse_tx,
+        )
+        .await
+        {
+            let (_, error) = err;
+            emit_harness_event(
+                &events_tx,
+                &sse_tx,
+                HarnessOutbound::Error(aura_os_link::ErrorMsg {
+                    code: "external_adapter_error".to_string(),
+                    message: error.0.error,
+                    recoverable: false,
+                }),
+            );
+        }
+    });
+
+    Ok((
+        [("x-accel-buffering", HeaderValue::from_static("no"))],
+        Sse::new(sse_stream).keep_alive(KeepAlive::default()),
     ))
 }
 
@@ -414,6 +516,218 @@ async fn run_external_adapter_prompt(
     }
 }
 
+async fn stream_codex_project_turn(
+    state: &AppState,
+    _agent: &Agent,
+    integration: Option<&ResolvedIntegration>,
+    prompt: &str,
+    model: Option<String>,
+    project_id: &str,
+    message_id: &str,
+    mcp_config: &CodexProjectMcpConfig,
+    events_tx: &broadcast::Sender<HarnessOutbound>,
+    sse_tx: &mpsc::UnboundedSender<Result<Event, Infallible>>,
+) -> ApiResult<()> {
+    let cwd = resolve_runtime_cwd(state, Some(project_id))
+        .unwrap_or_else(|| state.data_dir.to_string_lossy().to_string());
+    let mut env_overrides = HashMap::new();
+    if let Some(resolved) = integration {
+        if resolved.metadata.provider != "openai" {
+            return Err(ApiError::bad_request(
+                "Codex integrations must use the OpenAI provider",
+            ));
+        }
+        if let Some(secret) = resolved.secret.as_deref() {
+            env_overrides.insert("OPENAI_API_KEY".to_string(), secret.to_string());
+        }
+    }
+
+    let mut args = vec![
+        "exec".to_string(),
+        "--json".to_string(),
+        "--skip-git-repo-check".to_string(),
+        "--dangerously-bypass-approvals-and-sandbox".to_string(),
+        "--cd".to_string(),
+        cwd.clone(),
+        "-c".to_string(),
+        format!(
+            "mcp_servers.{}.command={:?}",
+            mcp_config.server_name, mcp_config.command
+        ),
+        "-c".to_string(),
+        format!(
+            "mcp_servers.{}.args={:?}",
+            mcp_config.server_name, mcp_config.args
+        ),
+        "-c".to_string(),
+        format!(
+            "mcp_servers.{}.env={}",
+            mcp_config.server_name,
+            codex_inline_env(&mcp_config.env)
+        ),
+        "-".to_string(),
+    ];
+    if let Some(model) = model.as_deref() {
+        let insert_at = args.len() - 1;
+        args.insert(insert_at, model.to_string());
+        args.insert(insert_at, "--model".to_string());
+    }
+
+    let mut cmd = Command::new("codex");
+    cmd.args(&args)
+        .current_dir(&cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for (key, value) in &env_overrides {
+        cmd.env(key, value);
+    }
+
+    let mut child = cmd.spawn().map_err(|e| {
+        ApiError::bad_gateway(format!(
+            "failed to start codex in `{cwd}`: {e}. If this agent is bound to a project, verify the workspace path still exists."
+        ))
+    })?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(format!("{prompt}\n").as_bytes())
+            .await
+            .map_err(|e| ApiError::bad_gateway(format!("failed writing prompt to codex: {e}")))?;
+        let _ = stdin.shutdown().await;
+    }
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| ApiError::bad_gateway("codex stdout unavailable"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| ApiError::bad_gateway("codex stderr unavailable"))?;
+
+    let stderr_task = tokio::spawn(async move {
+        let mut reader = BufReader::new(stderr);
+        let mut output = String::new();
+        let _ = reader.read_to_string(&mut output).await;
+        output
+    });
+
+    let mut lines = BufReader::new(stdout).lines();
+    let mut usage = SessionUsage {
+        model: model.unwrap_or_else(|| "codex".to_string()),
+        provider: "openai".to_string(),
+        ..Default::default()
+    };
+    let mut saw_text = false;
+    let mut saw_tool_event = false;
+
+    loop {
+        let next_line = timeout(Duration::from_secs(120), lines.next_line())
+            .await
+            .map_err(|_| ApiError::bad_gateway("codex timed out"))?;
+        let Some(line) = next_line
+            .map_err(|e| ApiError::bad_gateway(format!("reading codex output failed: {e}")))?
+        else {
+            break;
+        };
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<Value>(trimmed) else {
+            continue;
+        };
+
+        if let Some(turn_usage) = codex_turn_usage(&event, usage.model.clone()) {
+            usage = turn_usage;
+            continue;
+        }
+
+        if let Some(tool_start) = codex_tool_use_start(&event) {
+            saw_tool_event = true;
+            let tool_name = tool_start.name.clone();
+            let tool_id = tool_start.id.clone();
+            emit_harness_event(events_tx, sse_tx, HarnessOutbound::ToolUseStart(tool_start));
+            if let Some(tool_call) = codex_tool_call_payload(&event, &tool_id, &tool_name) {
+                emit_json_sse_event(sse_tx, "tool_call", tool_call);
+            }
+            continue;
+        }
+
+        if let Some(tool_result) = codex_tool_result(&event) {
+            saw_tool_event = true;
+            let tool_result_id = tool_result.tool_use_id.clone();
+            let tool_name = tool_result.name.clone();
+            let tool_result_value = if !tool_result.is_error && tool_name == "create_spec" {
+                parse_tool_result_json(&tool_result.result)
+            } else {
+                None
+            };
+            let _ = events_tx.send(HarnessOutbound::ToolResult(tool_result.clone()));
+            emit_json_sse_event(
+                sse_tx,
+                "tool_result",
+                serde_json::json!({
+                    "id": tool_result_id,
+                    "name": tool_result.name,
+                    "result": tool_result.result,
+                    "is_error": tool_result.is_error,
+                }),
+            );
+            if let Some(spec) = tool_result_value {
+                emit_json_sse_event(sse_tx, "spec_saved", serde_json::json!({ "spec": spec }));
+            }
+            continue;
+        }
+
+        if let Some(text) = codex_agent_message_text(&event) {
+            if !text.trim().is_empty() {
+                saw_text = true;
+                emit_harness_event(
+                    events_tx,
+                    sse_tx,
+                    HarnessOutbound::TextDelta(TextDelta { text }),
+                );
+            }
+        }
+    }
+
+    let status = timeout(Duration::from_secs(5), child.wait())
+        .await
+        .map_err(|_| ApiError::bad_gateway("waiting for codex failed"))?
+        .map_err(|e| ApiError::bad_gateway(format!("waiting for codex failed: {e}")))?;
+    let stderr_output = stderr_task.await.unwrap_or_default();
+
+    if !status.success() && !saw_text && !saw_tool_event {
+        return Err(ApiError::bad_gateway(format!(
+            "codex exited with {}: {}",
+            status,
+            stderr_output.trim()
+        )));
+    }
+
+    if !saw_text && !saw_tool_event {
+        return Err(ApiError::bad_gateway(
+            "Codex returned no assistant message or tool activity. Check the runtime auth/session and try again.",
+        ));
+    }
+
+    emit_harness_event(
+        events_tx,
+        sse_tx,
+        HarnessOutbound::AssistantMessageEnd(AssistantMessageEnd {
+            message_id: message_id.to_string(),
+            stop_reason: "end_turn".to_string(),
+            usage,
+            files_changed: FilesChanged::default(),
+        }),
+    );
+
+    Ok(())
+}
+
 fn resolve_runtime_cwd(state: &AppState, project_id: Option<&str>) -> Option<String> {
     let project_id = project_id?.parse::<ProjectId>().ok()?;
     let project = state.project_service.get_project(&project_id).ok();
@@ -479,6 +793,94 @@ async fn run_cli_command(
     }
 
     Ok(stdout)
+}
+
+fn build_codex_project_mcp_config(project_id: &str, jwt: &str) -> ApiResult<CodexProjectMcpConfig> {
+    let script_path = find_control_plane_mcp_script().ok_or_else(|| {
+        ApiError::bad_gateway(
+            "Codex project tool bridge is unavailable because the Aura control-plane MCP script could not be found.",
+        )
+    })?;
+
+    let mut env = HashMap::new();
+    env.insert(
+        "AURA_MCP_API_BASE_URL".to_string(),
+        control_plane_api_base_url(),
+    );
+    env.insert("AURA_MCP_PROJECT_ID".to_string(), project_id.to_string());
+    env.insert("AURA_MCP_JWT".to_string(), jwt.to_string());
+
+    Ok(CodexProjectMcpConfig {
+        server_name: "aura".to_string(),
+        command: "node".to_string(),
+        args: vec![script_path.to_string_lossy().to_string()],
+        env,
+    })
+}
+
+fn find_control_plane_mcp_script() -> Option<PathBuf> {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let candidates = [
+        manifest_dir.join("../../interface/scripts/aura-control-plane-mcp.mjs"),
+        PathBuf::from("interface/scripts/aura-control-plane-mcp.mjs"),
+        PathBuf::from("../../interface/scripts/aura-control-plane-mcp.mjs"),
+    ];
+    candidates.into_iter().find(|path| path.exists())
+}
+
+fn control_plane_api_base_url() -> String {
+    let port = std::env::var("AURA_SERVER_PORT")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "3100".to_string());
+    let host = std::env::var("AURA_SERVER_HOST")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+
+    let normalized_host = match host.as_str() {
+        "0.0.0.0" | "::" => "127.0.0.1".to_string(),
+        other if other.contains(':') && !other.starts_with('[') => format!("[{other}]"),
+        other => other.to_string(),
+    };
+
+    format!("http://{normalized_host}:{port}")
+}
+
+fn emit_harness_event(
+    events_tx: &broadcast::Sender<HarnessOutbound>,
+    sse_tx: &mpsc::UnboundedSender<Result<Event, Infallible>>,
+    event: HarnessOutbound,
+) {
+    let _ = events_tx.send(event.clone());
+    let _ = sse_tx.send(harness_event_to_sse(&event));
+}
+
+fn emit_json_sse_event(
+    sse_tx: &mpsc::UnboundedSender<Result<Event, Infallible>>,
+    event_type: &str,
+    value: Value,
+) {
+    let event = Event::default()
+        .event(event_type)
+        .json_data(value)
+        .unwrap_or_else(|_| Event::default().event(event_type).data("{}"));
+    let _ = sse_tx.send(Ok(event));
+}
+
+fn codex_inline_env(values: &HashMap<String, String>) -> String {
+    let mut entries = values.iter().collect::<Vec<_>>();
+    entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+    let pairs = entries
+        .into_iter()
+        .map(|(key, value)| format!("{key}={}", codex_toml_string(value)))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{pairs}}}")
+}
+
+fn codex_toml_string(value: &str) -> String {
+    format!("{:?}", value)
 }
 
 fn parse_claude_output(stdout: &str, fallback_model: Option<String>) -> ApiResult<RuntimeOutcome> {
@@ -652,6 +1054,120 @@ fn sanitize_model(model: &str) -> String {
         .to_string()
 }
 
+fn codex_agent_message_text(event: &Value) -> Option<String> {
+    event
+        .get("item")
+        .filter(|item| item.get("type") == Some(&Value::String("agent_message".to_string())))
+        .and_then(|item| item.get("text"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn codex_tool_use_start(event: &Value) -> Option<aura_os_link::ToolUseStart> {
+    let item = event.get("item")?;
+    if item.get("type") != Some(&Value::String("mcp_tool_call".to_string()))
+        || event.get("type") != Some(&Value::String("item.started".to_string()))
+    {
+        return None;
+    }
+
+    Some(aura_os_link::ToolUseStart {
+        id: item.get("id")?.as_str()?.to_string(),
+        name: item.get("tool")?.as_str()?.to_string(),
+    })
+}
+
+fn codex_tool_result(event: &Value) -> Option<aura_os_link::ToolResultMsg> {
+    let item = event.get("item")?;
+    if item.get("type") != Some(&Value::String("mcp_tool_call".to_string()))
+        || event.get("type") != Some(&Value::String("item.completed".to_string()))
+    {
+        return None;
+    }
+
+    let status = item
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let is_error = status != "completed";
+    let result = if is_error {
+        item.get("error")
+            .and_then(|error| error.get("message"))
+            .and_then(Value::as_str)
+            .unwrap_or("MCP tool call failed")
+            .to_string()
+    } else {
+        codex_tool_content_text(item.get("result"))
+    };
+
+    Some(aura_os_link::ToolResultMsg {
+        name: item.get("tool")?.as_str()?.to_string(),
+        result,
+        is_error,
+        tool_use_id: item.get("id").and_then(Value::as_str).map(str::to_string),
+    })
+}
+
+fn codex_tool_content_text(result: Option<&Value>) -> String {
+    result
+        .and_then(|value| value.get("content"))
+        .and_then(Value::as_array)
+        .map(|content| {
+            content
+                .iter()
+                .filter_map(|block| block.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .filter(|text| !text.trim().is_empty())
+        .unwrap_or_else(|| "{}".to_string())
+}
+
+fn codex_tool_call_payload(event: &Value, id: &str, name: &str) -> Option<Value> {
+    let mut input = event
+        .get("item")
+        .and_then(|item| item.get("arguments"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let Some(object) = input.as_object_mut() {
+        if let Some(markdown_contents) = object.get("markdownContents").cloned() {
+            object
+                .entry("markdown_contents".to_string())
+                .or_insert(markdown_contents);
+        }
+    }
+    Some(serde_json::json!({
+        "id": id,
+        "name": name,
+        "input": input,
+    }))
+}
+
+fn parse_tool_result_json(result: &str) -> Option<Value> {
+    serde_json::from_str::<Value>(result).ok()
+}
+
+fn codex_turn_usage(event: &Value, model: String) -> Option<SessionUsage> {
+    if event.get("type") != Some(&Value::String("turn.completed".to_string())) {
+        return None;
+    }
+    let usage = event.get("usage").cloned().unwrap_or(Value::Null);
+    Some(SessionUsage {
+        input_tokens: usage_number(&usage, "input_tokens"),
+        output_tokens: usage_number(&usage, "output_tokens"),
+        estimated_context_tokens: 0,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: usage_number(&usage, "cached_input_tokens"),
+        cumulative_input_tokens: usage_number(&usage, "input_tokens"),
+        cumulative_output_tokens: usage_number(&usage, "output_tokens"),
+        cumulative_cache_creation_input_tokens: 0,
+        cumulative_cache_read_input_tokens: usage_number(&usage, "cached_input_tokens"),
+        context_utilization: 0.0,
+        model,
+        provider: "openai".to_string(),
+    })
+}
+
 fn build_external_prompt(
     state: &AppState,
     agent: &Agent,
@@ -683,7 +1199,85 @@ fn build_external_prompt(
             prompt.push('\n');
         }
     }
+    if agent.adapter_type == "codex" && project_id.is_some() {
+        prompt.push_str("Aura control-plane tool:\n");
+        prompt.push_str("- create_spec(title, markdownContents): Persists a real spec in Aura OS for this project.\n");
+        prompt.push_str("Use this tool when the user asks to create, save, or persist a project spec. Do not only draft the spec in prose if the user's intent is to create one.\n\n");
+    }
     prompt.push_str("User request:\n");
     prompt.push_str(user_content.trim());
     prompt
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{codex_tool_result, codex_tool_use_start, codex_turn_usage};
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    #[test]
+    fn codex_mcp_tool_events_map_to_protocol_messages() {
+        let start = json!({
+            "type": "item.started",
+            "item": {
+                "id": "item_1",
+                "type": "mcp_tool_call",
+                "tool": "create_spec",
+                "arguments": {"title": "Spec"}
+            }
+        });
+        let start_msg = codex_tool_use_start(&start).expect("tool start");
+        assert_eq!(start_msg.id, "item_1");
+        assert_eq!(start_msg.name, "create_spec");
+
+        let done = json!({
+            "type": "item.completed",
+            "item": {
+                "id": "item_1",
+                "type": "mcp_tool_call",
+                "tool": "create_spec",
+                "status": "completed",
+                "result": {
+                    "content": [
+                        {"type": "text", "text": "{\"spec_id\":\"spec-1\"}"}
+                    ]
+                }
+            }
+        });
+        let result_msg = codex_tool_result(&done).expect("tool result");
+        assert_eq!(result_msg.tool_use_id.as_deref(), Some("item_1"));
+        assert_eq!(result_msg.name, "create_spec");
+        assert_eq!(result_msg.result, "{\"spec_id\":\"spec-1\"}");
+        assert!(!result_msg.is_error);
+    }
+
+    #[test]
+    fn codex_turn_completed_maps_usage() {
+        let event = json!({
+            "type": "turn.completed",
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 4,
+                "cached_input_tokens": 3
+            }
+        });
+        let usage = codex_turn_usage(&event, "codex".to_string()).expect("usage");
+        assert_eq!(usage.input_tokens, 10);
+        assert_eq!(usage.output_tokens, 4);
+        assert_eq!(usage.cache_read_input_tokens, 3);
+        assert_eq!(usage.provider, "openai");
+    }
+
+    #[test]
+    fn codex_inline_env_uses_toml_inline_table_syntax() {
+        let mut env = HashMap::new();
+        env.insert("AURA_MCP_PROJECT_ID".to_string(), "proj-1".to_string());
+        env.insert("AURA_MCP_JWT".to_string(), "secret".to_string());
+
+        let rendered = super::codex_inline_env(&env);
+        assert!(rendered.starts_with('{'));
+        assert!(rendered.ends_with('}'));
+        assert!(rendered.contains("AURA_MCP_PROJECT_ID=\"proj-1\""));
+        assert!(rendered.contains("AURA_MCP_JWT=\"secret\""));
+    }
 }

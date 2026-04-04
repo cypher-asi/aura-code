@@ -227,7 +227,10 @@ fn project_routes() -> Router<AppState> {
 
 fn spec_routes() -> Router<AppState> {
     Router::new()
-        .route("/api/projects/:project_id/specs", get(specs::list_specs))
+        .route(
+            "/api/projects/:project_id/specs",
+            get(specs::list_specs).post(specs::create_spec),
+        )
         .route(
             "/api/projects/:project_id/specs/generate",
             post(specs::generate_specs),
