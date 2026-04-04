@@ -861,12 +861,13 @@ async fn execute_artifact(
             .and_then(|v| v.as_u64())
             .unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
 
-        let session_config = build_session_config(
+        let mut session_config = build_session_config(
             node,
             token,
             agent_service,
             Some(preamble.to_string()),
         );
+        session_config.max_turns = Some(1);
 
         let session = harness
             .open_session(session_config)
