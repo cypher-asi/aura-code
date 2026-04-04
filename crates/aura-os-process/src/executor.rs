@@ -1,11 +1,13 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 
+use aura_os_agents::AgentService;
 use aura_os_core::{
     ArtifactType, ProcessArtifact, ProcessArtifactId, ProcessEvent, ProcessEventId,
     ProcessEventStatus, ProcessNode, ProcessNodeId, ProcessNodeType, ProcessRun, ProcessRunId,
@@ -19,12 +21,22 @@ use aura_os_store::RocksStore;
 use crate::error::ProcessError;
 use crate::process_store::ProcessStore;
 
+const DEFAULT_MAX_TURNS: u32 = 25;
+const DEFAULT_HARNESS_TIMEOUT_SECS: u64 = 300; // 5 minutes
+
+const PROCESS_EXECUTION_PREAMBLE: &str = "\
+You are executing a step in an automated workflow process. \
+Focus on completing the assigned task and producing clean, actionable output. \
+Do not narrate your thinking process or describe failed attempts. \
+Return only the final, useful result.";
+
 pub struct ProcessExecutor {
     store: Arc<ProcessStore>,
     event_broadcast: broadcast::Sender<serde_json::Value>,
     harness: Arc<dyn HarnessLink>,
     data_dir: PathBuf,
     rocks_store: Arc<RocksStore>,
+    agent_service: Arc<AgentService>,
 }
 
 impl ProcessExecutor {
@@ -34,6 +46,7 @@ impl ProcessExecutor {
         harness: Arc<dyn HarnessLink>,
         data_dir: PathBuf,
         rocks_store: Arc<RocksStore>,
+        agent_service: Arc<AgentService>,
     ) -> Self {
         Self {
             store,
@@ -41,7 +54,43 @@ impl ProcessExecutor {
             harness,
             data_dir,
             rocks_store,
+            agent_service,
         }
+    }
+
+    pub fn cancel_run(
+        &self,
+        process_id: &ProcessId,
+        run_id: &ProcessRunId,
+    ) -> Result<(), ProcessError> {
+        let mut run = self
+            .store
+            .list_runs(process_id)?
+            .into_iter()
+            .find(|r| r.run_id == *run_id)
+            .ok_or_else(|| ProcessError::RunNotFound(run_id.to_string()))?;
+
+        if !matches!(
+            run.status,
+            ProcessRunStatus::Pending | ProcessRunStatus::Running
+        ) {
+            return Err(ProcessError::RunNotActive);
+        }
+
+        run.status = ProcessRunStatus::Failed;
+        run.error = Some("Cancelled by user".to_string());
+        run.completed_at = Some(Utc::now());
+        self.store.save_run(&run)?;
+
+        let _ = self.event_broadcast.send(serde_json::json!({
+            "type": "process_run_failed",
+            "process_id": process_id.to_string(),
+            "run_id": run_id.to_string(),
+            "error": "Cancelled by user",
+        }));
+
+        info!(process_id = %process_id, run_id = %run_id, "Process run cancelled");
+        Ok(())
     }
 
     pub fn trigger(
@@ -93,11 +142,19 @@ impl ProcessExecutor {
         let harness = self.harness.clone();
         let data_dir = self.data_dir.clone();
         let rocks_store = self.rocks_store.clone();
+        let agent_service = self.agent_service.clone();
         let run_clone = run.clone();
         tokio::spawn(async move {
-            if let Err(e) =
-                execute_run(&store, &broadcast, &run_clone, &*harness, &data_dir, &rocks_store)
-                    .await
+            if let Err(e) = execute_run(
+                &store,
+                &broadcast,
+                &run_clone,
+                &*harness,
+                &data_dir,
+                &rocks_store,
+                &agent_service,
+            )
+            .await
             {
                 warn!(run_id = %run_clone.run_id, error = %e, "Process run failed");
             }
@@ -166,6 +223,7 @@ fn topological_sort(
 // Run execution
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_run(
     store: &ProcessStore,
     broadcast: &broadcast::Sender<serde_json::Value>,
@@ -173,6 +231,7 @@ async fn execute_run(
     harness: &dyn HarnessLink,
     data_dir: &Path,
     rocks_store: &RocksStore,
+    agent_service: &AgentService,
 ) -> Result<(), ProcessError> {
     let mut current_run = run.clone();
     current_run.status = ProcessRunStatus::Running;
@@ -207,7 +266,6 @@ async fn execute_run(
         let mut has_valid_upstream = false;
 
         for conn in &incoming {
-            // If the source was a condition node, only follow the taken branch.
             if let Some(&cond_result) = condition_results.get(&conn.source_node_id) {
                 let is_false_edge = conn.source_handle.as_deref() == Some("false");
                 if (cond_result && is_false_edge) || (!cond_result && !is_false_edge) {
@@ -225,7 +283,7 @@ async fn execute_run(
 
         // Nodes with upstream dependencies but no valid completed parent → skip
         if !incoming.is_empty() && !has_valid_upstream {
-            record_event(store, broadcast, run, node, ProcessEventStatus::Skipped, "", "");
+            record_event(store, broadcast, run, node, ProcessEventStatus::Skipped, "", "", None, None);
             continue;
         }
 
@@ -253,7 +311,7 @@ async fn execute_run(
         }
 
         // ── broadcast running status ───────────────────────────────────
-        let _started_at = Utc::now();
+        let node_started_at = Utc::now();
         let _ = broadcast.send(serde_json::json!({
             "type": "process_node_executed",
             "process_id": run.process_id.to_string(),
@@ -267,10 +325,10 @@ async fn execute_run(
         let result = match node.node_type {
             ProcessNodeType::Ignition => execute_ignition(node),
             ProcessNodeType::Action => {
-                execute_action(node, &upstream_context, harness, jwt.as_deref()).await
+                execute_action(node, &upstream_context, harness, jwt.as_deref(), agent_service).await
             }
             ProcessNodeType::Condition => {
-                execute_condition(node, &upstream_context, harness, jwt.as_deref()).await
+                execute_condition(node, &upstream_context, harness, jwt.as_deref(), agent_service).await
             }
             ProcessNodeType::Delay => execute_delay(node).await,
             ProcessNodeType::Artifact => {
@@ -286,6 +344,8 @@ async fn execute_run(
             }
             ProcessNodeType::Merge => Ok(upstream_context.clone()),
         };
+
+        let node_completed_at = Utc::now();
 
         match result {
             Ok(output) => {
@@ -314,6 +374,8 @@ async fn execute_run(
                     ProcessEventStatus::Completed,
                     &upstream_context,
                     &event_output,
+                    Some(node_started_at),
+                    Some(node_completed_at),
                 );
                 node_outputs.insert(node_id, output);
             }
@@ -327,6 +389,8 @@ async fn execute_run(
                     ProcessEventStatus::Failed,
                     &upstream_context,
                     &err_msg,
+                    Some(node_started_at),
+                    Some(node_completed_at),
                 );
 
                 current_run.status = ProcessRunStatus::Failed;
@@ -360,6 +424,68 @@ async fn execute_run(
 }
 
 // ---------------------------------------------------------------------------
+// Agent resolution helper
+// ---------------------------------------------------------------------------
+
+/// Build a SessionConfig enriched with the agent's system prompt, name, and
+/// node-level overrides (model, max_turns). Falls back gracefully if the agent
+/// cannot be loaded.
+fn build_session_config(
+    node: &ProcessNode,
+    token: Option<&str>,
+    agent_service: &AgentService,
+    system_prompt_override: Option<String>,
+) -> SessionConfig {
+    let agent_id_str = node.agent_id.as_ref().map(|id| id.to_string());
+
+    let (system_prompt, agent_name) = match node.agent_id.as_ref() {
+        Some(aid) => match agent_service.get_agent_local(aid) {
+            Ok(agent) => {
+                let prompt = system_prompt_override.unwrap_or_else(|| {
+                    if agent.system_prompt.is_empty() {
+                        PROCESS_EXECUTION_PREAMBLE.to_string()
+                    } else {
+                        format!("{}\n\n{}", PROCESS_EXECUTION_PREAMBLE, agent.system_prompt)
+                    }
+                });
+                (Some(prompt), Some(agent.name))
+            }
+            Err(e) => {
+                warn!(agent_id = %aid, error = %e, "Could not load agent for process node; using defaults");
+                (
+                    Some(PROCESS_EXECUTION_PREAMBLE.to_string()),
+                    None,
+                )
+            }
+        },
+        None => (Some(PROCESS_EXECUTION_PREAMBLE.to_string()), None),
+    };
+
+    let model = node
+        .config
+        .get("model")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let max_turns = node
+        .config
+        .get("max_turns")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as u32)
+        .or(Some(DEFAULT_MAX_TURNS));
+
+    SessionConfig {
+        system_prompt,
+        agent_id: agent_id_str,
+        agent_name,
+        model,
+        max_turns,
+        token: token.map(|s| s.to_string()),
+        ..Default::default()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Per-node execution
 // ---------------------------------------------------------------------------
 
@@ -385,12 +511,15 @@ async fn execute_action(
     upstream_context: &str,
     harness: &dyn HarnessLink,
     token: Option<&str>,
+    agent_service: &AgentService,
 ) -> Result<String, ProcessError> {
-    let config = SessionConfig {
-        agent_id: node.agent_id.as_ref().map(|id| id.to_string()),
-        token: token.map(|s| s.to_string()),
-        ..Default::default()
-    };
+    let timeout_secs = node
+        .config
+        .get("timeout_seconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
+
+    let config = build_session_config(node, token, agent_service, None);
 
     let session = harness
         .open_session(config)
@@ -414,7 +543,13 @@ async fn execute_action(
         }))
         .map_err(|e| ProcessError::Execution(format!("Failed to send message: {e}")))?;
 
-    collect_harness_response(&session.events_tx).await
+    let result = collect_harness_response(&session.events_tx, timeout_secs).await;
+
+    if let Err(e) = harness.close_session(&session.session_id).await {
+        warn!(session_id = %session.session_id, error = %e, "Failed to close harness session");
+    }
+
+    result
 }
 
 async fn execute_condition(
@@ -422,6 +557,7 @@ async fn execute_condition(
     upstream_context: &str,
     harness: &dyn HarnessLink,
     token: Option<&str>,
+    agent_service: &AgentService,
 ) -> Result<String, ProcessError> {
     let cfg = &node.config;
     let condition_expr = cfg
@@ -435,11 +571,12 @@ async fn execute_condition(
          ## Context\n{upstream_context}"
     );
 
-    let config = SessionConfig {
-        agent_id: node.agent_id.as_ref().map(|id| id.to_string()),
-        token: token.map(|s| s.to_string()),
-        ..Default::default()
-    };
+    let condition_system = Some(
+        "You are a condition evaluator in an automated workflow. \
+         Respond with ONLY the word \"true\" or \"false\". Do not use tools."
+            .to_string(),
+    );
+    let config = build_session_config(node, token, agent_service, condition_system);
 
     let session = harness
         .open_session(config)
@@ -454,7 +591,13 @@ async fn execute_condition(
         }))
         .map_err(|e| ProcessError::Execution(format!("Failed to send condition message: {e}")))?;
 
-    collect_harness_response(&session.events_tx).await
+    let result = collect_harness_response(&session.events_tx, 60).await;
+
+    if let Err(e) = harness.close_session(&session.session_id).await {
+        warn!(session_id = %session.session_id, error = %e, "Failed to close condition session");
+    }
+
+    result
 }
 
 async fn execute_delay(node: &ProcessNode) -> Result<String, ProcessError> {
@@ -561,32 +704,65 @@ async fn execute_artifact(
 
 async fn collect_harness_response(
     events_tx: &broadcast::Sender<HarnessOutbound>,
+    timeout_secs: u64,
 ) -> Result<String, ProcessError> {
     let mut rx = events_tx.subscribe();
     let mut output = String::new();
+    let deadline = Duration::from_secs(timeout_secs);
 
-    loop {
-        match rx.recv().await {
-            Ok(HarnessOutbound::TextDelta(delta)) => {
-                output.push_str(&delta.text);
+    let collect = async {
+        loop {
+            match rx.recv().await {
+                Ok(HarnessOutbound::TextDelta(delta)) => {
+                    output.push_str(&delta.text);
+                }
+                Ok(HarnessOutbound::AssistantMessageEnd(_)) => break,
+                Ok(HarnessOutbound::Error(err)) => {
+                    return Err(ProcessError::Execution(format!(
+                        "Harness error ({}): {}",
+                        err.code, err.message
+                    )));
+                }
+                Err(broadcast::error::RecvError::Closed) => {
+                    if output.is_empty() {
+                        return Err(ProcessError::Execution(
+                            "Harness connection closed before producing any output".into(),
+                        ));
+                    }
+                    warn!(
+                        bytes = output.len(),
+                        "Harness connection closed before AssistantMessageEnd; returning partial output"
+                    );
+                    break;
+                }
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    warn!(skipped = n, "Harness event receiver lagged");
+                    continue;
+                }
+                _ => continue,
             }
-            Ok(HarnessOutbound::AssistantMessageEnd(_)) => break,
-            Ok(HarnessOutbound::Error(err)) => {
-                return Err(ProcessError::Execution(format!(
-                    "Harness error ({}): {}",
-                    err.code, err.message
-                )));
+        }
+        Ok(())
+    };
+
+    match tokio::time::timeout(deadline, collect).await {
+        Ok(Ok(())) => Ok(output),
+        Ok(Err(e)) => Err(e),
+        Err(_) => {
+            if output.is_empty() {
+                Err(ProcessError::Execution(format!(
+                    "Harness timed out after {timeout_secs}s without producing output"
+                )))
+            } else {
+                warn!(
+                    bytes = output.len(),
+                    timeout_secs,
+                    "Harness timed out; returning partial output"
+                );
+                Ok(output)
             }
-            Err(broadcast::error::RecvError::Closed) => break,
-            Err(broadcast::error::RecvError::Lagged(n)) => {
-                warn!(skipped = n, "Harness event receiver lagged");
-                continue;
-            }
-            _ => continue,
         }
     }
-
-    Ok(output)
 }
 
 fn parse_condition_result(output: &str) -> bool {
@@ -637,6 +813,8 @@ fn record_event(
     status: ProcessEventStatus,
     input: &str,
     output: &str,
+    started_at: Option<DateTime<Utc>>,
+    completed_at: Option<DateTime<Utc>>,
 ) {
     let now = Utc::now();
     let event = ProcessEvent {
@@ -647,8 +825,8 @@ fn record_event(
         status,
         input_snapshot: input.to_string(),
         output: output.to_string(),
-        started_at: now,
-        completed_at: Some(now),
+        started_at: started_at.unwrap_or(now),
+        completed_at: Some(completed_at.unwrap_or(now)),
     };
 
     if let Err(e) = store.save_event(&event) {

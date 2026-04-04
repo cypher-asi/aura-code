@@ -97,6 +97,7 @@ impl SuperAgentService {
             harness,
             data_dir,
             store.clone(),
+            agent_service.clone(),
         ));
 
         let mut tool_registry = ToolRegistry::with_tier1_tools();
