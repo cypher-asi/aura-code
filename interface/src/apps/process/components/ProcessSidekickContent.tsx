@@ -944,22 +944,6 @@ function RunPreviewBody({ run: initialRun }: { run: ProcessRun }) {
           </div>
         )}
 
-        {run.error && (
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontWeight: 600, marginBottom: 4, color: "var(--color-error)" }}>Error</div>
-            <div style={{ background: "var(--color-bg-input)", padding: 8, borderRadius: "var(--radius-sm)", whiteSpace: "pre-wrap" }}>{run.error}</div>
-          </div>
-        )}
-        {artifacts.length > 0 && (
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>Artifacts</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {artifacts.map((a) => (
-                <ArtifactCard key={a.artifact_id} artifact={a} />
-              ))}
-            </div>
-          </div>
-        )}
         {isActive && liveRunNodeId && (
           <div style={{ marginTop: 16 }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>Live Output &mdash; {liveNodeLabel}</div>
@@ -978,6 +962,22 @@ function RunPreviewBody({ run: initialRun }: { run: ProcessRun }) {
                   isLive={isActive}
                   streamingText={streamingTexts[evt.node_id]}
                 />
+              ))}
+            </div>
+          </div>
+        )}
+        {run.error && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4, color: "var(--color-error)" }}>Error</div>
+            <div style={{ background: "var(--color-bg-input)", padding: 8, borderRadius: "var(--radius-sm)", whiteSpace: "pre-wrap" }}>{run.error}</div>
+          </div>
+        )}
+        {artifacts.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>Artifacts</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {artifacts.map((a) => (
+                <ArtifactCard key={a.artifact_id} artifact={a} />
               ))}
             </div>
           </div>
