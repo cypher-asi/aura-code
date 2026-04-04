@@ -230,6 +230,7 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
                     <span className={styles.integrationMeta}>
                       {integration.provider}
                       {integration.default_model ? ` • ${integration.default_model}` : ""}
+                      {integration.has_secret ? " • key saved" : " • no key saved"}
                     </span>
                   </button>
                 ))}
@@ -237,6 +238,13 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
               {integrationChoices.length === 0 && (
                 <Text variant="muted" size="sm">
                   Add a matching org integration in Team Settings if you want API-key-backed auth for this runtime.
+                </Text>
+              )}
+              {integrationId && (
+                <Text variant="muted" size="sm">
+                  {integrationChoices.find((integration) => integration.integration_id === integrationId)?.has_secret
+                    ? "This integration has a stored key and is ready for runtime auth."
+                    : "This integration does not have a stored key yet. Add one in Team Settings before using it for runtime auth."}
                 </Text>
               )}
             </div>

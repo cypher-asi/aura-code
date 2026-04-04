@@ -137,6 +137,11 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                 {busyId === "new" ? "Saving..." : "Add Integration"}
               </Button>
             </div>
+            {!newIntegration.apiKey.trim() && (
+              <Text size="xs" variant="muted">
+                You can save this without an API key for setup, but it will not be usable for runtime auth until a key is added.
+              </Text>
+            )}
           </div>
         </div>
       </div>
@@ -210,7 +215,17 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                     />
                   </div>
                   <div className={styles.integrationActions}>
-                    <Button variant="ghost" onClick={() => onDelete(integration.integration_id)} disabled={isBusy}>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        const confirmed = window.confirm(
+                          `Delete integration "${integration.name}"? Agents using it will need a new auth source or integration before they can run again.`,
+                        );
+                        if (!confirmed) return;
+                        void onDelete(integration.integration_id);
+                      }}
+                      disabled={isBusy}
+                    >
                       Delete
                     </Button>
                     <Button
