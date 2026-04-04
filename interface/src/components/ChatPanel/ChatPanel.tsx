@@ -73,7 +73,7 @@ export function ChatPanel({
     attachmentsRef.current = attachments;
   }, [attachments]);
 
-  const { handleScroll, scrollToBottom, scrollToBottomIfPinned, scrollToTop, holdPosition, isReady } = useScrollAnchor(
+  const { handleScroll, scrollToBottom: _scrollToBottom, scrollToBottomIfPinned: _scrollToBottomIfPinned, scrollToTop, holdPosition, isReady } = useScrollAnchor(
     messageAreaRef,
     scrollSentinelRef,
     {
@@ -81,6 +81,20 @@ export function ChatPanel({
       contentReady: historyResolved,
     },
   );
+
+  const collapseSpacer = useCallback(() => {
+    if (spacerRef.current) spacerRef.current.style.minHeight = "0";
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    collapseSpacer();
+    _scrollToBottom();
+  }, [collapseSpacer, _scrollToBottom]);
+
+  const scrollToBottomIfPinned = useCallback(() => {
+    collapseSpacer();
+    _scrollToBottomIfPinned();
+  }, [collapseSpacer, _scrollToBottomIfPinned]);
 
   const isStreaming = useIsStreaming(streamKey);
   const queue = useMessageQueue(streamKey);
@@ -192,19 +206,6 @@ export function ChatPanel({
     prevStreamingRef.current = isStreaming;
   }, [isStreaming, streamKey, scrollToBottom, scrollToBottomIfPinned]);
 
-  const onScroll = useCallback(() => {
-    handleScroll();
-    const sentinel = scrollSentinelRef.current;
-    const container = messageAreaRef.current;
-    const spacer = spacerRef.current;
-    if (!sentinel || !container || !spacer) return;
-    const sRect = sentinel.getBoundingClientRect();
-    const cRect = container.getBoundingClientRect();
-    if (sRect.top <= cRect.bottom - 140) {
-      spacer.style.minHeight = "0";
-    }
-  }, [handleScroll]);
-
   const handleQueueEdit = useCallback(
     (item: QueuedMessage) => {
       useMessageQueueStore.getState().remove(streamKey, item.id);
@@ -261,7 +262,7 @@ export function ChatPanel({
         <div
           className={`${styles.messageArea}${isReady ? "" : ` ${styles.messageAreaHidden}`}`}
           ref={messageAreaRef}
-          onScroll={onScroll}
+          onScroll={handleScroll}
         >
           <div className={styles.messageContent}>
             <ChatMessageList
