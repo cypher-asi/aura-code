@@ -331,6 +331,15 @@ async fn execute_run(
 
     let jwt = rocks_store.get_jwt();
 
+    let workspace_dir = data_dir
+        .join("process-workspaces")
+        .join(run.process_id.to_string())
+        .join(run.run_id.to_string());
+    tokio::fs::create_dir_all(&workspace_dir)
+        .await
+        .map_err(|e| ProcessError::Execution(format!("Failed to create process workspace: {e}")))?;
+    let workspace_path = workspace_dir.to_string_lossy().to_string();
+
     // node_id → output text (only present for completed nodes)
     let mut node_outputs: HashMap<ProcessNodeId, String> = HashMap::new();
     // condition node_id → whether it evaluated true
@@ -418,10 +427,10 @@ async fn execute_run(
         let result: Result<NodeResult, ProcessError> = match node.node_type {
             ProcessNodeType::Ignition => execute_ignition(node).map(|s| NodeResult { output: s, token_usage: None, content_blocks: None }),
             ProcessNodeType::Action => {
-                execute_action(node, &upstream_context, harness, jwt.as_deref(), agent_service, Some(&fwd)).await
+                execute_action(node, &upstream_context, harness, jwt.as_deref(), agent_service, Some(&fwd), Some(&workspace_path)).await
             }
             ProcessNodeType::Condition => {
-                execute_condition(node, &upstream_context, harness, jwt.as_deref(), agent_service, Some(&fwd)).await
+                execute_condition(node, &upstream_context, harness, jwt.as_deref(), agent_service, Some(&fwd), Some(&workspace_path)).await
             }
             ProcessNodeType::Delay => execute_delay(node).await.map(|s| NodeResult { output: s, token_usage: None, content_blocks: None }),
             ProcessNodeType::Artifact => {
@@ -436,6 +445,7 @@ async fn execute_run(
                     jwt.as_deref(),
                     agent_service,
                     Some(&fwd),
+                    Some(&workspace_path),
                 )
                 .await
             }
@@ -559,6 +569,7 @@ fn build_session_config(
     token: Option<&str>,
     agent_service: &AgentService,
     system_prompt_override: Option<String>,
+    project_path: Option<&str>,
 ) -> SessionConfig {
     let agent_id_str = node.agent_id.as_ref().map(|id| id.to_string());
 
@@ -605,6 +616,7 @@ fn build_session_config(
         model,
         max_turns,
         token: token.map(|s| s.to_string()),
+        project_path: project_path.map(|s| s.to_string()),
         ..Default::default()
     }
 }
@@ -637,6 +649,7 @@ async fn execute_action(
     token: Option<&str>,
     agent_service: &AgentService,
     forwarder: Option<&DeltaForwarder<'_>>,
+    project_path: Option<&str>,
 ) -> Result<NodeResult, ProcessError> {
     let timeout_secs = node
         .config
@@ -644,7 +657,7 @@ async fn execute_action(
         .and_then(|v| v.as_u64())
         .unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
 
-    let config = build_session_config(node, token, agent_service, None);
+    let config = build_session_config(node, token, agent_service, None, project_path);
 
     let session = harness
         .open_session(config)
@@ -697,6 +710,7 @@ async fn execute_condition(
     token: Option<&str>,
     agent_service: &AgentService,
     forwarder: Option<&DeltaForwarder<'_>>,
+    project_path: Option<&str>,
 ) -> Result<NodeResult, ProcessError> {
     let cfg = &node.config;
     let condition_expr = cfg
@@ -715,7 +729,7 @@ async fn execute_condition(
          Respond with ONLY the word \"true\" or \"false\". Do not use tools."
             .to_string(),
     );
-    let config = build_session_config(node, token, agent_service, condition_system);
+    let config = build_session_config(node, token, agent_service, condition_system, project_path);
 
     let session = harness
         .open_session(config)
@@ -790,6 +804,7 @@ async fn execute_artifact(
     token: Option<&str>,
     agent_service: &AgentService,
     forwarder: Option<&DeltaForwarder<'_>>,
+    project_path: Option<&str>,
 ) -> Result<NodeResult, ProcessError> {
     let cfg = &node.config;
     let artifact_name = cfg
@@ -886,6 +901,7 @@ async fn execute_artifact(
         token,
         agent_service,
         Some(preamble.to_string()),
+        project_path,
     );
     let artifact_max_turns = cfg
         .get("max_turns")
