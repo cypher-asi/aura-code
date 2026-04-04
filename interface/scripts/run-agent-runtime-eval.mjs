@@ -204,8 +204,8 @@ async function runChat(agentId) {
       body: JSON.stringify({ content: prompt }),
       signal: controller.signal,
     });
-    const text = await response.text();
     if (!response.ok) {
+      const text = await response.text();
       return {
         ok: false,
         status: response.status,
@@ -215,30 +215,13 @@ async function runChat(agentId) {
       };
     }
 
-    // We consumed the body above for errors only. Re-fetch for SSE.
-    const retry = await fetch(`${apiBaseUrl}/api/agents/${agentId}/events/stream`, {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ content: prompt }),
-      signal: controller.signal,
-    });
-    if (!retry.ok) {
-      return {
-        ok: false,
-        status: retry.status,
-        error: await retry.text(),
-        text: "",
-        events: [],
-      };
-    }
-
-    const sse = await readSse(retry);
+    const sse = await readSse(response);
     const endEvent = sse.events.findLast?.((event) => event.type === "assistant_message_end")
       ?? [...sse.events].reverse().find((event) => event.type === "assistant_message_end");
 
     return {
       ok: Boolean(endEvent),
-      status: retry.status,
+      status: response.status,
       text: sse.text,
       events: sse.events,
       usage: endEvent?.usage ?? null,
