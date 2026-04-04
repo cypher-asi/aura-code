@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Text } from "@cypher-asi/zui";
 import type { ProcessNode, ProcessEvent, ProcessEventContentBlock, ProcessArtifact, ProcessRun } from "../../../types";
+import type { ToolCallEntry, TimelineItem } from "../../../types/stream";
 import { processApi } from "../../../api/process";
 import { useProcessStore } from "../stores/process-store";
 import { useProcessSidekickStore } from "../stores/process-sidekick-store";
+import { ActivityTimeline } from "../../../components/ActivityTimeline";
 import styles from "../../../components/Preview/Preview.module.css";
 
 interface NodeOutputTabProps {
@@ -27,64 +29,47 @@ const monoBox: React.CSSProperties = {
   color: "var(--color-text)",
 };
 
-function ContentBlockView({ block }: { block: ProcessEventContentBlock }) {
-  if (block.type === "text" && block.text) {
-    return <div style={monoBox}>{block.text}</div>;
-  }
-  if (block.type === "thinking" && block.thinking) {
-    return (
-      <div style={{ ...monoBox, borderLeft: "2px solid rgba(139,92,246,0.5)", color: "var(--color-text-muted)" }}>
-        {block.thinking}
-      </div>
-    );
-  }
-  if (block.type === "tool_use") {
-    return (
-      <div style={{ ...monoBox, borderLeft: "2px solid rgba(59,130,246,0.6)" }}>
-        <span style={{ color: "#3b82f6", fontWeight: 600, fontSize: 11 }}>
-          tool call
-        </span>{" "}
-        <span style={{ fontWeight: 600 }}>{block.name}</span>
-      </div>
-    );
-  }
-  if (block.type === "tool_result") {
-    const resultText = block.result && block.result.length > 2000
-      ? `${block.result.slice(0, 2000)}…`
-      : block.result;
-    return (
-      <div
-        style={{
-          ...monoBox,
-          borderLeft: block.is_error
-            ? "2px solid rgba(239,68,68,0.6)"
-            : "2px solid rgba(16,185,129,0.6)",
-          color: "var(--color-text-muted)",
-          fontSize: 11,
-          maxHeight: 200,
-        }}
-      >
-        <span style={{ fontWeight: 600, fontSize: 11, color: block.is_error ? "#ef4444" : "#10b981" }}>
-          {block.is_error ? "error" : "result"}
-        </span>{" "}
-        <span style={{ color: "var(--color-text-muted)" }}>{block.name}</span>
-        {resultText && (
-          <div style={{ marginTop: 4 }}>{resultText}</div>
-        )}
-      </div>
-    );
-  }
-  return null;
-}
+function contentBlocksToTimeline(blocks: ProcessEventContentBlock[]): {
+  timeline: TimelineItem[];
+  toolCalls: ToolCallEntry[];
+  thinkingText: string;
+} {
+  const timeline: TimelineItem[] = [];
+  const toolCalls: ToolCallEntry[] = [];
+  let thinkingText = "";
+  const toolCallMap = new Map<string, ToolCallEntry>();
 
-function ContentBlocksView({ blocks }: { blocks: ProcessEventContentBlock[] }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      {blocks.map((block, i) => (
-        <ContentBlockView key={i} block={block} />
-      ))}
-    </div>
-  );
+  for (const block of blocks) {
+    if (block.type === "text" && block.text) {
+      timeline.push({ kind: "text", content: block.text, id: `text-${timeline.length}` });
+    } else if (block.type === "thinking" && block.thinking) {
+      thinkingText += (thinkingText ? "\n" : "") + block.thinking;
+      if (!timeline.some((t) => t.kind === "thinking")) {
+        timeline.push({ kind: "thinking", id: "thinking-0" });
+      }
+    } else if (block.type === "tool_use" && block.name) {
+      const id = block.id ?? `tool-${timeline.length}`;
+      const entry: ToolCallEntry = {
+        id,
+        name: block.name,
+        input: {},
+        pending: true,
+      };
+      toolCallMap.set(id, entry);
+      toolCalls.push(entry);
+      timeline.push({ kind: "tool", toolCallId: id, id: `tool-${id}` });
+    } else if (block.type === "tool_result") {
+      const matchId = block.tool_use_id ?? "";
+      const entry = toolCallMap.get(matchId) ?? toolCalls[toolCalls.length - 1];
+      if (entry) {
+        entry.result = block.result ?? "";
+        entry.isError = block.is_error ?? false;
+        entry.pending = false;
+      }
+    }
+  }
+
+  return { timeline, toolCalls, thinkingText };
 }
 
 export function NodeOutputTab({ node }: NodeOutputTabProps) {
@@ -144,6 +129,11 @@ export function NodeOutputTab({ node }: NodeOutputTabProps) {
   const nodeEvent = events.find((e) => e.node_id === node.node_id);
   const hasBlocks = nodeEvent?.content_blocks && nodeEvent.content_blocks.length > 0;
 
+  const { timeline, toolCalls, thinkingText } = useMemo(
+    () => hasBlocks ? contentBlocksToTimeline(nodeEvent!.content_blocks!) : { timeline: [], toolCalls: [], thinkingText: "" },
+    [hasBlocks, nodeEvent?.content_blocks],
+  );
+
   return (
     <div className={styles.previewBody}>
       <div className={styles.taskMeta}>
@@ -198,7 +188,12 @@ export function NodeOutputTab({ node }: NodeOutputTabProps) {
             {hasBlocks ? (
               <div className={styles.taskField}>
                 <span className={styles.fieldLabel}>Conversation</span>
-                <ContentBlocksView blocks={nodeEvent.content_blocks!} />
+                <ActivityTimeline
+                  timeline={timeline}
+                  thinkingText={thinkingText}
+                  toolCalls={toolCalls}
+                  isStreaming={false}
+                />
               </div>
             ) : nodeEvent.output ? (
               <div className={styles.taskField}>

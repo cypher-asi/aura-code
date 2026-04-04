@@ -12,6 +12,9 @@ import { processApi } from "../../../api/process";
 import { desktopApi } from "../../../api/desktop";
 import { EmptyState } from "../../../components/EmptyState";
 import { PreviewOverlay } from "../../../components/PreviewOverlay";
+import { StreamingBubble } from "../../../components/StreamingBubble";
+import { useProcessNodeStream } from "../../../hooks/use-process-node-stream";
+import { useStreamingText, useThinkingText, useThinkingDurationMs, useActiveToolCalls, useTimeline, useIsStreaming } from "../../../hooks/stream/hooks";
 import { ProcessEditorModal } from "./ProcessEditorModal";
 import { NodeEditorModal } from "./NodeEditorModal";
 import { NodeInfoTab } from "./NodeInfoTab";
@@ -310,43 +313,52 @@ function EventTimelineItem({
         type="button"
         onClick={() => setExpanded(!expanded)}
         style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "6px 8px",
+          display: "flex", flexDirection: "column", gap: 2, padding: "6px 8px",
           background: "transparent", border: "none", cursor: "pointer",
           width: "100%", textAlign: "left", color: "var(--color-text)",
         }}
       >
-        <span style={{
-          width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-          background: colors.fg,
-          ...(isRunning ? { animation: "aura-pulse 1.5s ease-in-out infinite" } : {}),
-        }} />
-        <span style={{ flex: 1, fontWeight: 600 }}>{nodeLabel}</span>
-        {hasTokens && !isRunning && (
-          <span style={{ fontSize: 10, color: "var(--color-text-muted)", marginRight: 4 }}>
-            {formatTokens(totalTokens)} tok
-          </span>
-        )}
-        {event.model && !isRunning && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, width: "100%" }}>
           <span style={{
-            fontSize: 9, padding: "1px 5px", borderRadius: 3,
-            background: "rgba(107,114,128,0.1)", color: "var(--color-text-muted)",
-            marginRight: 4,
-          }}>
-            {event.model}
+            width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+            background: colors.fg,
+            ...(isRunning ? { animation: "aura-pulse 1.5s ease-in-out infinite" } : {}),
+          }} />
+          <span style={{ flex: 1, fontWeight: 600 }}>{nodeLabel}</span>
+          <span style={{ fontSize: 10, color: "var(--color-text-muted)" }}>
+            {expanded ? "\u25B2" : "\u25BC"}
           </span>
-        )}
-        {isRunning
-          ? <NodeElapsedBadge startedAt={event.started_at} />
-          : <span style={{
-              fontSize: 10, padding: "1px 6px", borderRadius: 0,
-              background: colors.bg, color: colors.fg, fontWeight: 600,
-            }}>
-              {event.status}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 16, flexWrap: "wrap" }}>
+          {hasTokens && (
+            <span style={{ fontSize: 10, color: "var(--color-text-muted)" }}>
+              {formatTokens(totalTokens)} tok
             </span>
-        }
-        <span style={{ fontSize: 10, color: "var(--color-text-muted)" }}>
-          {expanded ? "\u25B2" : "\u25BC"}
-        </span>
+          )}
+          {event.model && (
+            <span style={{
+              fontSize: 9, padding: "1px 5px", borderRadius: 3,
+              background: "rgba(107,114,128,0.1)", color: "var(--color-text-muted)",
+            }}>
+              {event.model}
+            </span>
+          )}
+          {isRunning
+            ? <NodeElapsedBadge startedAt={event.started_at} />
+            : <span style={{
+                fontSize: 10, padding: "1px 6px", borderRadius: 0,
+                background: colors.bg, color: colors.fg, fontWeight: 600,
+              }}>
+                {event.status}
+              </span>
+          }
+          {event.started_at && (
+            <span style={{ fontSize: 10, color: "var(--color-text-muted)" }}>
+              {new Date(event.started_at).toLocaleString()}
+              {event.completed_at && ` \u2022 ${formatDuration(event.started_at, event.completed_at)}`}
+            </span>
+          )}
+        </div>
       </button>
       {expanded && (
         <div style={{ padding: "0 8px 8px", display: "flex", flexDirection: "column", gap: 6 }}>
@@ -401,17 +413,6 @@ function EventTimelineItem({
               </div>
             </div>
           )}
-          {hasTokens && (
-            <div style={{ display: "flex", gap: 12, fontSize: 10, color: "var(--color-text-muted)" }}>
-              {event.input_tokens != null && <span>In: {formatTokens(event.input_tokens)}</span>}
-              {event.output_tokens != null && <span>Out: {formatTokens(event.output_tokens)}</span>}
-              {event.model && <span>Model: {event.model}</span>}
-            </div>
-          )}
-          <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>
-            {event.started_at ? new Date(event.started_at).toLocaleString() : ""}
-            {event.started_at && event.completed_at && ` \u2022 ${formatDuration(event.started_at, event.completed_at)}`}
-          </div>
         </div>
       )}
     </div>
@@ -676,6 +677,41 @@ function LiveRunBanner({
 }
 
 // ---------------------------------------------------------------------------
+// ProcessNodeLiveOutput — StreamingBubble wrapper for process node execution
+// ---------------------------------------------------------------------------
+
+function ProcessNodeLiveOutput({ runId, nodeId, isActive }: { runId: string; nodeId: string; isActive: boolean }) {
+  const { streamKey } = useProcessNodeStream(runId, nodeId, isActive);
+  const isStreaming = useIsStreaming(streamKey);
+  const streamingText = useStreamingText(streamKey);
+  const thinkingText = useThinkingText(streamKey);
+  const thinkingDurationMs = useThinkingDurationMs(streamKey);
+  const activeToolCalls = useActiveToolCalls(streamKey);
+  const timeline = useTimeline(streamKey);
+
+  const hasContent = isStreaming || streamingText || thinkingText || activeToolCalls.length > 0 || timeline.length > 0;
+
+  if (!hasContent) {
+    return (
+      <div style={{ fontSize: 11, color: "#3b82f6", fontStyle: "italic", padding: "4px 0" }}>
+        Waiting for output...
+      </div>
+    );
+  }
+
+  return (
+    <StreamingBubble
+      isStreaming={isStreaming}
+      text={streamingText}
+      toolCalls={activeToolCalls}
+      thinkingText={thinkingText}
+      thinkingDurationMs={thinkingDurationMs}
+      timeline={timeline}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
 // RunPreviewBody
 // ---------------------------------------------------------------------------
 
@@ -840,14 +876,6 @@ function RunPreviewBody({ run: initialRun }: { run: ProcessRun }) {
   const liveNodeLabel = liveRunNodeId
     ? nodes.find((n) => n.node_id === liveRunNodeId)?.label ?? "Node"
     : null;
-  const liveStreamRef = useRef<HTMLDivElement>(null);
-  const liveText = liveRunNodeId ? streamingTexts[liveRunNodeId] : undefined;
-
-  useEffect(() => {
-    if (liveStreamRef.current && liveText) {
-      liveStreamRef.current.scrollTop = liveStreamRef.current.scrollHeight;
-    }
-  }, [liveText]);
 
   return (
     <div style={{ fontSize: 13 }}>
@@ -932,49 +960,15 @@ function RunPreviewBody({ run: initialRun }: { run: ProcessRun }) {
             </div>
           </div>
         )}
-        {(sortedEvents.length > 0 || (isActive && liveRunNodeId)) && (
+        {isActive && liveRunNodeId && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>Live Output &mdash; {liveNodeLabel}</div>
+            <ProcessNodeLiveOutput runId={run.run_id} nodeId={liveRunNodeId} isActive />
+          </div>
+        )}
+        {sortedEvents.length > 0 && (
           <div style={{ marginTop: 16 }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>Node Events</div>
-            {isActive && liveRunNodeId && (
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 10, color: "#3b82f6", fontWeight: 600, marginBottom: 4 }}>
-                  Live Output &mdash; {liveNodeLabel}
-                </div>
-                <div
-                  ref={liveStreamRef}
-                  style={{
-                    background: "var(--color-bg-input)",
-                    padding: 8,
-                    borderRadius: "var(--radius-sm)",
-                    whiteSpace: "pre-wrap",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    maxHeight: 300,
-                    overflow: "auto",
-                    lineHeight: 1.4,
-                    borderLeft: "2px solid #3b82f6",
-                    color: "var(--color-text)",
-                  }}
-                >
-                  {liveText || (
-                    <span style={{ color: "#3b82f6", fontStyle: "italic" }}>Waiting for output...</span>
-                  )}
-                  {liveText && (
-                    <span
-                      style={{
-                        display: "inline-block",
-                        width: 6,
-                        height: 14,
-                        marginLeft: 1,
-                        background: "#3b82f6",
-                        animation: "aura-pulse 1s ease-in-out infinite",
-                        verticalAlign: "text-bottom",
-                      }}
-                    />
-                  )}
-                </div>
-              </div>
-            )}
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {sortedEvents.map((evt) => (
                 <EventTimelineItem
