@@ -725,7 +725,28 @@ function RunPreviewBody({ run: initialRun }: { run: ProcessRun }) {
     };
   }, [isActive, loadData, refreshRun]);
 
-  const [runningNodeIds, setRunningNodeIds] = useState<Set<string>>(new Set());
+  const nodeStatuses = useProcessSidekickStore((s) => s.nodeStatuses);
+  const [runningNodeIds, setRunningNodeIds] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    for (const [nodeId, status] of Object.entries(nodeStatuses)) {
+      if (status === "running") initial.add(nodeId);
+    }
+    return initial;
+  });
+
+  useEffect(() => {
+    const next = new Set<string>();
+    for (const [nodeId, status] of Object.entries(nodeStatuses)) {
+      if (status === "running") next.add(nodeId);
+    }
+    if (next.size > 0) {
+      setRunningNodeIds((prev) => {
+        const merged = new Set(prev);
+        for (const id of next) merged.add(id);
+        return merged;
+      });
+    }
+  }, [nodeStatuses]);
 
   useEffect(() => {
     const unsub1 = useEventStore.getState().subscribe(EventType.ProcessNodeExecuted, (event) => {
