@@ -14,8 +14,11 @@ import { desktopApi } from "../../../api/desktop";
 import { EmptyState } from "../../../components/EmptyState";
 import { PreviewOverlay } from "../../../components/PreviewOverlay";
 import { StreamingBubble } from "../../../components/StreamingBubble";
+import { ActivityTimeline } from "../../../components/ActivityTimeline";
 import { useProcessNodeStream } from "../../../hooks/use-process-node-stream";
 import { useStreamingText, useThinkingText, useThinkingDurationMs, useActiveToolCalls, useTimeline, useIsStreaming } from "../../../hooks/stream/hooks";
+import type { ToolCallEntry, TimelineItem } from "../../../types/stream";
+import type { ProcessEventContentBlock } from "../../../types";
 import { ProcessEditorModal } from "./ProcessEditorModal";
 import { NodeEditorModal } from "./NodeEditorModal";
 import { NodeInfoTab } from "./NodeInfoTab";
@@ -268,6 +271,42 @@ const EVENT_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   pending: { bg: "rgba(59,130,246,0.15)", fg: "#3b82f6" },
 };
 
+function blocksToTimeline(blocks: ProcessEventContentBlock[]): {
+  timeline: TimelineItem[];
+  toolCalls: ToolCallEntry[];
+  thinkingText: string;
+} {
+  const timeline: TimelineItem[] = [];
+  const toolCalls: ToolCallEntry[] = [];
+  let thinkingText = "";
+  const toolMap = new Map<string, ToolCallEntry>();
+
+  for (const block of blocks) {
+    if (block.type === "text" && block.text) {
+      timeline.push({ kind: "text", content: block.text, id: `t-${timeline.length}` });
+    } else if (block.type === "thinking" && block.thinking) {
+      thinkingText += (thinkingText ? "\n" : "") + block.thinking;
+      if (!timeline.some((t) => t.kind === "thinking")) {
+        timeline.push({ kind: "thinking", id: "thinking-0" });
+      }
+    } else if (block.type === "tool_use" && block.name) {
+      const id = block.id ?? `tool-${timeline.length}`;
+      const entry: ToolCallEntry = { id, name: block.name, input: {}, pending: true };
+      toolMap.set(id, entry);
+      toolCalls.push(entry);
+      timeline.push({ kind: "tool", toolCallId: id, id: `tool-${id}` });
+    } else if (block.type === "tool_result") {
+      const entry = toolMap.get(block.tool_use_id ?? "") ?? toolCalls[toolCalls.length - 1];
+      if (entry) {
+        entry.result = block.result ?? "";
+        entry.isError = block.is_error ?? false;
+        entry.pending = false;
+      }
+    }
+  }
+  return { timeline, toolCalls, thinkingText };
+}
+
 function EventTimelineItem({
   event,
   nodes,
@@ -299,6 +338,11 @@ function EventTimelineItem({
   const hasTokens = event.input_tokens != null || event.output_tokens != null;
   const totalTokens = (event.input_tokens ?? 0) + (event.output_tokens ?? 0);
   const displayOutput = event.output || (streamingText && !isRunning ? streamingText : "");
+  const hasBlocks = !isRunning && event.content_blocks && event.content_blocks.length > 0;
+  const blockData = useMemo(
+    () => hasBlocks ? blocksToTimeline(event.content_blocks!) : null,
+    [hasBlocks, event.content_blocks],
+  );
 
   return (
     <div
@@ -389,7 +433,18 @@ function EventTimelineItem({
               Waiting for output...
             </div>
           )}
-          {displayOutput && !isRunning && (
+          {!isRunning && blockData && (
+            <div>
+              <div style={{ fontSize: 10, color: "var(--color-text-muted)", marginBottom: 2 }}>Output</div>
+              <ActivityTimeline
+                timeline={blockData.timeline}
+                thinkingText={blockData.thinkingText}
+                toolCalls={blockData.toolCalls}
+                isStreaming={false}
+              />
+            </div>
+          )}
+          {!isRunning && !blockData && displayOutput && (
             <div>
               <div style={{ fontSize: 10, color: "var(--color-text-muted)", marginBottom: 2 }}>Output</div>
               <div style={{
