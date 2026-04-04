@@ -2,12 +2,14 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use axum::extract::{Path, State};
 use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
+use serde::Deserialize;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
@@ -50,6 +52,44 @@ struct ExternalProjectMcpConfig {
     command: String,
     args: Vec<String>,
     env: HashMap<String, String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedProjectTool {
+    name: String,
+    description: String,
+    prompt_signature: String,
+    input_schema: Value,
+    saved_event: Option<String>,
+    saved_payload_key: Option<String>,
+}
+
+fn shared_project_tools() -> &'static [SharedProjectTool] {
+    static TOOLS: OnceLock<Vec<SharedProjectTool>> = OnceLock::new();
+    TOOLS.get_or_init(|| {
+        let tools: Vec<SharedProjectTool> = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../shared/project-control-plane-tools.json"
+        )))
+        .expect("shared project control-plane tool manifest must parse");
+        for tool in &tools {
+            assert!(
+                tool.input_schema.is_object(),
+                "shared project control-plane tool `{}` must declare an object input schema",
+                tool.name
+            );
+        }
+        tools
+    })
+}
+
+fn shared_project_tool(name: &str) -> Option<&'static SharedProjectTool> {
+    shared_project_tools().iter().find(|tool| tool.name == name)
+}
+
+fn is_external_project_tool_name(name: &str) -> bool {
+    shared_project_tool(name).is_some()
 }
 
 pub(crate) async fn test_agent_runtime(
@@ -272,115 +312,14 @@ fn supports_external_project_tools(adapter_type: &str) -> bool {
     matches!(adapter_type, "codex" | "claude_code")
 }
 
-fn external_project_tool_names() -> &'static [&'static str] {
-    &[
-        "list_specs",
-        "get_spec",
-        "create_spec",
-        "update_spec",
-        "delete_spec",
-        "list_tasks",
-        "get_task",
-        "create_task",
-        "update_task",
-        "delete_task",
-        "transition_task",
-        "retry_task",
-        "run_task",
-        "get_project",
-        "update_project",
-        "get_project_stats",
-        "start_dev_loop",
-        "pause_dev_loop",
-        "stop_dev_loop",
-        "get_loop_status",
-    ]
-}
-
 fn external_project_tool_infos() -> Vec<ToolInfo> {
-    vec![
-        ToolInfo {
-            name: "list_specs".to_string(),
-            description: "List all specs in the current project".to_string(),
-        },
-        ToolInfo {
-            name: "get_spec".to_string(),
-            description: "Fetch a single persisted Aura spec by ID".to_string(),
-        },
-        ToolInfo {
-            name: "create_spec".to_string(),
-            description: "Create a new persisted Aura spec in the current project".to_string(),
-        },
-        ToolInfo {
-            name: "update_spec".to_string(),
-            description: "Update an existing persisted Aura spec".to_string(),
-        },
-        ToolInfo {
-            name: "delete_spec".to_string(),
-            description: "Delete an existing persisted Aura spec".to_string(),
-        },
-        ToolInfo {
-            name: "list_tasks".to_string(),
-            description: "List persisted Aura tasks in the current project".to_string(),
-        },
-        ToolInfo {
-            name: "get_task".to_string(),
-            description: "Fetch a single persisted Aura task by ID".to_string(),
-        },
-        ToolInfo {
-            name: "create_task".to_string(),
-            description: "Create a persisted Aura task under an existing project spec".to_string(),
-        },
-        ToolInfo {
-            name: "update_task".to_string(),
-            description: "Update an existing persisted Aura task".to_string(),
-        },
-        ToolInfo {
-            name: "delete_task".to_string(),
-            description: "Delete an existing persisted Aura task".to_string(),
-        },
-        ToolInfo {
-            name: "transition_task".to_string(),
-            description: "Transition a persisted Aura task to a new workflow status".to_string(),
-        },
-        ToolInfo {
-            name: "retry_task".to_string(),
-            description: "Retry a failed or blocked Aura task by returning it to ready".to_string(),
-        },
-        ToolInfo {
-            name: "run_task".to_string(),
-            description: "Trigger execution of a single Aura task by the project dev loop"
-                .to_string(),
-        },
-        ToolInfo {
-            name: "get_project".to_string(),
-            description: "Fetch the current Aura project details".to_string(),
-        },
-        ToolInfo {
-            name: "update_project".to_string(),
-            description: "Update the current Aura project metadata or commands".to_string(),
-        },
-        ToolInfo {
-            name: "get_project_stats".to_string(),
-            description: "Fetch aggregate stats for the current Aura project".to_string(),
-        },
-        ToolInfo {
-            name: "start_dev_loop".to_string(),
-            description: "Start the Aura project dev loop".to_string(),
-        },
-        ToolInfo {
-            name: "pause_dev_loop".to_string(),
-            description: "Pause the Aura project dev loop".to_string(),
-        },
-        ToolInfo {
-            name: "stop_dev_loop".to_string(),
-            description: "Stop the Aura project dev loop".to_string(),
-        },
-        ToolInfo {
-            name: "get_loop_status".to_string(),
-            description: "Fetch the current Aura project dev-loop status".to_string(),
-        },
-    ]
+    shared_project_tools()
+        .iter()
+        .map(|tool| ToolInfo {
+            name: tool.name.clone(),
+            description: tool.description.clone(),
+        })
+        .collect()
 }
 
 pub(crate) fn effective_model(
@@ -1277,76 +1216,22 @@ fn emit_saved_artifact_events(
     if is_error {
         return;
     }
+    let Some(tool) = shared_project_tool(tool_name) else {
+        return;
+    };
+    let Some(saved_event) = tool.saved_event.as_deref() else {
+        return;
+    };
     let Some(value) = parse_tool_result_json(result) else {
         return;
     };
-    match tool_name {
-        "create_spec" | "update_spec" => {
-            let spec = value.get("spec").cloned().unwrap_or(value);
-            emit_json_sse_event(sse_tx, "spec_saved", serde_json::json!({ "spec": spec }));
-        }
-        "delete_spec" => {
-            let deleted = value.get("deleted").cloned().unwrap_or(value);
-            emit_json_sse_event(
-                sse_tx,
-                "spec_deleted",
-                serde_json::json!({ "deleted": deleted }),
-            );
-        }
-        "create_task" | "update_task" | "transition_task" | "retry_task" => {
-            let task = value.get("task").cloned().unwrap_or(value);
-            emit_json_sse_event(sse_tx, "task_saved", serde_json::json!({ "task": task }));
-        }
-        "delete_task" => {
-            let deleted = value.get("deleted").cloned().unwrap_or(value);
-            emit_json_sse_event(
-                sse_tx,
-                "task_deleted",
-                serde_json::json!({ "deleted": deleted }),
-            );
-        }
-        "run_task" => {
-            let task_run = value.get("task_run").cloned().unwrap_or(value);
-            emit_json_sse_event(
-                sse_tx,
-                "task_run_requested",
-                serde_json::json!({ "task_run": task_run }),
-            );
-        }
-        "update_project" => {
-            let project = value.get("project").cloned().unwrap_or(value);
-            emit_json_sse_event(
-                sse_tx,
-                "project_saved",
-                serde_json::json!({ "project": project }),
-            );
-        }
-        "start_dev_loop" => {
-            let loop_status = value.get("loop_status").cloned().unwrap_or(value);
-            emit_json_sse_event(
-                sse_tx,
-                "loop_started",
-                serde_json::json!({ "loop_status": loop_status }),
-            );
-        }
-        "pause_dev_loop" => {
-            let loop_status = value.get("loop_status").cloned().unwrap_or(value);
-            emit_json_sse_event(
-                sse_tx,
-                "loop_paused",
-                serde_json::json!({ "loop_status": loop_status }),
-            );
-        }
-        "stop_dev_loop" => {
-            let loop_status = value.get("loop_status").cloned().unwrap_or(value);
-            emit_json_sse_event(
-                sse_tx,
-                "loop_stopped",
-                serde_json::json!({ "loop_status": loop_status }),
-            );
-        }
-        _ => {}
-    }
+    let payload_key = tool.saved_payload_key.as_deref().unwrap_or("result");
+    let payload = value.get(payload_key).cloned().unwrap_or(value);
+    emit_json_sse_event(
+        sse_tx,
+        saved_event,
+        serde_json::json!({ payload_key: payload }),
+    );
 }
 
 fn codex_inline_env(values: &HashMap<String, String>) -> String {
@@ -1647,7 +1532,7 @@ fn claude_tool_use_starts(event: &Value) -> Vec<aura_os_link::ToolUseStart> {
         .filter_map(|block| {
             let name = block.get("name").and_then(Value::as_str)?;
             let normalized = normalize_external_tool_name(name);
-            if !external_project_tool_names().contains(&normalized.as_str()) {
+            if !is_external_project_tool_name(&normalized) {
                 return None;
             }
             Some(aura_os_link::ToolUseStart {
@@ -1844,32 +1729,13 @@ fn build_external_prompt(
     }
     if supports_external_project_tools(&agent.adapter_type) && project_id.is_some() {
         prompt.push_str("Aura control-plane tools:\n");
-        prompt.push_str("- list_specs(): Lists persisted specs for this project.\n");
-        prompt.push_str("- get_spec(spec_id): Fetches a single persisted Aura spec by ID.\n");
-        prompt.push_str("- create_spec(title, markdown_contents): Persists a real spec in Aura OS for this project.\n");
-        prompt.push_str(
-            "- update_spec(spec_id, title?, markdown_contents?): Updates a persisted Aura spec.\n",
-        );
-        prompt.push_str("- delete_spec(spec_id): Deletes a persisted Aura spec.\n");
-        prompt.push_str("- list_tasks(spec_id?): Lists persisted tasks for this project, optionally filtered to a spec.\n");
-        prompt.push_str("- get_task(task_id): Fetches a single persisted Aura task by ID.\n");
-        prompt.push_str("- create_task(spec_id, title, description, dependency_ids?): Persists a real task under an existing spec in Aura OS.\n");
-        prompt.push_str("- update_task(task_id, title?, description?, status?): Updates a persisted Aura task.\n");
-        prompt.push_str("- delete_task(task_id, spec_id): Deletes a persisted Aura task.\n");
-        prompt.push_str(
-            "- transition_task(task_id, status): Changes the status of an existing Aura task.\n",
-        );
-        prompt.push_str("- retry_task(task_id): Returns a failed or blocked task to ready.\n");
-        prompt
-            .push_str("- run_task(task_id): Starts the Aura dev-loop engine for a single task.\n");
-        prompt.push_str("- get_project(): Fetches the current Aura project metadata.\n");
-        prompt.push_str("- update_project(name?, description?, build_command?, test_command?): Updates the current Aura project configuration.\n");
-        prompt
-            .push_str("- get_project_stats(): Fetches the current Aura project metrics summary.\n");
-        prompt.push_str("- start_dev_loop(): Starts the Aura dev loop for this project.\n");
-        prompt.push_str("- pause_dev_loop(): Pauses the Aura dev loop for this project.\n");
-        prompt.push_str("- stop_dev_loop(): Stops the Aura dev loop for this project.\n");
-        prompt.push_str("- get_loop_status(): Fetches the current Aura dev-loop status.\n");
+        for tool in shared_project_tools() {
+            prompt.push_str("- ");
+            prompt.push_str(&tool.prompt_signature);
+            prompt.push_str(": ");
+            prompt.push_str(&tool.description);
+            prompt.push_str(".\n");
+        }
         prompt.push_str("When the user asks to create, save, or persist a project spec or task, use these tools directly instead of only drafting prose or writing a file.\n");
         prompt.push_str("Spec creation and task creation are separate steps. Do not create tasks in the same turn as creating specs.\n");
         prompt.push_str("When the user asks to inspect, update, or delete existing Aura project state, use the matching control-plane tool instead of only describing the change in prose.\n");
@@ -1887,10 +1753,10 @@ fn build_external_prompt(
 mod tests {
     use super::{
         claude_tool_results, claude_tool_use_starts, codex_tool_result, codex_tool_use_start,
-        codex_turn_usage,
+        codex_turn_usage, shared_project_tools,
     };
     use serde_json::json;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     #[test]
     fn codex_mcp_tool_events_map_to_protocol_messages() {
@@ -2005,5 +1871,22 @@ mod tests {
         assert_eq!(results[0].name, "create_task");
         assert_eq!(results[0].result, "{\"task\":{\"task_id\":\"task-1\"}}");
         assert!(!results[0].is_error);
+    }
+
+    #[test]
+    fn shared_project_tool_manifest_has_unique_names_and_signatures() {
+        let tools = shared_project_tools();
+        assert!(!tools.is_empty());
+
+        let mut names = HashSet::new();
+        let mut signatures = HashSet::new();
+        for tool in tools {
+            assert!(names.insert(tool.name.clone()), "duplicate tool name");
+            assert!(
+                signatures.insert(tool.prompt_signature.clone()),
+                "duplicate prompt signature"
+            );
+            assert!(tool.input_schema.is_object(), "input schema must be an object");
+        }
     }
 }

@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -7,6 +10,10 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 const apiBaseUrl = requiredEnv("AURA_MCP_API_BASE_URL");
 const projectId = requiredEnv("AURA_MCP_PROJECT_ID");
 const jwt = requiredEnv("AURA_MCP_JWT");
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const sharedProjectTools = JSON.parse(
+  fs.readFileSync(path.resolve(currentDir, "../../shared/project-control-plane-tools.json"), "utf8"),
+);
 
 function requiredEnv(name) {
   const value = process.env[name]?.trim();
@@ -371,6 +378,57 @@ async function getLoopStatus() {
   return { loop_status: loopStatus };
 }
 
+const toolHandlers = {
+  list_specs: listSpecs,
+  get_spec: getSpec,
+  create_spec: createSpec,
+  update_spec: updateSpec,
+  delete_spec: deleteSpec,
+  list_tasks: listTasks,
+  get_task: getTask,
+  create_task: createTask,
+  update_task: updateTask,
+  delete_task: deleteTask,
+  transition_task: transitionTask,
+  retry_task: retryTask,
+  run_task: runTask,
+  get_project: getProject,
+  update_project: updateProject,
+  get_project_stats: getProjectStats,
+  start_dev_loop: startDevLoop,
+  pause_dev_loop: pauseDevLoop,
+  stop_dev_loop: stopDevLoop,
+  get_loop_status: getLoopStatus,
+};
+
+function validateSharedProjectTools() {
+  const manifestNames = new Set(sharedProjectTools.map((tool) => tool.name));
+  const handlerNames = new Set(Object.keys(toolHandlers));
+
+  for (const tool of sharedProjectTools) {
+    if (typeof tool.name !== "string" || !tool.name) {
+      throw new Error("Shared project tool manifest contains a tool without a valid name");
+    }
+    if (typeof tool.description !== "string" || !tool.description) {
+      throw new Error(`Shared project tool '${tool.name}' is missing a description`);
+    }
+    if (!tool.inputSchema || typeof tool.inputSchema !== "object") {
+      throw new Error(`Shared project tool '${tool.name}' is missing a valid inputSchema`);
+    }
+    if (!toolHandlers[tool.name]) {
+      throw new Error(`Shared project tool '${tool.name}' has no MCP handler`);
+    }
+  }
+
+  for (const name of handlerNames) {
+    if (!manifestNames.has(name)) {
+      throw new Error(`MCP handler '${name}' is not declared in the shared project tool manifest`);
+    }
+  }
+}
+
+validateSharedProjectTools();
+
 const server = new Server(
   {
     name: "aura-control-plane",
@@ -384,363 +442,22 @@ const server = new Server(
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
-    {
-      name: "list_specs",
-      description: "List persisted Aura specs for the currently attached project.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-    },
-    {
-      name: "create_spec",
-      description:
-        "Create and persist a real Aura project spec for the currently attached project.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          title: {
-            type: "string",
-            description: "Short human-readable title for the spec.",
-          },
-          markdown_contents: {
-            type: "string",
-            description:
-              "Full markdown body of the spec that should be saved into Aura OS.",
-          },
-        },
-        required: ["title", "markdown_contents"],
-      },
-    },
-    {
-      name: "get_spec",
-      description: "Fetch one persisted Aura spec by spec_id.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          spec_id: {
-            type: "string",
-            description: "UUID of the spec to fetch.",
-          },
-        },
-        required: ["spec_id"],
-      },
-    },
-    {
-      name: "update_spec",
-      description: "Update an existing Aura spec's title or markdown contents.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          spec_id: {
-            type: "string",
-            description: "UUID of the spec to update.",
-          },
-          title: {
-            type: "string",
-            description: "Optional replacement title.",
-          },
-          markdown_contents: {
-            type: "string",
-            description: "Optional replacement markdown body.",
-          },
-        },
-        required: ["spec_id"],
-      },
-    },
-    {
-      name: "delete_spec",
-      description: "Delete an existing Aura spec and its tasks.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          spec_id: {
-            type: "string",
-            description: "UUID of the spec to delete.",
-          },
-        },
-        required: ["spec_id"],
-      },
-    },
-    {
-      name: "list_tasks",
-      description: "List persisted Aura tasks for the currently attached project.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          spec_id: {
-            type: "string",
-            description: "Optional spec UUID to filter tasks to a single spec.",
-          },
-        },
-      },
-    },
-    {
-      name: "get_task",
-      description: "Fetch one persisted Aura task by task_id.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          task_id: {
-            type: "string",
-            description: "UUID of the task to fetch.",
-          },
-        },
-        required: ["task_id"],
-      },
-    },
-    {
-      name: "create_task",
-      description: "Create and persist a real Aura task under an existing project spec.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          spec_id: {
-            type: "string",
-            description: "UUID of the parent spec from list_specs.",
-          },
-          title: {
-            type: "string",
-            description: "Short human-readable title for the task.",
-          },
-          description: {
-            type: "string",
-            description: "Full task description that should be saved into Aura OS.",
-          },
-          dependency_ids: {
-            type: "array",
-            items: { type: "string" },
-            description: "Optional task UUIDs this task depends on.",
-          },
-        },
-        required: ["spec_id", "title", "description"],
-      },
-    },
-    {
-      name: "update_task",
-      description: "Update an existing Aura task's title, description, or status.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          task_id: {
-            type: "string",
-            description: "UUID of the task to update.",
-          },
-          title: {
-            type: "string",
-            description: "Optional replacement title.",
-          },
-          description: {
-            type: "string",
-            description: "Optional replacement description.",
-          },
-          status: {
-            type: "string",
-            description: "Optional replacement status.",
-          },
-        },
-        required: ["task_id"],
-      },
-    },
-    {
-      name: "delete_task",
-      description: "Delete an existing Aura task.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          task_id: {
-            type: "string",
-            description: "UUID of the task to delete.",
-          },
-          spec_id: {
-            type: "string",
-            description: "UUID of the parent spec for parity with shared task tool semantics.",
-          },
-        },
-        required: ["task_id", "spec_id"],
-      },
-    },
-    {
-      name: "transition_task",
-      description: "Transition a task to a new status (e.g. pending -> ready, ready -> done).",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          task_id: {
-            type: "string",
-            description: "UUID of the task to update.",
-          },
-          status: {
-            type: "string",
-            description: "Target task status, such as ready, in_progress, done, blocked, or failed.",
-          },
-        },
-        required: ["task_id", "status"],
-      },
-    },
-    {
-      name: "retry_task",
-      description: "Retry a failed or blocked task by returning it to ready.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          task_id: {
-            type: "string",
-            description: "UUID of the task to retry.",
-          },
-        },
-        required: ["task_id"],
-      },
-    },
-    {
-      name: "run_task",
-      description: "Trigger execution of a single task by the Aura dev-loop engine.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          task_id: {
-            type: "string",
-            description: "UUID of the task to run.",
-          },
-        },
-        required: ["task_id"],
-      },
-    },
-    {
-      name: "get_project",
-      description: "Fetch the current Aura project details.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-    },
-    {
-      name: "update_project",
-      description: "Update the current Aura project's name, description, or commands.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          name: { type: "string" },
-          description: { type: "string" },
-          build_command: { type: "string" },
-          test_command: { type: "string" },
-        },
-      },
-    },
-    {
-      name: "get_project_stats",
-      description: "Fetch aggregate metrics for the current Aura project.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-    },
-    {
-      name: "start_dev_loop",
-      description: "Start the Aura autonomous dev loop for the current project agent.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-    },
-    {
-      name: "pause_dev_loop",
-      description: "Pause the Aura autonomous dev loop for the current project agent.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-    },
-    {
-      name: "stop_dev_loop",
-      description: "Stop the Aura autonomous dev loop for the current project agent.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-    },
-    {
-      name: "get_loop_status",
-      description: "Fetch the Aura dev-loop status for the current project agent.",
-      inputSchema: {
-        type: "object",
-        additionalProperties: false,
-        properties: {},
-      },
-    },
-  ],
+  tools: sharedProjectTools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+  })),
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
-    const result = await (async () => {
-      switch (name) {
-        case "list_specs":
-          return listSpecs();
-        case "get_spec":
-          return getSpec(args ?? {});
-        case "create_spec":
-          return createSpec(args ?? {});
-        case "update_spec":
-          return updateSpec(args ?? {});
-        case "delete_spec":
-          return deleteSpec(args ?? {});
-        case "list_tasks":
-          return listTasks(args ?? {});
-        case "get_task":
-          return getTask(args ?? {});
-        case "create_task":
-          return createTask(args ?? {});
-        case "update_task":
-          return updateTask(args ?? {});
-        case "delete_task":
-          return deleteTask(args ?? {});
-        case "transition_task":
-          return transitionTask(args ?? {});
-        case "retry_task":
-          return retryTask(args ?? {});
-        case "run_task":
-          return runTask(args ?? {});
-        case "get_project":
-          return getProject();
-        case "update_project":
-          return updateProject(args ?? {});
-        case "get_project_stats":
-          return getProjectStats();
-        case "start_dev_loop":
-          return startDevLoop();
-        case "pause_dev_loop":
-          return pauseDevLoop();
-        case "stop_dev_loop":
-          return stopDevLoop();
-        case "get_loop_status":
-          return getLoopStatus();
-        default:
-          throw new Error(`Unknown tool: ${name}`);
-      }
-    })();
+    const handler = toolHandlers[name];
+    if (!handler) {
+      throw new Error(`Unknown tool: ${name}`);
+    }
+    const result = await handler(args ?? {});
     return {
       content: [{ type: "text", text: JSON.stringify(result) }],
     };
