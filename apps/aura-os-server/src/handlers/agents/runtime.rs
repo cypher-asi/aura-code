@@ -183,7 +183,7 @@ async fn send_external_project_agent_event_stream(
     }
 
     let prompt = build_external_prompt(state, agent, &body.content, Some(project_id.as_str()));
-    let mcp_config = build_external_project_mcp_config(&project_id, jwt)?;
+    let mcp_config = build_external_project_mcp_config(state, &project_id, jwt, agent).await?;
     let (events_tx, _) = broadcast::channel::<HarnessOutbound>(256);
     let (sse_tx, sse_rx) = mpsc::unbounded_channel::<Result<Event, Infallible>>();
     let message_id = Uuid::new_v4().to_string();
@@ -276,24 +276,33 @@ fn external_project_tool_infos() -> Vec<ToolInfo> {
     vec![
         ToolInfo {
             name: "list_specs".to_string(),
-            description: "List persisted Aura specs for the attached project".to_string(),
+            description: "List all specs in the current project".to_string(),
         },
         ToolInfo {
             name: "create_spec".to_string(),
-            description: "Create a persisted Aura spec for the attached project".to_string(),
+            description: "Create a new persisted Aura spec in the current project".to_string(),
         },
         ToolInfo {
             name: "list_tasks".to_string(),
-            description: "List persisted Aura tasks for the attached project".to_string(),
+            description: "List persisted Aura tasks in the current project".to_string(),
         },
         ToolInfo {
             name: "create_task".to_string(),
-            description: "Create a persisted Aura task under a spec in the attached project"
+            description: "Create a persisted Aura task under an existing project spec"
                 .to_string(),
         },
         ToolInfo {
             name: "transition_task".to_string(),
-            description: "Update the status of a persisted Aura task in the attached project"
+            description: "Transition a persisted Aura task to a new workflow status"
+                .to_string(),
+        },
+        ToolInfo {
+            name: "retry_task".to_string(),
+            description: "Retry a failed or blocked Aura task by returning it to ready".to_string(),
+        },
+        ToolInfo {
+            name: "run_task".to_string(),
+            description: "Trigger execution of a single Aura task by the project dev loop"
                 .to_string(),
         },
     ]
@@ -1051,15 +1060,19 @@ async fn run_cli_command(
     Ok(stdout)
 }
 
-fn build_external_project_mcp_config(
+async fn build_external_project_mcp_config(
+    state: &AppState,
     project_id: &str,
     jwt: &str,
+    agent: &Agent,
 ) -> ApiResult<ExternalProjectMcpConfig> {
     let script_path = find_control_plane_mcp_script().ok_or_else(|| {
         ApiError::bad_gateway(
             "External project tool bridge is unavailable because the Aura control-plane MCP script could not be found.",
         )
     })?;
+    let agent_instance_id =
+        resolve_or_create_project_agent_instance_id(state, project_id, jwt, agent).await?;
 
     let mut env = HashMap::new();
     env.insert(
@@ -1068,6 +1081,7 @@ fn build_external_project_mcp_config(
     );
     env.insert("AURA_MCP_PROJECT_ID".to_string(), project_id.to_string());
     env.insert("AURA_MCP_JWT".to_string(), jwt.to_string());
+    env.insert("AURA_MCP_AGENT_INSTANCE_ID".to_string(), agent_instance_id);
 
     Ok(ExternalProjectMcpConfig {
         server_name: "aura".to_string(),
@@ -1098,6 +1112,45 @@ fn find_control_plane_mcp_script() -> Option<PathBuf> {
         PathBuf::from("../../interface/scripts/aura-control-plane-mcp.mjs"),
     ];
     candidates.into_iter().find(|path| path.exists())
+}
+
+async fn resolve_or_create_project_agent_instance_id(
+    state: &AppState,
+    project_id: &str,
+    jwt: &str,
+    agent: &Agent,
+) -> ApiResult<String> {
+    let storage = state.require_storage_client()?;
+    let project_agents = storage
+        .list_project_agents(project_id, jwt)
+        .await
+        .map_err(|e| ApiError::internal(format!("listing project agents for MCP bridge: {e}")))?;
+
+    let agent_id = agent.agent_id.to_string();
+    if let Some(existing) = project_agents
+        .into_iter()
+        .find(|project_agent| project_agent.agent_id.as_deref() == Some(agent_id.as_str()))
+    {
+        return Ok(existing.id);
+    }
+
+    let request = aura_os_storage::CreateProjectAgentRequest {
+        agent_id,
+        name: agent.name.clone(),
+        org_id: None,
+        role: Some(agent.role.clone()),
+        personality: Some(agent.personality.clone()),
+        system_prompt: Some(agent.system_prompt.clone()),
+        skills: Some(agent.skills.clone()),
+        icon: agent.icon.clone(),
+        harness: None,
+    };
+
+    let created = storage
+        .create_project_agent(project_id, jwt, &request)
+        .await
+        .map_err(|e| ApiError::internal(format!("creating project agent for MCP bridge: {e}")))?;
+    Ok(created.id)
 }
 
 fn control_plane_api_base_url() -> String {
@@ -1157,9 +1210,17 @@ fn emit_saved_artifact_events(
             let spec = value.get("spec").cloned().unwrap_or(value);
             emit_json_sse_event(sse_tx, "spec_saved", serde_json::json!({ "spec": spec }));
         }
-        "create_task" => {
+        "create_task" | "transition_task" | "retry_task" => {
             let task = value.get("task").cloned().unwrap_or(value);
             emit_json_sse_event(sse_tx, "task_saved", serde_json::json!({ "task": task }));
+        }
+        "run_task" => {
+            let task_run = value.get("task_run").cloned().unwrap_or(value);
+            emit_json_sse_event(
+                sse_tx,
+                "task_run_requested",
+                serde_json::json!({ "task_run": task_run }),
+            );
         }
         _ => {}
     }
@@ -1469,6 +1530,8 @@ fn claude_tool_use_starts(event: &Value) -> Vec<aura_os_link::ToolUseStart> {
                 "list_tasks",
                 "create_task",
                 "transition_task",
+                "retry_task",
+                "run_task",
             ]
                 .contains(&normalized.as_str())
             {
@@ -1672,10 +1735,13 @@ fn build_external_prompt(
         prompt.push_str("- create_spec(title, markdown_contents): Persists a real spec in Aura OS for this project.\n");
         prompt.push_str("- list_tasks(spec_id?): Lists persisted tasks for this project, optionally filtered to a spec.\n");
         prompt.push_str("- create_task(spec_id, title, description, dependency_ids?): Persists a real task under an existing spec in Aura OS.\n");
-        prompt.push_str("- transition_task(task_id, new_status): Changes the status of an existing Aura task.\n");
+        prompt.push_str("- transition_task(task_id, status): Changes the status of an existing Aura task.\n");
+        prompt.push_str("- retry_task(task_id): Returns a failed or blocked task to ready.\n");
+        prompt.push_str("- run_task(task_id): Starts the Aura dev-loop engine for a single task.\n");
         prompt.push_str("When the user asks to create, save, or persist a project spec or task, use these tools directly instead of only drafting prose or writing a file.\n");
         prompt.push_str("Spec creation and task creation are separate steps. Do not create tasks in the same turn as creating specs.\n");
         prompt.push_str("When the user asks to move an existing task between states, use transition_task instead of describing the change in prose.\n");
+        prompt.push_str("When the user asks to retry a task, use retry_task. When the user asks to start or run a task through Aura OS, use run_task.\n");
         prompt.push_str("After creating or transitioning tasks, stop and summarize what changed. Do not start implementation work unless the user explicitly asks for it.\n\n");
     }
     prompt.push_str("User request:\n");

@@ -277,7 +277,13 @@ impl AgentInstanceService {
         let client = self.network_client.as_ref()?;
         let jwt = self.get_jwt().ok()?;
         let net = client.get_agent(agent_id_str, &jwt).await.ok()?;
-        Some(network_agent_to_core(&net))
+        let mut agent = network_agent_to_core(&net);
+        let runtime_config_service = AgentService {
+            store: self.store.clone(),
+            network_client: self.network_client.clone(),
+        };
+        let _ = runtime_config_service.apply_runtime_config(&mut agent);
+        Some(agent)
     }
 
     pub async fn create_instance_from_agent(

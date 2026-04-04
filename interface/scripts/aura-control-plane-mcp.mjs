@@ -96,11 +96,21 @@ function normalizeTaskId(args) {
 }
 
 function normalizeNewStatus(args) {
-  const newStatus = args?.new_status ?? args?.newStatus;
+  const newStatus = args?.status ?? args?.new_status ?? args?.newStatus;
   if (typeof newStatus !== "string" || !newStatus.trim()) {
-    throw new Error("transition_task requires a non-empty new_status string");
+    throw new Error("transition_task requires a non-empty status string");
   }
   return newStatus.trim();
+}
+
+function requiredAgentInstanceId() {
+  const agentInstanceId = process.env.AURA_MCP_AGENT_INSTANCE_ID?.trim();
+  if (!agentInstanceId) {
+    throw new Error(
+      "run_task requires AURA_MCP_AGENT_INSTANCE_ID to be set by the Aura OS server",
+    );
+  }
+  return agentInstanceId;
 }
 
 async function listSpecs() {
@@ -184,14 +194,38 @@ async function createTask(args) {
 
 async function transitionTask(args) {
   const taskId = normalizeTaskId(args);
-  const newStatus = normalizeNewStatus(args);
+  const status = normalizeNewStatus(args);
   const task = await api(`/api/projects/${projectId}/tasks/${taskId}/transition`, {
     method: "POST",
     body: JSON.stringify({
-      new_status: newStatus,
+      new_status: status,
     }),
   });
   return { task };
+}
+
+async function retryTask(args) {
+  const taskId = normalizeTaskId(args);
+  const task = await api(`/api/projects/${projectId}/tasks/${taskId}/retry`, {
+    method: "POST",
+  });
+  return { task };
+}
+
+async function runTask(args) {
+  const taskId = normalizeTaskId(args);
+  const agentInstanceId = requiredAgentInstanceId();
+  await api(
+    `/api/projects/${projectId}/tasks/${taskId}/run?agent_instance_id=${encodeURIComponent(agentInstanceId)}`,
+    { method: "POST" },
+  );
+  return {
+    task_run: {
+      task_id: taskId,
+      agent_instance_id: agentInstanceId,
+      status: "requested",
+    },
+  };
 }
 
 const server = new Server(
@@ -282,7 +316,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "transition_task",
-      description: "Transition an existing Aura task to a new workflow status.",
+      description: "Transition a task to a new status (e.g. pending -> ready, ready -> done).",
       inputSchema: {
         type: "object",
         additionalProperties: false,
@@ -291,12 +325,42 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: "string",
             description: "UUID of the task to update.",
           },
-          new_status: {
+          status: {
             type: "string",
             description: "Target task status, such as ready, in_progress, done, blocked, or failed.",
           },
         },
-        required: ["task_id", "new_status"],
+        required: ["task_id", "status"],
+      },
+    },
+    {
+      name: "retry_task",
+      description: "Retry a failed or blocked task by returning it to ready.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          task_id: {
+            type: "string",
+            description: "UUID of the task to retry.",
+          },
+        },
+        required: ["task_id"],
+      },
+    },
+    {
+      name: "run_task",
+      description: "Trigger execution of a single task by the Aura dev-loop engine.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          task_id: {
+            type: "string",
+            description: "UUID of the task to run.",
+          },
+        },
+        required: ["task_id"],
       },
     },
   ],
@@ -318,6 +382,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return createTask(args ?? {});
         case "transition_task":
           return transitionTask(args ?? {});
+        case "retry_task":
+          return retryTask(args ?? {});
+        case "run_task":
+          return runTask(args ?? {});
         default:
           throw new Error(`Unknown tool: ${name}`);
       }

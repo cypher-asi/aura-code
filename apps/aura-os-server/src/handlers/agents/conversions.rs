@@ -108,7 +108,11 @@ pub(crate) async fn resolve_network_agents(state: &AppState, jwt: &str) -> HashM
         if let Ok(net_agents) = client.list_agents(jwt).await {
             return net_agents
                 .iter()
-                .map(|na| (na.id.clone(), agent_from_network(na)))
+                .map(|na| {
+                    let mut agent = agent_from_network(na);
+                    let _ = state.agent_service.apply_runtime_config(&mut agent);
+                    (na.id.clone(), agent)
+                })
                 .collect();
         }
     }
@@ -123,7 +127,9 @@ pub(crate) async fn resolve_single_agent(
 ) -> Option<Agent> {
     let client = state.network_client.as_ref()?;
     let net_agent = client.get_agent(agent_id, jwt).await.ok()?;
-    Some(agent_from_network(&net_agent))
+    let mut agent = agent_from_network(&net_agent);
+    let _ = state.agent_service.apply_runtime_config(&mut agent);
+    Some(agent)
 }
 
 /// Reconstruct `Vec<SessionEvent>` from persisted session events.
