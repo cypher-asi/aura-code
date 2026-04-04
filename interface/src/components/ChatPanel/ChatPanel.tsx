@@ -65,6 +65,7 @@ export function ChatPanel({
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const scrollSentinelRef = useRef<HTMLDivElement>(null);
+  const spacerRef = useRef<HTMLDivElement>(null);
   const inputBarRef = useRef<ChatInputBarHandle>(null);
   const { isMobileLayout } = useAuraCapabilities();
   const attachmentsRef = useRef(attachments);
@@ -98,6 +99,10 @@ export function ChatPanel({
         `[data-index="${lastIndex}"]`,
       );
       if (el) {
+        const container = messageAreaRef.current;
+        if (container && spacerRef.current) {
+          spacerRef.current.style.minHeight = `${container.clientHeight}px`;
+        }
         scrollToTop(el);
         holdPosition();
       } else {
@@ -187,6 +192,19 @@ export function ChatPanel({
     prevStreamingRef.current = isStreaming;
   }, [isStreaming, streamKey, scrollToBottom, scrollToBottomIfPinned]);
 
+  const onScroll = useCallback(() => {
+    handleScroll();
+    const sentinel = scrollSentinelRef.current;
+    const container = messageAreaRef.current;
+    const spacer = spacerRef.current;
+    if (!sentinel || !container || !spacer) return;
+    const sRect = sentinel.getBoundingClientRect();
+    const cRect = container.getBoundingClientRect();
+    if (sRect.top <= cRect.bottom - 140) {
+      spacer.style.minHeight = "0";
+    }
+  }, [handleScroll]);
+
   const handleQueueEdit = useCallback(
     (item: QueuedMessage) => {
       useMessageQueueStore.getState().remove(streamKey, item.id);
@@ -243,7 +261,7 @@ export function ChatPanel({
         <div
           className={`${styles.messageArea}${isReady ? "" : ` ${styles.messageAreaHidden}`}`}
           ref={messageAreaRef}
-          onScroll={handleScroll}
+          onScroll={onScroll}
         >
           <div className={styles.messageContent}>
             <ChatMessageList
@@ -252,6 +270,7 @@ export function ChatPanel({
               emptyState={emptyState}
             />
             <div ref={scrollSentinelRef} className={styles.scrollSentinel} />
+            <div ref={spacerRef} style={{ flexShrink: 0 }} />
           </div>
         </div>
 
