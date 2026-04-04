@@ -859,47 +859,6 @@ function RunPreviewBody({ run: initialRun }: { run: ProcessRun }) {
         />
       )}
 
-      {isActive && liveRunNodeId && (
-        <div style={{ padding: "0 12px 8px" }}>
-          <div style={{ fontSize: 10, color: "#3b82f6", fontWeight: 600, marginBottom: 4 }}>
-            Live Output &mdash; {liveNodeLabel}
-          </div>
-          <div
-            ref={liveStreamRef}
-            style={{
-              background: "var(--color-bg-input)",
-              padding: 8,
-              borderRadius: "var(--radius-sm)",
-              whiteSpace: "pre-wrap",
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              maxHeight: 300,
-              overflow: "auto",
-              lineHeight: 1.4,
-              borderLeft: "2px solid #3b82f6",
-              color: "var(--color-text)",
-            }}
-          >
-            {liveText || (
-              <span style={{ color: "#3b82f6", fontStyle: "italic" }}>Waiting for output...</span>
-            )}
-            {liveText && (
-              <span
-                style={{
-                  display: "inline-block",
-                  width: 6,
-                  height: 14,
-                  marginLeft: 1,
-                  background: "#3b82f6",
-                  animation: "aura-pulse 1s ease-in-out infinite",
-                  verticalAlign: "text-bottom",
-                }}
-              />
-            )}
-          </div>
-        </div>
-      )}
-
       <div style={{ padding: 12 }}>
         <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px" }}>
           <span style={{ color: "var(--color-text-muted)" }}>Status</span>
@@ -973,9 +932,49 @@ function RunPreviewBody({ run: initialRun }: { run: ProcessRun }) {
             </div>
           </div>
         )}
-        {sortedEvents.length > 0 && (
+        {(sortedEvents.length > 0 || (isActive && liveRunNodeId)) && (
           <div style={{ marginTop: 16 }}>
             <div style={{ fontWeight: 600, marginBottom: 8 }}>Node Events</div>
+            {isActive && liveRunNodeId && (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 10, color: "#3b82f6", fontWeight: 600, marginBottom: 4 }}>
+                  Live Output &mdash; {liveNodeLabel}
+                </div>
+                <div
+                  ref={liveStreamRef}
+                  style={{
+                    background: "var(--color-bg-input)",
+                    padding: 8,
+                    borderRadius: "var(--radius-sm)",
+                    whiteSpace: "pre-wrap",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    maxHeight: 300,
+                    overflow: "auto",
+                    lineHeight: 1.4,
+                    borderLeft: "2px solid #3b82f6",
+                    color: "var(--color-text)",
+                  }}
+                >
+                  {liveText || (
+                    <span style={{ color: "#3b82f6", fontStyle: "italic" }}>Waiting for output...</span>
+                  )}
+                  {liveText && (
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: 6,
+                        height: 14,
+                        marginLeft: 1,
+                        background: "#3b82f6",
+                        animation: "aura-pulse 1s ease-in-out infinite",
+                        verticalAlign: "text-bottom",
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {sortedEvents.map((evt) => (
                 <EventTimelineItem
