@@ -669,7 +669,7 @@ async fn execute_action(
         warn!(session_id = %session.session_id, error = %e, "Failed to close harness session");
     }
 
-    let output = extract_final_output(&resp.final_text);
+    let output = resp.final_text.trim().to_string();
 
     let token_usage = resp.usage.map(|u| NodeTokenUsage {
         input_tokens: u.cumulative_input_tokens,
@@ -833,72 +833,77 @@ async fn execute_artifact(
 
     let is_schema_mode = artifact_mode == "json_schema";
 
-    let (preamble, user_message, fallback_content) = if is_schema_mode {
+    let (preamble, user_message) = if is_schema_mode {
         let schema = data_content.as_deref().unwrap_or("{}");
         let instructions = if node.prompt.trim().is_empty() {
             "Transform the input data to match the target JSON structure.".to_string()
         } else {
             node.prompt.clone()
         };
-        let msg = format!(
-            "## Input from previous steps\n\n{upstream_context}\n\n## Target JSON structure\n\n{schema}\n\n## Instructions\n\n{instructions}"
-        );
-        let needs_llm = !upstream_context.is_empty();
-        (ARTIFACT_SCHEMA_PREAMBLE, msg, if needs_llm { None } else { Some(schema.to_string()) })
+        let msg = if upstream_context.is_empty() {
+            format!("## Target JSON structure\n\n{schema}\n\n## Instructions\n\n{instructions}")
+        } else {
+            format!("## Input from previous steps\n\n{upstream_context}\n\n## Target JSON structure\n\n{schema}\n\n## Instructions\n\n{instructions}")
+        };
+        (ARTIFACT_SCHEMA_PREAMBLE, msg)
     } else {
-        let msg = format!(
-            "## Input from previous steps\n\n{upstream_context}\n\n## Instructions\n\n{}",
-            node.prompt
-        );
-        let needs_llm = !node.prompt.trim().is_empty() && !upstream_context.is_empty();
-        (ARTIFACT_PROMPT_PREAMBLE, msg, if needs_llm { None } else { Some(upstream_context.to_string()) })
+        let msg = if upstream_context.is_empty() {
+            format!("## Instructions\n\n{}", node.prompt)
+        } else {
+            format!(
+                "## Input from previous steps\n\n{upstream_context}\n\n## Instructions\n\n{}",
+                node.prompt
+            )
+        };
+        (ARTIFACT_PROMPT_PREAMBLE, msg)
     };
 
-    let (content, token_usage, blocks) = if fallback_content.is_none() {
-        let timeout_secs = node
-            .config
-            .get("timeout_seconds")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
+    let timeout_secs = node
+        .config
+        .get("timeout_seconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
 
-        let mut session_config = build_session_config(
-            node,
-            token,
-            agent_service,
-            Some(preamble.to_string()),
-        );
-        session_config.max_turns = Some(1);
+    let mut session_config = build_session_config(
+        node,
+        token,
+        agent_service,
+        Some(preamble.to_string()),
+    );
+    session_config.max_turns = Some(1);
 
-        let session = harness
-            .open_session(session_config)
-            .await
-            .map_err(|e| ProcessError::Execution(format!("Failed to open artifact harness session: {e}")))?;
+    let session = harness
+        .open_session(session_config)
+        .await
+        .map_err(|e| ProcessError::Execution(format!("Failed to open artifact harness session: {e}")))?;
 
-        session
-            .commands_tx
-            .send(HarnessInbound::UserMessage(UserMessage {
-                content: user_message,
-                tool_hints: None,
-                attachments: None,
-            }))
-            .map_err(|e| ProcessError::Execution(format!("Failed to send artifact message: {e}")))?;
+    session
+        .commands_tx
+        .send(HarnessInbound::UserMessage(UserMessage {
+            content: user_message,
+            tool_hints: None,
+            attachments: None,
+        }))
+        .map_err(|e| ProcessError::Execution(format!("Failed to send artifact message: {e}")))?;
 
-        let resp = collect_harness_response(&session.events_tx, timeout_secs, forwarder).await?;
+    let resp = collect_harness_response(&session.events_tx, timeout_secs, forwarder).await?;
 
-        if let Err(e) = harness.close_session(&session.session_id).await {
-            warn!(session_id = %session.session_id, error = %e, "Failed to close artifact harness session");
-        }
+    if let Err(e) = harness.close_session(&session.session_id).await {
+        warn!(session_id = %session.session_id, error = %e, "Failed to close artifact harness session");
+    }
 
-        let refined = extract_final_output(&resp.final_text);
-        let tu = resp.usage.map(|u| NodeTokenUsage {
-            input_tokens: u.cumulative_input_tokens,
-            output_tokens: u.cumulative_output_tokens,
-            model: Some(u.model),
-        });
-        (refined, tu, Some(resp.content_blocks))
-    } else {
-        (fallback_content.unwrap(), None, None)
-    };
+    let content = extract_final_output(&resp.final_text);
+    if content.is_empty() {
+        return Err(ProcessError::Execution(
+            "Artifact node produced empty output from harness".into(),
+        ));
+    }
+    let token_usage = resp.usage.map(|u| NodeTokenUsage {
+        input_tokens: u.cumulative_input_tokens,
+        output_tokens: u.cumulative_output_tokens,
+        model: Some(u.model),
+    });
+    let blocks = Some(resp.content_blocks);
 
     let file_path = dir.join(&filename);
     tokio::fs::write(&file_path, content.as_bytes())
@@ -1116,12 +1121,8 @@ async fn collect_harness_response(
 
 /// Extract the final meaningful output from a multi-turn agentic response.
 ///
-/// During agentic loops the model often emits planning / narration text between
-/// tool calls. This function tries to return only the final result:
-///   1. If the output ends with a fenced code block, return its contents.
-///   2. Otherwise if a `---` separator is present, return the text after the
-///      last separator (the model's final output section).
-///   3. Fall back to the full text when neither heuristic matches.
+/// If the output ends with a fenced code block, return its contents (strips
+/// the wrapping fences). Otherwise return the full trimmed text.
 fn extract_final_output(raw: &str) -> String {
     let trimmed = raw.trim();
 
@@ -1136,13 +1137,6 @@ fn extract_final_output(raw: &str) -> String {
             if !block.is_empty() {
                 return block.to_string();
             }
-        }
-    }
-
-    if let Some(sep_pos) = trimmed.rfind("\n---\n") {
-        let after = trimmed[sep_pos + 5..].trim();
-        if !after.is_empty() {
-            return after.to_string();
         }
     }
 

@@ -317,12 +317,8 @@ function EventTimelineItem({
   nodes: { node_id: string; label: string }[];
   isLive?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const isRunning = event.status === "running";
-
-  useEffect(() => {
-    if (isLive && isRunning) setExpanded(true);
-  }, [isLive, isRunning]);
+  const [expanded, setExpanded] = useState(!isRunning);
 
   const nodeLabel = nodes.find((n) => n.node_id === event.node_id)?.label ?? event.node_id.slice(0, 8);
   const colors = EVENT_STATUS_COLORS[event.status] ?? EVENT_STATUS_COLORS.pending;

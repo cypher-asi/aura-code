@@ -47,11 +47,11 @@ export const useProcessSidekickStore = create<ProcessSidekickState>()((set, get)
   nodeStatuses: {},
   liveRunNodeId: null,
 
-  setActiveTab: (tab) => set({ activeTab: tab, previewRun: null }),
+  setActiveTab: (tab) => set({ activeTab: tab }),
   setActiveNodeTab: (tab) => set({ activeNodeTab: tab }),
   viewRun: (run) => set({ previewRun: run, selectedNode: null }),
   closePreview: () => set({ previewRun: null }),
-  selectNode: (node) => set({ selectedNode: node, previewRun: null, activeNodeTab: "info" }),
+  selectNode: (node) => set({ selectedNode: node, activeNodeTab: "info" }),
   closeNodeInspector: () => set({ selectedNode: null, activeNodeTab: "info" }),
   requestEdit: () => {
     if (get().selectedNode) {

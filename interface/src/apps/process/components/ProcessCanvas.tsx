@@ -381,17 +381,26 @@ function ProcessCanvasInner({ processId, processNodes, processConnections, onTri
     [processNodes, selectNode, requestEdit],
   );
 
+  const lastSelectedRef = useRef<string | null>(null);
+
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: { nodes: Node[] }) => {
       if (selectedNodes.length === 1) {
-        const processNode = processNodes.find((n) => n.node_id === selectedNodes[0].id);
-        if (processNode) selectNode(processNode);
+        const id = selectedNodes[0].id;
+        if (id !== lastSelectedRef.current) {
+          lastSelectedRef.current = id;
+          const processNode = processNodes.find((n) => n.node_id === id);
+          if (processNode) selectNode(processNode);
+        }
+      } else {
+        lastSelectedRef.current = null;
       }
     },
     [processNodes, selectNode],
   );
 
   const onPaneClick = useCallback(() => {
+    lastSelectedRef.current = null;
     closeNodeInspector();
   }, [closeNodeInspector]);
 
