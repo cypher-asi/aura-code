@@ -111,7 +111,9 @@ pub(crate) async fn list_specs(
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CreateSpecBody {
     pub title: String,
+    #[serde(alias = "markdown_contents")]
     pub markdown_contents: Option<String>,
+    #[serde(alias = "order_index")]
     pub order_index: Option<i32>,
 }
 
@@ -214,7 +216,9 @@ pub(crate) async fn get_spec(
 #[serde(rename_all = "camelCase")]
 pub(crate) struct UpdateSpecBody {
     pub title: Option<String>,
+    #[serde(alias = "order_index")]
     pub order_index: Option<i32>,
+    #[serde(alias = "markdown_contents")]
     pub markdown_contents: Option<String>,
 }
 

@@ -185,7 +185,7 @@ async function updateSpec(args) {
     method: "PUT",
     body: JSON.stringify({
       ...(title ? { title } : {}),
-      ...(markdownContents ? { markdown_contents: markdownContents } : {}),
+      ...(markdownContents ? { markdownContents } : {}),
     }),
   });
   return { spec };

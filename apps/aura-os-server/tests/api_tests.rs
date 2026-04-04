@@ -153,6 +153,20 @@ async fn spec_routes_support_storage_backed_crud() {
     assert_eq!(updated["markdown_contents"], "# Updated API Spec");
 
     let req = json_request(
+        "PUT",
+        &format!("/api/projects/{project_id}/specs/{spec_id}"),
+        Some(serde_json::json!({
+            "markdown_contents": "# Updated Via Snake Case",
+            "order_index": 3
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let updated = response_json(resp).await;
+    assert_eq!(updated["markdown_contents"], "# Updated Via Snake Case");
+    assert_eq!(updated["order_index"], 3);
+
+    let req = json_request(
         "DELETE",
         &format!("/api/projects/{project_id}/specs/{spec_id}"),
         None,
