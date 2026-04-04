@@ -761,8 +761,6 @@ function RunPreviewBody({ run: initialRun }: { run: ProcessRun }) {
           </span>
           <span style={{ color: "var(--color-text-muted)" }}>Trigger</span><span>{run.trigger}</span>
           <span style={{ color: "var(--color-text-muted)" }}>Started</span><span>{new Date(run.started_at).toLocaleString()}</span>
-          <span style={{ color: "var(--color-text-muted)" }}>Completed</span>
-          <span>{run.completed_at ? new Date(run.completed_at).toLocaleString() : isActive ? <ActiveDurationCell startedAt={run.started_at} /> : "\u2014"}</span>
           <span style={{ color: "var(--color-text-muted)" }}>Duration</span>
           <span>{run.completed_at ? formatDuration(run.started_at, run.completed_at) : isActive ? <ActiveDurationCell startedAt={run.started_at} /> : "\u2014"}</span>
         </div>
