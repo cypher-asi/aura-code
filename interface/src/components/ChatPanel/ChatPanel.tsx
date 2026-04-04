@@ -73,7 +73,7 @@ export function ChatPanel({
     attachmentsRef.current = attachments;
   }, [attachments]);
 
-  const { handleScroll, scrollToBottom: _scrollToBottom, scrollToBottomIfPinned: _scrollToBottomIfPinned, scrollToTop, holdPosition, isReady } = useScrollAnchor(
+  const { handleScroll, scrollToBottom: _scrollToBottom, scrollToBottomIfPinned, scrollToTop, holdPosition, isReady } = useScrollAnchor(
     messageAreaRef,
     scrollSentinelRef,
     {
@@ -82,19 +82,10 @@ export function ChatPanel({
     },
   );
 
-  const collapseSpacer = useCallback(() => {
-    if (spacerRef.current) spacerRef.current.style.minHeight = "0";
-  }, []);
-
   const scrollToBottom = useCallback(() => {
-    collapseSpacer();
+    if (spacerRef.current) spacerRef.current.style.minHeight = "0";
     _scrollToBottom();
-  }, [collapseSpacer, _scrollToBottom]);
-
-  const scrollToBottomIfPinned = useCallback(() => {
-    collapseSpacer();
-    _scrollToBottomIfPinned();
-  }, [collapseSpacer, _scrollToBottomIfPinned]);
+  }, [_scrollToBottom]);
 
   const isStreaming = useIsStreaming(streamKey);
   const queue = useMessageQueue(streamKey);
