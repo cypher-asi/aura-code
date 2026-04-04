@@ -3,6 +3,11 @@ import { ImagePlus, X, Monitor, Cloud } from "lucide-react";
 import type { Agent, OrgIntegration } from "../../types";
 import { useAgentEditorForm } from "./useAgentEditorForm";
 import { ImageCropModal } from "../ImageCropModal";
+import {
+  filterRuntimeCompatibleIntegrations,
+  getIntegrationLabel,
+  runtimeAuthProviderForAdapter,
+} from "../../lib/integrationCatalog";
 import styles from "./AgentEditorModal.module.css";
 
 interface AgentEditorModalProps {
@@ -72,14 +77,11 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
   } = useAgentEditorForm(isOpen, agent, onClose, onSaved);
 
   const isEditing = !!agent;
-  const integrationChoices = availableIntegrations.filter((integration) => {
-    if (adapterType === "aura_harness") return integration.provider === "anthropic";
-    if (adapterType === "claude_code") return integration.provider === "anthropic";
-    if (adapterType === "codex") return integration.provider === "openai";
-    return false;
-  });
+  const integrationChoices = filterRuntimeCompatibleIntegrations(adapterType, availableIntegrations);
   const showsIntegrationPicker = authSource === "org_integration";
   const selectedIntegration = integrationChoices.find((integration) => integration.integration_id === integrationId);
+  const requiredProvider = runtimeAuthProviderForAdapter(adapterType);
+  const requiredProviderLabel = requiredProvider ? getIntegrationLabel(requiredProvider) : "matching";
   const authReadiness = describeAuthReadiness(adapterType, authSource, selectedIntegration);
   const readinessClassName =
     authReadiness.tone === "success" ? styles.readinessSuccess
@@ -301,7 +303,7 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
               </div>
               {integrationChoices.length === 0 && (
                 <Text variant="muted" size="sm">
-                  Add a matching team integration in Team Settings if you want API-key-backed auth for this runtime.
+                  Add a {requiredProviderLabel} team integration in Team Settings if you want API-key-backed auth for this runtime.
                 </Text>
               )}
               {integrationId && (
@@ -314,7 +316,7 @@ export function AgentEditorModal({ isOpen, agent, onClose, onSaved }: AgentEdito
             </div>
           )}
 
-          {!showsIntegrationPicker && adapterType !== "aura_harness" && availableIntegrations.length === 0 && (
+          {!showsIntegrationPicker && adapterType !== "aura_harness" && integrationChoices.length === 0 && (
             <div className={styles.fieldGroup}>
               <Text variant="muted" size="sm">
                 Team integrations are optional for Claude Code and Codex. You can keep using local login.

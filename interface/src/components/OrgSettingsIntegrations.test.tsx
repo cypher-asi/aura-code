@@ -1,0 +1,67 @@
+import type { ComponentPropsWithoutRef, HTMLAttributes } from "react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { OrgSettingsIntegrations } from "./OrgSettingsIntegrations";
+
+vi.mock("@cypher-asi/zui", () => ({
+  Button: ({ children, ...props }: ComponentPropsWithoutRef<"button">) => (
+    <button {...props}>{children}</button>
+  ),
+  Input: ({ ...props }: ComponentPropsWithoutRef<"input">) => (
+    <input {...props} />
+  ),
+  Text: ({ children, ...props }: HTMLAttributes<HTMLParagraphElement>) => (
+    <p {...props}>{children}</p>
+  ),
+}));
+
+describe("OrgSettingsIntegrations", () => {
+  it("switches create form labels when a tool integration is selected", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <OrgSettingsIntegrations
+        integrations={[]}
+        busyId={null}
+        onCreate={vi.fn().mockResolvedValue(null)}
+        onUpdate={vi.fn().mockResolvedValue(null)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByLabelText("New preferred model")).toBeInTheDocument();
+    expect(screen.getByLabelText("New Anthropic API Key")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "GitHub" }));
+
+    expect(screen.queryByLabelText("New preferred model")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("New GitHub Token")).toBeInTheDocument();
+  });
+
+  it("submits tool integrations without a default model", async () => {
+    const user = userEvent.setup();
+    const onCreate = vi.fn().mockResolvedValue(null);
+
+    render(
+      <OrgSettingsIntegrations
+        integrations={[]}
+        busyId={null}
+        onCreate={onCreate}
+        onUpdate={vi.fn().mockResolvedValue(null)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "GitHub" }));
+    await user.type(screen.getByLabelText("New integration name"), "GitHub Ops");
+    await user.type(screen.getByLabelText("New GitHub Token"), "ghp_test_123");
+    await user.click(screen.getByRole("button", { name: "Add Integration" }));
+
+    expect(onCreate).toHaveBeenCalledWith({
+      name: "GitHub Ops",
+      provider: "github",
+      default_model: null,
+      api_key: "ghp_test_123",
+    });
+  });
+});

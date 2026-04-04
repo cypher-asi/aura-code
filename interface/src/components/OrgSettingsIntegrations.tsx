@@ -1,6 +1,14 @@
 import { useMemo, useState } from "react";
 import { Button, Input, Text } from "@cypher-asi/zui";
 import type { OrgIntegration } from "../types";
+import {
+  getIntegrationDefinition,
+  getIntegrationLabel,
+  getSecretLabel,
+  getSecretPlaceholder,
+  integrationSections,
+  supportsDefaultModel,
+} from "../lib/integrationCatalog";
 import styles from "./OrgSettingsPanel/OrgSettingsPanel.module.css";
 
 interface Props {
@@ -24,23 +32,39 @@ interface Props {
   onDelete: (integrationId: string) => Promise<void>;
 }
 
-const PROVIDERS = [
-  { id: "anthropic", label: "Anthropic" },
-  { id: "openai", label: "OpenAI" },
-];
-
-type DraftState = Record<string, {
+type IntegrationDraft = {
   name: string;
   provider: string;
   defaultModel: string;
   apiKey: string;
-}>;
+};
+
+type DraftState = Record<string, IntegrationDraft>;
+
+const DEFAULT_PROVIDER = "anthropic";
+
+function providerSupportsModel(provider: string): boolean {
+  return supportsDefaultModel(provider);
+}
+
+function normalizeDraftPayload(draft: IntegrationDraft) {
+  return {
+    name: draft.name.trim(),
+    provider: draft.provider,
+    default_model: providerSupportsModel(draft.provider) ? (draft.defaultModel.trim() || null) : null,
+    api_key: draft.apiKey.trim() || null,
+  };
+}
+
+function providerDescription(provider: string): string {
+  return getIntegrationDefinition(provider)?.description ?? "Shared org-level integration.";
+}
 
 export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpdate, onDelete }: Props) {
   const [drafts, setDrafts] = useState<DraftState>({});
-  const [newIntegration, setNewIntegration] = useState({
+  const [newIntegration, setNewIntegration] = useState<IntegrationDraft>({
     name: "",
-    provider: "anthropic",
+    provider: DEFAULT_PROVIDER,
     defaultModel: "",
     apiKey: "",
   });
@@ -58,12 +82,17 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
     return next;
   }, [drafts, integrations]);
 
+  const newProvider = getIntegrationDefinition(newIntegration.provider);
+  const newSecretLabel = getSecretLabel(newIntegration.provider);
+  const newSecretPlaceholder = getSecretPlaceholder(newIntegration.provider);
+  const newSupportsModel = providerSupportsModel(newIntegration.provider);
+
   return (
     <div>
       <h2 className={styles.sectionTitle}>Integrations</h2>
       <p className={styles.sectionIntro}>
-        Manage shared integrations for this team. Model integrations and future tool integrations
-        both live here, so agents can reuse the right setup without duplicating credentials.
+        Manage shared integrations for this team. Model vendors and org-level tool connections
+        both live here, while only runtime-compatible model providers appear in agent auth flows today.
       </p>
 
       <div className={styles.settingsGroup}>
@@ -72,7 +101,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
           <div className={styles.integrationMeta}>
             <div className={styles.integrationHeader}>New integration</div>
             <div className={styles.integrationHint}>
-              Save a provider, optional preferred model, and API key once for the whole team.
+              Save shared credentials once for the whole team, then reuse them across agents and future tool workflows.
             </div>
           </div>
           <div className={styles.integrationFields}>
@@ -83,35 +112,40 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                 aria-label="New integration name"
                 value={newIntegration.name}
                 onChange={(e) => setNewIntegration((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="e.g. Anthropic Production"
+                placeholder={`e.g. ${newProvider?.label ?? "Provider"} Production`}
               />
             </div>
-            <div className={styles.integrationFieldGroup}>
+            <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
               <span className={styles.integrationFieldLabel}>Provider</span>
               <ProviderButtons
                 value={newIntegration.provider}
                 onChange={(provider) => setNewIntegration((prev) => ({ ...prev, provider }))}
               />
+              <Text size="xs" variant="muted">
+                {providerDescription(newIntegration.provider)}
+              </Text>
             </div>
-            <div className={styles.integrationFieldGroup}>
-              <label className={styles.integrationFieldLabel} htmlFor="new-integration-model">Preferred Model</label>
-              <Input
-                id="new-integration-model"
-                aria-label="New default model"
-                value={newIntegration.defaultModel}
-                onChange={(e) => setNewIntegration((prev) => ({ ...prev, defaultModel: e.target.value }))}
-                placeholder="Optional default model"
-              />
-            </div>
-            <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
-              <label className={styles.integrationFieldLabel} htmlFor="new-integration-key">Provider API Key</label>
+            {newSupportsModel && (
+              <div className={styles.integrationFieldGroup}>
+                <label className={styles.integrationFieldLabel} htmlFor="new-integration-model">Preferred Model</label>
+                <Input
+                  id="new-integration-model"
+                  aria-label="New preferred model"
+                  value={newIntegration.defaultModel}
+                  onChange={(e) => setNewIntegration((prev) => ({ ...prev, defaultModel: e.target.value }))}
+                  placeholder="Optional preferred model"
+                />
+              </div>
+            )}
+            <div className={`${styles.integrationFieldGroup} ${newSupportsModel ? "" : styles.integrationFieldGroupFull}`}>
+              <label className={styles.integrationFieldLabel} htmlFor="new-integration-key">{newSecretLabel}</label>
               <Input
                 id="new-integration-key"
-                aria-label="New API key"
+                aria-label={`New ${newSecretLabel}`}
                 type="password"
                 value={newIntegration.apiKey}
                 onChange={(e) => setNewIntegration((prev) => ({ ...prev, apiKey: e.target.value }))}
-                placeholder="Paste the provider API key"
+                placeholder={newSecretPlaceholder}
               />
             </div>
             <div className={styles.integrationActions}>
@@ -119,12 +153,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                 variant="primary"
                 onClick={async () => {
                   if (!newIntegration.name.trim()) return;
-                  await onCreate({
-                    name: newIntegration.name.trim(),
-                    provider: newIntegration.provider,
-                    default_model: newIntegration.defaultModel.trim() || null,
-                    api_key: newIntegration.apiKey.trim() || null,
-                  });
+                  await onCreate(normalizeDraftPayload(newIntegration));
                   setNewIntegration({
                     name: "",
                     provider: newIntegration.provider,
@@ -139,7 +168,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
             </div>
             {!newIntegration.apiKey.trim() && (
               <Text size="xs" variant="muted">
-                You can save this without a key while setting things up, but agents will not be able to use it until a key is added.
+                You can save this without a secret while setting things up, but it will stay unavailable until a key or token is added.
               </Text>
             )}
           </div>
@@ -149,19 +178,27 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
       <div className={styles.settingsGroup}>
         <div className={styles.settingsGroupLabel}>Saved Integrations</div>
         {integrations.length === 0 ? (
-          <div className={styles.emptyMessage}>No integrations yet. Add one above to share provider keys across agents.</div>
+          <div className={styles.emptyMessage}>No integrations yet. Add one above to share provider keys and org tokens across agents.</div>
         ) : (
           integrations.map((integration) => {
             const draft = mergedDrafts[integration.integration_id];
             const isBusy = busyId === integration.integration_id;
+            const definition = getIntegrationDefinition(draft.provider);
+            const supportsModel = providerSupportsModel(draft.provider);
+            const secretLabel = getSecretLabel(draft.provider);
+            const secretPlaceholder = getSecretPlaceholder(draft.provider);
+
             return (
               <div key={integration.integration_id} className={`${styles.formRow} ${styles.integrationRow}`}>
                 <div className={styles.integrationMeta}>
                   <div className={styles.integrationHeader}>{integration.name}</div>
                   <div className={styles.integrationHint}>
-                    {integration.provider}
-                    {integration.secret_last4 ? ` • API key ending in ${integration.secret_last4}` : " • no key saved"}
+                    {getIntegrationLabel(integration.provider)}
+                    {integration.secret_last4 ? ` • secret ending in ${integration.secret_last4}` : " • no secret saved"}
                   </div>
+                  <Text size="xs" variant="muted">
+                    {definition?.description ?? "Shared org-level integration."}
+                  </Text>
                 </div>
                 <div className={styles.integrationFields}>
                   <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
@@ -177,7 +214,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                       placeholder="Integration name…"
                     />
                   </div>
-                  <div className={styles.integrationFieldGroup}>
+                  <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
                     <span className={styles.integrationFieldLabel}>Provider</span>
                     <ProviderButtons
                       value={draft.provider}
@@ -187,31 +224,33 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                       }))}
                     />
                   </div>
-                  <div className={styles.integrationFieldGroup}>
-                    <label className={styles.integrationFieldLabel} htmlFor={`integration-model-${integration.integration_id}`}>Preferred Model</label>
-                    <Input
-                      id={`integration-model-${integration.integration_id}`}
-                      aria-label={`Default model for ${integration.name}`}
-                      value={draft.defaultModel}
-                      onChange={(e) => setDrafts((prev) => ({
-                        ...prev,
-                        [integration.integration_id]: { ...draft, defaultModel: e.target.value },
-                      }))}
-                      placeholder="Optional default model"
-                    />
-                  </div>
-                  <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
-                    <label className={styles.integrationFieldLabel} htmlFor={`integration-key-${integration.integration_id}`}>Provider API Key</label>
+                  {supportsModel && (
+                    <div className={styles.integrationFieldGroup}>
+                      <label className={styles.integrationFieldLabel} htmlFor={`integration-model-${integration.integration_id}`}>Preferred Model</label>
+                      <Input
+                        id={`integration-model-${integration.integration_id}`}
+                        aria-label={`Preferred model for ${integration.name}`}
+                        value={draft.defaultModel}
+                        onChange={(e) => setDrafts((prev) => ({
+                          ...prev,
+                          [integration.integration_id]: { ...draft, defaultModel: e.target.value },
+                        }))}
+                        placeholder="Optional preferred model"
+                      />
+                    </div>
+                  )}
+                  <div className={`${styles.integrationFieldGroup} ${supportsModel ? "" : styles.integrationFieldGroupFull}`}>
+                    <label className={styles.integrationFieldLabel} htmlFor={`integration-key-${integration.integration_id}`}>{secretLabel}</label>
                     <Input
                       id={`integration-key-${integration.integration_id}`}
-                      aria-label={`API key for ${integration.name}`}
+                      aria-label={`${secretLabel} for ${integration.name}`}
                       type="password"
                       value={draft.apiKey}
                       onChange={(e) => setDrafts((prev) => ({
                         ...prev,
                         [integration.integration_id]: { ...draft, apiKey: e.target.value },
                       }))}
-                      placeholder={integration.has_secret ? "Leave blank to keep the existing API key" : "Paste the provider API key"}
+                      placeholder={integration.has_secret ? "Leave blank to keep the existing secret" : secretPlaceholder}
                     />
                   </div>
                   <div className={styles.integrationActions}>
@@ -230,12 +269,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                     </Button>
                     <Button
                       variant="primary"
-                      onClick={() => onUpdate(integration.integration_id, {
-                        name: draft.name.trim(),
-                        provider: draft.provider,
-                        default_model: draft.defaultModel.trim() || null,
-                        api_key: draft.apiKey.trim() || null,
-                      })}
+                      onClick={() => onUpdate(integration.integration_id, normalizeDraftPayload(draft))}
                       disabled={isBusy}
                     >
                       {isBusy ? "Saving..." : "Save"}
@@ -249,7 +283,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
       </div>
 
       <Text size="xs" variant="muted">
-        Provider API keys are stored at the team level and only attached to agents that use Team Integration.
+        Team-level secrets stay at the org integration layer. Runtime auth only shows the model providers each runtime can actually use today.
       </Text>
     </div>
   );
@@ -260,18 +294,32 @@ function ProviderButtons({
   onChange,
 }: {
   value: string;
-  onChange: (value: string) => void;
+  onChange: (provider: string) => void;
 }) {
+  const sections = integrationSections();
+
   return (
-    <div className={styles.providerButtonRow}>
-      {PROVIDERS.map((provider) => (
-        <Button
-          key={provider.id}
-          variant={value === provider.id ? "primary" : "ghost"}
-          onClick={() => onChange(provider.id)}
-        >
-          {provider.label}
-        </Button>
+    <div className={styles.integrationProviderSections}>
+      {sections.map((section) => (
+        <div key={section.id} className={styles.integrationProviderSection}>
+          <div className={styles.integrationProviderSectionHeader}>
+            <span>{section.title}</span>
+            <Text size="xs" variant="muted">{section.description}</Text>
+          </div>
+          <div className={styles.machineTypeToggle}>
+            {section.providers.map((provider) => (
+              <button
+                key={provider.id}
+                type="button"
+                className={`${styles.machineTypeOption} ${value === provider.id ? styles.machineTypeActive : ""}`}
+                onClick={() => onChange(provider.id)}
+                title={provider.description}
+              >
+                {provider.label}
+              </button>
+            ))}
+          </div>
+        </div>
       ))}
     </div>
   );

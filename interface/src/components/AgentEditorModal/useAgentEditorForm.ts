@@ -4,6 +4,7 @@ import { api } from "../../api/client";
 import type { Agent, OrgIntegration } from "../../types";
 import { useModalInitialFocus } from "../../hooks/use-modal-initial-focus";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
+import { runtimeAuthProviderForAdapter } from "../../lib/integrationCatalog";
 import { useOrgStore } from "../../stores/org-store";
 
 interface AgentEditorFormResult {
@@ -52,13 +53,6 @@ function defaultAuthSource(adapterType: string, integrationId?: string | null): 
   if (integrationId?.trim()) return "org_integration";
   if (adapterType === "aura_harness") return "aura_managed";
   return "local_cli_auth";
-}
-
-function requiredProviderForAdapter(adapterType: string): string | null {
-  if (adapterType === "aura_harness") return "anthropic";
-  if (adapterType === "claude_code") return "anthropic";
-  if (adapterType === "codex") return "openai";
-  return null;
 }
 
 export function useAgentEditorForm(
@@ -141,7 +135,7 @@ export function useAgentEditorForm(
       return;
     }
 
-    const requiredProvider = requiredProviderForAdapter(adapterType);
+    const requiredProvider = runtimeAuthProviderForAdapter(adapterType);
     const selected = integrations.find((integration) => integration.integration_id === integrationId);
     if (!selected || selected.provider !== requiredProvider) {
       const remembered = rememberedIntegrationIdsRef.current[adapterType];

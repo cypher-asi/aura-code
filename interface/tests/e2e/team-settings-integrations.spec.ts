@@ -17,6 +17,17 @@ test("team settings integrations show clear sections and labeled fields", async 
         created_at: "2026-03-17T01:00:00.000Z",
         updated_at: "2026-03-17T01:00:00.000Z",
       },
+      {
+        integration_id: "int-2",
+        org_id: "org-1",
+        name: "GitHub Ops",
+        provider: "github",
+        default_model: null,
+        has_secret: true,
+        secret_last4: "hub7",
+        created_at: "2026-03-17T01:00:00.000Z",
+        updated_at: "2026-03-17T01:00:00.000Z",
+      },
     ],
   });
 
@@ -30,20 +41,31 @@ test("team settings integrations show clear sections and labeled fields", async 
   await dialog.getByRole("button", { name: "Integrations" }).click();
 
   await expect(dialog.getByRole("heading", { name: "Integrations" })).toBeVisible();
-  await expect(dialog.getByText("Create New Integration")).toBeVisible();
+  await expect(dialog.getByText("Create Integration")).toBeVisible();
   await expect(dialog.getByText("Saved Integrations")).toBeVisible();
+  await expect(dialog.getByText("Model Integrations").first()).toBeVisible();
+  await expect(dialog.getByText("Tool Integrations").first()).toBeVisible();
 
   await expect(dialog.getByText("Integration Name").first()).toBeVisible();
   await expect(dialog.getByText("Provider").first()).toBeVisible();
-  await expect(dialog.getByText("Default Model").first()).toBeVisible();
-  await expect(dialog.getByText("API Key").first()).toBeVisible();
+  await expect(dialog.getByText("Preferred Model").first()).toBeVisible();
+  await expect(dialog.getByText("Anthropic API Key").first()).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "GitHub" }).first()).toBeVisible();
 
   await expect(dialog.getByLabel("New integration name")).toBeVisible();
-  await expect(dialog.getByLabel("New default model")).toBeVisible();
-  await expect(dialog.getByLabel("New API key")).toBeVisible();
+  await expect(dialog.getByLabel("New preferred model")).toBeVisible();
+  await expect(dialog.getByLabel("New Anthropic API Key")).toBeVisible();
+  await dialog.getByRole("button", { name: "GitHub" }).first().click();
+  await expect(dialog.getByLabel("New preferred model")).toHaveCount(0);
+  await expect(dialog.getByLabel("New GitHub Token")).toBeVisible();
 
   await expect(dialog.getByText("Anthropic Prod")).toBeVisible();
   await expect(dialog.getByLabel("Integration name for Anthropic Prod")).toBeVisible();
-  await expect(dialog.getByLabel("Default model for Anthropic Prod")).toBeVisible();
-  await expect(dialog.getByLabel("API key for Anthropic Prod")).toBeVisible();
+  await expect(dialog.getByLabel("Preferred model for Anthropic Prod")).toBeVisible();
+  await expect(dialog.getByLabel("Anthropic API Key for Anthropic Prod")).toBeVisible();
+
+  await expect(dialog.getByText("GitHub Ops")).toBeVisible();
+  await expect(dialog.getByLabel("Integration name for GitHub Ops")).toBeVisible();
+  await expect(dialog.getByLabel("GitHub Token for GitHub Ops")).toBeVisible();
+  await expect(dialog.getByLabel("Preferred model for GitHub Ops")).toHaveCount(0);
 });

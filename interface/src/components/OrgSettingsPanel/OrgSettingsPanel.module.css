@@ -219,6 +219,24 @@
   color: var(--color-text-primary);
 }
 
+.integrationProviderSections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.integrationProviderSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.integrationProviderSectionHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .integrationHint {
   font-size: var(--text-xs);
   line-height: 1.5;
@@ -250,6 +268,39 @@
   color: var(--color-text-muted);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.machineTypeToggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.machineTypeOption {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.machineTypeOption:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-text-muted);
+}
+
+.machineTypeActive {
+  background: color-mix(in srgb, var(--color-brand-primary) 16%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-brand-primary) 48%, var(--color-border));
+  color: var(--color-text-primary);
 }
 
 .integrationActions {

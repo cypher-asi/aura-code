@@ -133,6 +133,62 @@ describe("useAgentEditorForm", () => {
     });
   });
 
+  it("ignores unrelated tool integrations when choosing runtime auth", async () => {
+    mockOrgState.integrations = [
+      {
+        integration_id: "int-github",
+        provider: "github",
+        default_model: null,
+        name: "GitHub Org",
+      },
+      {
+        integration_id: "int-openai",
+        provider: "openai",
+        default_model: "gpt-5.1",
+        name: "OpenAI Team",
+      },
+    ];
+
+    const { result } = renderHook(() =>
+      useAgentEditorForm(true, undefined, vi.fn(), vi.fn()),
+    );
+
+    act(() => {
+      result.current.setAdapterType("codex");
+      result.current.setAuthSource("org_integration");
+    });
+
+    await waitFor(() => {
+      expect(result.current.authSource).toBe("org_integration");
+      expect(result.current.integrationId).toBe("int-openai");
+    });
+  });
+
+  it("leaves runtime auth unselected when only non-runtime integrations exist", async () => {
+    mockOrgState.integrations = [
+      {
+        integration_id: "int-linear",
+        provider: "linear",
+        default_model: null,
+        name: "Linear Team",
+      },
+    ];
+
+    const { result } = renderHook(() =>
+      useAgentEditorForm(true, undefined, vi.fn(), vi.fn()),
+    );
+
+    act(() => {
+      result.current.setAdapterType("codex");
+      result.current.setAuthSource("org_integration");
+    });
+
+    await waitFor(() => {
+      expect(result.current.authSource).toBe("org_integration");
+      expect(result.current.integrationId).toBe("");
+    });
+  });
+
   it("allows Aura to switch to an org-backed Anthropic integration", async () => {
     mockOrgState.integrations = [
       {
