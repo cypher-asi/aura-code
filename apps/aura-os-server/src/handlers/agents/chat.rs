@@ -18,11 +18,12 @@ use aura_os_core::{
     SessionEvent,
 };
 use aura_os_link::{
-    ConversationMessage, HarnessInbound, HarnessOutbound, SessionConfig, UserMessage,
+    ConversationMessage, HarnessInbound, HarnessOutbound, MessageAttachment, SessionConfig,
+    UserMessage,
 };
 use aura_os_storage::StorageClient;
 
-use crate::dto::SendChatRequest;
+use crate::dto::{ChatAttachmentDto, SendChatRequest};
 use crate::error::{map_storage_error, ApiError, ApiResult};
 use crate::handlers::{projects, projects_helpers::resolve_agent_instance_workspace_path};
 use crate::state::{AppState, AuthJwt, ChatSession};
@@ -88,10 +89,43 @@ async fn resolve_chat_session(
     }
 }
 
-fn persist_user_message(ctx: &ChatPersistCtx, content: &str) {
+fn persist_user_message(
+    ctx: &ChatPersistCtx,
+    content: &str,
+    attachments: &Option<Vec<ChatAttachmentDto>>,
+) {
     let ctx = ctx.clone();
     let content = content.to_string();
+
+    let content_blocks: Option<serde_json::Value> = attachments.as_ref().and_then(|atts| {
+        let image_blocks: Vec<serde_json::Value> = atts
+            .iter()
+            .filter(|a| a.type_ == "image")
+            .map(|a| {
+                serde_json::json!({
+                    "type": "image",
+                    "media_type": a.media_type,
+                    "data": a.data,
+                })
+            })
+            .collect();
+        if image_blocks.is_empty() {
+            None
+        } else {
+            let mut blocks = Vec::new();
+            if !content.is_empty() {
+                blocks.push(serde_json::json!({ "type": "text", "text": content }));
+            }
+            blocks.extend(image_blocks);
+            Some(serde_json::Value::Array(blocks))
+        }
+    });
+
     tokio::spawn(async move {
+        let mut payload = serde_json::json!({ "text": content });
+        if let Some(blocks) = content_blocks {
+            payload["content_blocks"] = blocks;
+        }
         let req = aura_os_storage::CreateSessionEventRequest {
             session_id: Some(ctx.session_id.clone()),
             user_id: None,
@@ -100,7 +134,7 @@ fn persist_user_message(ctx: &ChatPersistCtx, content: &str) {
             project_id: Some(ctx.project_id.clone()),
             org_id: None,
             event_type: "user_message".to_string(),
-            content: Some(serde_json::json!({ "text": content })),
+            content: Some(payload),
         };
         if let Err(e) = ctx
             .storage
@@ -424,7 +458,33 @@ fn session_events_to_super_agent_history(events: &[SessionEvent]) -> Vec<serde_j
                     }));
                     pending_tool_results = Vec::new();
                 }
-                if !evt.content.is_empty() {
+                if let Some(ref blocks) = evt.content_blocks {
+                    let api_blocks: Vec<serde_json::Value> = blocks
+                        .iter()
+                        .filter_map(|b| match b {
+                            ChatContentBlock::Text { text } => {
+                                Some(serde_json::json!({ "type": "text", "text": text }))
+                            }
+                            ChatContentBlock::Image { media_type, data } => {
+                                Some(serde_json::json!({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": data,
+                                    }
+                                }))
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    if !api_blocks.is_empty() {
+                        messages.push(serde_json::json!({
+                            "role": "user",
+                            "content": api_blocks,
+                        }));
+                    }
+                } else if !evt.content.is_empty() {
                     messages.push(serde_json::json!({
                         "role": "user",
                         "content": evt.content,
@@ -889,6 +949,25 @@ async fn get_or_create_chat_session(
     Ok((true, rx, commands_tx))
 }
 
+fn dto_attachments_to_protocol(atts: &Option<Vec<ChatAttachmentDto>>) -> Option<Vec<MessageAttachment>> {
+    atts.as_ref().and_then(|v| {
+        if v.is_empty() {
+            None
+        } else {
+            Some(
+                v.iter()
+                    .map(|a| MessageAttachment {
+                        type_: a.type_.clone(),
+                        media_type: a.media_type.clone(),
+                        data: a.data.clone(),
+                        name: a.name.clone(),
+                    })
+                    .collect(),
+            )
+        }
+    })
+}
+
 async fn open_harness_chat_stream(
     state: &AppState,
     session_key: &str,
@@ -898,6 +977,7 @@ async fn open_harness_chat_stream(
     requested_model: Option<String>,
     persist_ctx: Option<ChatPersistCtx>,
     _commands: Option<Vec<String>>,
+    attachments: Option<Vec<ChatAttachmentDto>>,
 ) -> ApiResult<SseResponse> {
     let persist_unavailable = persist_ctx.is_none();
 
@@ -919,13 +999,14 @@ async fn open_harness_chat_stream(
     };
 
     if let Some(ref ctx) = persist_ctx {
-        persist_user_message(ctx, &user_content);
+        persist_user_message(ctx, &user_content, &attachments);
     }
 
     commands_tx
         .send(HarnessInbound::UserMessage(UserMessage {
             content: user_content,
             tool_hints: None,
+            attachments: dto_attachments_to_protocol(&attachments),
         }))
         .map_err(|e| ApiError::internal(format!("sending user message: {e}")))?;
 
@@ -1017,6 +1098,7 @@ async fn handle_super_agent_stream(
 
     let user_content = body.content;
     let requested_model = body.model;
+    let attachments = body.attachments;
 
     let domains = aura_os_super_agent::tier::classify_intent(&user_content);
     let domain_tools = sas.tool_registry.tools_for_domains(&domains);
@@ -1055,7 +1137,7 @@ async fn handle_super_agent_stream(
     let persist_rx = persist_ctx.as_ref().map(|_| tx.subscribe());
 
     if let Some(ref pctx) = persist_ctx {
-        persist_user_message(pctx, &user_content);
+        persist_user_message(pctx, &user_content, &attachments);
     }
 
     let stream_handle = aura_os_super_agent::stream::SuperAgentStream::new(
@@ -1071,10 +1153,27 @@ async fn handle_super_agent_stream(
     );
 
     let content_for_run = user_content.clone();
+    let image_blocks_for_run: Option<Vec<serde_json::Value>> = attachments.as_ref().and_then(|atts| {
+        let blocks: Vec<serde_json::Value> = atts
+            .iter()
+            .filter(|a| a.type_ == "image")
+            .map(|a| {
+                serde_json::json!({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": a.media_type,
+                        "data": a.data,
+                    }
+                })
+            })
+            .collect();
+        if blocks.is_empty() { None } else { Some(blocks) }
+    });
     let messages_cache = state.super_agent_messages.clone();
     let cache_key = session_key.clone();
     tokio::spawn(async move {
-        let messages = stream_handle.run(content_for_run).await;
+        let messages = stream_handle.run(content_for_run, image_blocks_for_run).await;
         messages_cache.lock().await.insert(cache_key, messages);
     });
 
@@ -1154,6 +1253,7 @@ pub(crate) async fn send_agent_event_stream(
         body.model,
         persist_ctx,
         body.commands,
+        body.attachments,
     )
     .await
 }
@@ -1246,6 +1346,7 @@ pub(crate) async fn send_event_stream(
         body.model,
         persist_ctx,
         body.commands,
+        body.attachments,
     )
     .await
 }

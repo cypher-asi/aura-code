@@ -89,6 +89,24 @@ export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function 
   const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); }, []);
   const handleDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); addFiles(e.dataTransfer.files); }, [addFiles]);
 
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith("image/")) {
+        const file = items[i].getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      const dt = new DataTransfer();
+      imageFiles.forEach((f) => dt.items.add(f));
+      addFiles(dt.files);
+    }
+  }, [addFiles]);
+
   const autoResizeTextarea = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -186,7 +204,7 @@ export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function 
         <CommandChips commands={selectedCommands} onRemove={handleCommandRemove} />
         <div className={styles.inputRow}>
           <button type="button" className={styles.attachButton} onClick={() => fileInputRef.current?.click()} disabled={!canAddMore} aria-label="Attach file"><Plus size={16} strokeWidth={1} /></button>
-          <textarea ref={textareaRef} className={styles.textarea} value={input} onChange={(e) => handleInputChange(e.target.value)} onKeyDown={handleKeyDown} placeholder="Add a follow-up" rows={1} />
+          <textarea ref={textareaRef} className={styles.textarea} value={input} onChange={(e) => handleInputChange(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder="Add a follow-up" rows={1} />
           {isStreaming ? (
             <button type="button" className={`${styles.sendButton} ${styles.stopButton}`} onClick={onStop} aria-label="Stop"><span className={styles.stopIcon} /></button>
           ) : (
