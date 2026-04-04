@@ -453,7 +453,13 @@ export type AuraEvent = AuraEventBase & (
       process_id: string;
       run_id: string;
       node_id: string;
-      text: string;
+      delta_type?: "text" | "thinking" | "tool_use_start" | "tool_result";
+      text?: string;
+      thinking?: string;
+      id?: string;
+      name?: string;
+      result?: string;
+      is_error?: boolean;
     } }
 
   // ── Other ──────────────────────────────────────────────────

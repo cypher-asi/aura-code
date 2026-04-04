@@ -45,13 +45,50 @@ struct DeltaForwarder<'a> {
 }
 
 impl DeltaForwarder<'_> {
-    fn forward(&self, text: &str) {
+    fn forward_text(&self, text: &str) {
         let _ = self.broadcast.send(serde_json::json!({
             "type": "process_node_output_delta",
             "process_id": self.process_id.to_string(),
             "run_id": self.run_id.to_string(),
             "node_id": self.node_id.to_string(),
+            "delta_type": "text",
             "text": text,
+        }));
+    }
+
+    fn forward_thinking(&self, thinking: &str) {
+        let _ = self.broadcast.send(serde_json::json!({
+            "type": "process_node_output_delta",
+            "process_id": self.process_id.to_string(),
+            "run_id": self.run_id.to_string(),
+            "node_id": self.node_id.to_string(),
+            "delta_type": "thinking",
+            "thinking": thinking,
+        }));
+    }
+
+    fn forward_tool_start(&self, id: &str, name: &str) {
+        let _ = self.broadcast.send(serde_json::json!({
+            "type": "process_node_output_delta",
+            "process_id": self.process_id.to_string(),
+            "run_id": self.run_id.to_string(),
+            "node_id": self.node_id.to_string(),
+            "delta_type": "tool_use_start",
+            "id": id,
+            "name": name,
+        }));
+    }
+
+    fn forward_tool_result(&self, name: &str, result: &str, is_error: bool) {
+        let _ = self.broadcast.send(serde_json::json!({
+            "type": "process_node_output_delta",
+            "process_id": self.process_id.to_string(),
+            "run_id": self.run_id.to_string(),
+            "node_id": self.node_id.to_string(),
+            "delta_type": "tool_result",
+            "name": name,
+            "result": result,
+            "is_error": is_error,
         }));
     }
 }
@@ -909,7 +946,7 @@ async fn collect_harness_response(
             match rx.recv().await {
                 Ok(HarnessOutbound::TextDelta(delta)) => {
                     if let Some(fwd) = forwarder {
-                        fwd.forward(&delta.text);
+                        fwd.forward_text(&delta.text);
                     }
                     full_text.push_str(&delta.text);
                     text_segment.push_str(&delta.text);
@@ -918,6 +955,9 @@ async fn collect_harness_response(
                     }
                 }
                 Ok(HarnessOutbound::ThinkingDelta(delta)) => {
+                    if let Some(fwd) = forwarder {
+                        fwd.forward_thinking(&delta.thinking);
+                    }
                     thinking_buf.push_str(&delta.thinking);
                 }
                 Ok(HarnessOutbound::ToolUseStart(tool)) => {
@@ -939,6 +979,9 @@ async fn collect_harness_response(
                         "id": &tool.id,
                         "name": &tool.name,
                     }));
+                    if let Some(fwd) = forwarder {
+                        fwd.forward_tool_start(&tool.id, &tool.name);
+                    }
                     in_tool_call = true;
                     had_tool_calls = true;
                 }
@@ -950,6 +993,9 @@ async fn collect_harness_response(
                         "result": &result.result,
                         "is_error": result.is_error,
                     }));
+                    if let Some(fwd) = forwarder {
+                        fwd.forward_tool_result(&result.name, &result.result, result.is_error);
+                    }
                     in_tool_call = false;
                     last_turn_text.clear();
                 }
