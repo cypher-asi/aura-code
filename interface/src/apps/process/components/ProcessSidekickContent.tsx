@@ -766,10 +766,28 @@ function RunPreviewBody({ run: initialRun }: { run: ProcessRun }) {
     return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
   }, [run.run_id, loadData, refreshRun]);
 
-  const sortedEvents = useMemo(
-    () => [...events].sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime()),
-    [events],
-  );
+  const liveRunNodeId = useProcessSidekickStore((s) => s.liveRunNodeId);
+
+  const sortedEvents = useMemo(() => {
+    const sorted = [...events].sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
+    if (liveRunNodeId && !sorted.some((e) => e.node_id === liveRunNodeId && e.status === "running")) {
+      const alreadyCompleted = sorted.some((e) => e.node_id === liveRunNodeId);
+      if (!alreadyCompleted) {
+        sorted.push({
+          event_id: `live-${liveRunNodeId}`,
+          run_id: run.run_id,
+          node_id: liveRunNodeId,
+          process_id: run.process_id,
+          status: "running" as ProcessEvent["status"],
+          input_snapshot: "",
+          output: "",
+          started_at: new Date().toISOString(),
+          completed_at: null,
+        });
+      }
+    }
+    return sorted;
+  }, [events, liveRunNodeId, run.run_id, run.process_id]);
 
   const models = useMemo(() => {
     const set = new Set<string>();
