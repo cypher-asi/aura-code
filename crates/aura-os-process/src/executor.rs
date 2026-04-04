@@ -669,7 +669,7 @@ async fn execute_action(
         warn!(session_id = %session.session_id, error = %e, "Failed to close harness session");
     }
 
-    let output = resp.final_text.trim().to_string();
+    let output = build_downstream_output(&resp);
 
     let token_usage = resp.usage.map(|u| NodeTokenUsage {
         input_tokens: u.cumulative_input_tokens,
@@ -1117,6 +1117,58 @@ async fn collect_harness_response(
         content_blocks,
         usage,
     })
+}
+
+/// Build the output text that gets passed to downstream nodes.
+///
+/// For sessions without tool calls the final text is returned directly.
+/// When tool calls occurred, the output is assembled from all text blocks
+/// and non-error tool-result blocks so downstream nodes receive the actual
+/// data produced by tools, not just the model's narration.
+fn build_downstream_output(resp: &HarnessResponse) -> String {
+    let has_tool_results = resp
+        .content_blocks
+        .iter()
+        .any(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_result"));
+
+    if !has_tool_results {
+        return resp.final_text.trim().to_string();
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+    for block in &resp.content_blocks {
+        match block.get("type").and_then(|t| t.as_str()) {
+            Some("text") => {
+                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                    let t = text.trim();
+                    if !t.is_empty() {
+                        parts.push(t.to_string());
+                    }
+                }
+            }
+            Some("tool_result") => {
+                let is_error = block
+                    .get("is_error")
+                    .and_then(|e| e.as_bool())
+                    .unwrap_or(false);
+                if !is_error {
+                    if let Some(result) = block.get("result").and_then(|r| r.as_str()) {
+                        let r = result.trim();
+                        if !r.is_empty() {
+                            parts.push(r.to_string());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if parts.is_empty() {
+        resp.final_text.trim().to_string()
+    } else {
+        parts.join("\n\n")
+    }
 }
 
 /// Extract the final meaningful output from a multi-turn agentic response.
