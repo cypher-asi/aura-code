@@ -1,222 +1,351 @@
-# Agent Runtime Adapter Plan
+# Agent Runtime And Integrations Plan
 
-This document is the reference for the runtime adapter and BYOK work.
+This document is the current reference for Aura OS runtime adapters, org-level integrations, and BYOK.
+
+It is intentionally practical:
+- what the product model is
+- what works today
+- what is still limited
+- how we expect tool integrations to fit later
 
 ## Goal
 
-Let Aura support multiple runtimes cleanly while keeping Aura OS as the system of record.
+Let Aura OS support multiple runtimes cleanly while keeping one simple system model:
 
-## Core Concepts
+- Aura OS owns projects, tasks, workflow state, and orchestration
+- adapters do the AI/runtime work
+- org integrations hold reusable external credentials
+- environments decide where a runtime executes
 
-### Adapter
+## Product Model
 
-Which runtime does the work.
+### Integrations
 
-Examples:
-- `aura_harness` (user-facing label: `Aura`)
+Integrations are org-level shared setup.
+
+Today, the main integrations are model/provider integrations:
+- Anthropic
+- OpenAI
+
+Later, the same org-level concept should also hold tool integrations:
+- Linear
+- GitHub
+- Slack
+- MCP servers
+- internal APIs
+
+So the durable product term is:
+- `Integrations`
+
+And later we can split that into:
+- model integrations
+- tool integrations
+
+### Adapters
+
+Adapters are the runtime types an agent can use.
+
+Current adapters:
+- `Aura`
+- `Claude Code`
+- `Codex`
+
+Internal ids still exist in code:
+- `aura_harness`
 - `claude_code`
 - `codex`
 
-### Integration
+But the user-facing concept is:
+- `Runtime`
 
-Reusable external connectivity owned outside the agent.
+### Authentication
 
-Two useful buckets:
-- runtime/provider integrations
-  - Anthropic
-  - OpenAI
-- tool/service integrations
-  - Linear
-  - GitHub
-  - Slack
-  - MCP servers
+Authentication explains how the selected adapter gets access.
 
-### Environment
+Current modes:
+- `Aura Billing`
+  - internal: `aura_managed`
+- `Use Team Integration`
+  - internal: `org_integration`
+- `Use Local Login`
+  - internal: `local_cli_auth`
 
-Where the runtime executes.
+### Runs On
 
-Examples:
-- `local_host`
-- `swarm_microvm`
+Runs On explains where the runtime executes.
 
-### Auth Source
-
-How the runtime gets credentials.
-
-Examples:
-- `aura_managed`
-- `org_integration`
-- `local_cli_auth`
+Current environments:
+- `This Machine`
+  - internal: `local_host`
+- `Isolated Cloud Runtime`
+  - internal: `swarm_microvm`
 
 ## Simple Rule
 
-- Adapter chooses the runtime
-- Integration is the shared connection source
-- Environment chooses placement
-- Auth source explains how the runtime authenticates
-
-## System Layers
-
-- **User intent**
-  The human request.
-- **Control plane**
-  The orchestrator that decides what should happen next.
-- **Aura OS**
-  The authority for projects, tasks, Kanban, settings, agents, and workflows.
-- **Runtime adapters**
-  Aura, Claude Code, Codex.
-- **Environment**
-  Local host or swarm microVM.
+- adapter chooses the runtime
+- integration is the shared external setup
+- authentication explains how that runtime gets access
+- runs on chooses execution placement
 
 ## Authority Boundary
 
-- Aura OS owns state and workflow authority.
-- Adapters execute runtime work.
-- Tool integrations should usually be invoked through Aura OS, not directly by the adapter.
+Aura OS remains the system of record.
 
-So:
-- create project -> Aura OS
-- move task -> Aura OS
-- call Linear -> Aura OS integration/tool layer
-- generate/respond/edit/code -> selected adapter
+Aura OS owns:
+- projects
+- tasks
+- Kanban / workflow state
+- persistence
+- orchestration
+- governed side effects
 
-## Org Integrations
+Adapters do runtime work:
+- generate
+- reason
+- chat
+- code
+- plan
+- respond
 
-The org should own reusable external connections.
+Important practical rule:
+- if something does not require AI, Aura OS should just do it directly
+- if something requires AI work, the selected runtime path is used
 
 Examples:
-- Anthropic API key
-- OpenAI API key
-- Linear token
-- GitHub credentials
-- MCP server config
+- move task -> Aura OS
+- update workflow state -> Aura OS
+- save project metadata -> Aura OS
+- generate a response -> selected adapter
+- write code -> selected adapter
+- produce specs/tasks through AI -> Aura runtime path
 
-Agents should reference these integrations. They should not store raw secrets.
+## Tool Integration Boundary
 
-## Adapter Mental Model
+Tool integrations should usually be mediated by Aura OS, not directly owned by each adapter.
+
+That means:
+- stateful product actions stay governed by Aura OS
+- adapters should not become the source of truth for external business state
+
+Example with Linear later:
+- org adds a Linear integration
+- an agent may ask to move a task or create an issue
+- Aura OS should perform the Linear action through the org integration layer
+- the adapter should not need to permanently own the Linear token itself
+
+This keeps the system cleaner:
+- one source of truth
+- better auditability
+- easier permission control
+- less duplicated secret handling across runtimes
+
+## Current Offering
+
+Today, Aura OS offers:
+
+1. Org-level model integrations
+- Anthropic integration
+- OpenAI integration
+
+2. Agent runtime selection
+- Aura
+- Claude Code
+- Codex
+
+3. Per-agent authentication choice
+- Aura Billing
+- Use Team Integration
+- Use Local Login
+
+4. Per-agent execution placement
+- local path working today
+- cloud/swarm path modeled, but not yet fully validated end to end
+
+## Current Support Matrix
 
 ### Aura
 
-- default runtime for Aura-native execution
-- can use:
-  - `aura_managed`
-  - `org_integration` for BYOK
+Supports:
+- `Aura Billing`
+- `Use Team Integration`
+
+Current practical provider support for `Use Team Integration`:
+- Anthropic only
+
+So today:
+- `Aura + Anthropic org integration` works
+- `Aura + OpenAI org integration` is not supported yet
+
+This is a current implementation limit, not a framework limit.
 
 ### Claude Code
 
-- can use:
-  - `local_cli_auth`
-  - `org_integration`
+Supports:
+- `Use Local Login`
+- `Use Team Integration`
+
+Current provider expectation for team integration:
+- Anthropic
+
+So today:
+- `Claude Code + local login` works if the `aura-os-server` process has a valid Claude CLI session
+- `Claude Code + Anthropic org integration` works by injecting the org key into the runtime path
 
 ### Codex
 
-- can use:
-  - `local_cli_auth`
-  - `org_integration`
+Supports:
+- `Use Local Login`
+- `Use Team Integration`
 
-## End-to-End Product Flow
+Current provider expectation for team integration:
+- OpenAI
 
-The product flow should stay simple:
+So today:
+- `Codex + local login` works if the `aura-os-server` process can run Codex with valid local auth
+- `Codex + OpenAI org integration` is the matching provider-backed path
 
-1. Create or edit an organization
-2. Add shared integrations in Team Settings
+## Important Local-Login Truth
+
+For local-login adapters, the login state belongs to the server process environment.
+
+That means:
+- `Claude Code + Use Local Login + This Machine`
+- `Codex + Use Local Login + This Machine`
+
+both depend on:
+- the CLI being installed
+- the `aura-os-server` process being able to use that CLI
+- valid auth being present in that same host environment
+
+This is why local login is convenient but less deterministic than team integration.
+
+## End-To-End Flow
+
+The intended user flow is:
+
+1. Open Team Settings
+2. Add an integration at the org level
 3. Create or edit an agent
 4. Choose:
-   - adapter
-   - environment
-   - auth source
-5. Attach an integration only when the auth source requires one
-6. Test the runtime
+   - runtime
+   - runs on
+   - authentication
+5. If authentication is `Use Team Integration`, choose the matching integration
+6. Check runtime
 7. Run the agent
+
+## Current UI Language
+
+The current user-facing language should be:
+
+- `Integrations`
+- `Runtime`
+- `Runs On`
+- `Authentication`
+- `Use Team Integration`
+- `Use Local Login`
+- `Aura Billing`
+
+Internal ids and transport details should stay internal wherever possible.
 
 ## Security Model
 
-### Baseline rules
-
+Baseline rules:
 - store secrets at the integration layer, not on agents
-- keep metadata and secret material separate
+- keep secret material separate from agent config
 - resolve secrets only at runtime
 - do not write secrets into prompts, logs, or transcripts
-- agents should reference integration ids, not inline keys
+- agents should reference integration ids, not raw keys
 
-This is close to Paperclip’s shape:
-- encrypted secrets at rest
-- secret refs instead of inline spread
-- runtime-time resolution
-- environment tests before execution
+Trust model today:
+- `This Machine` is treated as a trusted local environment
 
-## V1
+Stronger future model:
+- `Isolated Cloud Runtime` is the stronger boundary for BYOK and sensitive workloads
 
-V1 is the thin but real product slice:
+## What Works Today
 
-- org integrations UI
-- agent adapter/environment/auth-source selection
-- local CLI auth for Claude/Codex
-- Aura-managed auth for Aura
-- direct runtime testing
-- direct agent execution through the selected runtime
+Local path:
+- Aura with Aura Billing
+- Aura with Anthropic org integration
+- Claude Code with Anthropic org integration
+- Codex with local login
+- local benchmark/core loop
 
-Trust model:
-- `local_host` is treated as a trusted environment
+Also true:
+- UI and product model now support org integrations cleanly
+- standalone agent chat paths for Aura, Claude org integration, and Codex are working on the local path
 
-## V2
+## Current Limits
 
-V2 adds Aura BYOK properly:
+These are important and should stay explicit:
 
-- `Aura + org_integration + local_host`
-- `Aura + org_integration + swarm_microvm`
-- per-session provider config passed into the harness
-- no fake dependence on Aura-managed billing when the org is supplying the provider key
+1. Aura BYOK is Anthropic-only today
+- the framework is generic enough to grow
+- the current server-to-harness provider override is only implemented for Anthropic
 
-Trust model:
-- `local_host` remains the simple trusted path
-- `swarm_microvm` is the stronger isolation path for BYOK and sensitive integrations
+2. Claude local login is environment-dependent
+- if the server process is not logged into Claude, this path fails
 
-## What V2 Changes
+3. External adapter chat is still buffered
+- Codex and Claude do not yet stream token-by-token like Aura does
 
-To support Aura BYOK, the harness must accept provider config per session instead of relying only on process-global env.
+4. Swarm path is not the fully validated path yet
+- the local product path is the main working path today
 
-That means:
-- Aura OS resolves the org integration
-- Aura OS passes a per-session provider config into the harness
-- the harness creates a per-session provider override
-- if no override is supplied, the harness falls back to the normal Aura-managed provider
+## Why Aura Supports Only Anthropic Today
 
-## Example
+The key limitation is not the overall model. It is the current provider implementation.
 
-Org adds:
-- Anthropic integration
-- Linear integration
+Today:
+- Aura OS builds session provider config only for Anthropic
+- the harness provider factory only instantiates Anthropic from session overrides
 
-### After V1
+So supporting more providers would require:
+- adding another provider implementation in the harness
+- extending the provider factory
+- extending Aura OS integration-to-provider mapping
+- validating the full path end to end
 
-- Aura agent can use Aura-managed auth
-- Claude/Codex can use local CLI auth or org integrations
-- Linear stays OS-mediated
-- `local_host` is the trusted execution boundary
+This is additive work, not a redesign.
 
-### After V2
+## Tool Integration Direction
 
-- Aura can also use the org Anthropic integration directly
-- the same org can still use Linear through Aura OS
-- high-trust agents can run in `swarm_microvm`
+Later, integrations should expand beyond model providers.
+
+Example:
+- org adds Anthropic
+- org adds Linear
+
+Then:
+- Aura or Claude may use Anthropic for model execution
+- Aura OS should use the Linear integration when the system needs to create or update Linear state
+
+Important distinction:
+- model integrations help a runtime talk to a model
+- tool integrations help Aura OS perform governed external actions
 
 ## What This Does Not Change
 
-- Aura OS still owns Kanban and task transitions
-- Aura OS still owns project/workflow authority
-- tool integrations still belong to the OS/integration layer
+Even with more adapters and more integrations:
+- Aura OS still owns workflow state
+- Aura OS still owns tasks/projects
+- Aura OS still owns non-AI actions
+- integrations stay org-level
+- adapters stay execution-level
 
-## Current Practical Scope
+## Practical Build Order
 
-The clean build order is:
+The current practical order remains:
 
-1. ship the adapter/auth-source foundation
-2. add Aura BYOK through per-session harness provider config
-3. harden the swarm path for stronger isolation
+1. runtime / auth / environment foundation
+2. Aura BYOK through per-session provider config
+3. stronger cloud/swarm hardening
+4. more provider support for Aura BYOK
+5. tool integrations through the org integration layer
 
-That keeps the model simple:
-- Aura OS governs
-- adapters execute
+That keeps the system understandable:
 - integrations connect
+- adapters execute
+- Aura OS governs
 - environments place the runtime
