@@ -108,11 +108,6 @@
   flex-shrink: 0;
 }
 
-.scrollSpacer {
-  flex-shrink: 0;
-  min-height: calc(100vh - 200px);
-}
-
 .emptyState {
   display: flex;
   flex-direction: column;
