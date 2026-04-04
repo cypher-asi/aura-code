@@ -60,24 +60,24 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
 
   return (
     <div>
-      <h2 className={styles.sectionTitle}>Team Integrations</h2>
+      <h2 className={styles.sectionTitle}>Integrations</h2>
       <p className={styles.sectionIntro}>
-        Save provider connections for your team in one place. Add a provider once, store its API key
-        here, then choose Use Team Integration on any agent that should run with it.
+        Manage shared integrations for this team. Model integrations and future tool integrations
+        both live here, so agents can reuse the right setup without duplicating credentials.
       </p>
 
       <div className={styles.settingsGroup}>
-        <div className={styles.settingsGroupLabel}>Add Provider Connection</div>
+        <div className={styles.settingsGroupLabel}>Create Integration</div>
         <div className={`${styles.formRow} ${styles.integrationRow}`}>
           <div className={styles.integrationMeta}>
-            <div className={styles.integrationHeader}>New connection</div>
+            <div className={styles.integrationHeader}>New integration</div>
             <div className={styles.integrationHint}>
-              Store a provider name, optional preferred model, and API key once for the whole team.
+              Save a provider, optional preferred model, and API key once for the whole team.
             </div>
           </div>
           <div className={styles.integrationFields}>
             <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
-              <label className={styles.integrationFieldLabel} htmlFor="new-integration-name">Connection Name</label>
+              <label className={styles.integrationFieldLabel} htmlFor="new-integration-name">Integration Name</label>
               <Input
                 id="new-integration-name"
                 aria-label="New integration name"
@@ -134,7 +134,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                 }}
                 disabled={busyId === "new"}
               >
-                {busyId === "new" ? "Saving..." : "Add Connection"}
+                {busyId === "new" ? "Saving..." : "Add Integration"}
               </Button>
             </div>
             {!newIntegration.apiKey.trim() && (
@@ -147,9 +147,9 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
       </div>
 
       <div className={styles.settingsGroup}>
-        <div className={styles.settingsGroupLabel}>Saved Connections</div>
+        <div className={styles.settingsGroupLabel}>Saved Integrations</div>
         {integrations.length === 0 ? (
-          <div className={styles.emptyMessage}>No team integrations yet. Add one above to share provider keys across agents.</div>
+          <div className={styles.emptyMessage}>No integrations yet. Add one above to share provider keys across agents.</div>
         ) : (
           integrations.map((integration) => {
             const draft = mergedDrafts[integration.integration_id];
@@ -165,7 +165,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                 </div>
                 <div className={styles.integrationFields}>
                   <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
-                    <label className={styles.integrationFieldLabel} htmlFor={`integration-name-${integration.integration_id}`}>Connection Name</label>
+                    <label className={styles.integrationFieldLabel} htmlFor={`integration-name-${integration.integration_id}`}>Integration Name</label>
                     <Input
                       id={`integration-name-${integration.integration_id}`}
                       aria-label={`Integration name for ${integration.name}`}
@@ -219,7 +219,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                       variant="ghost"
                       onClick={() => {
                         const confirmed = window.confirm(
-                          `Delete connection "${integration.name}"? Agents using Team Integration will need a different authentication setup before they can run again.`,
+                          `Delete integration "${integration.name}"? Agents using Team Integration will need a different authentication setup before they can run again.`,
                         );
                         if (!confirmed) return;
                         void onDelete(integration.integration_id);
