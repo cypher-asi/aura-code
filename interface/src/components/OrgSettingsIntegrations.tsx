@@ -60,30 +60,30 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
 
   return (
     <div>
-      <h2 className={styles.sectionTitle}>Integrations</h2>
+      <h2 className={styles.sectionTitle}>Team Integrations</h2>
       <p className={styles.sectionIntro}>
-        Manage shared provider connections for this organization. Create a new integration below,
-        then attach the right one to an agent only when that runtime should use org-managed auth.
+        Save provider connections for your team in one place. Add a provider once, store its API key
+        here, then choose Use Team Integration on any agent that should run with it.
       </p>
 
       <div className={styles.settingsGroup}>
-        <div className={styles.settingsGroupLabel}>Create New Integration</div>
+        <div className={styles.settingsGroupLabel}>Add Provider Connection</div>
         <div className={`${styles.formRow} ${styles.integrationRow}`}>
           <div className={styles.integrationMeta}>
-            <div className={styles.integrationHeader}>New integration</div>
+            <div className={styles.integrationHeader}>New connection</div>
             <div className={styles.integrationHint}>
-              Store reusable provider credentials once at the organization level, then attach them only where API-backed runtime auth is needed.
+              Store a provider name, optional preferred model, and API key once for the whole team.
             </div>
           </div>
           <div className={styles.integrationFields}>
             <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
-              <label className={styles.integrationFieldLabel} htmlFor="new-integration-name">Integration Name</label>
+              <label className={styles.integrationFieldLabel} htmlFor="new-integration-name">Connection Name</label>
               <Input
                 id="new-integration-name"
                 aria-label="New integration name"
                 value={newIntegration.name}
                 onChange={(e) => setNewIntegration((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="e.g. Anthropic Prod…"
+                placeholder="e.g. Anthropic Production"
               />
             </div>
             <div className={styles.integrationFieldGroup}>
@@ -94,24 +94,24 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
               />
             </div>
             <div className={styles.integrationFieldGroup}>
-              <label className={styles.integrationFieldLabel} htmlFor="new-integration-model">Default Model</label>
+              <label className={styles.integrationFieldLabel} htmlFor="new-integration-model">Preferred Model</label>
               <Input
                 id="new-integration-model"
                 aria-label="New default model"
                 value={newIntegration.defaultModel}
                 onChange={(e) => setNewIntegration((prev) => ({ ...prev, defaultModel: e.target.value }))}
-                placeholder="Optional model override…"
+                placeholder="Optional default model"
               />
             </div>
             <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
-              <label className={styles.integrationFieldLabel} htmlFor="new-integration-key">API Key</label>
+              <label className={styles.integrationFieldLabel} htmlFor="new-integration-key">Provider API Key</label>
               <Input
                 id="new-integration-key"
                 aria-label="New API key"
                 type="password"
                 value={newIntegration.apiKey}
                 onChange={(e) => setNewIntegration((prev) => ({ ...prev, apiKey: e.target.value }))}
-                placeholder="Paste the provider key…"
+                placeholder="Paste the provider API key"
               />
             </div>
             <div className={styles.integrationActions}>
@@ -134,12 +134,12 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                 }}
                 disabled={busyId === "new"}
               >
-                {busyId === "new" ? "Saving..." : "Add Integration"}
+                {busyId === "new" ? "Saving..." : "Add Connection"}
               </Button>
             </div>
             {!newIntegration.apiKey.trim() && (
               <Text size="xs" variant="muted">
-                You can save this without an API key for setup, but it will not be usable for runtime auth until a key is added.
+                You can save this without a key while setting things up, but agents will not be able to use it until a key is added.
               </Text>
             )}
           </div>
@@ -147,9 +147,9 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
       </div>
 
       <div className={styles.settingsGroup}>
-        <div className={styles.settingsGroupLabel}>Saved Integrations</div>
+        <div className={styles.settingsGroupLabel}>Saved Connections</div>
         {integrations.length === 0 ? (
-          <div className={styles.emptyMessage}>No integrations yet.</div>
+          <div className={styles.emptyMessage}>No team integrations yet. Add one above to share provider keys across agents.</div>
         ) : (
           integrations.map((integration) => {
             const draft = mergedDrafts[integration.integration_id];
@@ -160,12 +160,12 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                   <div className={styles.integrationHeader}>{integration.name}</div>
                   <div className={styles.integrationHint}>
                     {integration.provider}
-                    {integration.secret_last4 ? ` • key ending in ${integration.secret_last4}` : " • no key saved"}
+                    {integration.secret_last4 ? ` • API key ending in ${integration.secret_last4}` : " • no key saved"}
                   </div>
                 </div>
                 <div className={styles.integrationFields}>
                   <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
-                    <label className={styles.integrationFieldLabel} htmlFor={`integration-name-${integration.integration_id}`}>Integration Name</label>
+                    <label className={styles.integrationFieldLabel} htmlFor={`integration-name-${integration.integration_id}`}>Connection Name</label>
                     <Input
                       id={`integration-name-${integration.integration_id}`}
                       aria-label={`Integration name for ${integration.name}`}
@@ -188,7 +188,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                     />
                   </div>
                   <div className={styles.integrationFieldGroup}>
-                    <label className={styles.integrationFieldLabel} htmlFor={`integration-model-${integration.integration_id}`}>Default Model</label>
+                    <label className={styles.integrationFieldLabel} htmlFor={`integration-model-${integration.integration_id}`}>Preferred Model</label>
                     <Input
                       id={`integration-model-${integration.integration_id}`}
                       aria-label={`Default model for ${integration.name}`}
@@ -197,11 +197,11 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                         ...prev,
                         [integration.integration_id]: { ...draft, defaultModel: e.target.value },
                       }))}
-                      placeholder="Optional model override…"
+                      placeholder="Optional default model"
                     />
                   </div>
                   <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
-                    <label className={styles.integrationFieldLabel} htmlFor={`integration-key-${integration.integration_id}`}>API Key</label>
+                    <label className={styles.integrationFieldLabel} htmlFor={`integration-key-${integration.integration_id}`}>Provider API Key</label>
                     <Input
                       id={`integration-key-${integration.integration_id}`}
                       aria-label={`API key for ${integration.name}`}
@@ -211,7 +211,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                         ...prev,
                         [integration.integration_id]: { ...draft, apiKey: e.target.value },
                       }))}
-                      placeholder={integration.has_secret ? "Leave blank to keep the existing key…" : "Paste the provider key…"}
+                      placeholder={integration.has_secret ? "Leave blank to keep the existing API key" : "Paste the provider API key"}
                     />
                   </div>
                   <div className={styles.integrationActions}>
@@ -219,7 +219,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                       variant="ghost"
                       onClick={() => {
                         const confirmed = window.confirm(
-                          `Delete integration "${integration.name}"? Agents using it will need a new auth source or integration before they can run again.`,
+                          `Delete connection "${integration.name}"? Agents using Team Integration will need a different authentication setup before they can run again.`,
                         );
                         if (!confirmed) return;
                         void onDelete(integration.integration_id);
@@ -249,7 +249,7 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
       </div>
 
       <Text size="xs" variant="muted">
-        Secrets are stored at the organization layer and only attached to agents through integration bindings.
+        Provider API keys are stored at the team level and only attached to agents that use Team Integration.
       </Text>
     </div>
   );
