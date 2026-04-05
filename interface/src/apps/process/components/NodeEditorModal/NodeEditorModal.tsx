@@ -10,6 +10,7 @@ import { useProcessSidekickStore } from "../../stores/process-sidekick-store";
 import { useAgentStore } from "../../../agents/stores";
 import { Select } from "../../../../components/Select";
 import { SchedulePicker } from "../../../../components/SchedulePicker";
+import { CHAT_MODEL_OPTIONS } from "../../../../constants/models";
 import previewStyles from "../../../../components/Preview/Preview.module.css";
 import modalStyles from "./NodeEditorModal.module.css";
 
@@ -442,7 +443,7 @@ export function NodeEditorModal({ isOpen, node, onClose }: NodeEditorModalProps)
               {showAdvanced && (
                 <>
                   <EditField label="Model">
-                    <input style={inputStyle} value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. claude-sonnet-4-20250514" />
+                    <Select value={model} onChange={setModel} placeholder="Default" options={CHAT_MODEL_OPTIONS} />
                     <Text variant="secondary" size="xs" style={{ marginTop: 2 }}>Override the default model for this node.</Text>
                   </EditField>
                   <EditField label="Timeout (seconds)">

@@ -1,6 +1,8 @@
 import { Input, Textarea, Text } from "@cypher-asi/zui";
 import { ImagePlus, X, Monitor, Cloud } from "lucide-react";
 import type { OrgIntegration } from "../../types";
+import { Select } from "../Select";
+import { CHAT_MODEL_OPTIONS } from "../../constants/models";
 import styles from "./AgentEditorModal.module.css";
 
 type ReadinessTone = "info" | "success" | "warning";
@@ -250,10 +252,11 @@ export function AgentEditorForm({
 
       <div className={styles.fieldGroup}>
         <label className={styles.label}>Default Model</label>
-        <Input
+        <Select
           value={defaultModel}
-          onChange={(e) => setDefaultModel(e.target.value)}
-          placeholder="Optional override (otherwise uses the adapter or integration default)"
+          onChange={setDefaultModel}
+          placeholder="Use adapter or integration default"
+          options={CHAT_MODEL_OPTIONS}
         />
       </div>
 

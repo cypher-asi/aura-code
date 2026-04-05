@@ -79,6 +79,14 @@ export function persistModel(modelId: string, adapterType?: string): void {
   } catch {}
 }
 
+/** Chat model options formatted for <Select> dropdowns across the app. */
+export const CHAT_MODEL_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "Default" },
+  ...AVAILABLE_MODELS
+    .filter((m) => m.mode === "chat")
+    .map((m) => ({ value: m.id, label: m.label })),
+];
+
 export function modelLabel(
   modelId: string,
   adapterType?: string,

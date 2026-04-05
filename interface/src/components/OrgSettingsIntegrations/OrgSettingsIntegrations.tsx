@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Button, Input, Text } from "@cypher-asi/zui";
 import type { OrgIntegration } from "../../types";
+import { Select } from "../Select";
+import { CHAT_MODEL_OPTIONS } from "../../constants/models";
 import styles from "../OrgSettingsPanel/OrgSettingsPanel.module.css";
 
 interface Props {
@@ -95,12 +97,11 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
             </div>
             <div className={styles.integrationFieldGroup}>
               <label className={styles.integrationFieldLabel} htmlFor="new-integration-model">Preferred Model</label>
-              <Input
-                id="new-integration-model"
-                aria-label="New default model"
+              <Select
                 value={newIntegration.defaultModel}
-                onChange={(e) => setNewIntegration((prev) => ({ ...prev, defaultModel: e.target.value }))}
+                onChange={(v) => setNewIntegration((prev) => ({ ...prev, defaultModel: v }))}
                 placeholder="Optional default model"
+                options={CHAT_MODEL_OPTIONS}
               />
             </div>
             <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
@@ -189,15 +190,14 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                   </div>
                   <div className={styles.integrationFieldGroup}>
                     <label className={styles.integrationFieldLabel} htmlFor={`integration-model-${integration.integration_id}`}>Preferred Model</label>
-                    <Input
-                      id={`integration-model-${integration.integration_id}`}
-                      aria-label={`Default model for ${integration.name}`}
+                    <Select
                       value={draft.defaultModel}
-                      onChange={(e) => setDrafts((prev) => ({
+                      onChange={(v) => setDrafts((prev) => ({
                         ...prev,
-                        [integration.integration_id]: { ...draft, defaultModel: e.target.value },
+                        [integration.integration_id]: { ...draft, defaultModel: v },
                       }))}
                       placeholder="Optional default model"
+                      options={CHAT_MODEL_OPTIONS}
                     />
                   </div>
                   <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
