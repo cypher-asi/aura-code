@@ -9,13 +9,15 @@ use tracing::{info, warn};
 
 use aura_os_agents::AgentService;
 use aura_os_core::{
-    ArtifactType, ProcessArtifact, ProcessArtifactId, ProcessEvent, ProcessEventId,
+    Agent, ArtifactType, ProcessArtifact, ProcessArtifactId, ProcessEvent, ProcessEventId,
     ProcessEventStatus, ProcessNode, ProcessNodeId, ProcessNodeType, ProcessRun, ProcessRunId,
     ProcessRunStatus, ProcessRunTrigger, ProcessId,
 };
 use aura_os_link::{
-    HarnessInbound, HarnessLink, HarnessOutbound, SessionConfig, SessionUsage, UserMessage,
+    HarnessInbound, HarnessLink, HarnessOutbound, SessionConfig, SessionProviderConfig,
+    SessionUsage, UserMessage,
 };
+use aura_os_orgs::OrgService;
 use aura_os_store::RocksStore;
 
 use crate::error::ProcessError;
@@ -124,6 +126,7 @@ pub struct ProcessExecutor {
     data_dir: PathBuf,
     rocks_store: Arc<RocksStore>,
     agent_service: Arc<AgentService>,
+    org_service: Arc<OrgService>,
 }
 
 impl ProcessExecutor {
@@ -134,6 +137,7 @@ impl ProcessExecutor {
         data_dir: PathBuf,
         rocks_store: Arc<RocksStore>,
         agent_service: Arc<AgentService>,
+        org_service: Arc<OrgService>,
     ) -> Self {
         Self {
             store,
@@ -142,6 +146,7 @@ impl ProcessExecutor {
             data_dir,
             rocks_store,
             agent_service,
+            org_service,
         }
     }
 
@@ -232,6 +237,7 @@ impl ProcessExecutor {
         let data_dir = self.data_dir.clone();
         let rocks_store = self.rocks_store.clone();
         let agent_service = self.agent_service.clone();
+        let org_service = self.org_service.clone();
         let run_clone = run.clone();
         tokio::spawn(async move {
             if let Err(e) = execute_run(
@@ -242,6 +248,7 @@ impl ProcessExecutor {
                 &data_dir,
                 &rocks_store,
                 &agent_service,
+                &org_service,
             )
             .await
             {
@@ -321,6 +328,7 @@ async fn execute_run(
     data_dir: &Path,
     rocks_store: &RocksStore,
     agent_service: &AgentService,
+    org_service: &OrgService,
 ) -> Result<(), ProcessError> {
     let mut current_run = run.clone();
     current_run.status = ProcessRunStatus::Running;
@@ -456,10 +464,10 @@ async fn execute_run(
         let result: Result<NodeResult, ProcessError> = match node.node_type {
             ProcessNodeType::Ignition => execute_ignition(node).map(|s| NodeResult { output: s, token_usage: None, content_blocks: None }),
             ProcessNodeType::Action => {
-                execute_action(node, &upstream_context, harness, jwt.as_deref(), agent_service, Some(&fwd), Some(&workspace_path)).await
+                execute_action(node, &upstream_context, harness, jwt.as_deref(), agent_service, org_service, Some(&fwd), Some(&workspace_path)).await
             }
             ProcessNodeType::Condition => {
-                execute_condition(node, &upstream_context, harness, jwt.as_deref(), agent_service, Some(&fwd), Some(&workspace_path)).await
+                execute_condition(node, &upstream_context, harness, jwt.as_deref(), agent_service, org_service, Some(&fwd), Some(&workspace_path)).await
             }
             ProcessNodeType::Delay => execute_delay(node).await.map(|s| NodeResult { output: s, token_usage: None, content_blocks: None }),
             ProcessNodeType::Artifact => {
@@ -473,6 +481,7 @@ async fn execute_run(
                     harness,
                     jwt.as_deref(),
                     agent_service,
+                    org_service,
                     Some(&fwd),
                     Some(&workspace_path),
                 )
@@ -590,46 +599,146 @@ async fn execute_run(
 // Agent resolution helper
 // ---------------------------------------------------------------------------
 
-/// Build a SessionConfig enriched with the agent's system prompt, name, and
-/// node-level overrides (model, max_turns). Falls back gracefully if the agent
-/// cannot be loaded.
+/// Resolved integration data for building provider config.
+struct ResolvedIntegration {
+    metadata: aura_os_core::OrgIntegration,
+    secret: Option<String>,
+}
+
+/// Resolve the agent's org integration, returning the metadata and secret
+/// needed to build a `SessionProviderConfig`.
+fn resolve_agent_integration(
+    agent: &Agent,
+    org_service: &OrgService,
+) -> Option<ResolvedIntegration> {
+    if agent.auth_source != "org_integration" {
+        return None;
+    }
+    let integration_id = agent.integration_id.as_deref()?;
+    let org_id = agent.org_id.as_ref()?;
+
+    let metadata = match org_service.get_integration(org_id, integration_id) {
+        Ok(Some(m)) => m,
+        Ok(None) => {
+            warn!(%integration_id, "Integration not found for process agent");
+            return None;
+        }
+        Err(e) => {
+            warn!(%integration_id, error = %e, "Failed to load integration for process agent");
+            return None;
+        }
+    };
+
+    let secret = match org_service.get_integration_secret(integration_id) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(%integration_id, error = %e, "Failed to load integration secret for process agent");
+            return None;
+        }
+    };
+
+    Some(ResolvedIntegration { metadata, secret })
+}
+
+/// Resolve the effective model using the same cascade as the chat handler:
+/// node config override > agent default > integration default.
+fn effective_model(
+    node: &ProcessNode,
+    agent: Option<&Agent>,
+    integration: Option<&ResolvedIntegration>,
+) -> Option<String> {
+    node.config
+        .get("model")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            agent
+                .and_then(|a| a.default_model.clone())
+                .filter(|s| !s.trim().is_empty())
+        })
+        .or_else(|| {
+            integration
+                .and_then(|ri| ri.metadata.default_model.clone())
+                .filter(|s| !s.trim().is_empty())
+        })
+}
+
+/// Build a `SessionProviderConfig` from a resolved integration and the
+/// effective model, matching the chat handler's `build_harness_provider_config`.
+fn build_provider_config(
+    integration: &ResolvedIntegration,
+    model: Option<&str>,
+) -> Option<SessionProviderConfig> {
+    if integration.metadata.provider != "anthropic" {
+        warn!(provider = %integration.metadata.provider, "Process executor only supports anthropic provider");
+        return None;
+    }
+
+    Some(SessionProviderConfig {
+        provider: "anthropic".to_string(),
+        routing_mode: Some("direct".to_string()),
+        api_key: integration.secret.clone(),
+        base_url: None,
+        default_model: model
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .or_else(|| integration.metadata.default_model.clone()),
+        fallback_model: None,
+        prompt_caching_enabled: Some(true),
+    })
+}
+
+/// Build a SessionConfig enriched with the agent's system prompt, name,
+/// provider config, and node-level overrides (model, max_turns). Mirrors the
+/// same session setup path as the chat handler to ensure identical behaviour.
 fn build_session_config(
     node: &ProcessNode,
     token: Option<&str>,
     agent_service: &AgentService,
+    org_service: &OrgService,
     system_prompt_override: Option<String>,
     project_path: Option<&str>,
 ) -> SessionConfig {
     let agent_id_str = node.agent_id.as_ref().map(|id| id.to_string());
 
-    let (system_prompt, agent_name) = match node.agent_id.as_ref() {
-        Some(aid) => match agent_service.get_agent_local(aid) {
-            Ok(agent) => {
-                let prompt = system_prompt_override.unwrap_or_else(|| {
-                    if agent.system_prompt.is_empty() {
-                        PROCESS_EXECUTION_PREAMBLE.to_string()
-                    } else {
-                        format!("{}\n\n{}", PROCESS_EXECUTION_PREAMBLE, agent.system_prompt)
-                    }
-                });
-                (Some(prompt), Some(agent.name))
-            }
-            Err(e) => {
-                warn!(agent_id = %aid, error = %e, "Could not load agent for process node; using defaults");
-                (
-                    Some(PROCESS_EXECUTION_PREAMBLE.to_string()),
-                    None,
-                )
-            }
-        },
-        None => (Some(PROCESS_EXECUTION_PREAMBLE.to_string()), None),
-    };
+    let (system_prompt, agent_name, resolved_integration, loaded_agent) =
+        match node.agent_id.as_ref() {
+            Some(aid) => match agent_service.get_agent_local(aid) {
+                Ok(agent) => {
+                    let prompt = system_prompt_override.unwrap_or_else(|| {
+                        if agent.system_prompt.is_empty() {
+                            PROCESS_EXECUTION_PREAMBLE.to_string()
+                        } else {
+                            format!("{}\n\n{}", PROCESS_EXECUTION_PREAMBLE, agent.system_prompt)
+                        }
+                    });
+                    let ri = resolve_agent_integration(&agent, org_service);
+                    (Some(prompt), Some(agent.name.clone()), ri, Some(agent))
+                }
+                Err(e) => {
+                    warn!(agent_id = %aid, error = %e, "Could not load agent for process node; using defaults");
+                    (
+                        Some(PROCESS_EXECUTION_PREAMBLE.to_string()),
+                        None,
+                        None,
+                        None,
+                    )
+                }
+            },
+            None => (
+                Some(PROCESS_EXECUTION_PREAMBLE.to_string()),
+                None,
+                None,
+                None,
+            ),
+        };
 
-    let model = node
-        .config
-        .get("model")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    let model = effective_model(node, loaded_agent.as_ref(), resolved_integration.as_ref());
+    let provider_config = resolved_integration
+        .as_ref()
+        .and_then(|ri| build_provider_config(ri, model.as_deref()));
 
     let max_turns = node
         .config
@@ -646,6 +755,7 @@ fn build_session_config(
         max_turns,
         token: token.map(|s| s.to_string()),
         project_path: project_path.map(|s| s.to_string()),
+        provider_config,
         ..Default::default()
     }
 }
@@ -677,6 +787,7 @@ async fn execute_action(
     harness: &dyn HarnessLink,
     token: Option<&str>,
     agent_service: &AgentService,
+    org_service: &OrgService,
     forwarder: Option<&DeltaForwarder<'_>>,
     project_path: Option<&str>,
 ) -> Result<NodeResult, ProcessError> {
@@ -686,7 +797,7 @@ async fn execute_action(
         .and_then(|v| v.as_u64())
         .unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
 
-    let config = build_session_config(node, token, agent_service, None, project_path);
+    let config = build_session_config(node, token, agent_service, org_service, None, project_path);
 
     let session = harness
         .open_session(config)
@@ -738,6 +849,7 @@ async fn execute_condition(
     harness: &dyn HarnessLink,
     token: Option<&str>,
     agent_service: &AgentService,
+    org_service: &OrgService,
     forwarder: Option<&DeltaForwarder<'_>>,
     project_path: Option<&str>,
 ) -> Result<NodeResult, ProcessError> {
@@ -758,7 +870,7 @@ async fn execute_condition(
          Respond with ONLY the word \"true\" or \"false\". Do not use tools."
             .to_string(),
     );
-    let config = build_session_config(node, token, agent_service, condition_system, project_path);
+    let config = build_session_config(node, token, agent_service, org_service, condition_system, project_path);
 
     let session = harness
         .open_session(config)
@@ -832,6 +944,7 @@ async fn execute_artifact(
     harness: &dyn HarnessLink,
     token: Option<&str>,
     agent_service: &AgentService,
+    org_service: &OrgService,
     forwarder: Option<&DeltaForwarder<'_>>,
     project_path: Option<&str>,
 ) -> Result<NodeResult, ProcessError> {
@@ -931,6 +1044,7 @@ async fn execute_artifact(
         node,
         token,
         agent_service,
+        org_service,
         Some(preamble.to_string()),
         project_path,
     );

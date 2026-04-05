@@ -434,6 +434,7 @@ dependencies = [
  "aura-os-agents",
  "aura-os-core",
  "aura-os-link",
+ "aura-os-orgs",
  "aura-os-store",
  "chrono",
  "cron",
