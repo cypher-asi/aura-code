@@ -629,6 +629,26 @@ mod tests {
     }
 
     #[test]
+    fn opencode_supports_org_integration_for_multi_provider_connections() {
+        let config = build_runtime_config(
+            Some("opencode".to_string()),
+            Some("local_host".to_string()),
+            None,
+            Some("int-openrouter".to_string()),
+            Some("openrouter/openai/gpt-4.1-mini".to_string()),
+            Some("local".to_string()),
+        )
+        .expect("runtime config");
+
+        assert_eq!(config.auth_source, "org_integration");
+        assert_eq!(config.integration_id.as_deref(), Some("int-openrouter"));
+        assert_eq!(
+            config.default_model.as_deref(),
+            Some("openrouter/openai/gpt-4.1-mini")
+        );
+    }
+
+    #[test]
     fn cursor_allows_only_local_cli_auth() {
         let error = build_runtime_config(
             Some("cursor".to_string()),

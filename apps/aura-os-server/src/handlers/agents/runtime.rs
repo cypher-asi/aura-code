@@ -580,6 +580,7 @@ async fn run_external_adapter_prompt(
                 }
                 if let Some(secret) = resolved.secret.as_deref() {
                     env_overrides.insert("GEMINI_API_KEY".to_string(), secret.to_string());
+                    env_overrides.insert("GOOGLE_API_KEY".to_string(), secret.to_string());
                 }
             }
             writes_prompt_to_stdin = false;

@@ -218,6 +218,30 @@ describe("useAgentEditorForm", () => {
     });
   });
 
+  it("allows OpenCode to use xAI workspace connections", async () => {
+    mockOrgState.integrations = [
+      {
+        integration_id: "int-xai",
+        provider: "xai",
+        default_model: "xai/grok-4",
+        name: "xAI Team",
+      },
+    ];
+
+    const { result } = renderHook(() =>
+      useAgentEditorForm(true, undefined, vi.fn(), vi.fn()),
+    );
+
+    act(() => {
+      result.current.setAdapterType("opencode");
+      result.current.setAuthSource("org_integration");
+    });
+
+    await waitFor(() => {
+      expect(result.current.integrationId).toBe("int-xai");
+    });
+  });
+
   it("leaves runtime auth unselected when only non-runtime integrations exist", async () => {
     mockOrgState.integrations = [
       {
