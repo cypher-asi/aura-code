@@ -8,6 +8,7 @@ import { useProcessSidekickStore, type NodeRunStatus } from "../../stores/proces
 import { useEventStore } from "../../../../stores/event-store";
 import { EventType } from "../../../../types/aura-events";
 import { processApi } from "../../../../api/process";
+import type { ProcessRun } from "../../../../types";
 import { ProcessCanvas } from "../ProcessCanvas";
 import type { ReactNode } from "react";
 
@@ -26,6 +27,7 @@ export function ProcessMainPanel({ children }: { children?: ReactNode }) {
   const setNodeStatus = useProcessSidekickStore((s) => s.setNodeStatus);
   const clearNodeStatuses = useProcessSidekickStore((s) => s.clearNodeStatuses);
   const setLiveRunNodeId = useProcessSidekickStore((s) => s.setLiveRunNodeId);
+  const viewRun = useProcessSidekickStore((s) => s.viewRun);
 
   const process = processes.find((p) => p.process_id === processId);
   const processNodes = useMemo(() => (processId ? nodes[processId] ?? EMPTY_NODES : EMPTY_NODES), [processId, nodes]);
@@ -53,7 +55,14 @@ export function ProcessMainPanel({ children }: { children?: ReactNode }) {
       }
     });
     const unsub2 = useEventStore.getState().subscribe(EventType.ProcessRunStarted, (event) => {
-      if (event.content.process_id === processId) clearNodeStatuses();
+      if (event.content.process_id === processId && processId) {
+        clearNodeStatuses();
+        fetchRuns(processId).then(() => {
+          const runs = useProcessStore.getState().runs[processId];
+          const startedRun = runs?.find((r: ProcessRun) => r.run_id === event.content.run_id);
+          if (startedRun) viewRun(startedRun);
+        });
+      }
     });
     const unsub3 = useEventStore.getState().subscribe(EventType.ProcessRunCompleted, (event) => {
       if (event.content.process_id === processId && processId) {
@@ -68,7 +77,7 @@ export function ProcessMainPanel({ children }: { children?: ReactNode }) {
       }
     });
     return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
-  }, [processId, setNodeStatus, clearNodeStatuses, setLiveRunNodeId, fetchRuns]);
+  }, [processId, setNodeStatus, clearNodeStatuses, setLiveRunNodeId, fetchRuns, viewRun]);
 
   const handleToggle = useCallback(async () => {
     if (!process) return;
@@ -81,8 +90,6 @@ export function ProcessMainPanel({ children }: { children?: ReactNode }) {
       console.error("Failed to toggle process:", e);
     }
   }, [process, updateProcess]);
-
-  const viewRun = useProcessSidekickStore((s) => s.viewRun);
 
   const handleTrigger = useCallback(async () => {
     if (!process) return;
