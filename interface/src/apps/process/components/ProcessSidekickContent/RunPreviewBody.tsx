@@ -11,7 +11,6 @@ import { MessageBubble } from "../../../../components/MessageBubble";
 import { useProcessNodeStream } from "../../../../hooks/use-process-node-stream";
 import { useStreamEvents, useStreamingText, useThinkingText, useThinkingDurationMs, useActiveToolCalls, useTimeline, useIsStreaming } from "../../../../hooks/stream/hooks";
 import type { ProcessArtifact, ProcessEvent, ProcessRun } from "../../../../types";
-import type { ProcessEventContentBlock } from "../../../../types";
 import { EventTimelineItem } from "./EventTimelineItem";
 import { ArtifactCard } from "./ArtifactCard";
 import { LiveRunBanner } from "./LiveRunBanner";

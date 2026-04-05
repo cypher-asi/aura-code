@@ -1,4 +1,3 @@
-import { Text } from "@cypher-asi/zui";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { TaskStatusIcon } from "../../../components/TaskStatusIcon";

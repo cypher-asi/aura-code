@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useScrollAnchor } from "../../hooks/use-scroll-anchor";
 import { useIsStreaming, useStreamEvents } from "../../hooks/stream/hooks";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
-import { ChatInputBar } from "../ChatInputBar";
 import type { ChatInputBarHandle, AttachmentItem } from "../ChatInputBar";
 import { useMessageQueueStore, useMessageQueue } from "../../stores/message-queue-store";
 import type { QueuedMessage } from "../../stores/message-queue-store";

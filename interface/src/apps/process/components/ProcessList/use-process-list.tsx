@@ -1,5 +1,4 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { ButtonPlus } from "@cypher-asi/zui";
 import type { ExplorerNode, DropPosition } from "@cypher-asi/zui";

@@ -1,4 +1,4 @@
-import type { AuraEvent } from "../../types/aura-events";
+import type { AuraEvent, AuraEventContent } from "../../types/aura-events";
 import { EventType } from "../../types/aura-events";
 import type { BuildStep, TestStep, GitStep, TaskOutputEntry } from "./event-store";
 import { useEventStore, EMPTY_OUTPUT, subscribers, notifyTaskOutputListeners } from "./event-store";
@@ -12,7 +12,7 @@ interface OutputUpdate {
 type EngineHandler = (event: AuraEvent, u: OutputUpdate) => void;
 
 function handleTaskStarted(event: AuraEvent, u: OutputUpdate): void {
-  const { task_id } = event.content;
+  const { task_id } = event.content as AuraEventContent<EventType.TaskStarted>;
   if (!task_id) return;
   const existing = u.outputs[task_id];
   if (existing?.text) {
@@ -38,7 +38,7 @@ function handleTextDelta(event: AuraEvent, u: OutputUpdate): void {
 }
 
 function handleFileOpsApplied(event: AuraEvent, u: OutputUpdate): void {
-  const { task_id, files } = event.content;
+  const { task_id, files } = event.content as AuraEventContent<EventType.FileOpsApplied>;
   if (!task_id || !files) return;
   const existing = u.outputs[task_id] ?? EMPTY_OUTPUT;
   u.outputs = { ...u.outputs, [task_id]: { ...existing, fileOps: files } };
@@ -112,19 +112,19 @@ function appendGitStep(taskId: string, step: GitStep, u: OutputUpdate): void {
 }
 
 function handleGitCommitted(event: AuraEvent, u: OutputUpdate): void {
-  const c = event.content;
+  const c = event.content as AuraEventContent<EventType.GitCommitted>;
   if (!c.task_id) return;
   appendGitStep(c.task_id, { kind: "committed", commitSha: c.commit_sha, timestamp: Date.now() }, u);
 }
 
 function handleGitCommitFailed(event: AuraEvent, u: OutputUpdate): void {
-  const c = event.content;
+  const c = event.content as AuraEventContent<EventType.GitCommitFailed>;
   if (!c.task_id) return;
   appendGitStep(c.task_id, { kind: "commit_failed", reason: c.reason, timestamp: Date.now() }, u);
 }
 
 function handleGitPushed(event: AuraEvent, u: OutputUpdate): void {
-  const c = event.content;
+  const c = event.content as AuraEventContent<EventType.GitPushed>;
   if (!c.task_id) return;
   appendGitStep(c.task_id, {
     kind: "pushed",
@@ -136,7 +136,7 @@ function handleGitPushed(event: AuraEvent, u: OutputUpdate): void {
 }
 
 function handleGitPushFailed(event: AuraEvent, u: OutputUpdate): void {
-  const c = event.content;
+  const c = event.content as AuraEventContent<EventType.GitPushFailed>;
   if (!c.task_id) return;
   appendGitStep(c.task_id, { kind: "push_failed", reason: c.reason, timestamp: Date.now() }, u);
 }

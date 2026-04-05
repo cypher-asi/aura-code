@@ -5,10 +5,10 @@ import { processApi } from "../../../../api/process";
 import { formatTokensCompact as formatTokens } from "../../../../utils/format";
 import { EmptyState } from "../../../../components/EmptyState";
 import { ActivityTimeline } from "../../../../components/ActivityTimeline";
-import type { ProcessEvent, ProcessNode } from "../../../../types";
+import type { ProcessEvent } from "../../../../types";
 import type { ToolCallEntry, TimelineItem } from "../../../../types/stream";
 import type { ProcessEventContentBlock } from "../../../../types";
-import { injectKeyframes, useElapsedTime, formatDuration, EMPTY_RUNS, EMPTY_NODES } from "./process-sidekick-utils";
+import { useElapsedTime, formatDuration, EMPTY_RUNS, EMPTY_NODES } from "./process-sidekick-utils";
 
 const EVENT_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   completed: { bg: "rgba(16,185,129,0.15)", fg: "#10b981" },
