@@ -254,13 +254,13 @@ export function integrationSections(): Array<{
   return [
     {
       id: "workspace_connection",
-      title: "Model Connections",
+      title: "Connections",
       description: "Shared model providers for agent runtimes.",
       providers: INTEGRATION_CATALOG.filter((provider) => provider.kind === "workspace_connection"),
     },
     {
       id: "workspace_integration",
-      title: "App Integrations",
+      title: "Integrations",
       description: "Connected work apps that can supply tools and workflows.",
       providers: INTEGRATION_CATALOG.filter((provider) => provider.kind === "workspace_integration"),
     },

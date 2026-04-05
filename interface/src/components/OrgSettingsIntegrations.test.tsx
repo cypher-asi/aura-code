@@ -108,10 +108,10 @@ describe("OrgSettingsIntegrations", () => {
       />,
     );
 
-    expect(screen.getByText("Integrations")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Integrations" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add Integration" })).toBeInTheDocument();
-    expect(screen.getByText("Model Connections")).toBeInTheDocument();
-    expect(screen.getByText("App Integrations")).toBeInTheDocument();
+    expect(screen.getByText("Connections")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Integrations", level: 2 })).toBeInTheDocument();
   });
 
   it("submits custom mcp servers with provider config", async () => {

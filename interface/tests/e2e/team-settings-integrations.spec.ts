@@ -42,32 +42,37 @@ test("team settings integrations show clear sections and labeled fields", async 
 
   await dialog.getByRole("button", { name: "Integrations" }).click();
 
-  await expect(dialog.getByRole("heading", { name: "Connections, Integrations, and MCP" })).toBeVisible();
-  await expect(dialog.getByText("Add Workspace Capability")).toBeVisible();
-  await expect(dialog.getByText("Workspace Connections").first()).toBeVisible();
-  await expect(dialog.getByText("Workspace Integrations").first()).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Integrations" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Add Integration" })).toBeVisible();
+  await expect(dialog.getByText("Connections").first()).toBeVisible();
+  await expect(dialog.getByText("Integrations").first()).toBeVisible();
   await expect(dialog.getByText("MCP Servers").first()).toBeVisible();
 
-  await expect(dialog.getByText("Name").first()).toBeVisible();
-  await expect(dialog.getByText("Provider").first()).toBeVisible();
-  await expect(dialog.getByText("Preferred Model").first()).toBeVisible();
-  await expect(dialog.getByText("Anthropic API Key").first()).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "GitHub" }).first()).toBeVisible();
-
-  await expect(dialog.getByLabel("New integration name")).toBeVisible();
-  await expect(dialog.getByLabel("New preferred model")).toBeVisible();
-  await expect(dialog.getByLabel("New Anthropic API Key")).toBeVisible();
-  await dialog.getByRole("button", { name: "GitHub" }).first().click();
-  await expect(dialog.getByLabel("New preferred model")).toHaveCount(0);
-  await expect(dialog.getByLabel("New GitHub Token")).toBeVisible();
-
   await expect(dialog.getByText("Anthropic Prod")).toBeVisible();
-  await expect(dialog.getByLabel("Integration name for Anthropic Prod")).toBeVisible();
-  await expect(dialog.getByLabel("Preferred model for Anthropic Prod")).toBeVisible();
-  await expect(dialog.getByLabel("Anthropic API Key for Anthropic Prod")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Edit" }).first()).toBeVisible();
 
   await expect(dialog.getByText("GitHub Ops")).toBeVisible();
-  await expect(dialog.getByLabel("Integration name for GitHub Ops")).toBeVisible();
-  await expect(dialog.getByLabel("GitHub Token for GitHub Ops")).toBeVisible();
-  await expect(dialog.getByLabel("Preferred model for GitHub Ops")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Add Integration" }).click();
+  await expect(dialog.getByText("New Integration")).toBeVisible();
+  await expect(dialog.getByText("Choose Provider")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Anthropic" }).first()).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "GitHub" }).first()).toBeVisible();
+
+  await dialog.getByRole("button", { name: "Anthropic" }).first().click();
+  await expect(dialog.getByLabel("New integration name")).toBeVisible();
+  await expect(dialog.getByLabel("New Anthropic API Key")).toBeVisible();
+  await expect(dialog.getByText("Advanced")).toBeVisible();
+  await dialog.getByText("Advanced").click();
+  await expect(dialog.getByLabel("New preferred model")).toBeVisible();
+
+  await dialog.getByRole("button", { name: "Change" }).click();
+  await dialog.getByRole("button", { name: "GitHub" }).first().click();
+  await expect(dialog.getByLabel("New GitHub Token")).toBeVisible();
+  await expect(dialog.getByLabel("New preferred model")).toHaveCount(0);
+
+  await dialog.getByRole("button", { name: "Edit" }).first().click();
+  await expect(dialog.getByLabel("Integration name for Anthropic Prod")).toBeVisible();
+  await expect(dialog.getByLabel("Anthropic API Key for Anthropic Prod")).toBeVisible();
+  await dialog.getByText("Advanced").click();
+  await expect(dialog.getByLabel("Preferred model for Anthropic Prod")).toBeVisible();
 });

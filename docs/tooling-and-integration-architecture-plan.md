@@ -69,9 +69,9 @@ Adapters are responsible for:
 
 Adapters are not the system of record for project state.
 
-### Workspace Connections
+### Connections
 
-Workspace Connections are saved provider credentials that power adapters.
+Connections are saved provider credentials that power adapters.
 
 Examples:
 - `OpenAI`
@@ -84,7 +84,7 @@ Examples:
 - `Mistral`
 - `Perplexity`
 
-Workspace Connections are mainly for model/runtime access.
+Connections are mainly for model/runtime access.
 
 They answer:
 - which provider account can this workspace use?
@@ -92,9 +92,9 @@ They answer:
 
 They do not directly expose user-facing actions.
 
-### Workspace Integrations
+### Integrations
 
-Workspace Integrations are saved connections to external work systems.
+Integrations are saved connections to external work systems.
 
 Examples:
 - `Linear`
@@ -106,7 +106,7 @@ Examples:
 - `Figma`
 - `Sentry`
 
-Workspace Integrations answer:
+Integrations answer:
 - which external systems is this workspace connected to?
 - which systems are allowed to contribute tools into Aura OS?
 
@@ -173,10 +173,10 @@ The clean product taxonomy should be:
 1. `Adapters`
 - the agent brains
 
-2. `Workspace Connections`
+2. `Connections`
 - model/runtime provider access
 
-3. `Workspace Integrations`
+3. `Integrations`
 - external work systems
 
 4. `Workspace Tools`
@@ -324,10 +324,10 @@ The UI should make these concepts visible:
 #### Adapters
 - per-agent runtime selection
 
-#### Workspace Connections
+#### Connections
 - provider credentials used by runtimes
 
-#### Workspace Integrations
+#### Integrations
 - external systems connected to the workspace
 
 #### MCP Servers
@@ -354,7 +354,7 @@ This is non-negotiable because Aura OS owns that workflow.
 
 #### 2. Model-backed runtime execution
 
-Workspace Connections should power adapters like:
+Connections should power adapters like:
 - `Claude Code` through `Anthropic`
 - `Codex` through `OpenAI`
 - `Gemini CLI` through `Google Gemini`
@@ -362,7 +362,7 @@ Workspace Connections should power adapters like:
 
 #### 3. External work systems through MCP
 
-Workspace Integrations like:
+Integrations like:
 - `Linear`
 - `Slack`
 - `GitHub`
@@ -554,8 +554,8 @@ The next implementation steps should follow this order:
 
 1. clean up the product vocabulary in the UI
 - `Adapters`
-- `Workspace Connections`
-- `Workspace Integrations`
+- `Connections`
+- `Integrations`
 - `Workspace Tools`
 - `MCP Servers`
 
@@ -584,8 +584,8 @@ V1 should not try to:
 
 The correct near-term system is:
 - Adapters are the brains
-- Workspace Connections power runtimes
-- Workspace Integrations connect external systems
+- Connections power runtimes
+- Integrations connect external systems
 - Workspace Tools are the action surface
 - Aura-native tools own Aura's domain
 - MCP-backed tools are the preferred external integration path
