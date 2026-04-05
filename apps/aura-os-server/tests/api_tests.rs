@@ -1,8 +1,12 @@
 mod common;
 
+use axum::Json;
 use axum::body::Body;
+use axum::routing::{get, post};
 use axum::http::{Request, StatusCode};
+use axum::Router;
 use tower::ServiceExt;
+use tokio::net::TcpListener;
 
 use aura_os_core::*;
 
@@ -160,6 +164,263 @@ async fn org_integrations_support_tool_and_model_provider_strings() {
     assert_eq!(resp.status(), StatusCode::OK);
     let listed = response_json(resp).await;
     assert!(listed.as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn org_tool_actions_use_saved_integrations() {
+    let provider_app = Router::new()
+        .route(
+            "/github/user/repos",
+            get(|| async {
+                Json(serde_json::json!([{
+                    "name": "hello-world",
+                    "full_name": "octocat/hello-world",
+                    "private": false,
+                    "html_url": "https://github.com/octocat/hello-world",
+                    "default_branch": "main",
+                    "description": "Test repo"
+                }]))
+            }),
+        )
+        .route(
+            "/github/repos/octocat/hello-world/issues",
+            post(|| async {
+                (
+                    StatusCode::CREATED,
+                    Json(serde_json::json!({
+                        "number": 42,
+                        "title": "Aura issue",
+                        "state": "open",
+                        "html_url": "https://github.com/octocat/hello-world/issues/42"
+                    })),
+                )
+            }),
+        )
+        .route(
+            "/linear/graphql",
+            post(|Json(payload): Json<serde_json::Value>| async move {
+                let query = payload["query"].as_str().unwrap_or_default();
+                if query.contains("AuraLinearTeams") {
+                    Json(serde_json::json!({
+                        "data": {
+                            "teams": { "nodes": [{ "id": "team-1", "name": "Platform", "key": "PLAT" }] }
+                        }
+                    }))
+                } else {
+                    Json(serde_json::json!({
+                        "data": {
+                            "issueCreate": {
+                                "success": true,
+                                "issue": {
+                                    "id": "lin-1",
+                                    "identifier": "PLAT-42",
+                                    "title": "Aura linear issue",
+                                    "url": "https://linear.app/test/issue/PLAT-42",
+                                    "state": { "name": "Backlog" },
+                                    "team": { "id": "team-1", "name": "Platform", "key": "PLAT" }
+                                }
+                            }
+                        }
+                    }))
+                }
+            }),
+        )
+        .route(
+            "/slack/conversations.list",
+            get(|| async {
+                Json(serde_json::json!({
+                    "ok": true,
+                    "channels": [{ "id": "C123", "name": "eng", "is_private": false }]
+                }))
+            }),
+        )
+        .route(
+            "/slack/chat.postMessage",
+            post(|| async {
+                Json(serde_json::json!({
+                    "ok": true,
+                    "channel": "C123",
+                    "ts": "1710000000.000100"
+                }))
+            }),
+        )
+        .route(
+            "/notion/search",
+            post(|| async {
+                Json(serde_json::json!({
+                    "results": [{
+                        "id": "page-1",
+                        "url": "https://notion.so/page-1",
+                        "properties": {
+                            "title": {
+                                "title": [{ "plain_text": "Team Notes" }]
+                            }
+                        }
+                    }]
+                }))
+            }),
+        )
+        .route(
+            "/notion/pages",
+            post(|| async {
+                Json(serde_json::json!({
+                    "id": "page-2",
+                    "url": "https://notion.so/page-2",
+                    "properties": {
+                        "title": {
+                            "title": [{ "plain_text": "Aura Page" }]
+                        }
+                    }
+                }))
+            }),
+        );
+
+    let provider_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let provider_addr = provider_listener.local_addr().unwrap();
+    let provider_url = format!("http://{}", provider_addr);
+    tokio::spawn(async move { axum::serve(provider_listener, provider_app).await.ok() });
+
+    unsafe {
+        std::env::set_var("AURA_GITHUB_API_BASE_URL", format!("{provider_url}/github"));
+        std::env::set_var("AURA_LINEAR_API_BASE_URL", format!("{provider_url}/linear/graphql"));
+        std::env::set_var("AURA_SLACK_API_BASE_URL", format!("{provider_url}/slack"));
+        std::env::set_var("AURA_NOTION_API_BASE_URL", format!("{provider_url}/notion"));
+    }
+
+    let (app, _state, _db) = build_test_app();
+    let org_id = OrgId::new();
+
+    for (name, provider, api_key) in [
+        ("GitHub", "github", "ghp_test"),
+        ("Linear", "linear", "lin_api_test"),
+        ("Slack", "slack", "xoxb-test"),
+        ("Notion", "notion", "secret_test"),
+    ] {
+        let req = json_request(
+            "POST",
+            &format!("/api/orgs/{org_id}/integrations"),
+            Some(serde_json::json!({
+                "name": name,
+                "provider": provider,
+                "api_key": api_key
+            })),
+        );
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/list_org_integrations"),
+        Some(serde_json::json!({})),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let listed = response_json(resp).await;
+    assert_eq!(listed["integrations"].as_array().unwrap().len(), 4);
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/github_list_repos"),
+        Some(serde_json::json!({})),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let github_repos = response_json(resp).await;
+    assert_eq!(github_repos["repos"][0]["full_name"], "octocat/hello-world");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/github_create_issue"),
+        Some(serde_json::json!({
+            "owner": "octocat",
+            "repo": "hello-world",
+            "title": "Aura issue"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let github_issue = response_json(resp).await;
+    assert_eq!(github_issue["issue"]["number"], 42);
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/linear_list_teams"),
+        Some(serde_json::json!({})),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let linear_teams = response_json(resp).await;
+    assert_eq!(linear_teams["teams"][0]["key"], "PLAT");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/linear_create_issue"),
+        Some(serde_json::json!({
+            "team_id": "team-1",
+            "title": "Aura linear issue"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let linear_issue = response_json(resp).await;
+    assert_eq!(linear_issue["issue"]["identifier"], "PLAT-42");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/slack_list_channels"),
+        Some(serde_json::json!({})),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let slack_channels = response_json(resp).await;
+    assert_eq!(slack_channels["channels"][0]["name"], "eng");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/slack_post_message"),
+        Some(serde_json::json!({
+            "channel_id": "C123",
+            "text": "Ship it"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let slack_message = response_json(resp).await;
+    assert_eq!(slack_message["message"]["channel"], "C123");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/notion_search_pages"),
+        Some(serde_json::json!({
+            "query": "Team"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let notion_pages = response_json(resp).await;
+    assert_eq!(notion_pages["pages"][0]["title"], "Team Notes");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/notion_create_page"),
+        Some(serde_json::json!({
+            "parent_page_id": "page-1",
+            "title": "Aura Page",
+            "content": "First paragraph"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let notion_page = response_json(resp).await;
+    assert_eq!(notion_page["page"]["id"], "page-2");
+
+    unsafe {
+        std::env::remove_var("AURA_GITHUB_API_BASE_URL");
+        std::env::remove_var("AURA_LINEAR_API_BASE_URL");
+        std::env::remove_var("AURA_SLACK_API_BASE_URL");
+        std::env::remove_var("AURA_NOTION_API_BASE_URL");
+    }
 }
 
 // ---------------------------------------------------------------------------

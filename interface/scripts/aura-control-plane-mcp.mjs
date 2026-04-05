@@ -10,10 +10,16 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 const apiBaseUrl = requiredEnv("AURA_MCP_API_BASE_URL");
 const projectId = requiredEnv("AURA_MCP_PROJECT_ID");
 const jwt = requiredEnv("AURA_MCP_JWT");
+const orgId = optionalEnv("AURA_MCP_ORG_ID");
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const sharedProjectTools = JSON.parse(
   fs.readFileSync(path.resolve(currentDir, "../../shared/project-control-plane-tools.json"), "utf8"),
 );
+const sharedOrgTools = JSON.parse(
+  fs.readFileSync(path.resolve(currentDir, "../../shared/org-integration-tools.json"), "utf8"),
+);
+const allSharedTools = [...sharedProjectTools, ...sharedOrgTools];
+let orgIntegrationsPromise;
 
 function requiredEnv(name) {
   const value = process.env[name]?.trim();
@@ -21,6 +27,11 @@ function requiredEnv(name) {
     throw new Error(`Missing required environment variable: ${name}`);
   }
   return value;
+}
+
+function optionalEnv(name) {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
 }
 
 async function api(path, init = {}) {
@@ -39,6 +50,41 @@ async function api(path, init = {}) {
   }
 
   return text ? JSON.parse(text) : null;
+}
+
+async function getOrgIntegrations() {
+  if (!orgId) {
+    return [];
+  }
+  if (!orgIntegrationsPromise) {
+    orgIntegrationsPromise = api(`/api/orgs/${orgId}/integrations`);
+  }
+  const integrations = await orgIntegrationsPromise;
+  return Array.isArray(integrations) ? integrations : [];
+}
+
+async function availableOrgTools() {
+  if (!orgId) {
+    return [];
+  }
+  const integrations = await getOrgIntegrations();
+  const availableProviders = new Set(
+    integrations
+      .filter((integration) => integration?.has_secret)
+      .map((integration) => integration.provider)
+      .filter((provider) => typeof provider === "string" && provider),
+  );
+  return sharedOrgTools.filter((tool) => !tool.provider || availableProviders.has(tool.provider));
+}
+
+async function callOrgTool(toolName, args = {}) {
+  if (!orgId) {
+    throw new Error(`${toolName} requires AURA_MCP_ORG_ID to be set by the Aura OS server`);
+  }
+  return api(`/api/orgs/${orgId}/tool-actions/${toolName}`, {
+    method: "POST",
+    body: JSON.stringify(args),
+  });
 }
 
 function normalizeMarkdownContents(args) {
@@ -378,6 +424,54 @@ async function getLoopStatus() {
   return { loop_status: loopStatus };
 }
 
+async function listOrgIntegrations(args) {
+  const provider = optionalTrimmedString(args?.provider);
+  const integrations = await getOrgIntegrations();
+  return {
+    integrations: integrations
+      .filter((integration) => !provider || integration.provider === provider)
+      .map((integration) => ({
+        integration_id: integration.integration_id,
+        name: integration.name,
+        provider: integration.provider,
+        default_model: integration.default_model ?? null,
+        has_secret: Boolean(integration.has_secret),
+      })),
+  };
+}
+
+async function githubListRepos(args) {
+  return callOrgTool("github_list_repos", args);
+}
+
+async function githubCreateIssue(args) {
+  return callOrgTool("github_create_issue", args);
+}
+
+async function linearListTeams(args) {
+  return callOrgTool("linear_list_teams", args);
+}
+
+async function linearCreateIssue(args) {
+  return callOrgTool("linear_create_issue", args);
+}
+
+async function slackListChannels(args) {
+  return callOrgTool("slack_list_channels", args);
+}
+
+async function slackPostMessage(args) {
+  return callOrgTool("slack_post_message", args);
+}
+
+async function notionSearchPages(args) {
+  return callOrgTool("notion_search_pages", args);
+}
+
+async function notionCreatePage(args) {
+  return callOrgTool("notion_create_page", args);
+}
+
 const toolHandlers = {
   list_specs: listSpecs,
   get_spec: getSpec,
@@ -399,35 +493,44 @@ const toolHandlers = {
   pause_dev_loop: pauseDevLoop,
   stop_dev_loop: stopDevLoop,
   get_loop_status: getLoopStatus,
+  list_org_integrations: listOrgIntegrations,
+  github_list_repos: githubListRepos,
+  github_create_issue: githubCreateIssue,
+  linear_list_teams: linearListTeams,
+  linear_create_issue: linearCreateIssue,
+  slack_list_channels: slackListChannels,
+  slack_post_message: slackPostMessage,
+  notion_search_pages: notionSearchPages,
+  notion_create_page: notionCreatePage,
 };
 
-function validateSharedProjectTools() {
-  const manifestNames = new Set(sharedProjectTools.map((tool) => tool.name));
+function validateSharedTools() {
+  const manifestNames = new Set(allSharedTools.map((tool) => tool.name));
   const handlerNames = new Set(Object.keys(toolHandlers));
 
-  for (const tool of sharedProjectTools) {
+  for (const tool of allSharedTools) {
     if (typeof tool.name !== "string" || !tool.name) {
-      throw new Error("Shared project tool manifest contains a tool without a valid name");
+      throw new Error("Shared tool manifest contains a tool without a valid name");
     }
     if (typeof tool.description !== "string" || !tool.description) {
-      throw new Error(`Shared project tool '${tool.name}' is missing a description`);
+      throw new Error(`Shared tool '${tool.name}' is missing a description`);
     }
     if (!tool.inputSchema || typeof tool.inputSchema !== "object") {
-      throw new Error(`Shared project tool '${tool.name}' is missing a valid inputSchema`);
+      throw new Error(`Shared tool '${tool.name}' is missing a valid inputSchema`);
     }
     if (!toolHandlers[tool.name]) {
-      throw new Error(`Shared project tool '${tool.name}' has no MCP handler`);
+      throw new Error(`Shared tool '${tool.name}' has no MCP handler`);
     }
   }
 
   for (const name of handlerNames) {
     if (!manifestNames.has(name)) {
-      throw new Error(`MCP handler '${name}' is not declared in the shared project tool manifest`);
+      throw new Error(`MCP handler '${name}' is not declared in the shared tool manifests`);
     }
   }
 }
 
-validateSharedProjectTools();
+validateSharedTools();
 
 const server = new Server(
   {
@@ -442,7 +545,7 @@ const server = new Server(
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: sharedProjectTools.map((tool) => ({
+  tools: [...sharedProjectTools, ...(await availableOrgTools())].map((tool) => ({
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,

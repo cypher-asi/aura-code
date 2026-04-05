@@ -11,6 +11,7 @@ pub(crate) mod follows;
 pub(crate) mod leaderboard;
 pub(crate) mod log;
 pub(crate) mod orgs;
+pub(crate) mod org_tools;
 pub(crate) mod project_stats;
 pub(crate) mod projects;
 mod projects_helpers;

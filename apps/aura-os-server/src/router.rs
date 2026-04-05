@@ -14,6 +14,7 @@ use crate::handlers::{
     agents, auth, billing, cron, dev_loop, feed, files, follows, harness_proxy, leaderboard, log,
     orgs, process, project_stats, projects, remote_files, remote_terminal, specs, super_agent,
     swarm, system, tasks, terminal, users, ws,
+    org_tools,
 };
 use crate::state::AppState;
 
@@ -176,6 +177,10 @@ fn org_routes() -> Router<AppState> {
         .route(
             "/api/orgs/:org_id/integrations/:integration_id",
             put(orgs::update_integration).delete(orgs::delete_integration),
+        )
+        .route(
+            "/api/orgs/:org_id/tool-actions/:tool_name",
+            post(org_tools::call_tool),
         )
         .route("/api/invites/:token/accept", post(orgs::accept_invite))
         .route(

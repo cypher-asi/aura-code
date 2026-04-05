@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -59,6 +59,7 @@ struct ExternalProjectMcpConfig {
 #[serde(rename_all = "camelCase")]
 struct SharedProjectTool {
     name: String,
+    provider: Option<String>,
     description: String,
     prompt_signature: String,
     input_schema: Value,
@@ -66,31 +67,87 @@ struct SharedProjectTool {
     saved_payload_key: Option<String>,
 }
 
+fn load_shared_tools(manifest_path: &str, label: &str) -> Vec<SharedProjectTool> {
+    let tools: Vec<SharedProjectTool> =
+        serde_json::from_str(manifest_path).expect("shared control-plane tool manifest must parse");
+    for tool in &tools {
+        assert!(
+            tool.input_schema.is_object(),
+            "{label} control-plane tool `{}` must declare an object input schema",
+            tool.name
+        );
+    }
+    tools
+}
+
 fn shared_project_tools() -> &'static [SharedProjectTool] {
     static TOOLS: OnceLock<Vec<SharedProjectTool>> = OnceLock::new();
     TOOLS.get_or_init(|| {
-        let tools: Vec<SharedProjectTool> = serde_json::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../shared/project-control-plane-tools.json"
-        )))
-        .expect("shared project control-plane tool manifest must parse");
-        for tool in &tools {
-            assert!(
-                tool.input_schema.is_object(),
-                "shared project control-plane tool `{}` must declare an object input schema",
-                tool.name
-            );
-        }
-        tools
+        load_shared_tools(
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../shared/project-control-plane-tools.json"
+            )),
+            "shared project",
+        )
     })
 }
 
-fn shared_project_tool(name: &str) -> Option<&'static SharedProjectTool> {
-    shared_project_tools().iter().find(|tool| tool.name == name)
+fn shared_org_tools() -> &'static [SharedProjectTool] {
+    static TOOLS: OnceLock<Vec<SharedProjectTool>> = OnceLock::new();
+    TOOLS.get_or_init(|| {
+        load_shared_tools(
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../shared/org-integration-tools.json"
+            )),
+            "shared org",
+        )
+    })
 }
 
-fn is_external_project_tool_name(name: &str) -> bool {
-    shared_project_tool(name).is_some()
+fn shared_external_tool(name: &str) -> Option<&'static SharedProjectTool> {
+    shared_project_tools().iter().find(|tool| tool.name == name)
+        .or_else(|| shared_org_tools().iter().find(|tool| tool.name == name))
+}
+
+fn is_external_tool_name(name: &str) -> bool {
+    shared_external_tool(name).is_some()
+}
+
+fn available_org_tool_providers(state: &AppState, agent: &Agent) -> HashSet<String> {
+    let Some(org_id) = agent.org_id else {
+        return HashSet::new();
+    };
+
+    state
+        .org_service
+        .list_integrations(&org_id)
+        .map(|integrations| {
+            integrations
+                .into_iter()
+                .filter(|integration| integration.has_secret)
+                .map(|integration| integration.provider)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn available_external_tools<'a>(
+    state: &'a AppState,
+    agent: &'a Agent,
+) -> Vec<&'static SharedProjectTool> {
+    let available_providers = available_org_tool_providers(state, agent);
+    let mut tools = shared_project_tools().iter().collect::<Vec<_>>();
+    if agent.org_id.is_some() {
+        tools.extend(shared_org_tools().iter().filter(|tool| {
+            tool.provider
+                .as_deref()
+                .map(|provider| available_providers.contains(provider))
+                .unwrap_or(true)
+        }));
+    }
+    tools
 }
 
 pub(crate) async fn test_agent_runtime(
@@ -242,7 +299,7 @@ async fn send_external_project_agent_event_stream(
             &sse_tx,
             HarnessOutbound::SessionReady(SessionReady {
                 session_id: Uuid::new_v4().to_string(),
-                tools: external_project_tool_infos(),
+                tools: external_project_tool_infos(&state, &agent),
                 skills: Vec::new(),
             }),
         );
@@ -343,9 +400,9 @@ fn opencode_default_model(provider: &str) -> Option<&'static str> {
     }
 }
 
-fn external_project_tool_infos() -> Vec<ToolInfo> {
-    shared_project_tools()
-        .iter()
+fn external_project_tool_infos(state: &AppState, agent: &Agent) -> Vec<ToolInfo> {
+    available_external_tools(state, agent)
+        .into_iter()
         .map(|tool| ToolInfo {
             name: tool.name.clone(),
             description: tool.description.clone(),
@@ -1261,6 +1318,9 @@ async fn build_external_project_mcp_config(
     env.insert("AURA_MCP_PROJECT_ID".to_string(), project_id.to_string());
     env.insert("AURA_MCP_JWT".to_string(), jwt.to_string());
     env.insert("AURA_MCP_AGENT_INSTANCE_ID".to_string(), agent_instance_id);
+    if let Some(org_id) = agent.org_id {
+        env.insert("AURA_MCP_ORG_ID".to_string(), org_id.to_string());
+    }
 
     Ok(ExternalProjectMcpConfig {
         server_name: "aura".to_string(),
@@ -1389,7 +1449,7 @@ fn emit_saved_artifact_events(
     if is_error {
         return;
     }
-    let Some(tool) = shared_project_tool(tool_name) else {
+    let Some(tool) = shared_external_tool(tool_name) else {
         return;
     };
     let Some(saved_event) = tool.saved_event.as_deref() else {
@@ -1834,7 +1894,7 @@ fn claude_tool_use_starts(event: &Value) -> Vec<aura_os_link::ToolUseStart> {
         .filter_map(|block| {
             let name = block.get("name").and_then(Value::as_str)?;
             let normalized = normalize_external_tool_name(name);
-            if !is_external_project_tool_name(&normalized) {
+            if !is_external_tool_name(&normalized) {
                 return None;
             }
             Some(aura_os_link::ToolUseStart {
@@ -2031,7 +2091,7 @@ fn build_external_prompt(
     }
     if supports_external_project_tools(&agent.adapter_type) && project_id.is_some() {
         prompt.push_str("Aura control-plane tools:\n");
-        for tool in shared_project_tools() {
+        for tool in available_external_tools(state, agent) {
             prompt.push_str("- ");
             prompt.push_str(&tool.prompt_signature);
             prompt.push_str(": ");
@@ -2044,6 +2104,7 @@ fn build_external_prompt(
         prompt.push_str("When the user asks to move an existing task between states, use transition_task or update_task(status=...) instead of describing the change in prose.\n");
         prompt.push_str("When the user asks to retry a task, use retry_task. When the user asks to start or run a task through Aura OS, use run_task.\n");
         prompt.push_str("When the user asks to control the project loop itself, use start_dev_loop, pause_dev_loop, stop_dev_loop, or get_loop_status.\n");
+        prompt.push_str("When the user asks to use a connected org system like GitHub, Linear, Slack, or Notion, use the matching Aura tool if it is available instead of only drafting prose.\n");
         prompt.push_str("After creating or transitioning tasks, stop and summarize what changed. Do not start implementation work unless the user explicitly asks for it.\n\n");
     }
     prompt.push_str("User request:\n");
@@ -2056,7 +2117,7 @@ mod tests {
     use super::{
         claude_tool_results, claude_tool_use_starts, codex_tool_result, codex_tool_use_start,
         codex_turn_usage, parse_gemini_output, parse_opencode_output, parse_cursor_output,
-        shared_project_tools,
+        shared_org_tools, shared_project_tools,
     };
     use serde_json::json;
     use std::collections::{HashMap, HashSet};
@@ -2214,7 +2275,10 @@ mod tests {
 
     #[test]
     fn shared_project_tool_manifest_has_unique_names_and_signatures() {
-        let tools = shared_project_tools();
+        let tools = shared_project_tools()
+            .iter()
+            .chain(shared_org_tools().iter())
+            .collect::<Vec<_>>();
         assert!(!tools.is_empty());
 
         let mut names = HashSet::new();
