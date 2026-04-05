@@ -625,13 +625,20 @@ async fn stream_codex_project_turn(
         cwd.clone(),
         "-c".to_string(),
         format!(
-            "mcp_servers.{}.command={:?}",
-            mcp_config.server_name, mcp_config.command
+            "mcp_servers.{}.command={}",
+            mcp_config.server_name,
+            codex_toml_string(&mcp_config.command)
         ),
         "-c".to_string(),
         format!(
-            "mcp_servers.{}.args={:?}",
-            mcp_config.server_name, mcp_config.args
+            "mcp_servers.{}.args=[{}]",
+            mcp_config.server_name,
+            mcp_config
+                .args
+                .iter()
+                .map(|a| codex_toml_string(a))
+                .collect::<Vec<_>>()
+                .join(",")
         ),
         "-c".to_string(),
         format!(
@@ -1254,7 +1261,13 @@ fn codex_inline_env(values: &HashMap<String, String>) -> String {
 }
 
 fn codex_toml_string(value: &str) -> String {
-    format!("{:?}", value)
+    let escaped = value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t");
+    format!("\"{escaped}\"")
 }
 
 fn parse_claude_output(stdout: &str, fallback_model: Option<String>) -> ApiResult<RuntimeOutcome> {

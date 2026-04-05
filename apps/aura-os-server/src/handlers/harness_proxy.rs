@@ -8,6 +8,16 @@ use aura_os_core::AgentId;
 
 use crate::state::AppState;
 
+/// Escape a string for use as a YAML double-quoted scalar value.
+/// The caller wraps the result in `"..."` — this function escapes the interior.
+fn yaml_escape_scalar(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+}
+
 pub(crate) fn harness_base_url() -> String {
     std::env::var("LOCAL_HARNESS_URL").unwrap_or_else(|_| "http://localhost:8080".to_string())
 }
@@ -19,7 +29,7 @@ pub(crate) async fn install_skill_for_agent(agent_id: &str, skill_name: &str) ->
     let resp = client
         .post(&url)
         .header("Content-Type", "application/json")
-        .body(format!(r#"{{"name":"{}"}}"#, skill_name))
+        .body(serde_json::json!({"name": skill_name}).to_string())
         .send()
         .await;
     matches!(resp, Ok(r) if r.status().is_success())
@@ -280,16 +290,16 @@ pub(crate) async fn create_skill(
 
     let mut frontmatter = format!(
         "---\ndescription: \"{}\"\n",
-        payload.description.replace('"', "\\\"")
+        yaml_escape_scalar(&payload.description)
     );
     if let Some(ref tools) = payload.allowed_tools {
         frontmatter.push_str(&format!("allowed_tools: [{}]\n", tools.join(", ")));
     }
     if let Some(ref model) = payload.model {
-        frontmatter.push_str(&format!("model: \"{model}\"\n"));
+        frontmatter.push_str(&format!("model: \"{}\"\n", yaml_escape_scalar(model)));
     }
     if let Some(ref context) = payload.context {
-        frontmatter.push_str(&format!("context: \"{context}\"\n"));
+        frontmatter.push_str(&format!("context: \"{}\"\n", yaml_escape_scalar(context)));
     }
     frontmatter.push_str(&format!(
         "user_invocable: {}\n",

@@ -39,7 +39,8 @@ impl TryFrom<StorageSpec> for Spec {
 // ---------------------------------------------------------------------------
 
 fn parse_task_status(raw: &str) -> TaskStatus {
-    serde_json::from_str(&format!("\"{raw}\"")).unwrap_or(TaskStatus::Pending)
+    serde_json::from_value(serde_json::Value::String(raw.to_string()))
+        .unwrap_or(TaskStatus::Pending)
 }
 
 fn parse_dependency_ids(ids: Option<Vec<String>>) -> Vec<TaskId> {
