@@ -1230,6 +1230,9 @@ async fn build_external_project_mcp_config(
     if let Some(org_id) = agent.org_id {
         env.insert("AURA_MCP_ORG_ID".to_string(), org_id.to_string());
     }
+    if let Some(secrets_json) = workspace_integration_secrets_json(state, agent) {
+        env.insert("AURA_MCP_INTEGRATION_SECRETS_JSON".to_string(), secrets_json);
+    }
 
     Ok(ExternalProjectMcpConfig {
         server_name: "aura".to_string(),
@@ -1326,6 +1329,33 @@ fn control_plane_api_base_url() -> String {
     };
 
     format!("http://{normalized_host}:{port}")
+}
+
+fn workspace_integration_secrets_json(state: &AppState, agent: &Agent) -> Option<String> {
+    let org_id = agent.org_id?;
+    let integrations = state.org_service.list_integrations(&org_id).ok()?;
+    let mut secrets = serde_json::Map::new();
+
+    for integration in integrations {
+        if !integration.has_secret {
+            continue;
+        }
+        let secret = state
+            .org_service
+            .get_integration_secret(&integration.integration_id)
+            .ok()
+            .flatten()
+            .filter(|value| !value.trim().is_empty());
+        if let Some(secret) = secret {
+            secrets.insert(integration.integration_id, Value::String(secret));
+        }
+    }
+
+    if secrets.is_empty() {
+        None
+    } else {
+        Some(Value::Object(secrets).to_string())
+    }
 }
 
 fn emit_harness_event(

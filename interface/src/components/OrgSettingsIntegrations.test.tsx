@@ -105,4 +105,42 @@ describe("OrgSettingsIntegrations", () => {
       screen.getByText(/Workspace connection for model\/runtime access./i),
     ).toBeInTheDocument();
   });
+
+  it("submits custom mcp servers with provider config", async () => {
+    const user = userEvent.setup();
+    const onCreate = vi.fn().mockResolvedValue(null);
+
+    render(
+      <OrgSettingsIntegrations
+        integrations={[]}
+        busyId={null}
+        onCreate={onCreate}
+        onUpdate={vi.fn().mockResolvedValue(null)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Custom MCP Server" }));
+    await user.type(screen.getByLabelText("New integration name"), "GitHub MCP");
+    await user.type(screen.getByLabelText("New Transport"), "stdio");
+    await user.type(screen.getByLabelText("New Command"), "npx");
+    await user.type(screen.getByLabelText("New Args"), "-y @modelcontextprotocol/server-github");
+    await user.type(screen.getByLabelText("New Secret Env Var"), "GITHUB_PERSONAL_ACCESS_TOKEN");
+    await user.type(screen.getByLabelText("New Optional MCP Token"), "ghp_test");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(onCreate).toHaveBeenCalledWith({
+      name: "GitHub MCP",
+      provider: "mcp_server",
+      kind: "mcp_server",
+      default_model: null,
+      provider_config: {
+        transport: "stdio",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-github"],
+        secretEnvVar: "GITHUB_PERSONAL_ACCESS_TOKEN",
+      },
+      api_key: "ghp_test",
+    });
+  });
 });

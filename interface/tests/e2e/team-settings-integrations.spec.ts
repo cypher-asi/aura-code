@@ -11,6 +11,7 @@ test("team settings integrations show clear sections and labeled fields", async 
         org_id: "org-1",
         name: "Anthropic Prod",
         provider: "anthropic",
+        kind: "workspace_connection",
         default_model: "claude-sonnet-4-5",
         has_secret: true,
         secret_last4: "ngAA",
@@ -22,6 +23,7 @@ test("team settings integrations show clear sections and labeled fields", async 
         org_id: "org-1",
         name: "GitHub Ops",
         provider: "github",
+        kind: "workspace_integration",
         default_model: null,
         has_secret: true,
         secret_last4: "hub7",
@@ -40,13 +42,13 @@ test("team settings integrations show clear sections and labeled fields", async 
 
   await dialog.getByRole("button", { name: "Integrations" }).click();
 
-  await expect(dialog.getByRole("heading", { name: "Integrations" })).toBeVisible();
-  await expect(dialog.getByText("Create Integration")).toBeVisible();
-  await expect(dialog.getByText("Saved Integrations")).toBeVisible();
-  await expect(dialog.getByText("Model Integrations").first()).toBeVisible();
-  await expect(dialog.getByText("Tool Integrations").first()).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Connections, Integrations, and MCP" })).toBeVisible();
+  await expect(dialog.getByText("Add Workspace Capability")).toBeVisible();
+  await expect(dialog.getByText("Workspace Connections").first()).toBeVisible();
+  await expect(dialog.getByText("Workspace Integrations").first()).toBeVisible();
+  await expect(dialog.getByText("MCP Servers").first()).toBeVisible();
 
-  await expect(dialog.getByText("Integration Name").first()).toBeVisible();
+  await expect(dialog.getByText("Name").first()).toBeVisible();
   await expect(dialog.getByText("Provider").first()).toBeVisible();
   await expect(dialog.getByText("Preferred Model").first()).toBeVisible();
   await expect(dialog.getByText("Anthropic API Key").first()).toBeVisible();

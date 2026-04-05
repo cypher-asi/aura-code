@@ -168,6 +168,11 @@ export const INTEGRATION_CATALOG: IntegrationDefinition[] = [
         label: "Args",
         placeholder: "-y @modelcontextprotocol/server-github",
       },
+      {
+        key: "secretEnvVar",
+        label: "Secret Env Var",
+        placeholder: "GITHUB_PERSONAL_ACCESS_TOKEN",
+      },
     ],
   },
 ];

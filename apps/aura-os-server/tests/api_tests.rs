@@ -171,6 +171,44 @@ async fn org_integrations_support_tool_and_model_provider_strings() {
 }
 
 #[tokio::test]
+async fn org_integrations_support_mcp_server_provider_config() {
+    let (app, _state, _db) = build_test_app();
+    let org_id = OrgId::new();
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/integrations"),
+        Some(serde_json::json!({
+            "name": "GitHub MCP",
+            "provider": "mcp_server",
+            "kind": "mcp_server",
+            "provider_config": {
+                "transport": "stdio",
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-github"],
+                "secretEnvVar": "GITHUB_PERSONAL_ACCESS_TOKEN"
+            },
+            "api_key": "ghp_test_123"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let created = response_json(resp).await;
+    assert_eq!(created["kind"], "mcp_server");
+    assert_eq!(created["provider"], "mcp_server");
+    assert_eq!(created["provider_config"]["transport"], "stdio");
+    assert_eq!(created["provider_config"]["secretEnvVar"], "GITHUB_PERSONAL_ACCESS_TOKEN");
+
+    let req = json_request("GET", &format!("/api/orgs/{org_id}/integrations"), None);
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let listed = response_json(resp).await;
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["kind"], "mcp_server");
+    assert_eq!(listed[0]["provider_config"]["command"], "npx");
+}
+
+#[tokio::test]
 async fn org_tool_actions_use_saved_integrations() {
     let provider_app = Router::new()
         .route(
