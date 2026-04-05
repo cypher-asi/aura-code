@@ -149,8 +149,8 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
     <div>
       <div className={styles.sectionHeaderRow}>
         <div>
-          <h2 className={styles.sectionTitle}>Integrations</h2>
-          <p className={styles.sectionIntro}>Connect model providers, work apps, and MCP tool sources.</p>
+          <h2 className={styles.sectionTitle}>Connected Services</h2>
+          <p className={styles.sectionIntro}>Manage provider access, app integrations, and MCP servers.</p>
         </div>
         <Button
           variant={isCreating ? "ghost" : "primary"}
@@ -159,13 +159,13 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
             setNewIntegration(null);
           }}
         >
-          {isCreating ? "Close" : "Add Integration"}
+          {isCreating ? "Close" : "Add Service"}
         </Button>
       </div>
 
       {isCreating && (
         <div className={styles.settingsGroup}>
-          <div className={styles.settingsGroupLabel}>New Integration</div>
+          <div className={styles.settingsGroupLabel}>New Service</div>
           <div className={`${styles.formRow} ${styles.integrationRow}`}>
             {!newIntegration ? (
               <div className={styles.integrationFields}>
