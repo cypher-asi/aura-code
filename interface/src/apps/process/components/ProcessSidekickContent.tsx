@@ -11,6 +11,7 @@ import { EventType } from "../../../types/aura-events";
 import type { ProcessArtifact, ProcessEvent, ProcessNode, ProcessRun } from "../../../types";
 import { processApi } from "../../../api/process";
 import { desktopApi } from "../../../api/desktop";
+import { formatTokensCompact as formatTokens, formatCost } from "../../../utils/format";
 import { EmptyState } from "../../../components/EmptyState";
 import { PreviewOverlay } from "../../../components/PreviewOverlay";
 import { StreamingBubble } from "../../../components/StreamingBubble";
@@ -60,16 +61,6 @@ function injectKeyframes() {
   document.head.appendChild(style);
 }
 
-function formatTokens(count: number): string {
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
-  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`;
-  return String(count);
-}
-
-function formatCost(usd: number): string {
-  if (usd < 0.01) return `$${usd.toFixed(4)}`;
-  return `$${usd.toFixed(3)}`;
-}
 
 function useElapsedTime(startedAt: string, isActive: boolean): string {
   const [, setTick] = useState(0);
@@ -687,7 +678,7 @@ function LiveRunBanner({
       {totalTokens > 0 && (
         <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--color-text-muted)" }}>
           <span>{formatTokens(totalTokens)} tokens</span>
-          <span>~{formatCost(estimatedCost)}</span>
+          <span>~{formatCost(estimatedCost, 3)}</span>
         </div>
       )}
     </div>
@@ -999,9 +990,9 @@ function RunPreviewBody({ run: initialRun }: { run: ProcessRun }) {
               <span style={{ color: "var(--color-text-muted)" }}>Cost</span>
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>
                 {run.cost_usd != null
-                  ? formatCost(run.cost_usd)
+                  ? formatCost(run.cost_usd, 3)
                   : totalTokensFromEvents.total > 0
-                    ? `~${formatCost(totalTokensFromEvents.input * 3 / 1_000_000 + totalTokensFromEvents.output * 15 / 1_000_000)}`
+                    ? `~${formatCost(totalTokensFromEvents.input * 3 / 1_000_000 + totalTokensFromEvents.output * 15 / 1_000_000, 3)}`
                     : "\u2014"
                 }
               </span>

@@ -9,7 +9,8 @@ import { AgentEditorModal } from "../../../components/AgentEditorModal";
 import { PreviewOverlay } from "../../../components/PreviewOverlay";
 import { StatusBadge } from "../../../components/StatusBadge";
 import { TaskStatusIcon } from "../../../components/TaskStatusIcon";
-import { api, ApiClientError } from "../../../api/client";
+import { api } from "../../../api/client";
+import { getApiErrorMessage } from "../../../utils/api-errors";
 import { useSelectedAgent, useAgentStore } from "../stores";
 import { useAgentSidekickStore } from "../stores/agent-sidekick-store";
 import { useShallow } from "zustand/react/shallow";
@@ -190,11 +191,7 @@ export function AgentInfoPanel({ variant = "default" }: AgentInfoPanelProps) {
       useAgentStore.getState().fetchAgents({ force: true });
       navigate("/agents");
     } catch (err) {
-      if (err instanceof ApiClientError) {
-        setDeleteError(err.body.error);
-      } else {
-        setDeleteError("Failed to delete agent.");
-      }
+      setDeleteError(getApiErrorMessage(err));
     } finally {
       setDeleting(false);
     }

@@ -5,7 +5,7 @@ import { useAuth } from "../../stores/auth-store";
 import { authApi } from "../../api/auth";
 import { useHostStore, type HostConnectionStatus } from "../../stores/host-store";
 import { getHostDisplayLabel, getTargetHostOrigin, requiresExplicitHostOrigin } from "../../lib/host-config";
-import { ApiClientError } from "../../api/client";
+import { getAuthErrorMessage } from "../../utils/api-errors";
 import { HostSettingsModal } from "../../components/HostSettingsModal";
 import { useUIModalStore } from "../../stores/ui-modal-store";
 import { useShallow } from "zustand/react/shallow";
@@ -32,7 +32,7 @@ const HOST_BADGE_VARIANT: Record<HostConnectionStatus, "running" | "pending" | "
 const HOST_STATUS_COPY: Record<HostConnectionStatus, { title: string; detail: string }> = {
   checking: {
     title: "Checking Aura host",
-    detail: "We’re verifying the configured host before sign-in.",
+    detail: "We\u2019re verifying the configured host before sign-in.",
   },
   online: {
     title: "Host reachable",
@@ -44,34 +44,13 @@ const HOST_STATUS_COPY: Record<HostConnectionStatus, { title: string; detail: st
   },
   unreachable: {
     title: "Host unreachable",
-    detail: "We couldn’t reach the configured Aura host. Update the host target or retry the connection check.",
+    detail: "We couldn\u2019t reach the configured Aura host. Update the host target or retry the connection check.",
   },
   error: {
     title: "Host check failed",
     detail: "Aura returned an unexpected error while checking the host connection.",
   },
 };
-
-function formatAuthError(err: unknown, hostLabel: string): string {
-  if (err instanceof ApiClientError) {
-    if (err.status === 401) {
-      return "Email or password incorrect.";
-    }
-    if ([502, 503, 504].includes(err.status)) {
-      return `Can’t reach Aura host at ${hostLabel}. Check the host target and try again.`;
-    }
-    return err.body.error;
-  }
-
-  if (err instanceof Error) {
-    if (/fetch|network|load failed/i.test(err.message)) {
-      return `Can’t reach Aura host at ${hostLabel}. Check the host target and try again.`;
-    }
-    return err.message;
-  }
-
-  return "An unexpected error occurred";
-}
 
 export function LoginView() {
   const { login, register, isAuthenticated, isLoading } = useAuth();
@@ -187,7 +166,7 @@ export function LoginView() {
       await refreshStatus();
       navigate(from, { replace: true });
     } catch (err) {
-      setError(formatAuthError(err, hostLabel));
+      setError(getAuthErrorMessage(err, hostLabel));
     } finally {
       setLoading(false);
     }
