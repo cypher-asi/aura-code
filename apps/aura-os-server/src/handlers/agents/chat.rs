@@ -340,6 +340,11 @@ pub(crate) fn spawn_chat_persist_task(
                             .await;
                             break;
                         }
+                        HarnessOutbound::GenerationStart(_)
+                        | HarnessOutbound::GenerationProgress(_)
+                        | HarnessOutbound::GenerationPartialImage(_)
+                        | HarnessOutbound::GenerationCompleted(_)
+                        | HarnessOutbound::GenerationError(_) => {}
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
@@ -1050,7 +1055,7 @@ fn dto_attachments_to_protocol(atts: &Option<Vec<ChatAttachmentDto>>) -> Option<
             Some(
                 v.iter()
                     .map(|a| MessageAttachment {
-                        r#type: a.type_.clone(),
+                        type_: a.type_.clone(),
                         media_type: a.media_type.clone(),
                         data: a.data.clone(),
                         name: a.name.clone(),
