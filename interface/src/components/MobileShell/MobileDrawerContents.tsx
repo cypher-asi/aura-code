@@ -10,7 +10,7 @@ import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import { projectWorkRoute, projectStatsRoute } from "../../utils/mobileNavigation";
 import { resolveProjectAgentPath } from "./mobile-shell-utils";
 import type { MobileShellState } from "./useMobileShellState";
-import styles from "../AppShell/AppShell.module.css";
+import styles from "./MobileShell.module.css";
 
 function resolveGlobalProjectPath(state: MobileShellState) {
   if (state.mobileDestination === "tasks" && state.mobileTargetProjectId) {

@@ -16,7 +16,7 @@ import { blurActiveElement, resolveProjectAgentPath } from "./mobile-shell-utils
 import { ProjectNavigationDrawerContent } from "./ProjectNavigationDrawer";
 import { MobileTopbar } from "./MobileTopbar";
 import { AppSwitcherContent, AccountSheetContent, PreviewSheetContent } from "./MobileDrawerContents";
-import styles from "../AppShell/AppShell.module.css";
+import styles from "./MobileShell.module.css";
 
 export function MobileShell() {
   const state = useMobileShellState();

@@ -12,7 +12,7 @@ import { CommandChips } from "./CommandChips";
 import { useChatUI } from "../../stores/chat-ui-store";
 import type { SlashCommand } from "../../constants/commands";
 import type { Project } from "../../types";
-import styles from "../ChatView/ChatView.module.css";
+import styles from "./ChatInputBar.module.css";
 
 export interface ChatInputBarHandle {
   focus: () => void;

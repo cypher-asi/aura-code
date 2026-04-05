@@ -7,7 +7,7 @@ import { useChatPanelState } from "./useChatPanelState";
 import type { ChatAttachment } from "../../api/streams";
 import type { Project } from "../../types";
 import type { GenerationMode } from "../../constants/models";
-import styles from "../ChatView/ChatView.module.css";
+import styles from "./ChatPanel.module.css";
 
 export interface ChatPanelProps {
   streamKey: string;

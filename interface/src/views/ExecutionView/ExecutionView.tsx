@@ -6,7 +6,7 @@ import { TaskFeed } from "../TaskFeed";
 import { LogPanel } from "../LogPanel";
 import { LoopControls } from "../LoopControls";
 import { Badge, Text } from "@cypher-asi/zui";
-import styles from "../aura.module.css";
+import styles from "./ExecutionView.module.css";
 
 export function ExecutionView() {
   const { projectId } = useParams<{ projectId: string }>();

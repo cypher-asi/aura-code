@@ -14,7 +14,7 @@ import {
   projectStatsRoute,
 } from "../../utils/mobileNavigation";
 import { resolveProjectAgentPath } from "./mobile-shell-utils";
-import styles from "../AppShell/AppShell.module.css";
+import styles from "./MobileShell.module.css";
 
 function ProjectRow({
   project,

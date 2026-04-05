@@ -7,7 +7,7 @@ import { SkillIcon } from "./SkillIcon";
 import { SecurityBadge } from "./SecurityBadge";
 import { apiFetch, apiFetchText } from "../../api/core";
 import type { SkillShopCatalogEntry } from "../../types";
-import styles from "./SkillShopModal.module.css";
+import styles from "./SkillShopDetail.module.css";
 import mdStyles from "../Preview/Preview.module.css";
 
 function stripFrontmatter(raw: string): string {

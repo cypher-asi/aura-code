@@ -22,7 +22,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
 import { apps } from "../../apps/registry";
 import { windowCommand } from "../../lib/windowCommand";
-import styles from "../AppShell/AppShell.module.css";
+import styles from "./DesktopShell.module.css";
 
 function blurActiveElement() {
   const active = document.activeElement;

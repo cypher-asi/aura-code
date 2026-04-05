@@ -162,7 +162,7 @@ vi.mock("../../stores/sidekick-store", () => ({
   ),
 }));
 
-vi.mock("../AppShell/AppShell.module.css", () => ({
+vi.mock("./MobileShell.module.css", () => ({
   default: new Proxy({}, { get: (_t, prop) => String(prop) }),
 }));
 

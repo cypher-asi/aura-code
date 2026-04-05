@@ -6,7 +6,7 @@ vi.mock("../../hooks/stream/hooks", () => ({
   useIsStreaming: () => mockIsStreaming,
 }));
 
-vi.mock("../ChatView/ChatView.module.css", () => ({
+vi.mock("./ChatInputBar.module.css", () => ({
   default: new Proxy({}, { get: (_t, prop) => String(prop) }),
 }));
 

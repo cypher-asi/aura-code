@@ -116,7 +116,7 @@ vi.mock("../../lib/windowCommand", () => ({
   windowCommand: vi.fn(),
 }));
 
-vi.mock("../AppShell/AppShell.module.css", () => ({
+vi.mock("./DesktopShell.module.css", () => ({
   default: new Proxy({}, { get: (_t, prop) => String(prop) }),
 }));
 

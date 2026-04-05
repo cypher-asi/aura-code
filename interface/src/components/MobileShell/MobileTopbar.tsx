@@ -4,7 +4,7 @@ import { ArrowLeft, ChevronDown, CircleUserRound, Menu } from "lucide-react";
 import { useMobileDrawerStore } from "../../stores/mobile-drawer-store";
 import { projectRootPath } from "../../utils/mobileNavigation";
 import type { MobileShellState } from "./useMobileShellState";
-import styles from "../AppShell/AppShell.module.css";
+import styles from "./MobileShell.module.css";
 
 export function MobileTopbar({ state }: { state: MobileShellState }) {
   const navigate = useNavigate();
