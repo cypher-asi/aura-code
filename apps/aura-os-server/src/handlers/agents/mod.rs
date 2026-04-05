@@ -26,4 +26,5 @@ pub mod conversions_pub {
 }
 pub mod chat_pub {
     pub use super::chat::session_events_to_conversation_history;
+    pub(crate) use super::chat::get_or_create_chat_session;
 }

@@ -340,6 +340,7 @@ pub(crate) fn spawn_chat_persist_task(
                             .await;
                             break;
                         }
+                        _ => {}
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
@@ -986,7 +987,7 @@ pub(crate) async fn list_agent_events(
     Ok(Json(messages))
 }
 
-async fn get_or_create_chat_session(
+pub(crate) async fn get_or_create_chat_session(
     state: &AppState,
     key: &str,
     harness_mode: HarnessMode,
