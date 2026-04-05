@@ -1,6 +1,5 @@
 import { useCallback, type ReactNode, type ButtonHTMLAttributes } from "react";
 import { useNavigate } from "react-router-dom";
-import { CircleUserRound } from "lucide-react";
 import { useAppStore } from "../../stores/app-store";
 import { getLastSelectedAgentId } from "../../apps/agents/stores";
 import { getLastProject, getLastAgent } from "../../utils/storage";
@@ -62,7 +61,7 @@ export function AppNavRail({ layout = "rail" }: AppNavRailProps) {
   const apps = useAppStore((s) => s.apps);
   const activeApp = useAppStore((s) => s.activeApp);
   const navigate = useNavigate();
-  const primaryApps = apps.filter((app) => app.id !== "profile" && app.id !== "desktop");
+  const primaryApps = apps.filter((app) => app.id !== "desktop");
   const isBar = layout === "bar";
 
   const handleAppClick = useCallback(
@@ -111,15 +110,6 @@ export function AppNavRail({ layout = "rail" }: AppNavRailProps) {
               />
             ))}
           </div>
-          <NavRailButton
-            icon={<CircleUserRound size={17} />}
-            label="Profile"
-            selected={activeApp.id === "profile"}
-            title="Profile"
-            aria-label="Profile"
-            className={styles.navBarBtn}
-            onClick={() => navigate("/profile")}
-          />
         </>
       )}
     </nav>

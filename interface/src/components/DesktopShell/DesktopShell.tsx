@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef } from "react";
 import { useNavigate, useOutlet } from "react-router-dom";
 import { Topbar, Button } from "@cypher-asi/zui";
-import { CircleUserRound, PanelRight, Server } from "lucide-react";
+import { PanelRight, Server } from "lucide-react";
 import { Lane } from "../Lane";
 import { AppNavRail } from "../AppNavRail";
 import { BottomTaskbar } from "../BottomTaskbar";
@@ -169,16 +169,6 @@ export function DesktopShell() {
                   onClick={openHostSettings}
                 />
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                iconOnly
-                selected={activeApp.id === "profile"}
-                icon={<CircleUserRound size={16} />}
-                title="Profile"
-                aria-label="Profile"
-                onClick={() => navigate("/profile")}
-              />
               <Button
                 variant="ghost"
                 size="sm"
