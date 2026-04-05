@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { Org, OrgMember } from "../types";
+import type { Org, OrgMember, OrgIntegration } from "../types";
 
 const org1: Org = {
   org_id: "org-1",
@@ -27,6 +27,20 @@ const member1: OrgMember = {
   joined_at: "2025-01-01T00:00:00Z",
 };
 
+const integration1: OrgIntegration = {
+  integration_id: "int-1",
+  org_id: "org-1",
+  name: "Anthropic Team",
+  provider: "anthropic",
+  kind: "workspace_connection",
+  default_model: null,
+  provider_config: null,
+  has_secret: true,
+  secret_last4: "1234",
+  created_at: "2025-01-01T00:00:00Z",
+  updated_at: "2025-01-01T00:00:00Z",
+};
+
 const { mockApi, mockLocalStorage } = vi.hoisted(() => {
   const mockLocalStorage: Record<string, string> = {};
   return {
@@ -34,6 +48,7 @@ const { mockApi, mockLocalStorage } = vi.hoisted(() => {
       orgs: {
         list: vi.fn(),
         listMembers: vi.fn(),
+        listIntegrations: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
       },
@@ -64,10 +79,13 @@ beforeEach(() => {
     orgs: [],
     activeOrg: null,
     members: [],
+    integrations: [],
     isLoading: true,
   });
   for (const key of Object.keys(mockLocalStorage)) delete mockLocalStorage[key];
   vi.clearAllMocks();
+  mockApi.orgs.listMembers.mockResolvedValue([]);
+  mockApi.orgs.listIntegrations.mockResolvedValue([]);
 });
 
 describe("org-store", () => {
@@ -109,6 +127,24 @@ describe("org-store", () => {
       expect(useOrgStore.getState().activeOrg).toEqual(org2);
     });
 
+    it("clears stale members and integrations when the selected org changes", async () => {
+      mockLocalStorage["aura-active-org"] = "org-2";
+      mockApi.orgs.list.mockResolvedValue([org1, org2]);
+      useOrgStore.setState({
+        orgs: [org1, org2],
+        activeOrg: org1,
+        members: [member1],
+        integrations: [integration1],
+        isLoading: false,
+      });
+
+      await useOrgStore.getState().refreshOrgs();
+
+      expect(useOrgStore.getState().activeOrg).toEqual(org2);
+      expect(useOrgStore.getState().members).toEqual([]);
+      expect(useOrgStore.getState().integrations).toEqual([]);
+    });
+
     it("handles API failure gracefully", async () => {
       mockApi.orgs.list.mockRejectedValue(new Error("fail"));
 
@@ -144,6 +180,21 @@ describe("org-store", () => {
 
       expect(useOrgStore.getState().activeOrg).toEqual(org2);
       expect(mockLocalStorage["aura-active-org"]).toBe("org-2");
+    });
+
+    it("clears stale members and integrations when switching orgs", () => {
+      useOrgStore.setState({
+        orgs: [org1, org2],
+        activeOrg: org1,
+        members: [member1],
+        integrations: [integration1],
+      });
+
+      useOrgStore.getState().switchOrg("org-2");
+
+      expect(useOrgStore.getState().activeOrg).toEqual(org2);
+      expect(useOrgStore.getState().members).toEqual([]);
+      expect(useOrgStore.getState().integrations).toEqual([]);
     });
 
     it("does nothing if orgId not found", () => {
