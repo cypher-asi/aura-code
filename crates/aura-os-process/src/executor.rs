@@ -118,6 +118,16 @@ the error, and what data is missing. Do NOT fabricate results, echo back your se
 queries, or produce placeholder output. Downstream nodes depend on real data — passing \
 garbage forward is worse than reporting an honest failure.";
 
+fn output_file_addendum(output_file: &str) -> String {
+    format!(
+        "\n\nOUTPUT FILE: Write your results to `{output_file}` in the working directory. \
+         You may write incrementally as you collect data. This file is automatically \
+         read after your session ends and passed to downstream nodes. You do NOT need \
+         to repeat its contents in your text response. Write each result to disk as \
+         you go so partial progress survives timeouts."
+    )
+}
+
 pub struct ProcessExecutor {
     store: Arc<ProcessStore>,
     event_broadcast: broadcast::Sender<serde_json::Value>,
@@ -795,7 +805,19 @@ async fn execute_action(
         .and_then(|v| v.as_u64())
         .unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
 
-    let config = build_session_config(node, token, agent_service, org_service, None, project_path);
+    let output_file = node
+        .config
+        .get("output_file")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let mut config = build_session_config(node, token, agent_service, org_service, None, project_path);
+
+    if let Some(ref of_name) = output_file {
+        if let Some(ref mut sp) = config.system_prompt {
+            sp.push_str(&output_file_addendum(of_name));
+        }
+    }
 
     let session = harness
         .open_session(config)
@@ -826,7 +848,35 @@ async fn execute_action(
         warn!(session_id = %session.session_id, error = %e, "Failed to close harness session");
     }
 
-    let output = build_downstream_output(&resp);
+    // --- determine downstream output ---
+    let file_content = if let Some(ref of_name) = output_file {
+        let path = Path::new(project_path.unwrap_or(".")).join(of_name);
+        match tokio::fs::read_to_string(&path).await {
+            Ok(content) if !content.trim().is_empty() => {
+                info!(path = %path.display(), bytes = content.len(), "Read designated output file");
+                Some(content)
+            }
+            Ok(_) => None,
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
+    let final_text = strip_thinking_tags(resp.final_text.trim());
+
+    let output = if let Some(fc) = file_content {
+        fc
+    } else if !final_text.is_empty() {
+        final_text
+    } else {
+        return Err(ProcessError::Execution(
+            "Action node produced no output: the designated output file is \
+             missing/empty and the model's final text response is empty. \
+             Check the node's prompt and tool access."
+                .into(),
+        ));
+    };
 
     let token_usage = resp.usage.map(|u| NodeTokenUsage {
         input_tokens: u.cumulative_input_tokens,
@@ -1078,12 +1128,6 @@ async fn execute_artifact(
         content = extract_final_output(&strip_thinking_tags(&resp.full_text));
     }
     if content.is_empty() {
-        if let Some(wf) = extract_write_file_content(&resp.content_blocks) {
-            warn!("Artifact text output was empty but write_file content found — salvaging");
-            content = strip_thinking_tags(&wf);
-        }
-    }
-    if content.is_empty() {
         return Err(ProcessError::Execution(
             "Artifact node produced empty output from harness".into(),
         ));
@@ -1309,27 +1353,8 @@ async fn collect_harness_response(
     })
 }
 
-/// Build the output text that gets passed to downstream nodes.
-///
-const MIN_SUBSTANTIAL_OUTPUT_LEN: usize = 200;
-
-/// Build the downstream output for an action node.
-///
-/// Prefers the model's final text when it contains substantial content.
-/// When the text is thin (under [`MIN_SUBSTANTIAL_OUTPUT_LEN`] chars) and the
-/// session involved tool calls, falls back to extracting data from non-error
-/// `tool_result` content blocks so the actual research data reaches downstream
-/// nodes even if the model forgot to repeat it in its final message.
-///
-/// As a last resort, extracts content from `write_file` tool inputs — models
-/// sometimes put their output into file writes despite being told not to, and
-/// that data would otherwise be lost.
-///
-/// If the vast majority of tool calls errored, prepends a degraded-output
-/// warning so downstream nodes can detect that the data may be incomplete.
 /// Strip `<thinking>...</thinking>` blocks that some models emit as plain text
-/// instead of using the structured thinking protocol. Without this, reasoning
-/// text leaks into downstream node context.
+/// instead of using the structured thinking protocol.
 fn strip_thinking_tags(text: &str) -> String {
     let mut result = text.to_string();
     while let Some(start) = result.find("<thinking>") {
@@ -1340,111 +1365,6 @@ fn strip_thinking_tags(text: &str) -> String {
         }
     }
     result.trim().to_string()
-}
-
-fn build_downstream_output(resp: &HarnessResponse) -> String {
-    let text = strip_thinking_tags(resp.final_text.trim());
-
-    let (total_tool_calls, error_tool_calls, ok_results) = count_tool_outcomes(&resp.content_blocks);
-
-    let degraded = total_tool_calls > 0
-        && error_tool_calls as f64 / total_tool_calls as f64 > 0.5;
-
-    if degraded {
-        warn!(
-            total = total_tool_calls,
-            errors = error_tool_calls,
-            "Majority of tool calls failed — marking output as degraded"
-        );
-    }
-
-    let write_file_content = extract_write_file_content(&resp.content_blocks);
-
-    // When degraded and the model produced a substantial error report (per the
-    // TOOL-FAILURE RULE), always prefer it over write_file salvage — the file
-    // content is likely an incidental workaround attempt, not the intended output.
-    let mut output = if degraded && text.len() >= MIN_SUBSTANTIAL_OUTPUT_LEN {
-        text.to_string()
-    } else if text.len() >= MIN_SUBSTANTIAL_OUTPUT_LEN
-        && text.len() >= write_file_content.as_ref().map_or(0, |s| s.len())
-    {
-        text.to_string()
-    } else if let Some(ref wf) = write_file_content {
-        warn!(
-            text_len = text.len(),
-            write_file_len = wf.len(),
-            "Final text is thin but write_file content found — using write_file content"
-        );
-        wf.clone()
-    } else if ok_results.is_empty() {
-        text.to_string()
-    } else {
-        ok_results.join("\n\n---\n\n")
-    };
-
-    if degraded {
-        output = format!(
-            "⚠ DEGRADED OUTPUT: {error_tool_calls}/{total_tool_calls} tool calls failed. \
-             Data below may be incomplete.\n\n{output}"
-        );
-    }
-
-    output
-}
-
-/// Extract the largest `write_file` / `edit_file` content from tool_use blocks.
-/// Models sometimes put their final output into a file write despite being told
-/// not to; this salvages that data so it can flow downstream.
-fn extract_write_file_content(blocks: &[serde_json::Value]) -> Option<String> {
-    let mut best: Option<String> = None;
-    for block in blocks {
-        if block.get("type").and_then(|t| t.as_str()) != Some("tool_use") {
-            continue;
-        }
-        let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("");
-        if name != "write_file" && name != "edit_file" {
-            continue;
-        }
-        let content = block
-            .get("input")
-            .and_then(|inp| inp.get("content").or_else(|| inp.get("new_content")))
-            .and_then(|c| c.as_str())
-            .unwrap_or("");
-        if content.len() > best.as_ref().map_or(0, |s| s.len()) {
-            best = Some(content.to_string());
-        }
-    }
-    best.filter(|s| s.len() >= MIN_SUBSTANTIAL_OUTPUT_LEN)
-}
-
-/// Count total tool calls, error count, and collect non-error result strings.
-fn count_tool_outcomes(blocks: &[serde_json::Value]) -> (usize, usize, Vec<&str>) {
-    let mut total: usize = 0;
-    let mut errors: usize = 0;
-    let mut ok_results: Vec<&str> = Vec::new();
-
-    for block in blocks {
-        if block.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
-            continue;
-        }
-        total += 1;
-        let is_error = block
-            .get("is_error")
-            .and_then(|e| e.as_bool())
-            .unwrap_or(false);
-        if is_error {
-            errors += 1;
-            continue;
-        }
-        if let Some(result) = block.get("result").and_then(|r| r.as_str()) {
-            let r = result.trim();
-            if r.len() > 50 {
-                ok_results.push(r);
-            }
-        }
-    }
-
-    (total, errors, ok_results)
 }
 
 /// Extract the final meaningful output from a multi-turn agentic response.
