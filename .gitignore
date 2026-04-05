@@ -2,8 +2,6 @@
 .cursor
 .playwright-cli
 desktop-smoke-logs
-frontend/node_modules
-frontend/dist
 interface/node_modules
 interface/dist
 evals/promptfoo/node_modules
