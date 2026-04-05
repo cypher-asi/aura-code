@@ -123,6 +123,11 @@ const PROCESS_EXECUTION_PREAMBLE: &str = "\
 You are executing a step in an automated workflow process. \
 Output ONLY the final result. No planning, no narration, no \"let me try\" preamble. \
 Never describe your process — just output the finished product as text.\n\n\
+TOOL RULES:\n\
+- Use `read_file` / `write_file` / `edit_file` for file operations.\n\
+- Use `list_files` or `find_files` to browse the filesystem.\n\
+- Use `run_command` for build, test, git, and other shell commands.\n\
+- Treat the project root as `.` and always use relative paths.\n\n\
 TOOL-FAILURE RULE: If the majority of your tool calls fail or return errors, \
 STOP immediately and output a structured error report listing each failed tool call, \
 the error, and what data is missing. Do NOT fabricate results, echo back your search \
@@ -132,12 +137,18 @@ garbage forward is worse than reporting an honest failure.";
 const PROCESS_EXECUTION_PREAMBLE_WITH_OUTPUT_FILE: &str = "\
 You are executing a step in an automated workflow process.\n\n\
 OUTPUT FILE REQUIREMENT: You MUST write your final results to the designated \
-output file. This file is the ONLY output passed to downstream nodes. If the \
-file is empty when your session ends, the node FAILS and the workflow stops.\n\n\
+output file using `write_file`. This file is the ONLY output passed to \
+downstream nodes. If the file is empty when your session ends, the node \
+FAILS and the workflow stops.\n\n\
 WRITE INCREMENTALLY: Write to the output file after each batch of results you \
 collect, not just at the end. This way partial progress survives if you run out \
 of time. If write_file fails, retry with a simpler approach or write smaller \
 chunks. Never end your session without having written to the output file.\n\n\
+TOOL RULES:\n\
+- Use `read_file` / `write_file` / `edit_file` for file operations.\n\
+- Use `list_files` or `find_files` to browse the filesystem.\n\
+- Use `run_command` for build, test, git, and other shell commands.\n\
+- Treat the project root as `.` and always use relative paths.\n\n\
 TOOL-FAILURE RULE: If the majority of your tool calls fail or return errors, \
 STOP immediately and write a structured error report TO THE OUTPUT FILE listing \
 each failed tool call, the error, and what data is missing. Do NOT fabricate \
