@@ -142,8 +142,15 @@ downstream nodes. If the file is empty when your session ends, the node \
 FAILS and the workflow stops.\n\n\
 WRITE INCREMENTALLY: Write to the output file after each batch of results you \
 collect, not just at the end. This way partial progress survives if you run out \
-of time. If write_file fails, retry with a simpler approach or write smaller \
-chunks. Never end your session without having written to the output file.\n\n\
+of time.\n\n\
+SIZE LIMIT: Each individual `write_file` call MUST contain fewer than 4000 \
+characters of content. If your output is larger, split it across multiple \
+writes — write the first section, then use `edit_file` or another `write_file` \
+to append subsequent sections.\n\n\
+WRITE-FAILURE FALLBACK: If `write_file` fails 3 or more times in a row, STOP \
+trying to write to the file. Instead, output your complete results directly as \
+text in your response message. The system will recover this text automatically. \
+Do NOT keep retrying `write_file` indefinitely.\n\n\
 TOOL RULES:\n\
 - Use `read_file` / `write_file` / `edit_file` for file operations.\n\
 - Use `list_files` or `find_files` to browse the filesystem.\n\
@@ -1067,8 +1074,7 @@ async fn execute_action(
         timeout_secs,
     ).await;
 
-    // Always check the output file first — agent may have written it before
-    // a timeout or error. This is the canonical output path.
+    // Read the on-disk output file (agent may have written it during the session).
     let file_content = match tokio::fs::read_to_string(&output_file_path).await {
         Ok(content) if !content.trim().is_empty() => {
             info!(path = %output_file_path.display(), bytes = content.len(), "Read designated output file");
@@ -1077,90 +1083,94 @@ async fn execute_action(
         _ => None,
     };
 
-    if let Some(fc) = file_content {
-        let rel_path = format!(
-            "process-workspaces/{}/{}/{}",
-            process_id, run_id, output_file
-        );
-        let artifact = ProcessArtifact {
-            artifact_id: ProcessArtifactId::new(),
-            process_id: *process_id,
-            run_id: *run_id,
-            node_id: node.node_id,
-            artifact_type: ArtifactType::Document,
-            name: output_file.clone(),
-            file_path: rel_path,
-            size_bytes: fc.len() as u64,
-            metadata: serde_json::json!({}),
-            created_at: Utc::now(),
-        };
-        if let Err(e) = store.save_artifact(&artifact) {
-            warn!(node_id = %node.node_id, error = %e, "Failed to save action output as artifact");
+    // Try to extract recovery candidates from the harness response.
+    // We do this even when the file exists so we can pick the richer content.
+    let (recovery_content, token_usage, content_blocks) = match harness_result {
+        Ok((resp, tu)) => {
+            let all_text_clean = canonicalize_output(&resp.all_text, false);
+            let synthesized = synthesize_output_from_blocks(&resp.content_blocks);
+            let best_recovery = match (all_text_clean.len() > 500, synthesized) {
+                (true, Some(ref s)) if all_text_clean.len() >= s.len() => Some(all_text_clean),
+                (_, Some(s)) => Some(s),
+                (true, None) => Some(all_text_clean),
+                _ => None,
+            };
+            (best_recovery, tu, Some(resp.content_blocks))
         }
+        Err(e) => {
+            if file_content.is_some() {
+                (None, None, None)
+            } else {
+                return Err(e);
+            }
+        }
+    };
 
-        let token_usage = harness_result.ok().and_then(|(_, tu)| tu);
-        return Ok(NodeResult {
-            downstream_output: fc,
-            display_output: None,
-            token_usage,
-            content_blocks: None,
-        });
+    // Pick the best available content: prefer whichever source is largest,
+    // but only override the file when recovery is substantially better.
+    let chosen = match (&file_content, &recovery_content) {
+        (Some(fc), Some(rc))
+            if rc.len() > fc.len() * 3 && rc.len() > fc.len() + 500 =>
+        {
+            warn!(
+                node_id = %node.node_id,
+                file_bytes = fc.len(),
+                recovered_bytes = rc.len(),
+                "Recovery content is substantially larger than output file; using recovery"
+            );
+            recovery_content.unwrap()
+        }
+        (Some(fc), _) => fc.clone(),
+        (None, Some(_)) => {
+            warn!(
+                node_id = %node.node_id,
+                output_file = %output_file,
+                recovered_bytes = recovery_content.as_ref().map_or(0, |r| r.len()),
+                "Output file missing; using recovered content"
+            );
+            recovery_content.unwrap()
+        }
+        (None, None) => {
+            return Err(ProcessError::Execution(format!(
+                "Action node output file '{}' is missing/empty and no substantial output \
+                 could be recovered. This usually means the agent got stuck or ran out of \
+                 turns before writing results. Check the prompt, increase max_turns, or \
+                 increase timeout_seconds.",
+                output_file,
+            )));
+        }
+    };
+
+    // Persist the chosen content to disk and save the artifact.
+    if let Err(e) = tokio::fs::write(&output_file_path, chosen.as_bytes()).await {
+        warn!(node_id = %node.node_id, error = %e, "Failed to write action output to disk");
+    }
+    let rel_path = format!(
+        "process-workspaces/{}/{}/{}",
+        process_id, run_id, output_file
+    );
+    let artifact = ProcessArtifact {
+        artifact_id: ProcessArtifactId::new(),
+        process_id: *process_id,
+        run_id: *run_id,
+        node_id: node.node_id,
+        artifact_type: ArtifactType::Document,
+        name: output_file.clone(),
+        file_path: rel_path,
+        size_bytes: chosen.len() as u64,
+        metadata: serde_json::json!({}),
+        created_at: Utc::now(),
+    };
+    if let Err(e) = store.save_artifact(&artifact) {
+        warn!(node_id = %node.node_id, error = %e, "Failed to save action artifact");
     }
 
-    // Output file missing — propagate harness errors now.
-    let (resp, token_usage) = harness_result?;
-
-    // Recovery chain: try to salvage substantial work the agent produced
-    // but failed to write to the file.
-
-    // 1. Check all_text — the full conversation may contain the real output
-    //    (e.g. agent produced 25KB of JSON but never wrote it to the file).
-    let all_text_clean = canonicalize_output(&resp.all_text, false);
-    if all_text_clean.len() > 500 {
-        warn!(
-            node_id = %node.node_id,
-            output_file = %output_file,
-            all_text_bytes = all_text_clean.len(),
-            "Output file missing; recovered substantial text from conversation"
-        );
-        return Ok(NodeResult {
-            downstream_output: all_text_clean,
-            display_output: None,
-            token_usage,
-            content_blocks: Some(resp.content_blocks),
-        });
-    }
-
-    // 2. Check content_blocks for write_file attempts that failed
-    if let Some(recovered) = synthesize_output_from_blocks(&resp.content_blocks) {
-        warn!(
-            node_id = %node.node_id,
-            output_file = %output_file,
-            recovered_bytes = recovered.len(),
-            "Output file missing; recovered content from write_file tool calls"
-        );
-        return Ok(NodeResult {
-            downstream_output: recovered,
-            display_output: None,
-            token_usage,
-            content_blocks: Some(resp.content_blocks),
-        });
-    }
-
-    // 3. Nothing recoverable — hard fail with diagnostics
-    let tool_call_count = resp.content_blocks.iter()
-        .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
-        .count();
-    let final_text_preview: String = resp.final_text.chars().take(200).collect();
-
-    Err(ProcessError::Execution(format!(
-        "Action node output file '{}' is missing/empty and no substantial output \
-         could be recovered. The agent made {} tool calls and produced {} bytes of \
-         total text, but the final response was just: '{}'. \
-         This usually means the agent got stuck or ran out of turns before writing \
-         results. Check the prompt, increase max_turns, or increase timeout_seconds.",
-        output_file, tool_call_count, resp.all_text.len(), final_text_preview,
-    )))
+    Ok(NodeResult {
+        downstream_output: chosen,
+        display_output: None,
+        token_usage,
+        content_blocks,
+    })
 }
 
 fn sanitize_label_to_filename(label: &str) -> String {
@@ -1230,9 +1240,9 @@ async fn execute_prompt(
         _ => None,
     };
 
-    let (content, token_usage, content_blocks) = if let Some(fc) = file_content {
+    let (content, token_usage, content_blocks, from_file) = if let Some(fc) = file_content {
         let token_usage = harness_result.ok().and_then(|(_, tu)| tu);
-        (fc, token_usage, None)
+        (fc, token_usage, None, true)
     } else {
         let (resp, token_usage) = harness_result?;
         let cleaned = canonicalize_output(&resp.final_text, false);
@@ -1241,8 +1251,20 @@ async fn execute_prompt(
                 "Prompt node produced empty output".into(),
             ));
         }
-        (cleaned, token_usage, Some(resp.content_blocks))
+        (cleaned, token_usage, Some(resp.content_blocks), false)
     };
+
+    // When content was recovered from the LLM response (not the file), write
+    // it to disk so get_artifact_content can serve it.
+    if !from_file {
+        if let Err(e) = tokio::fs::write(&output_file_path, content.as_bytes()).await {
+            warn!(
+                node_id = %node.node_id,
+                error = %e,
+                "Failed to write prompt fallback content to disk"
+            );
+        }
+    }
 
     let artifact_type_str = node
         .config
@@ -2027,7 +2049,8 @@ fn extract_final_output(raw: &str) -> String {
 /// tool calls and returns the largest content payload, since the agent may
 /// have tried to write the file but the tool call failed.
 fn synthesize_output_from_blocks(blocks: &[serde_json::Value]) -> Option<String> {
-    let mut best: Option<String> = None;
+    // Tier 1: find the largest write_file call that has actual content.
+    let mut best_write: Option<String> = None;
     for block in blocks {
         let is_write = block.get("type").and_then(|t| t.as_str()) == Some("tool_use")
             && block
@@ -2047,12 +2070,49 @@ fn synthesize_output_from_blocks(blocks: &[serde_json::Value]) -> Option<String>
             })
             .and_then(|v| v.as_str());
         if let Some(c) = content {
-            if c.len() > best.as_ref().map_or(0, |b| b.len()) {
-                best = Some(c.to_string());
+            if c.len() > best_write.as_ref().map_or(0, |b| b.len()) {
+                best_write = Some(c.to_string());
             }
         }
     }
-    best.filter(|b| b.len() > 200)
+    if let Some(ref w) = best_write {
+        if w.len() > 200 {
+            return best_write;
+        }
+    }
+
+    // Tier 2: concatenate substantial results from successful tool calls.
+    // When write_file calls were all truncated by MaxTokens, the actual research
+    // data lives in tool_result blocks from run_command and similar tools.
+    let skip_tools: &[&str] = &[
+        "write_file", "write", "read_file", "list_files", "find_files", "edit_file",
+    ];
+    let mut tool_outputs: Vec<&str> = Vec::new();
+    for block in blocks {
+        if block.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
+            continue;
+        }
+        if block.get("is_error").and_then(|e| e.as_bool()).unwrap_or(false) {
+            continue;
+        }
+        let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        if skip_tools.contains(&name) {
+            continue;
+        }
+        if let Some(result) = block.get("result").and_then(|r| r.as_str()) {
+            if result.len() > 200 {
+                tool_outputs.push(result);
+            }
+        }
+    }
+    if !tool_outputs.is_empty() {
+        let combined = tool_outputs.join("\n\n---\n\n");
+        if combined.len() > 500 {
+            return Some(combined);
+        }
+    }
+
+    None
 }
 
 fn parse_condition_result(output: &str) -> bool {
