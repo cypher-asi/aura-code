@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 import { useOrgStore } from "../../stores/org-store";
-import { Building2, ChevronDown, Layers, Plus, Settings } from "lucide-react";
+import { Building2, ChevronDown, Plus, Settings } from "lucide-react";
 import { Button, Input, Modal } from "@cypher-asi/zui";
 import { useClickOutside } from "../../hooks/use-click-outside";
 import { useModalInitialFocus } from "../../hooks/use-modal-initial-focus";
@@ -118,7 +118,7 @@ export function OrgSelector({
           title={activeOrg?.name ?? "My Team"}
           aria-label="Switch team"
         >
-          <Layers size={15} />
+          <span className={styles.orgNameLabel}>/{activeOrg?.name?.toLowerCase() ?? "org"}</span>
         </button>
       ) : (
         <button
