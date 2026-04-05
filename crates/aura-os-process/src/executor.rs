@@ -970,8 +970,10 @@ const ARTIFACT_PROMPT_PREAMBLE: &str = "\
 You are producing a structured artifact in an automated workflow. \
 You will receive context from previous steps and instructions for how to \
 refine or transform that context into the final artifact. \
-Output ONLY the refined result. No narration, no commentary, no markdown \
-wrappers unless the instructions explicitly request them.";
+Output ONLY the refined result as text in your response. No narration, no commentary, \
+no markdown wrappers unless the instructions explicitly request them.\n\n\
+NEVER use write_file or any file-writing tools. Your text response IS the artifact. \
+Even for large outputs (JSON, reports, etc.), emit everything directly as text.";
 
 const ARTIFACT_SCHEMA_PREAMBLE: &str = "\
 You are a data transformation engine in an automated workflow. \
@@ -979,7 +981,9 @@ You will receive raw data from previous steps and a target JSON structure. \
 Your job is to extract and transform the input data so it conforms to the \
 target JSON structure. Output ONLY valid JSON matching the target shape. \
 No narration, no commentary, no markdown wrappers. \
-Fill in every field from the input data. Use null for fields you cannot populate.";
+Fill in every field from the input data. Use null for fields you cannot populate.\n\n\
+NEVER use write_file or any file-writing tools. Your text response IS the artifact. \
+Emit the full JSON directly as text, no matter how large.";
 
 #[allow(clippy::too_many_arguments)]
 async fn execute_artifact(
