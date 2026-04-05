@@ -15,7 +15,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import styles from "./ProcessCanvas.module.css";
-import { Play, Pause, Square, GitBranch, FileOutput, Timer, Merge, Pencil, Trash2 } from "lucide-react";
+import { Play, Pause, Square, GitBranch, FileOutput, Timer, Merge, Pencil, Trash2, Pin, PinOff } from "lucide-react";
 import { Button, Menu } from "@cypher-asi/zui";
 import type { MenuItem } from "@cypher-asi/zui";
 import type { ProcessNodeType } from "../../../../types/enums";
@@ -48,8 +48,11 @@ const nodeMenuItems: MenuItem[] = ADD_NODE_TYPES.map((item) => ({
   icon: NODE_MENU_ICONS[item.type],
 }));
 
-const nodeCtxMenuItems = (isIgnition: boolean): MenuItem[] => [
+const nodeCtxMenuItems = (isIgnition: boolean, isPinned: boolean, hasRuns: boolean): MenuItem[] => [
   { id: "rename", label: "Rename", icon: <Pencil size={14} /> },
+  isPinned
+    ? { id: "unpin", label: "Unpin Output", icon: <PinOff size={14} /> }
+    : { id: "pin", label: "Pin Output", icon: <Pin size={14} />, disabled: !hasRuns },
   { type: "separator" as const },
   { id: "delete", label: "Delete", icon: <Trash2 size={14} />, disabled: isIgnition },
 ];
@@ -98,6 +101,7 @@ function ProcessCanvasInner({
     onSelectionContextMenu,
     handleAddNode,
     deleteNodes,
+    togglePinNode,
     deleteConnection,
     setNodeCtxMenu,
     setEdgeCtxMenu,
@@ -110,6 +114,7 @@ function ProcessCanvasInner({
   } = useCanvasEventHandlers({
     processId,
     processNodes,
+    runs,
     nodes,
     setNodes,
     edges,
@@ -229,13 +234,19 @@ function ProcessCanvasInner({
           style={{ position: "fixed", left: nodeCtxMenu.x, top: nodeCtxMenu.y, zIndex: 9999 }}
         >
           <Menu
-            items={nodeCtxMenuItems(
-              processNodes.find((n) => n.node_id === nodeCtxMenu.nodeId)?.node_type === "ignition",
-            )}
+            items={(() => {
+              const node = processNodes.find((n) => n.node_id === nodeCtxMenu.nodeId);
+              return nodeCtxMenuItems(
+                node?.node_type === "ignition",
+                !!node?.config?.pinned_output,
+                runs.length > 0,
+              );
+            })()}
             onChange={(id) => {
               const targetId = nodeCtxMenu.nodeId;
               setNodeCtxMenu(null);
               if (id === "rename") setRenamingNodeId(targetId);
+              if (id === "pin" || id === "unpin") togglePinNode(targetId);
               if (id === "delete") deleteNodes([targetId]);
             }}
             background="solid"

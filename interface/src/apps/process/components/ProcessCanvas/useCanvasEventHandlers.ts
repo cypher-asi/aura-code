@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { Connection, Node, Edge } from "@xyflow/react";
-import type { ProcessNode } from "../../../../types";
+import type { ProcessNode, ProcessRun } from "../../../../types";
 import type { ProcessNodeType } from "../../../../types/enums";
 import { processApi } from "../../../../api/process";
 import { useProcessSidekickStore } from "../../stores/process-sidekick-store";
@@ -10,6 +10,7 @@ import { snap, type RenameState } from "./process-canvas-utils";
 export interface UseCanvasEventHandlersParams {
   processId: string;
   processNodes: ProcessNode[];
+  runs: ProcessRun[];
   nodes: Node[];
   setNodes: Dispatch<SetStateAction<Node[]>>;
   edges: Edge[];
@@ -21,7 +22,7 @@ export interface UseCanvasEventHandlersParams {
 
 export function useCanvasEventHandlers(params: UseCanvasEventHandlersParams) {
   const {
-    processId, processNodes,
+    processId, processNodes, runs,
     nodes, setNodes, edges, setEdges,
     screenToFlowPosition, fetchNodes, fetchConnections,
   } = params;
@@ -79,6 +80,35 @@ export function useCanvasEventHandlers(params: UseCanvasEventHandlersParams) {
       fetchConnections(processId);
     },
     [processId, processNodes, setNodes, setEdges, fetchNodes, fetchConnections, closeNodeInspector],
+  );
+
+  const togglePinNode = useCallback(
+    async (nodeId: string) => {
+      const node = processNodes.find((n) => n.node_id === nodeId);
+      if (!node) return;
+
+      const isPinned = !!node.config?.pinned_output;
+      try {
+        if (isPinned) {
+          const newConfig = { ...node.config };
+          delete newConfig.pinned_output;
+          await processApi.updateNode(processId, nodeId, { config: newConfig });
+        } else {
+          const latestRun = runs[0];
+          if (!latestRun) return;
+          const events = await processApi.listRunEvents(processId, latestRun.run_id);
+          const nodeEvent = events.find((e) => e.node_id === nodeId && e.status === "completed");
+          if (!nodeEvent?.output) return;
+          await processApi.updateNode(processId, nodeId, {
+            config: { ...node.config, pinned_output: nodeEvent.output },
+          });
+        }
+        fetchNodes(processId);
+      } catch (e) {
+        console.error("Failed to toggle pin:", e);
+      }
+    },
+    [processId, processNodes, runs, fetchNodes],
   );
 
   const onConnect = useCallback(
@@ -313,6 +343,7 @@ export function useCanvasEventHandlers(params: UseCanvasEventHandlersParams) {
     onSelectionContextMenu,
     handleAddNode,
     deleteNodes,
+    togglePinNode,
     deleteConnection,
     setNodeCtxMenu,
     setEdgeCtxMenu,
