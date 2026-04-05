@@ -1104,16 +1104,6 @@ async fn execute_artifact(
         .unwrap_or(3);
     session_config.max_turns = Some(artifact_max_turns);
 
-    let artifact_output_file = cfg
-        .get("output_file")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "output.md".to_string());
-
-    if let Some(ref mut sp) = session_config.system_prompt {
-        sp.push_str(&output_file_addendum(&artifact_output_file));
-    }
-
     let session = harness
         .open_session(session_config)
         .await
@@ -1134,31 +1124,12 @@ async fn execute_artifact(
         warn!(session_id = %session.session_id, error = %e, "Failed to close artifact harness session");
     }
 
-    let file_content = {
-        let path = Path::new(project_path.unwrap_or(".")).join(&artifact_output_file);
-        match tokio::fs::read_to_string(&path).await {
-            Ok(c) if !c.trim().is_empty() => {
-                info!(path = %path.display(), bytes = c.len(), "Read artifact output file");
-                Some(c)
-            }
-            _ => None,
-        }
-    };
-
-    let content = if let Some(fc) = file_content {
-        fc
-    } else {
-        let mut c = extract_final_output(&strip_thinking_tags(&resp.final_text));
-        if c.is_empty() {
-            c = extract_final_output(&strip_thinking_tags(&resp.full_text));
-        }
-        if c.is_empty() {
-            return Err(ProcessError::Execution(
-                "Artifact node produced empty output from harness".into(),
-            ));
-        }
-        c
-    };
+    let content = extract_final_output(&strip_thinking_tags(&resp.final_text));
+    if content.is_empty() {
+        return Err(ProcessError::Execution(
+            "Artifact node produced empty output from harness".into(),
+        ));
+    }
     let token_usage = resp.usage.map(|u| NodeTokenUsage {
         input_tokens: u.cumulative_input_tokens,
         output_tokens: u.cumulative_output_tokens,
