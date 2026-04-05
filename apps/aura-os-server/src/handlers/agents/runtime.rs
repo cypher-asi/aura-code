@@ -71,7 +71,7 @@ fn shared_project_tools() -> &'static [SharedProjectTool] {
     TOOLS.get_or_init(|| {
         let tools: Vec<SharedProjectTool> = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../shared/project-control-plane-tools.json"
+            "/../../infra/shared/project-control-plane-tools.json"
         )))
         .expect("shared project control-plane tool manifest must parse");
         for tool in &tools {

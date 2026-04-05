@@ -12,7 +12,7 @@ const projectId = requiredEnv("AURA_MCP_PROJECT_ID");
 const jwt = requiredEnv("AURA_MCP_JWT");
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const sharedProjectTools = JSON.parse(
-  fs.readFileSync(path.resolve(currentDir, "../../shared/project-control-plane-tools.json"), "utf8"),
+  fs.readFileSync(path.resolve(currentDir, "../../infra/shared/project-control-plane-tools.json"), "utf8"),
 );
 
 function requiredEnv(name) {
