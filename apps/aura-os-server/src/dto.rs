@@ -1,6 +1,6 @@
 use aura_os_core::*;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct CreateProjectRequest {
@@ -266,16 +266,24 @@ pub(crate) struct UpdateOrgIntegrationRequest {
     pub provider: Option<String>,
     #[serde(default)]
     pub kind: Option<aura_os_core::OrgIntegrationKind>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_patch_option")]
     pub default_model: Option<Option<String>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_patch_option")]
     pub provider_config: Option<Option<serde_json::Value>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_patch_option")]
     pub api_key: Option<Option<String>>,
 }
 
 fn default_org_integration_kind() -> aura_os_core::OrgIntegrationKind {
     aura_os_core::OrgIntegrationKind::WorkspaceConnection
+}
+
+fn deserialize_patch_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Some(Option::<T>::deserialize(deserializer)?))
 }
 
 #[derive(Debug, Deserialize)]

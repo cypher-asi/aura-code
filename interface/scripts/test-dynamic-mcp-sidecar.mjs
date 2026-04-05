@@ -79,7 +79,7 @@ async function main() {
     await client.connect(transport);
 
     const listResult = await client.listTools();
-    const dynamicTool = listResult.tools.find((tool) => tool.name === "mcp_github_mcp__echo_secret");
+    const dynamicTool = listResult.tools.find((tool) => tool.name === "mcp_mcp_1__echo_secret");
     assert(dynamicTool, "expected dynamic MCP tool to be registered through the sidecar");
 
     const callResult = await client.callTool({
@@ -94,7 +94,7 @@ async function main() {
     assert.equal(parsed.message, "hello");
     assert.equal(parsed.secret, "secret-123");
 
-    const contextTool = listResult.tools.find((tool) => tool.name === "mcp_github_mcp__echo_context");
+    const contextTool = listResult.tools.find((tool) => tool.name === "mcp_mcp_1__echo_context");
     assert(contextTool, "expected context MCP tool to be registered through the sidecar");
 
     const contextResult = await client.callTool({

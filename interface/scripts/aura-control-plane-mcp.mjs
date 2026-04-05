@@ -201,7 +201,7 @@ async function buildDynamicMcpRegistry() {
       const { client, transport, tools: discoveredTools } = await connectDynamicMcpServer(integration);
       clients.push(client);
       transports.push(transport);
-      const prefix = `mcp_${slugify(integration.name || integration.integration_id)}`;
+      const prefix = `mcp_${slugify(integration.integration_id)}`;
 
       for (const tool of discoveredTools) {
         const namespacedName = `${prefix}__${tool.name}`;

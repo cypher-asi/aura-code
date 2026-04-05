@@ -36,6 +36,13 @@ pub struct OrgService {
     store: Arc<RocksStore>,
 }
 
+#[derive(Debug, Clone)]
+pub enum IntegrationSecretUpdate {
+    Preserve,
+    Clear,
+    Set(String),
+}
+
 impl OrgService {
     pub fn new(store: Arc<RocksStore>) -> Self {
         Self { store }
@@ -135,21 +142,34 @@ impl OrgService {
         kind: OrgIntegrationKind,
         default_model: Option<String>,
         provider_config: Option<serde_json::Value>,
-        secret: Option<String>,
+        secret_update: IntegrationSecretUpdate,
     ) -> Result<OrgIntegration, OrgError> {
         let integration_id = integration_id
             .map(str::to_string)
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let existing = self.get_integration(org_id, &integration_id)?;
         let now = Utc::now();
-        let has_secret = if let Some(secret_value) = secret {
-            let bytes = secret_value.into_bytes();
-            self.store
-                .put_setting(&org_integration_secret_key(&integration_id), &bytes)
-                .map_err(OrgError::Store)?;
-            true
-        } else {
-            existing.as_ref().map(|it| it.has_secret).unwrap_or(false)
+        let has_secret = match secret_update {
+            IntegrationSecretUpdate::Set(secret_value) => {
+                let bytes = secret_value.into_bytes();
+                self.store
+                    .put_setting(&org_integration_secret_key(&integration_id), &bytes)
+                    .map_err(OrgError::Store)?;
+                true
+            }
+            IntegrationSecretUpdate::Clear => {
+                match self
+                    .store
+                    .delete_setting(&org_integration_secret_key(&integration_id))
+                {
+                    Ok(()) | Err(aura_os_store::StoreError::NotFound(_)) => {}
+                    Err(e) => return Err(OrgError::Store(e)),
+                }
+                false
+            }
+            IntegrationSecretUpdate::Preserve => {
+                existing.as_ref().map(|it| it.has_secret).unwrap_or(false)
+            }
         };
         let secret_last4 = self
             .get_integration_secret(&integration_id)
