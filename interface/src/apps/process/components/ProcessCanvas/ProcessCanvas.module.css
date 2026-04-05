@@ -1,52 +1,52 @@
-.process-flow-controls button {
+.flowControls button {
   background: transparent !important;
   color: var(--color-text-muted, #666) !important;
   border-color: transparent !important;
   fill: var(--color-text-muted, #666) !important;
 }
 
-.process-flow-controls button:hover {
+.flowControls button:hover {
   background: transparent !important;
   color: #fff !important;
   fill: #fff !important;
 }
 
-.process-flow-controls button svg {
+.flowControls button svg {
   fill: inherit !important;
 }
 
-.react-flow__pane {
+:global(.react-flow__pane) {
   cursor: default !important;
 }
 
-.react-flow__pane.dragging {
+:global(.react-flow__pane.dragging) {
   cursor: grab !important;
 }
 
-.react-flow__pane.panning {
+:global(.react-flow__pane.panning) {
   cursor: grabbing !important;
 }
 
-.react-flow__selection {
+:global(.react-flow__selection) {
   border: 1px solid var(--color-success, #4c9) !important;
   background: color-mix(in srgb, var(--color-success, #4c9) 12%, transparent) !important;
 }
 
-.react-flow__handle {
+:global(.react-flow__handle) {
   width: 10px !important;
   height: 10px !important;
 }
 
-.react-flow__edges {
+:global(.react-flow__edges) {
   width: 100% !important;
   height: 100% !important;
 }
 
-.react-flow__edges svg {
+:global(.react-flow__edges svg) {
   overflow: visible !important;
 }
 
-.react-flow__edge-path {
+:global(.react-flow__edge-path) {
   stroke: rgba(255, 255, 255, 0.55) !important;
   stroke-width: 1px !important;
   stroke-opacity: 1 !important;
@@ -54,27 +54,27 @@
   filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.15));
 }
 
-.react-flow__connection-path {
+:global(.react-flow__connection-path) {
   stroke: rgba(255, 255, 255, 0.55) !important;
   stroke-opacity: 1 !important;
   fill: none !important;
   filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.15));
 }
 
-.react-flow__node {
+:global(.react-flow__node) {
   outline: none !important;
 }
 
-.react-flow__nodesselection-rect {
+:global(.react-flow__nodesselection-rect) {
   border: none !important;
   background: transparent !important;
 }
 
-.react-flow__node.selected .react-flow__resize-control {
+:global(.react-flow__node.selected .react-flow__resize-control) {
   display: none !important;
 }
 
-.react-flow__minimap {
+:global(.react-flow__minimap) {
   cursor: grab !important;
   margin-bottom: 53px !important;
   border: none !important;
@@ -82,11 +82,11 @@
   box-shadow: 0 0 0 1px var(--color-border, #333) !important;
 }
 
-.react-flow__minimap:active {
+:global(.react-flow__minimap:active) {
   cursor: grabbing !important;
 }
 
-.process-floating-toolbar {
+.floatingToolbar {
   position: absolute;
   bottom: 15px;
   right: 15px;
@@ -104,7 +104,7 @@
   border: 1px solid var(--color-border, #333);
 }
 
-.process-node-rename-input {
+:global(.process-node-rename-input) {
   box-sizing: border-box;
   font-size: 13px;
   font-weight: 600;

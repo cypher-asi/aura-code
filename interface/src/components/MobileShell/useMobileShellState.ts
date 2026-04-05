@@ -62,3 +62,5 @@ export function useMobileShellState() {
     showGlobalTitle, globalTitle,
   };
 }
+
+export type MobileShellState = ReturnType<typeof useMobileShellState>;
