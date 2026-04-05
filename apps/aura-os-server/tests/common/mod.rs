@@ -39,11 +39,36 @@ pub fn store_zero_auth_session(store: &RocksStore) {
         wallets: vec![],
         access_token: "test-token".into(),
         is_zero_pro: true,
+        is_access_granted: false,
         created_at: chrono::Utc::now(),
         validated_at: chrono::Utc::now(),
     })
     .unwrap();
     store.put_setting("zero_auth_session", &session).unwrap();
+}
+
+#[allow(dead_code)]
+pub async fn build_test_app_with_storage() -> (
+    Router,
+    AppState,
+    Arc<StorageClient>,
+    tempfile::TempDir,
+) {
+    let (storage_url, _db) = aura_os_storage::testutil::start_mock_storage().await;
+    let storage = Arc::new(StorageClient::with_base_url(&storage_url));
+
+    let db_dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(RocksStore::open(db_dir.path()).unwrap());
+    store_zero_auth_session(&store);
+
+    let (app, state) = build_test_app_from_store(
+        store,
+        db_dir.path().to_path_buf(),
+        None,
+        Some(storage.clone()),
+        None,
+    );
+    (app, state, storage, db_dir)
 }
 
 #[allow(dead_code)]
@@ -253,6 +278,7 @@ pub fn build_test_app_from_store(
                 wallets: vec![],
                 access_token: TEST_JWT.into(),
                 is_zero_pro: true,
+                is_access_granted: false,
                 created_at: chrono::Utc::now(),
                 validated_at: chrono::Utc::now(),
             },

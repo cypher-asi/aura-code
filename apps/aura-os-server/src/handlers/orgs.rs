@@ -7,6 +7,7 @@ use aura_os_core::*;
 use aura_os_network::{NetworkOrg, NetworkOrgInvite, NetworkOrgMember};
 
 use crate::dto::SetBillingRequest;
+use crate::dto::{CreateOrgIntegrationRequest, UpdateOrgIntegrationRequest};
 use crate::error::{map_network_error, ApiError, ApiResult};
 use crate::state::{AppState, AuthJwt, AuthSession};
 
@@ -206,6 +207,81 @@ pub(crate) async fn update_org(
 
     let billing = state.org_service.get_billing(&org_id).ok().flatten();
     Ok(Json(OrgResponse::from_network(&net_org, billing)))
+}
+
+pub(crate) async fn list_integrations(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    Path(org_id): Path<OrgId>,
+) -> ApiResult<Json<Vec<OrgIntegration>>> {
+    let integrations = state
+        .org_service
+        .list_integrations(&org_id)
+        .map_err(map_org_err)?;
+    Ok(Json(integrations))
+}
+
+pub(crate) async fn create_integration(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    Path(org_id): Path<OrgId>,
+    Json(req): Json<CreateOrgIntegrationRequest>,
+) -> ApiResult<(StatusCode, Json<OrgIntegration>)> {
+    let integration = state
+        .org_service
+        .upsert_integration(
+            &org_id,
+            None,
+            req.name,
+            req.provider,
+            req.default_model,
+            req.api_key,
+        )
+        .map_err(map_org_err)?;
+    Ok((StatusCode::CREATED, Json(integration)))
+}
+
+pub(crate) async fn update_integration(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    Path((org_id, integration_id)): Path<(OrgId, String)>,
+    Json(req): Json<UpdateOrgIntegrationRequest>,
+) -> ApiResult<Json<OrgIntegration>> {
+    let existing = state
+        .org_service
+        .get_integration(&org_id, &integration_id)
+        .map_err(map_org_err)?
+        .ok_or_else(|| ApiError::not_found("integration not found"))?;
+    let integration = state
+        .org_service
+        .upsert_integration(
+            &org_id,
+            Some(&integration_id),
+            req.name.unwrap_or(existing.name),
+            req.provider.unwrap_or(existing.provider),
+            match req.default_model {
+                Some(value) => value,
+                None => existing.default_model,
+            },
+            match req.api_key {
+                Some(value) => value,
+                None => None,
+            },
+        )
+        .map_err(map_org_err)?;
+    Ok(Json(integration))
+}
+
+pub(crate) async fn delete_integration(
+    State(state): State<AppState>,
+    AuthJwt(_jwt): AuthJwt,
+    Path((org_id, integration_id)): Path<(OrgId, String)>,
+) -> ApiResult<Json<()>> {
+    state
+        .org_service
+        .delete_integration(&org_id, &integration_id)
+        .map_err(map_org_err)?;
+    Ok(Json(()))
 }
 
 // ---------------------------------------------------------------------------

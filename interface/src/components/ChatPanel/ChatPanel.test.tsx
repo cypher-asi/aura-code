@@ -22,6 +22,10 @@ vi.mock("../../hooks/use-scroll-anchor", () => ({
 vi.mock("../../hooks/stream/hooks", () => ({
   useIsStreaming: () => false,
   useStreamEvents: () => [],
+  useStreamingText: () => "",
+  useThinkingText: () => "",
+  useProgressText: () => "",
+  useActiveToolCalls: () => [],
 }));
 
 vi.mock("../../hooks/use-aura-capabilities", () => ({
@@ -56,6 +60,8 @@ vi.mock("../../stores/message-queue-store", () => ({
 
 vi.mock("../../constants/models", () => ({
   loadPersistedModel: () => "gpt-5.4",
+  availableModelsForAdapter: () => [],
+  defaultModelForAdapter: () => "gpt-5.4",
   persistModel: vi.fn(),
 }));
 

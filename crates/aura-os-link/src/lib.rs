@@ -9,6 +9,7 @@ pub use automaton_client::{
     AutomatonClient, AutomatonStartError, AutomatonStartParams, AutomatonStartResult,
 };
 pub use harness::{HarnessLink, HarnessSession, SessionConfig};
+pub use harness::SessionProviderConfig;
 pub use local_harness::LocalHarness;
 pub use swarm_harness::{CreateAgentResponse, SwarmHarness};
 

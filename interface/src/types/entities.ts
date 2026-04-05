@@ -98,6 +98,7 @@ export interface Task {
 export interface Agent {
   agent_id: AgentId;
   user_id: string;
+  org_id?: string | null;
   name: string;
   role: string;
   personality: string;
@@ -105,6 +106,11 @@ export interface Agent {
   skills: string[];
   icon: string | null;
   machine_type: string;
+  adapter_type: string;
+  environment: string;
+  auth_source: string;
+  integration_id?: string | null;
+  default_model?: string | null;
   vm_id?: string | null;
   network_agent_id?: string;
   profile_id?: string;
@@ -118,6 +124,7 @@ export interface AgentInstance {
   agent_instance_id: AgentInstanceId;
   project_id: ProjectId;
   agent_id: AgentId;
+  org_id?: string | null;
   name: string;
   role: string;
   personality: string;
@@ -125,6 +132,11 @@ export interface AgentInstance {
   skills: string[];
   icon: string | null;
   machine_type: string;
+  adapter_type: string;
+  environment: string;
+  auth_source?: string;
+  integration_id?: string | null;
+  default_model?: string | null;
   workspace_path?: string | null;
   status: AgentStatus;
   current_task_id: TaskId | null;
@@ -184,6 +196,7 @@ export interface ZeroUser {
   zero_wallet: string;
   wallets: string[];
   is_zero_pro?: boolean;
+  is_access_granted?: boolean;
 }
 
 export interface AuthSession {
@@ -196,6 +209,7 @@ export interface AuthSession {
   zero_wallet: string;
   wallets: string[];
   is_zero_pro?: boolean;
+  is_access_granted?: boolean;
   zero_pro_refresh_error?: string;
   access_token?: string;
   created_at: string;
@@ -216,6 +230,30 @@ export interface Org {
   billing: OrgBilling | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface OrgIntegration {
+  integration_id: string;
+  org_id: string;
+  name: string;
+  provider: string;
+  default_model?: string | null;
+  has_secret: boolean;
+  secret_last4?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentRuntimeTestResult {
+  ok: boolean;
+  adapter_type: string;
+  environment: string;
+  auth_source: string;
+  provider?: string | null;
+  model?: string | null;
+  integration_id?: string | null;
+  integration_name?: string | null;
+  message: string;
 }
 
 export interface OrgMember {

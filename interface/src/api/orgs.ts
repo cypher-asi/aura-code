@@ -1,4 +1,4 @@
-import type { Org, OrgMember, OrgInvite, OrgBilling, OrgRole, CreditBalance, CheckoutSessionResponse, TransactionsResponse, BillingAccount } from "../types";
+import type { Org, OrgMember, OrgInvite, OrgBilling, OrgRole, CreditBalance, CheckoutSessionResponse, TransactionsResponse, BillingAccount, OrgIntegration } from "../types";
 import { apiFetch } from "./core";
 
 export const orgsApi = {
@@ -56,4 +56,27 @@ export const orgsApi = {
     apiFetch<TransactionsResponse>(`/api/orgs/${orgId}/credits/transactions`),
   getAccount: (orgId: string) =>
     apiFetch<BillingAccount>(`/api/orgs/${orgId}/account`),
+  listIntegrations: (orgId: string) =>
+    apiFetch<OrgIntegration[]>(`/api/orgs/${orgId}/integrations`),
+  createIntegration: (
+    orgId: string,
+    data: { name: string; provider: string; default_model?: string | null; api_key?: string | null },
+  ) =>
+    apiFetch<OrgIntegration>(`/api/orgs/${orgId}/integrations`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateIntegration: (
+    orgId: string,
+    integrationId: string,
+    data: { name?: string; provider?: string; default_model?: string | null; api_key?: string | null },
+  ) =>
+    apiFetch<OrgIntegration>(`/api/orgs/${orgId}/integrations/${integrationId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  deleteIntegration: (orgId: string, integrationId: string) =>
+    apiFetch<void>(`/api/orgs/${orgId}/integrations/${integrationId}`, {
+      method: "DELETE",
+    }),
 };

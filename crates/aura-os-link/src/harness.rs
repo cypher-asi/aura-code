@@ -3,6 +3,23 @@ use tokio::sync::{broadcast, mpsc};
 
 use aura_protocol::{ConversationMessage, InboundMessage, OutboundMessage};
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionProviderConfig {
+    pub provider: String,
+    #[serde(default)]
+    pub routing_mode: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub default_model: Option<String>,
+    #[serde(default)]
+    pub fallback_model: Option<String>,
+    #[serde(default)]
+    pub prompt_caching_enabled: Option<bool>,
+}
+
 pub struct SessionConfig {
     pub system_prompt: Option<String>,
     pub model: Option<String>,
@@ -24,6 +41,8 @@ pub struct SessionConfig {
     pub aura_session_id: Option<String>,
     /// Org UUID for X-Aura-Org-Id billing header.
     pub aura_org_id: Option<String>,
+    /// Optional per-session provider override for Aura BYOK.
+    pub provider_config: Option<SessionProviderConfig>,
 }
 
 impl Default for SessionConfig {
@@ -43,6 +62,7 @@ impl Default for SessionConfig {
             installed_tools: None,
             aura_session_id: None,
             aura_org_id: None,
+            provider_config: None,
         }
     }
 }

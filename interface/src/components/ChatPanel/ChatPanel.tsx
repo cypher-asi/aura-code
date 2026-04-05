@@ -15,7 +15,12 @@ import type { SlashCommand } from "../../constants/commands";
 import { isGenerationCommand } from "../../constants/commands";
 import type { Project } from "../../types";
 import type { GenerationMode } from "../../constants/models";
-import { loadPersistedModel, persistModel } from "../../constants/models";
+import {
+  availableModelsForAdapter,
+  defaultModelForAdapter,
+  loadPersistedModel,
+  persistModel,
+} from "../../constants/models";
 import styles from "../ChatView/ChatView.module.css";
 
 export interface ChatPanelProps {
@@ -32,6 +37,8 @@ export interface ChatPanelProps {
   onStop: () => void;
   agentName?: string;
   machineType?: "local" | "remote";
+  adapterType?: string;
+  defaultModel?: string | null;
   /** Agent template ID used by AgentEnvironment for remote VM state polling. */
   templateAgentId?: string;
   agentId?: string;
@@ -51,6 +58,8 @@ export function ChatPanel({
   onStop,
   agentName,
   machineType,
+  adapterType,
+  defaultModel,
   templateAgentId,
   agentId,
   isLoading: _isLoading,
@@ -63,7 +72,8 @@ export function ChatPanel({
   onProjectChange,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
-  const [selectedModel, setSelectedModel] = useState(loadPersistedModel);
+  const availableModels = availableModelsForAdapter(adapterType);
+  const [selectedModel, setSelectedModel] = useState(() => loadPersistedModel(adapterType, defaultModel));
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
   const messageAreaRef = useRef<HTMLDivElement>(null);
@@ -127,8 +137,17 @@ export function ChatPanel({
 
   const handleModelChange = useCallback((modelId: string) => {
     setSelectedModel(modelId);
-    persistModel(modelId);
-  }, []);
+    persistModel(modelId, adapterType);
+  }, [adapterType]);
+
+  useEffect(() => {
+    setSelectedModel((current) => {
+      if (availableModels.some((model) => model.id === current)) {
+        return current;
+      }
+      return defaultModelForAdapter(adapterType, defaultModel);
+    });
+  }, [adapterType, defaultModel, availableModels]);
 
   const handleRemoveAttachment = useCallback(
     (id: string) => setAttachments((prev) => prev.filter((a) => a.id !== id)),
@@ -153,6 +172,7 @@ export function ChatPanel({
       const apiAttachments = buildApiAttachments(atts);
       const commandIds = commands.length > 0 ? commands.map((c) => c.id).filter((id) => !isGenerationCommand(id)) : undefined;
       const effectiveGenMode = genMode ?? (commands.some((c) => c.id === "generate_image") ? "image" as GenerationMode : commands.some((c) => c.id === "generate_3d") ? "3d" as GenerationMode : undefined);
+      const runtimeModel = adapterType === "codex" ? null : selectedModel;
       setAttachments([]);
       setCommands([]);
 
@@ -166,10 +186,10 @@ export function ChatPanel({
         scrollToBottom();
       } else {
         pendingScrollToTopRef.current = true;
-        onSend(content, action ?? null, selectedModel, apiAttachments, commandIds, selectedProjectId, effectiveGenMode);
+        onSend(content, action ?? null, runtimeModel, apiAttachments, commandIds, selectedProjectId, effectiveGenMode);
       }
     },
-    [buildApiAttachments, commands, isStreaming, onSend, scrollToBottom, selectedModel, selectedProjectId, streamKey],
+    [adapterType, buildApiAttachments, commands, isStreaming, onSend, scrollToBottom, selectedModel, selectedProjectId, streamKey],
   );
 
   const prevStreamingRef = useRef(false);
@@ -192,14 +212,21 @@ export function ChatPanel({
     if (prevStreamingRef.current && !isStreaming) {
       const next = useMessageQueueStore.getState().dequeue(streamKey);
       if (next) {
-        onSendRef.current(next.content, next.action, selectedModelRef.current, next.attachments, next.commands, selectedProjectIdRef.current);
+        onSendRef.current(
+          next.content,
+          next.action,
+          adapterType === "codex" ? null : selectedModelRef.current,
+          next.attachments,
+          next.commands,
+          selectedProjectIdRef.current,
+        );
         scrollToBottom();
       } else {
         requestAnimationFrame(() => scrollToBottomIfPinned());
       }
     }
     prevStreamingRef.current = isStreaming;
-  }, [isStreaming, streamKey, scrollToBottom, scrollToBottomIfPinned]);
+  }, [adapterType, isStreaming, streamKey, scrollToBottom, scrollToBottomIfPinned]);
 
   const handleQueueEdit = useCallback(
     (item: QueuedMessage) => {
@@ -289,6 +316,9 @@ export function ChatPanel({
           onStop={onStop}
           streamKey={streamKey}
           selectedModel={selectedModel}
+          availableModels={availableModels}
+          adapterType={adapterType}
+          defaultModel={defaultModel}
           onModelChange={handleModelChange}
           agentName={agentName}
           machineType={machineType}

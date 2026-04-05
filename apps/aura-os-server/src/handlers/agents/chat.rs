@@ -7,11 +7,13 @@ use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
 use futures_util::future::join_all;
-use tokio_stream::StreamExt;
+use futures_util::stream;
+use futures_util::StreamExt as FuturesStreamExt;
 use tracing::{error, info, warn};
 
-type SseStream = Pin<Box<dyn futures_core::Stream<Item = Result<Event, Infallible>> + Send>>;
-type SseResponse = ([(&'static str, HeaderValue); 1], Sse<SseStream>);
+pub(crate) type SseStream =
+    Pin<Box<dyn futures_core::Stream<Item = Result<Event, Infallible>> + Send>>;
+pub(crate) type SseResponse = ([(&'static str, HeaderValue); 1], Sse<SseStream>);
 
 use aura_os_core::{
     Agent, AgentId, AgentInstanceId, ChatContentBlock, ChatRole, HarnessMode, ProjectId,
@@ -19,23 +21,28 @@ use aura_os_core::{
 };
 use aura_os_link::{
     ConversationMessage, HarnessInbound, HarnessOutbound, MessageAttachment, SessionConfig,
-    UserMessage,
+    SessionUsage, UserMessage,
 };
 use aura_os_storage::StorageClient;
 
 use crate::dto::{ChatAttachmentDto, SendChatRequest};
 use crate::error::{map_storage_error, ApiError, ApiResult};
+use crate::handlers::billing::require_credits_for_auth_source;
 use crate::handlers::{projects, projects_helpers::resolve_agent_instance_workspace_path};
 use crate::state::{AppState, AuthJwt, ChatSession};
 
 use super::conversions::events_to_session_history;
+use super::runtime::{
+    build_harness_provider_config, effective_model, resolve_integration, resolve_integration_ref,
+    send_external_agent_event_stream,
+};
 
 // ---------------------------------------------------------------------------
 // Chat persistence helpers
 // ---------------------------------------------------------------------------
 
 #[derive(Clone)]
-struct ChatPersistCtx {
+pub(crate) struct ChatPersistCtx {
     storage: Arc<StorageClient>,
     jwt: String,
     session_id: String,
@@ -89,7 +96,7 @@ async fn resolve_chat_session(
     }
 }
 
-fn persist_user_message(
+pub(crate) fn persist_user_message(
     ctx: &ChatPersistCtx,
     content: &str,
     attachments: &Option<Vec<ChatAttachmentDto>>,
@@ -151,7 +158,7 @@ fn persist_user_message(
     });
 }
 
-fn spawn_chat_persist_task(
+pub(crate) fn spawn_chat_persist_task(
     rx: tokio::sync::broadcast::Receiver<HarnessOutbound>,
     ctx: ChatPersistCtx,
 ) {
@@ -350,6 +357,47 @@ fn spawn_chat_persist_task(
     });
 }
 
+pub(crate) fn persist_external_agent_turn(ctx: &ChatPersistCtx, text: &str, usage: &SessionUsage) {
+    let ctx = ctx.clone();
+    let text = text.to_string();
+    let usage = usage.clone();
+    tokio::spawn(async move {
+        let text_block = text.clone();
+        let req = aura_os_storage::CreateSessionEventRequest {
+            session_id: Some(ctx.session_id.clone()),
+            user_id: None,
+            agent_id: Some(ctx.project_agent_id.clone()),
+            sender: Some("agent".to_string()),
+            project_id: Some(ctx.project_id.clone()),
+            org_id: None,
+            event_type: "assistant_message_end".to_string(),
+            content: Some(serde_json::json!({
+                "message_id": uuid::Uuid::new_v4().to_string(),
+                "text": text,
+                "thinking": serde_json::Value::Null,
+                "content_blocks": [{
+                    "type": "text",
+                    "text": text_block
+                }],
+                "usage": usage,
+                "files_changed": {
+                    "created": [],
+                    "modified": [],
+                    "deleted": []
+                },
+                "stop_reason": "end_turn"
+            })),
+        };
+        if let Err(e) = ctx
+            .storage
+            .create_event(&ctx.session_id, &ctx.jwt, &req)
+            .await
+        {
+            warn!(error = %e, "Failed to persist external agent message");
+        }
+    });
+}
+
 async fn setup_project_chat_persistence(
     state: &AppState,
     project_id: &ProjectId,
@@ -370,7 +418,7 @@ async fn setup_project_chat_persistence(
     })
 }
 
-async fn setup_agent_chat_persistence(
+pub(crate) async fn setup_agent_chat_persistence(
     state: &AppState,
     agent_id: &AgentId,
     agent_name: &str,
@@ -430,6 +478,31 @@ async fn setup_agent_chat_persistence(
 
 const SSE_NO_BUFFERING_HEADERS: [(&str, HeaderValue); 1] =
     [("X-Accel-Buffering", HeaderValue::from_static("no"))];
+
+fn harness_broadcast_to_sse(
+    rx: tokio::sync::broadcast::Receiver<HarnessOutbound>,
+) -> impl futures_core::Stream<Item = Result<Event, Infallible>> + Send {
+    stream::unfold((rx, false), |(mut rx, done)| async move {
+        if done {
+            return None;
+        }
+
+        loop {
+            match rx.recv().await {
+                Ok(evt) => {
+                    let should_close = matches!(
+                        evt,
+                        HarnessOutbound::AssistantMessageEnd(_) | HarnessOutbound::Error(_)
+                    );
+                    let event = super::super::sse::harness_event_to_sse(&evt);
+                    return Some((event, (rx, should_close)));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    })
+}
 
 async fn has_live_session(state: &AppState, key: &str) -> bool {
     let reg = state.chat_sessions.lock().await;
@@ -582,18 +655,16 @@ async fn find_matching_project_agents(
             info!(count = p.len(), %agent_id_str, "agent matching: projects discovered from network");
             p
         }
-        Err(_) => {
-            match state.project_service.list_projects() {
-                Ok(local) if !local.is_empty() => {
-                    info!(count = local.len(), %agent_id_str, "agent matching: using local project cache (network unavailable)");
-                    local
-                }
-                _ => {
-                    warn!(%agent_id_str, "agent matching: network unavailable and no local projects");
-                    return Vec::new();
-                }
+        Err(_) => match state.project_service.list_projects() {
+            Ok(local) if !local.is_empty() => {
+                info!(count = local.len(), %agent_id_str, "agent matching: using local project cache (network unavailable)");
+                local
             }
-        }
+            _ => {
+                warn!(%agent_id_str, "agent matching: network unavailable and no local projects");
+                return Vec::new();
+            }
+        },
     };
     let pids: Vec<String> = all_projects
         .iter()
@@ -651,9 +722,7 @@ async fn auto_create_project_agent(
 ) -> Option<aura_os_storage::StorageProjectAgent> {
     let all_projects = match projects::list_all_projects_from_network(state, jwt).await {
         Ok(p) => p,
-        Err(_) => {
-            state.project_service.list_projects().unwrap_or_default()
-        }
+        Err(_) => state.project_service.list_projects().unwrap_or_default(),
     };
     let project = all_projects.first()?;
     let project_id_str = project.project_id.to_string();
@@ -668,7 +737,10 @@ async fn auto_create_project_agent(
         icon: None,
         harness: None,
     };
-    match storage.create_project_agent(&project_id_str, jwt, &req).await {
+    match storage
+        .create_project_agent(&project_id_str, jwt, &req)
+        .await
+    {
         Ok(mut pa) => {
             if pa.project_id.as_ref().map_or(true, |p| p.is_empty()) {
                 pa.project_id = Some(project_id_str.clone());
@@ -825,7 +897,9 @@ async fn aggregate_agent_events_from_storage_result(
             .get_agent_local(agent_id)
             .map(|a| a.name)
             .unwrap_or_else(|_| agent_id_str.clone());
-        if let Some(pa) = auto_create_project_agent(state, storage, jwt, agent_id, &agent_name).await {
+        if let Some(pa) =
+            auto_create_project_agent(state, storage, jwt, agent_id, &agent_name).await
+        {
             info!(%agent_id, "aggregate events: auto-created project agent for event retrieval");
             matching.push(pa);
         } else {
@@ -1053,11 +1127,9 @@ async fn open_harness_chat_stream(
         prefix.push(Ok(warning_event));
     }
 
-    let broadcast_stream = tokio_stream::wrappers::BroadcastStream::new(rx)
-        .filter_map(|r| r.ok())
-        .map(|evt| super::super::sse::harness_event_to_sse(&evt));
+    let broadcast_stream = harness_broadcast_to_sse(rx);
 
-    let stream = futures_util::stream::iter(prefix).chain(broadcast_stream);
+    let stream = FuturesStreamExt::chain(futures_util::stream::iter(prefix), broadcast_stream);
     let boxed: SseStream = Box::pin(stream);
 
     Ok((
@@ -1200,9 +1272,7 @@ async fn handle_super_agent_stream(
         spawn_chat_persist_task(prx, pctx);
     }
 
-    let broadcast_stream = tokio_stream::wrappers::BroadcastStream::new(rx)
-        .filter_map(|r| r.ok())
-        .map(|evt| super::super::sse::harness_event_to_sse(&evt));
+    let broadcast_stream = harness_broadcast_to_sse(rx);
 
     let boxed: SseStream = Box::pin(broadcast_stream);
     Ok((
@@ -1217,9 +1287,6 @@ pub(crate) async fn send_agent_event_stream(
     Path(agent_id): Path<AgentId>,
     Json(body): Json<SendChatRequest>,
 ) -> ApiResult<SseResponse> {
-    super::super::billing::require_credits(&state, &jwt).await?;
-    info!(%agent_id, action = ?body.action, "Agent message stream requested");
-
     let agent = match state.agent_service.get_agent_async("", &agent_id).await {
         Ok(a) => a,
         Err(_) => state
@@ -1227,10 +1294,17 @@ pub(crate) async fn send_agent_event_stream(
             .get_agent_local(&agent_id)
             .map_err(|e| ApiError::not_found(format!("agent not found: {e}")))?,
     };
+    require_credits_for_auth_source(&state, &jwt, &agent.auth_source).await?;
+    info!(%agent_id, action = ?body.action, "Agent message stream requested");
 
     if agent.role == "super_agent" || agent.tags.contains(&"super_agent".to_string()) {
         info!(%agent_id, "SuperAgent detected — routing to SuperAgent handler");
         return handle_super_agent_stream(&state, &jwt, &agent, body).await;
+    }
+
+    if agent.adapter_type != "aura_harness" {
+        info!(%agent_id, adapter = %agent.adapter_type, "Routing direct agent chat through external runtime");
+        return send_external_agent_event_stream(&state, &jwt, &agent, body).await;
     }
 
     let persist_ctx = setup_agent_chat_persistence(&state, &agent_id, &agent.name, &jwt).await;
@@ -1252,14 +1326,17 @@ pub(crate) async fn send_agent_event_stream(
         None
     };
 
+    let integration = resolve_integration(&state, &agent)?;
+    let model = effective_model(&agent, integration.as_ref(), body.model.clone());
     let config = SessionConfig {
         system_prompt: Some(agent.system_prompt.clone()),
         agent_id: Some(agent_id.to_string()),
         agent_name: Some(agent.name.clone()),
-        model: body.model.clone(),
+        model: model.clone(),
         token: Some(jwt.clone()),
         conversation_messages,
         project_id: body.project_id.clone(),
+        provider_config: build_harness_provider_config(integration.as_ref(), model.as_deref())?,
         ..Default::default()
     };
 
@@ -1307,14 +1384,13 @@ pub(crate) async fn send_event_stream(
     Path((project_id, agent_instance_id)): Path<(ProjectId, AgentInstanceId)>,
     Json(body): Json<SendChatRequest>,
 ) -> ApiResult<SseResponse> {
-    super::super::billing::require_credits(&state, &jwt).await?;
-    info!(%project_id, %agent_instance_id, action = ?body.action, "Message stream requested");
-
     let instance = state
         .agent_instance_service
         .get_instance(&project_id, &agent_instance_id)
         .await
         .map_err(|e| ApiError::internal(format!("looking up agent instance: {e}")))?;
+    require_credits_for_auth_source(&state, &jwt, &instance.auth_source).await?;
+    info!(%project_id, %agent_instance_id, action = ?body.action, "Message stream requested");
 
     let persist_ctx =
         setup_project_chat_persistence(&state, &project_id, &agent_instance_id, &jwt).await;
@@ -1344,15 +1420,38 @@ pub(crate) async fn send_event_stream(
         project_path.as_deref(),
     );
 
+    let integration = resolve_integration_ref(
+        &state,
+        instance.org_id,
+        &instance.auth_source,
+        instance.integration_id.as_deref(),
+    )?;
+    let model = body
+        .model
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            instance
+                .default_model
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .or_else(|| {
+            integration
+                .as_ref()
+                .and_then(|resolved| resolved.metadata.default_model.clone())
+                .filter(|value| !value.trim().is_empty())
+        });
     let config = SessionConfig {
         system_prompt: Some(system_prompt),
         agent_id: Some(instance.agent_id.to_string()),
         agent_name: Some(instance.name.clone()),
-        model: body.model.clone(),
+        model: model.clone(),
         token: Some(jwt),
         conversation_messages,
         project_id: Some(pid_str),
         project_path,
+        provider_config: build_harness_provider_config(integration.as_ref(), model.as_deref())?,
         ..Default::default()
     };
 

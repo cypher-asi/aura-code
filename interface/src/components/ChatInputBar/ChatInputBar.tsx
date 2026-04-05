@@ -2,8 +2,8 @@ import { useRef, useState, useImperativeHandle, forwardRef, memo, useCallback, u
 import { ArrowUp, Plus, X, FileText, ChevronDown, FolderOpen } from "lucide-react";
 import { useIsStreaming } from "../../hooks/stream/hooks";
 import { useFileAttachments } from "./useFileAttachments";
-import { modelLabel, getModelsForMode, getDefaultModelForMode } from "../../constants/models";
-import type { GenerationMode } from "../../constants/models";
+import type { ModelOption, GenerationMode } from "../../constants/models";
+import { AVAILABLE_MODELS, modelLabel, getModelsForMode, getDefaultModelForMode } from "../../constants/models";
 import { isGenerationCommand } from "../../constants/commands";
 import { AgentEnvironment } from "../AgentEnvironment";
 import { OrbitStatusIndicator } from "../OrbitStatusIndicator/OrbitStatusIndicator";
@@ -34,6 +34,9 @@ interface Props {
   onStop: () => void;
   streamKey: string;
   selectedModel?: string;
+  availableModels?: ModelOption[];
+  adapterType?: string;
+  defaultModel?: string | null;
   onModelChange?: (model: string) => void;
   agentName?: string;
   machineType?: "local" | "remote";
@@ -66,7 +69,7 @@ function AttachmentPreviews({ attachments, onRemove }: { attachments: Attachment
 
 export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function ChatInputBar({
   input, onInputChange, onSend, onStop, streamKey,
-  selectedModel, onModelChange, machineType, templateAgentId, agentId,
+  selectedModel, availableModels = AVAILABLE_MODELS, adapterType, defaultModel, onModelChange, machineType, templateAgentId, agentId,
   attachments = [], onAttachmentsChange, onRemoveAttachment,
   selectedCommands = [], onCommandsChange,
   projects = [], selectedProjectId, onProjectChange,
@@ -260,10 +263,16 @@ export const ChatInputBar = memo(forwardRef<ChatInputBarHandle, Props>(function 
           )}
         </div>
         <div className={styles.modelMenuWrap} ref={modelMenuRef}>
-          <button type="button" className={styles.modelButton} onClick={() => setModelMenuOpen((v) => !v)}>
-            {modelLabel(selectedModel ?? "")}<ChevronDown size={10} />
+          <button
+            type="button"
+            className={styles.modelButton}
+            onClick={availableModels.length > 1 ? () => setModelMenuOpen((v) => !v) : undefined}
+            style={availableModels.length > 1 ? undefined : { cursor: "default" }}
+          >
+            {modelLabel(selectedModel ?? "", adapterType, defaultModel)}
+            {availableModels.length > 1 && <ChevronDown size={10} />}
           </button>
-          {modelMenuOpen && (
+          {modelMenuOpen && availableModels.length > 1 && (
             <div className={styles.modelMenu}>
               {modelsForMode.map((m) => (
                 <button

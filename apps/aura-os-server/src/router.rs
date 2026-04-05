@@ -135,6 +135,11 @@ fn protected_auth_routes() -> Router<AppState> {
         .route("/api/auth/session", get(auth::get_session))
         .route("/api/auth/validate", post(auth::validate))
         .route("/api/auth/jwt-issuer", get(auth::get_jwt_issuer))
+        .route(
+            "/api/auth/redeem-access-code",
+            post(auth::redeem_access_code),
+        )
+        .route("/api/auth/access-codes", get(auth::get_access_code))
 }
 
 fn user_routes() -> Router<AppState> {
@@ -164,6 +169,14 @@ fn org_routes() -> Router<AppState> {
         .route(
             "/api/orgs/:org_id/invites/:invite_id",
             delete(orgs::revoke_invite),
+        )
+        .route(
+            "/api/orgs/:org_id/integrations",
+            get(orgs::list_integrations).post(orgs::create_integration),
+        )
+        .route(
+            "/api/orgs/:org_id/integrations/:integration_id",
+            put(orgs::update_integration).delete(orgs::delete_integration),
         )
         .route("/api/invites/:token/accept", post(orgs::accept_invite))
         .route(
@@ -224,7 +237,10 @@ fn project_routes() -> Router<AppState> {
 
 fn spec_routes() -> Router<AppState> {
     Router::new()
-        .route("/api/projects/:project_id/specs", get(specs::list_specs))
+        .route(
+            "/api/projects/:project_id/specs",
+            get(specs::list_specs).post(specs::create_spec),
+        )
         .route(
             "/api/projects/:project_id/specs/generate",
             post(specs::generate_specs),
@@ -239,13 +255,18 @@ fn spec_routes() -> Router<AppState> {
         )
         .route(
             "/api/projects/:project_id/specs/:spec_id",
-            get(specs::get_spec),
+            get(specs::get_spec)
+                .put(specs::update_spec)
+                .delete(specs::delete_spec),
         )
 }
 
 fn task_routes() -> Router<AppState> {
     Router::new()
-        .route("/api/projects/:project_id/tasks", get(tasks::list_tasks).post(tasks::create_task))
+        .route(
+            "/api/projects/:project_id/tasks",
+            get(tasks::list_tasks).post(tasks::create_task),
+        )
         .route(
             "/api/projects/:project_id/specs/:spec_id/tasks",
             get(tasks::list_tasks_by_spec),
@@ -257,6 +278,12 @@ fn task_routes() -> Router<AppState> {
         .route(
             "/api/projects/:project_id/tasks/:task_id/transition",
             post(tasks::transition_task),
+        )
+        .route(
+            "/api/projects/:project_id/tasks/:task_id",
+            get(tasks::get_task)
+                .put(tasks::update_task)
+                .delete(tasks::delete_task),
         )
         .route(
             "/api/projects/:project_id/tasks/:task_id/retry",
@@ -311,6 +338,10 @@ fn agent_routes() -> Router<AppState> {
         .route(
             "/api/agents/:agent_id/events",
             get(agents::list_agent_events),
+        )
+        .route(
+            "/api/agents/:agent_id/runtime/test",
+            post(agents::test_agent_runtime),
         )
         .route(
             "/api/agents/:agent_id/events/stream",
@@ -429,10 +460,7 @@ fn cron_routes() -> Router<AppState> {
         .route("/api/cron-jobs/:id/resume", post(cron::resume_cron_job))
         .route("/api/cron-jobs/:id/trigger", post(cron::trigger_cron_job))
         .route("/api/cron-jobs/:id/runs", get(cron::list_cron_runs))
-        .route(
-            "/api/cron-jobs/:id/runs/:run_id",
-            get(cron::get_cron_run),
-        )
+        .route("/api/cron-jobs/:id/runs/:run_id", get(cron::get_cron_run))
         .route(
             "/api/cron-jobs/:id/artifacts",
             get(cron::list_cron_artifacts),
@@ -475,10 +503,7 @@ fn process_routes() -> Router<AppState> {
             delete(process::delete_connection),
         )
         .route("/api/processes/:id/runs", get(process::list_runs))
-        .route(
-            "/api/processes/:id/runs/:run_id",
-            get(process::get_run),
-        )
+        .route("/api/processes/:id/runs/:run_id", get(process::get_run))
         .route(
             "/api/processes/:id/runs/:run_id/cancel",
             post(process::cancel_run),
@@ -580,11 +605,11 @@ fn harness_proxy_routes() -> Router<AppState> {
             post(harness_proxy::trigger_consolidation),
         )
         // Skills
-        .route("/api/harness/skills", get(harness_proxy::list_skills).post(harness_proxy::create_skill))
         .route(
-            "/api/harness/skills/:name",
-            get(harness_proxy::get_skill),
+            "/api/harness/skills",
+            get(harness_proxy::list_skills).post(harness_proxy::create_skill),
         )
+        .route("/api/harness/skills/:name", get(harness_proxy::get_skill))
         .route(
             "/api/harness/skills/:name/activate",
             post(harness_proxy::activate_skill),

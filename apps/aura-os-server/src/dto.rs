@@ -71,6 +71,8 @@ pub(crate) struct LoopStatusResponse {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct CreateAgentRequest {
+    #[serde(default)]
+    pub org_id: Option<OrgId>,
     pub name: String,
     pub role: String,
     pub personality: String,
@@ -78,7 +80,18 @@ pub(crate) struct CreateAgentRequest {
     #[serde(default)]
     pub skills: Vec<String>,
     pub icon: Option<String>,
+    #[serde(default)]
     pub machine_type: Option<String>,
+    #[serde(default)]
+    pub adapter_type: Option<String>,
+    #[serde(default)]
+    pub environment: Option<String>,
+    #[serde(default)]
+    pub auth_source: Option<String>,
+    #[serde(default)]
+    pub integration_id: Option<String>,
+    #[serde(default)]
+    pub default_model: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,6 +103,16 @@ pub(crate) struct UpdateAgentRequest {
     pub skills: Option<Vec<String>>,
     pub icon: Option<Option<String>>,
     pub machine_type: Option<String>,
+    #[serde(default)]
+    pub adapter_type: Option<String>,
+    #[serde(default)]
+    pub environment: Option<String>,
+    #[serde(default)]
+    pub auth_source: Option<String>,
+    #[serde(default)]
+    pub integration_id: Option<Option<String>>,
+    #[serde(default)]
+    pub default_model: Option<Option<String>>,
 }
 
 // -- AgentInstance DTOs (project-level) --
@@ -148,6 +171,23 @@ pub(crate) struct Generate3dRequest {
     pub project_id: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub(crate) struct AgentRuntimeTestResponse {
+    pub ok: bool,
+    pub adapter_type: String,
+    pub environment: String,
+    pub auth_source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub integration_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub integration_name: Option<String>,
+    pub message: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct AuthLoginRequest {
     pub email: String,
@@ -185,6 +225,7 @@ pub(crate) struct AuthSessionResponse {
     pub zero_wallet: String,
     pub wallets: Vec<String>,
     pub is_zero_pro: bool,
+    pub is_access_granted: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zero_pro_refresh_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -203,6 +244,26 @@ pub(crate) struct CreateOrgRequest {
 #[derive(Debug, Deserialize)]
 pub(crate) struct UpdateOrgRequest {
     pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct CreateOrgIntegrationRequest {
+    pub name: String,
+    pub provider: String,
+    #[serde(default)]
+    pub default_model: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct UpdateOrgIntegrationRequest {
+    pub name: Option<String>,
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub default_model: Option<Option<String>>,
+    #[serde(default)]
+    pub api_key: Option<Option<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -248,6 +309,7 @@ impl From<ZeroAuthSession> for AuthSessionResponse {
             zero_wallet: s.zero_wallet,
             wallets: s.wallets,
             is_zero_pro: s.is_zero_pro,
+            is_access_granted: s.is_access_granted,
             zero_pro_refresh_error: None,
             access_token: Some(token),
             created_at: s.created_at,
