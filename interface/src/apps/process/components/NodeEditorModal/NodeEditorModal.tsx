@@ -22,6 +22,8 @@ const NODE_TYPE_LABELS: Record<ProcessNodeType, string> = {
   delay: "Delay",
   merge: "Merge",
   prompt: "Prompt",
+  sub_process: "SubProcess",
+  for_each: "ForEach",
 };
 
 interface NodeEditorModalProps {
@@ -98,6 +100,23 @@ export function NodeEditorModal({ isOpen, node, onClose }: NodeEditorModalProps)
   const [delaySeconds, setDelaySeconds] = useState(
     node.node_type === "delay" ? String(cfg?.delay_seconds ?? "60") : "60",
   );
+  const [childProcessId, setChildProcessId] = useState(
+    (node.node_type === "sub_process" || node.node_type === "for_each")
+      ? (cfg?.child_process_id as string) ?? ""
+      : "",
+  );
+  const [maxConcurrency, setMaxConcurrency] = useState(
+    node.node_type === "for_each" ? String(cfg?.max_concurrency ?? "3") : "3",
+  );
+  const [iteratorMode, setIteratorMode] = useState(
+    node.node_type === "for_each" ? (cfg?.iterator_mode as string) ?? "json_array" : "json_array",
+  );
+  const [itemVariableName, setItemVariableName] = useState(
+    node.node_type === "for_each" ? (cfg?.item_variable_name as string) ?? "item" : "item",
+  );
+  const [collectMode, setCollectMode] = useState(
+    node.node_type === "for_each" ? (cfg?.collect_mode as string) ?? "json_array" : "json_array",
+  );
   const [vaultPath, setVaultPath] = useState(
     node.node_type === "action" ? (cfg?.vault_path as string) ?? "" : "",
   );
@@ -121,6 +140,23 @@ export function NodeEditorModal({ isOpen, node, onClose }: NodeEditorModalProps)
   const [pinLoading, setPinLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const [processes, setProcesses] = useState<Array<{ process_id: string; name: string }>>([]);
+  useEffect(() => {
+    if (node.node_type === "sub_process" || node.node_type === "for_each") {
+      processApi.listProcesses().then(setProcesses).catch(() => {});
+    }
+  }, [node.node_type]);
+
+  const processOptions = useMemo(
+    () => [
+      { value: "", label: "Select a process..." },
+      ...processes
+        .filter((p) => p.process_id !== processId)
+        .map((p) => ({ value: p.process_id, label: p.name })),
+    ],
+    [processes, processId],
+  );
 
   const agentOptions = useMemo(
     () => [
@@ -148,6 +184,15 @@ export function NodeEditorModal({ isOpen, node, onClose }: NodeEditorModalProps)
         setArtifactData(JSON.stringify(c?.data ?? {}, null, 2));
       }
       if (node.node_type === "delay") setDelaySeconds(String(c?.delay_seconds ?? "60"));
+      if (node.node_type === "sub_process" || node.node_type === "for_each") {
+        setChildProcessId((c?.child_process_id as string) ?? "");
+      }
+      if (node.node_type === "for_each") {
+        setMaxConcurrency(String(c?.max_concurrency ?? "3"));
+        setIteratorMode((c?.iterator_mode as string) ?? "json_array");
+        setItemVariableName((c?.item_variable_name as string) ?? "item");
+        setCollectMode((c?.collect_mode as string) ?? "json_array");
+      }
       if (node.node_type === "action") setVaultPath((c?.vault_path as string) ?? "");
       if (node.node_type === "action" || node.node_type === "artifact" || node.node_type === "prompt") setOutputFile((c?.output_file as string) ?? "");
       if (node.node_type === "ignition") setWatchlist(JSON.stringify(c?.watchlist ?? {}, null, 2));
@@ -206,6 +251,15 @@ export function NodeEditorModal({ isOpen, node, onClose }: NodeEditorModalProps)
         }
       }
       if (node.node_type === "delay") config.delay_seconds = Number(delaySeconds) || 60;
+      if (node.node_type === "sub_process" || node.node_type === "for_each") {
+        if (childProcessId) config.child_process_id = childProcessId;
+      }
+      if (node.node_type === "for_each") {
+        config.max_concurrency = Number(maxConcurrency) || 3;
+        config.iterator_mode = iteratorMode;
+        if (itemVariableName) config.item_variable_name = itemVariableName;
+        config.collect_mode = collectMode;
+      }
       if (node.node_type === "action" && vaultPath) config.vault_path = vaultPath;
       if ((node.node_type === "action" || node.node_type === "artifact" || node.node_type === "prompt") && outputFile) {
         config.output_file = outputFile;
@@ -243,7 +297,7 @@ export function NodeEditorModal({ isOpen, node, onClose }: NodeEditorModalProps)
     } finally {
       setSaving(false);
     }
-  }, [processId, node, label, prompt, agentId, schedule, conditionExpr, artifactMode, artifactType, artifactName, artifactData, delaySeconds, vaultPath, outputFile, watchlist, model, timeoutSeconds, maxTurns, isPinned, pinnedOutput, fetchNodes, onClose]);
+  }, [processId, node, label, prompt, agentId, schedule, conditionExpr, artifactMode, artifactType, artifactName, artifactData, delaySeconds, childProcessId, maxConcurrency, iteratorMode, itemVariableName, collectMode, vaultPath, outputFile, watchlist, model, timeoutSeconds, maxTurns, isPinned, pinnedOutput, fetchNodes, onClose]);
 
   const handleDelete = useCallback(async () => {
     if (!processId || node.node_type === "ignition") return;
@@ -345,6 +399,46 @@ export function NodeEditorModal({ isOpen, node, onClose }: NodeEditorModalProps)
           <EditField label="Label">
             <input style={inputStyle} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Node label" />
           </EditField>
+
+          {(node.node_type === "sub_process" || node.node_type === "for_each") && (
+            <EditField label="Child Process">
+              <Select value={childProcessId} onChange={setChildProcessId} placeholder="Select a process..." options={processOptions} />
+              <Text variant="secondary" size="xs" style={{ marginTop: 2 }}>The process to invoke for each item or as a sub-process.</Text>
+            </EditField>
+          )}
+
+          {node.node_type === "for_each" && (
+            <>
+              <EditField label="Iterator Mode">
+                <Select
+                  value={iteratorMode}
+                  onChange={setIteratorMode}
+                  options={[
+                    { value: "json_array", label: "JSON Array" },
+                    { value: "line_delimited", label: "Line Delimited" },
+                    { value: "separator", label: "Custom Separator" },
+                  ]}
+                />
+              </EditField>
+              <EditField label="Max Concurrency">
+                <input style={inputStyle} type="number" min={1} max={20} value={maxConcurrency} onChange={(e) => setMaxConcurrency(e.target.value)} />
+                <Text variant="secondary" size="xs" style={{ marginTop: 2 }}>Maximum parallel child process runs.</Text>
+              </EditField>
+              <EditField label="Item Variable Name">
+                <input style={inputStyle} value={itemVariableName} onChange={(e) => setItemVariableName(e.target.value)} placeholder="item" />
+              </EditField>
+              <EditField label="Collect Mode">
+                <Select
+                  value={collectMode}
+                  onChange={setCollectMode}
+                  options={[
+                    { value: "json_array", label: "JSON Array" },
+                    { value: "concatenate", label: "Concatenated Text" },
+                  ]}
+                />
+              </EditField>
+            </>
+          )}
 
           {node.node_type === "ignition" && (
             <EditField label="Schedule">

@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -150,6 +152,7 @@ fn action_preamble(output_file: &str) -> String {
     )
 }
 
+#[derive(Clone)]
 pub struct ProcessExecutor {
     store: Arc<ProcessStore>,
     event_broadcast: broadcast::Sender<serde_json::Value>,
@@ -248,6 +251,8 @@ impl ProcessExecutor {
             total_output_tokens: None,
             cost_usd: None,
             output: None,
+            parent_run_id: None,
+            input_override: None,
         };
         self.store.save_run(&run)?;
 
@@ -263,24 +268,19 @@ impl ProcessExecutor {
             "Process run triggered"
         );
 
-        let store = self.store.clone();
-        let broadcast = self.event_broadcast.clone();
-        let harness = self.harness.clone();
-        let data_dir = self.data_dir.clone();
-        let rocks_store = self.rocks_store.clone();
-        let agent_service = self.agent_service.clone();
-        let org_service = self.org_service.clone();
+        let executor = self.clone();
         let run_clone = run.clone();
         tokio::spawn(async move {
             if let Err(e) = execute_run(
-                &store,
-                &broadcast,
+                &executor,
+                &executor.store,
+                &executor.event_broadcast,
                 &run_clone,
-                &*harness,
-                &data_dir,
-                &rocks_store,
-                &agent_service,
-                &org_service,
+                &*executor.harness,
+                &executor.data_dir,
+                &executor.rocks_store,
+                &executor.agent_service,
+                &executor.org_service,
             )
             .await
             {
@@ -289,6 +289,75 @@ impl ProcessExecutor {
         });
 
         Ok(run)
+    }
+
+    /// Trigger a child process run and wait for it to complete, returning
+    /// the finished `ProcessRun` (with `.output`).  Used by SubProcess and
+    /// ForEach nodes to invoke another process synchronously.
+    pub async fn trigger_and_await(
+        &self,
+        process_id: &ProcessId,
+        trigger: ProcessRunTrigger,
+        input_override: Option<String>,
+        parent_run_id: Option<ProcessRunId>,
+    ) -> Result<ProcessRun, ProcessError> {
+        let process = self
+            .store
+            .get_process(process_id)?
+            .ok_or_else(|| ProcessError::NotFound(process_id.to_string()))?;
+
+        let now = Utc::now();
+        let run = ProcessRun {
+            run_id: ProcessRunId::new(),
+            process_id: process.process_id,
+            status: ProcessRunStatus::Pending,
+            trigger,
+            error: None,
+            started_at: now,
+            completed_at: None,
+            total_input_tokens: None,
+            total_output_tokens: None,
+            cost_usd: None,
+            output: None,
+            parent_run_id,
+            input_override: input_override.clone(),
+        };
+        self.store.save_run(&run)?;
+
+        let _ = self.event_broadcast.send(serde_json::json!({
+            "type": "process_run_started",
+            "process_id": process.process_id.to_string(),
+            "run_id": run.run_id.to_string(),
+        }));
+
+        info!(
+            process_id = %process.process_id,
+            run_id = %run.run_id,
+            parent = ?parent_run_id,
+            "Child process run triggered (await)"
+        );
+
+        execute_run(
+            self,
+            &self.store,
+            &self.event_broadcast,
+            &run,
+            &*self.harness,
+            &self.data_dir,
+            &self.rocks_store,
+            &self.agent_service,
+            &self.org_service,
+        )
+        .await?;
+
+        let completed_run = self
+            .store
+            .list_runs(process_id)?
+            .into_iter()
+            .find(|r| r.run_id == run.run_id)
+            .ok_or_else(|| ProcessError::RunNotFound(run.run_id.to_string()))?;
+
+        Ok(completed_run)
     }
 }
 
@@ -391,16 +460,18 @@ fn reachable_from_ignition(
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_arguments)]
-async fn execute_run(
-    store: &ProcessStore,
-    broadcast: &broadcast::Sender<serde_json::Value>,
-    run: &ProcessRun,
-    harness: &dyn HarnessLink,
-    data_dir: &Path,
-    rocks_store: &RocksStore,
-    agent_service: &AgentService,
-    org_service: &OrgService,
-) -> Result<(), ProcessError> {
+fn execute_run<'a>(
+    executor: &'a ProcessExecutor,
+    store: &'a ProcessStore,
+    broadcast: &'a broadcast::Sender<serde_json::Value>,
+    run: &'a ProcessRun,
+    harness: &'a dyn HarnessLink,
+    data_dir: &'a Path,
+    rocks_store: &'a RocksStore,
+    agent_service: &'a AgentService,
+    org_service: &'a OrgService,
+) -> Pin<Box<dyn Future<Output = Result<(), ProcessError>> + Send + 'a>> {
+    Box::pin(async move {
     let mut current_run = run.clone();
     current_run.status = ProcessRunStatus::Running;
     store.save_run(&current_run)?;
@@ -537,6 +608,22 @@ async fn execute_run(
             run_id: run.run_id,
             node_id,
         };
+
+        if node.node_type == ProcessNodeType::Ignition {
+            if let Some(ref override_text) = run.input_override {
+                let now = Utc::now();
+                if let Some(ref mut evt) = running_event {
+                    complete_event(
+                        store, broadcast, run, node, evt,
+                        ProcessEventStatus::Completed, override_text, now,
+                        None, None,
+                    );
+                }
+                node_outputs.insert(node_id, override_text.clone());
+                continue;
+            }
+        }
+
         let result: Result<NodeResult, ProcessError> = match node.node_type {
             ProcessNodeType::Ignition => execute_ignition(node).map(|s| NodeResult {
                 downstream_output: s, display_output: None, token_usage: None, content_blocks: None,
@@ -563,6 +650,12 @@ async fn execute_run(
                     data_dir, store, harness, jwt.as_deref(),
                     agent_service, org_service, Some(&fwd), Some(&workspace_path),
                 ).await
+            }
+            ProcessNodeType::SubProcess => {
+                execute_subprocess(node, &upstream_context, executor, &run.run_id).await
+            }
+            ProcessNodeType::ForEach => {
+                execute_foreach(node, &upstream_context, executor, &run.run_id).await
             }
             ProcessNodeType::Merge => {
                 let display = format!(
@@ -675,6 +768,7 @@ async fn execute_run(
     }));
 
     Ok(())
+    }) // end Box::pin(async move { ... })
 }
 
 // ---------------------------------------------------------------------------
@@ -1181,6 +1275,291 @@ async fn execute_prompt(
         display_output: None,
         token_usage,
         content_blocks,
+    })
+}
+
+async fn execute_subprocess(
+    node: &ProcessNode,
+    upstream_context: &str,
+    executor: &ProcessExecutor,
+    parent_run_id: &ProcessRunId,
+) -> Result<NodeResult, ProcessError> {
+    let child_process_id_str = node
+        .config
+        .get("child_process_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ProcessError::Execution(
+            "SubProcess node missing 'child_process_id' in config".into(),
+        ))?;
+
+    let child_process_id: ProcessId = child_process_id_str
+        .parse()
+        .map_err(|_| ProcessError::Execution(format!(
+            "Invalid child_process_id: {child_process_id_str}"
+        )))?;
+
+    let timeout_secs = node
+        .config
+        .get("timeout_seconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1200);
+
+    info!(
+        node_id = %node.node_id,
+        child_process_id = %child_process_id,
+        "SubProcess: triggering child process"
+    );
+
+    let input = if upstream_context.is_empty() {
+        node.prompt.clone()
+    } else if node.prompt.is_empty() {
+        upstream_context.to_string()
+    } else {
+        format!("{}\n\n---\n\n{}", upstream_context, node.prompt)
+    };
+
+    let child_run = tokio::time::timeout(
+        Duration::from_secs(timeout_secs),
+        executor.trigger_and_await(
+            &child_process_id,
+            ProcessRunTrigger::Manual,
+            Some(input),
+            Some(*parent_run_id),
+        ),
+    )
+    .await
+    .map_err(|_| ProcessError::Execution(format!(
+        "SubProcess timed out after {timeout_secs}s waiting for child process {child_process_id}"
+    )))?
+    ?;
+
+    let output = child_run.output.unwrap_or_default();
+    let display = format!(
+        "SubProcess completed (child run {}): {} bytes output",
+        child_run.run_id, output.len()
+    );
+
+    let mut token_usage = None;
+    if let (Some(inp), Some(out)) = (child_run.total_input_tokens, child_run.total_output_tokens) {
+        token_usage = Some(NodeTokenUsage {
+            input_tokens: inp,
+            output_tokens: out,
+            model: None,
+        });
+    }
+
+    Ok(NodeResult {
+        downstream_output: output,
+        display_output: Some(display),
+        token_usage,
+        content_blocks: None,
+    })
+}
+
+async fn execute_foreach(
+    node: &ProcessNode,
+    upstream_context: &str,
+    executor: &ProcessExecutor,
+    parent_run_id: &ProcessRunId,
+) -> Result<NodeResult, ProcessError> {
+    let child_process_id_str = node
+        .config
+        .get("child_process_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ProcessError::Execution(
+            "ForEach node missing 'child_process_id' in config".into(),
+        ))?;
+
+    let child_process_id: ProcessId = child_process_id_str
+        .parse()
+        .map_err(|_| ProcessError::Execution(format!(
+            "Invalid child_process_id: {child_process_id_str}"
+        )))?;
+
+    let max_concurrency = node
+        .config
+        .get("max_concurrency")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(3) as usize;
+
+    let timeout_secs = node
+        .config
+        .get("timeout_seconds")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(1800);
+
+    let iterator_mode = node
+        .config
+        .get("iterator_mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("json_array");
+
+    let item_variable = node
+        .config
+        .get("item_variable_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("item");
+
+    let items: Vec<String> = match iterator_mode {
+        "json_array" => {
+            let parsed: Vec<serde_json::Value> = serde_json::from_str(upstream_context.trim())
+                .map_err(|e| ProcessError::Execution(format!(
+                    "ForEach: failed to parse upstream as JSON array: {e}"
+                )))?;
+            parsed.iter().map(|v| {
+                if let Some(s) = v.as_str() { s.to_string() }
+                else { serde_json::to_string(v).unwrap_or_default() }
+            }).collect()
+        }
+        "line_delimited" => {
+            upstream_context
+                .lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .collect()
+        }
+        _ => {
+            let sep = node.config.get("separator")
+                .and_then(|v| v.as_str())
+                .unwrap_or("\n");
+            upstream_context
+                .split(sep)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        }
+    };
+
+    if items.is_empty() {
+        return Ok(NodeResult {
+            downstream_output: "[]".to_string(),
+            display_output: Some("ForEach: no items to iterate".to_string()),
+            token_usage: None,
+            content_blocks: None,
+        });
+    }
+
+    info!(
+        node_id = %node.node_id,
+        child_process_id = %child_process_id,
+        items = items.len(),
+        max_concurrency,
+        "ForEach: starting iteration"
+    );
+
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrency));
+    let executor = executor.clone();
+    let parent_run_id = *parent_run_id;
+    let prompt_template = node.prompt.clone();
+
+    let mut handles = Vec::with_capacity(items.len());
+
+    for (idx, item) in items.iter().enumerate() {
+        let sem = semaphore.clone();
+        let exec = executor.clone();
+        let cpid = child_process_id;
+        let prid = parent_run_id;
+        let item = item.clone();
+        let prompt = prompt_template.clone();
+        let item_var = item_variable.to_string();
+
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await.map_err(|e| {
+                ProcessError::Execution(format!("ForEach semaphore error: {e}"))
+            })?;
+
+            let input = if prompt.is_empty() {
+                format!("## {item_var} (#{idx})\n\n{item}")
+            } else {
+                format!("## {item_var} (#{idx})\n\n{item}\n\n## Task\n\n{prompt}")
+            };
+
+            exec.trigger_and_await(
+                &cpid,
+                ProcessRunTrigger::Manual,
+                Some(input),
+                Some(prid),
+            ).await
+        }));
+    }
+
+    let timeout_result = tokio::time::timeout(
+        Duration::from_secs(timeout_secs),
+        async {
+            let mut results = Vec::with_capacity(handles.len());
+            for handle in handles {
+                results.push(handle.await.map_err(|e| {
+                    ProcessError::Execution(format!("ForEach task join error: {e}"))
+                })?);
+            }
+            Ok::<Vec<Result<ProcessRun, ProcessError>>, ProcessError>(results)
+        }
+    ).await;
+
+    let child_results = match timeout_result {
+        Ok(Ok(results)) => results,
+        Ok(Err(e)) => return Err(e),
+        Err(_) => return Err(ProcessError::Execution(format!(
+            "ForEach timed out after {timeout_secs}s"
+        ))),
+    };
+
+    let mut outputs = Vec::new();
+    let mut total_input = 0u64;
+    let mut total_output = 0u64;
+    let mut failures = 0;
+
+    for (idx, result) in child_results.into_iter().enumerate() {
+        match result {
+            Ok(run) => {
+                total_input += run.total_input_tokens.unwrap_or(0);
+                total_output += run.total_output_tokens.unwrap_or(0);
+                outputs.push(run.output.unwrap_or_else(|| format!("(no output for item #{})", idx)));
+            }
+            Err(e) => {
+                failures += 1;
+                outputs.push(format!("(error for item #{}: {})", idx, e));
+            }
+        }
+    }
+
+    let collect_mode = node
+        .config
+        .get("collect_mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("json_array");
+
+    let downstream = match collect_mode {
+        "json_array" => {
+            let arr: Vec<serde_json::Value> = outputs.iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect();
+            serde_json::to_string_pretty(&arr).unwrap_or_else(|_| outputs.join("\n\n---\n\n"))
+        }
+        _ => outputs.join("\n\n---\n\n"),
+    };
+
+    let display = format!(
+        "ForEach completed: {} items, {} failures, {} input tokens, {} output tokens",
+        items.len(), failures, total_input, total_output
+    );
+
+    let token_usage = if total_input > 0 || total_output > 0 {
+        Some(NodeTokenUsage {
+            input_tokens: total_input,
+            output_tokens: total_output,
+            model: None,
+        })
+    } else {
+        None
+    };
+
+    Ok(NodeResult {
+        downstream_output: downstream,
+        display_output: Some(display),
+        token_usage,
+        content_blocks: None,
     })
 }
 

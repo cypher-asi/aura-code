@@ -707,6 +707,10 @@ pub struct ProcessRun {
     /// (leaf) node(s). Present only after a successful completion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_run_id: Option<ProcessRunId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_override: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

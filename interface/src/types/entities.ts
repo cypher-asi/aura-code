@@ -508,6 +508,8 @@ export interface ProcessRun {
   total_output_tokens?: number;
   cost_usd?: number;
   output?: string | null;
+  parent_run_id?: string | null;
+  input_override?: string | null;
 }
 
 export interface ProcessEventContentBlock {

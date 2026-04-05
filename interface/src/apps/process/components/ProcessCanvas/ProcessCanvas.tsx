@@ -15,7 +15,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import styles from "./ProcessCanvas.module.css";
-import { Play, Pause, Square, GitBranch, FileOutput, Timer, Merge, Pencil, Trash2, Pin, PinOff, MessageSquare } from "lucide-react";
+import { Play, Pause, Square, GitBranch, FileOutput, Timer, Merge, Pencil, Trash2, Pin, PinOff, MessageSquare, Workflow, Repeat } from "lucide-react";
 import { Button, Menu } from "@cypher-asi/zui";
 import type { MenuItem } from "@cypher-asi/zui";
 import type { ProcessNodeType } from "../../../../types/enums";
@@ -41,6 +41,8 @@ const NODE_MENU_ICONS: Record<string, React.ReactNode> = {
   artifact: <FileOutput size={14} />,
   delay: <Timer size={14} />,
   merge: <Merge size={14} />,
+  sub_process: <Workflow size={14} />,
+  for_each: <Repeat size={14} />,
 };
 
 const nodeMenuItems: MenuItem[] = ADD_NODE_TYPES.map((item) => ({

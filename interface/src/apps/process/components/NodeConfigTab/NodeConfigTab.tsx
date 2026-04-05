@@ -52,6 +52,8 @@ const NODE_TYPE_LABELS: Record<ProcessNodeType, string> = {
   delay: "Delay",
   merge: "Merge",
   prompt: "Prompt",
+  sub_process: "SubProcess",
+  for_each: "ForEach",
 };
 
 interface NodeConfigTabProps {

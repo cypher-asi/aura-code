@@ -153,6 +153,8 @@ pub enum ProcessNodeType {
     Delay,
     Merge,
     Prompt,
+    SubProcess,
+    ForEach,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
