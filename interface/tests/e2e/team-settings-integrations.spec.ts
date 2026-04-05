@@ -42,18 +42,18 @@ test("team settings integrations show clear sections and labeled fields", async 
 
   await dialog.getByRole("button", { name: "Integrations" }).click();
 
-  await expect(dialog.getByRole("heading", { name: "Connected Services" })).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Add Service" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Integrations" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Add Integration" })).toBeVisible();
   await expect(dialog.getByText("Connections").first()).toBeVisible();
-  await expect(dialog.getByText("Integrations").first()).toBeVisible();
+  await expect(dialog.getByText("Apps").first()).toBeVisible();
   await expect(dialog.getByText("MCP Servers").first()).toBeVisible();
 
   await expect(dialog.getByText("Anthropic Prod")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Edit" }).first()).toBeVisible();
 
   await expect(dialog.getByText("GitHub Ops")).toBeVisible();
-  await dialog.getByRole("button", { name: "Add Service" }).click();
-  await expect(dialog.getByText("New Service")).toBeVisible();
+  await dialog.getByRole("button", { name: "Add Integration" }).click();
+  await expect(dialog.getByText("New Integration")).toBeVisible();
   await expect(dialog.getByText("Choose Provider")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Anthropic" }).first()).toBeVisible();
   await expect(dialog.getByRole("button", { name: "GitHub" }).first()).toBeVisible();

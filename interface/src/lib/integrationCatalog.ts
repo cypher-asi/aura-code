@@ -260,7 +260,7 @@ export function integrationSections(): Array<{
     },
     {
       id: "workspace_integration",
-      title: "Integrations",
+      title: "Apps",
       description: "Connected work apps that can supply tools and workflows.",
       providers: INTEGRATION_CATALOG.filter((provider) => provider.kind === "workspace_integration"),
     },

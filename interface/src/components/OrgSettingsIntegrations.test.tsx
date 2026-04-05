@@ -29,7 +29,7 @@ describe("OrgSettingsIntegrations", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Add Service" }));
+    await user.click(screen.getByRole("button", { name: "Add Integration" }));
     await user.click(screen.getByRole("button", { name: "Anthropic" }));
     await user.click(screen.getByText("Advanced"));
 
@@ -57,7 +57,7 @@ describe("OrgSettingsIntegrations", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Add Service" }));
+    await user.click(screen.getByRole("button", { name: "Add Integration" }));
     await user.click(screen.getByRole("button", { name: "GitHub" }));
     await user.type(screen.getByLabelText("New integration name"), "GitHub Ops");
     await user.type(screen.getByLabelText("New GitHub Token"), "ghp_test_123");
@@ -86,7 +86,7 @@ describe("OrgSettingsIntegrations", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Add Service" }));
+    await user.click(screen.getByRole("button", { name: "Add Integration" }));
     await user.click(screen.getByRole("button", { name: "Slack" }));
 
     expect(
@@ -108,10 +108,10 @@ describe("OrgSettingsIntegrations", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Connected Services" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add Service" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Integrations" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add Integration" })).toBeInTheDocument();
     expect(screen.getByText("Connections")).toBeInTheDocument();
-    expect(screen.getByText("Integrations")).toBeInTheDocument();
+    expect(screen.getByText("Apps")).toBeInTheDocument();
   });
 
   it("submits custom mcp servers with provider config", async () => {
@@ -128,7 +128,7 @@ describe("OrgSettingsIntegrations", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Add Service" }));
+    await user.click(screen.getByRole("button", { name: "Add Integration" }));
     await user.click(screen.getByRole("button", { name: "Custom MCP Server" }));
     await user.type(screen.getByLabelText("New integration name"), "GitHub MCP");
     await user.type(screen.getByLabelText("New Transport"), "stdio");

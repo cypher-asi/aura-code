@@ -92,9 +92,9 @@ They answer:
 
 They do not directly expose user-facing actions.
 
-### Integrations
+### Apps
 
-Integrations are saved connections to external work systems.
+Apps are saved connections to external work systems.
 
 Examples:
 - `Linear`
@@ -106,7 +106,7 @@ Examples:
 - `Figma`
 - `Sentry`
 
-Integrations answer:
+Apps answer:
 - which external systems is this workspace connected to?
 - which systems are allowed to contribute tools into Aura OS?
 
@@ -176,7 +176,7 @@ The clean product taxonomy should be:
 2. `Connections`
 - model/runtime provider access
 
-3. `Integrations`
+3. `Apps`
 - external work systems
 
 4. `Workspace Tools`
@@ -327,7 +327,7 @@ The UI should make these concepts visible:
 #### Connections
 - provider credentials used by runtimes
 
-#### Integrations
+#### Apps
 - external systems connected to the workspace
 
 #### MCP Servers
@@ -362,7 +362,7 @@ Connections should power adapters like:
 
 #### 3. External work systems through MCP
 
-Integrations like:
+Apps like:
 - `Linear`
 - `Slack`
 - `GitHub`
@@ -555,7 +555,7 @@ The next implementation steps should follow this order:
 1. clean up the product vocabulary in the UI
 - `Adapters`
 - `Connections`
-- `Integrations`
+- `Apps`
 - `Workspace Tools`
 - `MCP Servers`
 
@@ -585,7 +585,7 @@ V1 should not try to:
 The correct near-term system is:
 - Adapters are the brains
 - Connections power runtimes
-- Integrations connect external systems
+- Apps connect external systems
 - Workspace Tools are the action surface
 - Aura-native tools own Aura's domain
 - MCP-backed tools are the preferred external integration path
