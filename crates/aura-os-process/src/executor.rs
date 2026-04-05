@@ -1075,9 +1075,15 @@ async fn execute_artifact(
         warn!(session_id = %session.session_id, error = %e, "Failed to close artifact harness session");
     }
 
-    let mut content = extract_final_output(&resp.final_text);
+    let mut content = extract_final_output(&strip_thinking_tags(&resp.final_text));
     if content.is_empty() {
-        content = extract_final_output(&resp.full_text);
+        content = extract_final_output(&strip_thinking_tags(&resp.full_text));
+    }
+    if content.is_empty() {
+        if let Some(wf) = extract_write_file_content(&resp.content_blocks) {
+            warn!("Artifact text output was empty but write_file content found — salvaging");
+            content = strip_thinking_tags(&wf);
+        }
     }
     if content.is_empty() {
         return Err(ProcessError::Execution(
@@ -1323,8 +1329,23 @@ const MIN_SUBSTANTIAL_OUTPUT_LEN: usize = 200;
 ///
 /// If the vast majority of tool calls errored, prepends a degraded-output
 /// warning so downstream nodes can detect that the data may be incomplete.
+/// Strip `<thinking>...</thinking>` blocks that some models emit as plain text
+/// instead of using the structured thinking protocol. Without this, reasoning
+/// text leaks into downstream node context.
+fn strip_thinking_tags(text: &str) -> String {
+    let mut result = text.to_string();
+    while let Some(start) = result.find("<thinking>") {
+        if let Some(end_offset) = result[start..].find("</thinking>") {
+            result.replace_range(start..start + end_offset + "</thinking>".len(), "");
+        } else {
+            break;
+        }
+    }
+    result.trim().to_string()
+}
+
 fn build_downstream_output(resp: &HarnessResponse) -> String {
-    let text = resp.final_text.trim();
+    let text = strip_thinking_tags(resp.final_text.trim());
 
     let (total_tool_calls, error_tool_calls, ok_results) = count_tool_outcomes(&resp.content_blocks);
 
