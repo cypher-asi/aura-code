@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { ToolCallEntry } from "../../types/stream";
 import { TOOL_LABELS, FILE_OPS, COMMAND_OPS } from "../../constants/tools";
-import { summarizeInput, formatResult } from "../../utils/format";
+import { summarizeInput, formatResult, summarizeError } from "../../utils/format";
 import { FilePreviewCard } from "../FilePreviewCard";
 import { CommandPreviewCard } from "./CommandPreviewCard";
 import { SpecPreviewCard } from "./SpecPreviewCard";
@@ -47,7 +47,7 @@ export function ToolCallBlock({
   const autoExpand = isFileOp || isCommand ? false : (defaultExpanded ?? (isSpec && !entry.pending && !entry.started));
   const [expanded, setExpanded] = useState(autoExpand);
   const label = TOOL_LABELS[entry.name] || entry.name;
-  const inputSummary = (entry.started && !isTask) ? "" : summarizeInput(entry.name, entry.input);
+  const inputSummary = (entry.started && (isSpec || isTask)) ? "" : summarizeInput(entry.name, entry.input);
 
   const stateClass = entry.pending
     ? toolStyles.taskActive
@@ -154,7 +154,7 @@ export function ToolCallBlock({
         <span className={toolStyles.toolName}>{label}</span>
         {entry.isError && entry.result ? (
           <span className={toolStyles.headerErrorText}>
-            {entry.result.length > 100 ? entry.result.slice(0, 100) + "…" : entry.result}
+            {summarizeError(entry.result)}
           </span>
         ) : showGeneratingHint ? (
           <span className={toolStyles.generatingHint}>Generating…</span>
