@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Text } from "@cypher-asi/zui";
 import type {
@@ -10,9 +10,9 @@ import type {
 import { processApi } from "../../../../api/process";
 import { useProcessStore } from "../../stores/process-store";
 import { useProcessSidekickStore } from "../../stores/process-sidekick-store";
-import { ActivityTimeline } from "../../../../components/ActivityTimeline";
 import { PinnedOutputField, PinOutputButton } from "../PinnedOutput";
-import { monoBox, contentBlocksToTimeline } from "./node-output-utils";
+import { monoBox } from "./node-output-utils";
+import { ProcessEventOutput } from "../ProcessEventOutput";
 import styles from "../../../../components/Preview/Preview.module.css";
 
 interface NodeOutputTabProps {
@@ -97,16 +97,6 @@ export function NodeOutputTab({ node }: NodeOutputTabProps) {
   }, [currentNodeStatus, loadEvents, loadArtifacts]);
 
   const nodeEvent = events.find((e) => e.node_id === node.node_id);
-  const hasBlocks =
-    nodeEvent?.content_blocks && nodeEvent.content_blocks.length > 0;
-
-  const { timeline, toolCalls, thinkingText } = useMemo(
-    () =>
-      hasBlocks
-        ? contentBlocksToTimeline(nodeEvent!.content_blocks!)
-        : { timeline: [], toolCalls: [], thinkingText: "" },
-    [hasBlocks, nodeEvent?.content_blocks],
-  );
 
   const pinnedOutput = node.config?.pinned_output as string | undefined;
 
@@ -133,10 +123,6 @@ export function NodeOutputTab({ node }: NodeOutputTabProps) {
         {!loading && nodeEvent && (
           <NodeEventDetails
             nodeEvent={nodeEvent}
-            hasBlocks={!!hasBlocks}
-            timeline={timeline}
-            toolCalls={toolCalls}
-            thinkingText={thinkingText}
             node={node}
           />
         )}
@@ -168,17 +154,9 @@ export function NodeOutputTab({ node }: NodeOutputTabProps) {
 
 function NodeEventDetails({
   nodeEvent,
-  hasBlocks,
-  timeline,
-  toolCalls,
-  thinkingText,
   node,
 }: {
   nodeEvent: ProcessEvent;
-  hasBlocks: boolean;
-  timeline: import("../../../../types/stream").TimelineItem[];
-  toolCalls: import("../../../../types/stream").ToolCallEntry[];
-  thinkingText: string;
   node: ProcessNode;
 }) {
   const statusColor =
@@ -215,28 +193,15 @@ function NodeEventDetails({
         </div>
       )}
 
-      {hasBlocks ? (
-        <div className={styles.taskField}>
-          <span className={styles.fieldLabel}>Conversation</span>
-          <ActivityTimeline
-            timeline={timeline}
-            thinkingText={thinkingText}
-            toolCalls={toolCalls}
-            isStreaming={false}
-          />
-        </div>
-      ) : (
-        <div className={styles.taskField}>
-          <span className={styles.fieldLabel}>Output</span>
-          {nodeEvent.output ? (
-            <div style={monoBox}>{nodeEvent.output}</div>
-          ) : (
-            <div style={{ ...monoBox, color: "var(--color-text-muted)" }}>
-              No output
-            </div>
-          )}
-        </div>
-      )}
+      <div className={styles.taskField}>
+        <span className={styles.fieldLabel}>Output</span>
+        <ProcessEventOutput event={nodeEvent} />
+        {!nodeEvent.output && (!nodeEvent.content_blocks || nodeEvent.content_blocks.length === 0) && (
+          <div style={{ ...monoBox, color: "var(--color-text-muted)" }}>
+            No output
+          </div>
+        )}
+      </div>
 
       {nodeEvent.input_snapshot && (
         <div className={styles.taskField}>

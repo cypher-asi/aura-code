@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Text } from "@cypher-asi/zui";
 import { useProcessStore } from "../../stores/process-store";
 import { processApi } from "../../../../api/process";
 import { formatTokensCompact as formatTokens } from "../../../../utils/format";
 import { EmptyState } from "../../../../components/EmptyState";
-import { ActivityTimeline } from "../../../../components/ActivityTimeline";
 import type { ProcessEvent } from "../../../../types";
-import type { ToolCallEntry, TimelineItem } from "../../../../types/stream";
-import type { ProcessEventContentBlock } from "../../../../types";
 import { useElapsedTime, formatDuration, EMPTY_RUNS, EMPTY_NODES } from "./process-sidekick-utils";
+import { ProcessEventOutput } from "../ProcessEventOutput";
 
 const EVENT_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   completed: { bg: "rgba(16,185,129,0.15)", fg: "#10b981" },
@@ -17,42 +15,6 @@ const EVENT_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   running: { bg: "rgba(59,130,246,0.15)", fg: "#3b82f6" },
   pending: { bg: "rgba(59,130,246,0.15)", fg: "#3b82f6" },
 };
-
-function blocksToTimeline(blocks: ProcessEventContentBlock[]): {
-  timeline: TimelineItem[];
-  toolCalls: ToolCallEntry[];
-  thinkingText: string;
-} {
-  const timeline: TimelineItem[] = [];
-  const toolCalls: ToolCallEntry[] = [];
-  let thinkingText = "";
-  const toolMap = new Map<string, ToolCallEntry>();
-
-  for (const block of blocks) {
-    if (block.type === "text" && block.text) {
-      timeline.push({ kind: "text", content: block.text, id: `t-${timeline.length}` });
-    } else if (block.type === "thinking" && block.thinking) {
-      thinkingText += (thinkingText ? "\n" : "") + block.thinking;
-      if (!timeline.some((t) => t.kind === "thinking")) {
-        timeline.push({ kind: "thinking", id: "thinking-0" });
-      }
-    } else if (block.type === "tool_use" && block.name) {
-      const id = block.id ?? `tool-${timeline.length}`;
-      const entry: ToolCallEntry = { id, name: block.name, input: {}, pending: true };
-      toolMap.set(id, entry);
-      toolCalls.push(entry);
-      timeline.push({ kind: "tool", toolCallId: id, id: `tool-${id}` });
-    } else if (block.type === "tool_result") {
-      const entry = toolMap.get(block.tool_use_id ?? "") ?? toolCalls[toolCalls.length - 1];
-      if (entry) {
-        entry.result = block.result ?? "";
-        entry.isError = block.is_error ?? false;
-        entry.pending = false;
-      }
-    }
-  }
-  return { timeline, toolCalls, thinkingText };
-}
 
 // ---------------------------------------------------------------------------
 // EventTimelineItem
@@ -73,12 +35,6 @@ export function EventTimelineItem({ event, nodes, isLive }: EventTimelineItemPro
 
   const hasTokens = event.input_tokens != null || event.output_tokens != null;
   const totalTokens = (event.input_tokens ?? 0) + (event.output_tokens ?? 0);
-  const displayOutput = event.output;
-  const hasBlocks = !isRunning && event.content_blocks && event.content_blocks.length > 0;
-  const blockData = useMemo(
-    () => hasBlocks ? blocksToTimeline(event.content_blocks!) : null,
-    [hasBlocks, event.content_blocks],
-  );
 
   return (
     <div
@@ -103,8 +59,7 @@ export function EventTimelineItem({ event, nodes, isLive }: EventTimelineItemPro
       {expanded && (
         <EventTimelineItemBody
           isRunning={isRunning}
-          blockData={blockData}
-          displayOutput={displayOutput}
+          event={event}
           inputSnapshot={event.input_snapshot}
         />
       )}
@@ -187,35 +142,17 @@ function EventTimelineItemHeader({
 
 interface BodyProps {
   isRunning: boolean;
-  blockData: ReturnType<typeof blocksToTimeline> | null;
-  displayOutput: string | undefined;
+  event: ProcessEvent;
   inputSnapshot: string | undefined;
 }
 
-function EventTimelineItemBody({ isRunning, blockData, displayOutput, inputSnapshot }: BodyProps) {
+function EventTimelineItemBody({ isRunning, event, inputSnapshot }: BodyProps) {
   return (
     <div style={{ padding: "0 8px 8px", display: "flex", flexDirection: "column", gap: 6 }}>
-      {!isRunning && blockData && (
+      {!isRunning && (
         <div>
           <div style={{ fontSize: 10, color: "var(--color-text-muted)", marginBottom: 2 }}>Output</div>
-          <ActivityTimeline
-            timeline={blockData.timeline}
-            thinkingText={blockData.thinkingText}
-            toolCalls={blockData.toolCalls}
-            isStreaming={false}
-          />
-        </div>
-      )}
-      {!isRunning && !blockData && displayOutput && (
-        <div>
-          <div style={{ fontSize: 10, color: "var(--color-text-muted)", marginBottom: 2 }}>Output</div>
-          <div style={{
-            background: "var(--color-bg-input)", padding: 6, borderRadius: "var(--radius-sm)",
-            whiteSpace: "pre-wrap", fontFamily: "var(--font-mono)", fontSize: 11,
-            maxHeight: 200, overflow: "auto", lineHeight: 1.4,
-          }}>
-            {displayOutput}
-          </div>
+          <ProcessEventOutput event={event} />
         </div>
       )}
       {inputSnapshot && (

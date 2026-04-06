@@ -9,7 +9,7 @@ import { useProcessStore } from "../../stores/process-store";
 import { useAgentStore } from "../../../agents/stores";
 import { Avatar } from "../../../../components/Avatar";
 import { PinnedOutputField } from "../PinnedOutput";
-import { monoBox } from "../NodeOutputTab/node-output-utils";
+import { ProcessEventOutput } from "../ProcessEventOutput";
 import styles from "../../../../components/Preview/Preview.module.css";
 
 const MAX_LINES = 5;
@@ -165,12 +165,12 @@ export function NodeInfoTab({ node }: NodeInfoTabProps) {
 
         <div className={styles.taskField}>
           <span className={styles.fieldLabel}>Output</span>
-          {nodeEvent?.output ? (
-            <div style={monoBox}>{nodeEvent.output}</div>
+          {nodeEvent ? (
+            <ProcessEventOutput event={nodeEvent} />
           ) : (
-            <div style={{ ...monoBox, color: "var(--color-text-muted)" }}>
+            <Text variant="secondary" size="sm">
               No output yet
-            </div>
+            </Text>
           )}
         </div>
 

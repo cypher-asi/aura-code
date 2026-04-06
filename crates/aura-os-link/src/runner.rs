@@ -136,7 +136,19 @@ where
     F: FnMut(&serde_json::Value, &str),
 {
     let mut out = CollectedOutput::default();
+    let mut pending_text = String::new();
     let deadline = tokio::time::Instant::now() + timeout;
+    let flush_pending_text =
+        |out: &mut CollectedOutput, pending_text: &mut String| {
+            if pending_text.is_empty() {
+                return;
+            }
+            let text = std::mem::take(pending_text);
+            out.content_blocks.push(serde_json::json!({
+                "type": "text",
+                "text": text,
+            }));
+        };
 
     loop {
         match tokio::time::timeout_at(deadline, rx.recv()).await {
@@ -147,9 +159,11 @@ where
                     "text_delta" => {
                         if let Some(text) = evt.get("text").and_then(|t| t.as_str()) {
                             out.output_text.push_str(text);
+                            pending_text.push_str(text);
                         }
                     }
                     "tool_use_start" => {
+                        flush_pending_text(&mut out, &mut pending_text);
                         let id = evt.get("id").and_then(|v| v.as_str()).unwrap_or("");
                         let name = evt.get("name").and_then(|v| v.as_str()).unwrap_or("");
                         out.content_blocks.push(serde_json::json!({
@@ -180,8 +194,12 @@ where
                             out.model = Some(m.to_string());
                         }
                     }
-                    "task_completed" | "done" => return RunCompletion::Done(out),
+                    "task_completed" | "done" => {
+                        flush_pending_text(&mut out, &mut pending_text);
+                        return RunCompletion::Done(out);
+                    }
                     "task_failed" | "error" => {
+                        flush_pending_text(&mut out, &mut pending_text);
                         let msg = evt
                             .get("message")
                             .or_else(|| evt.get("error"))
@@ -197,10 +215,14 @@ where
                 }
             }
             Ok(Err(broadcast::error::RecvError::Closed)) => {
+                flush_pending_text(&mut out, &mut pending_text);
                 return RunCompletion::StreamClosed(out);
             }
             Ok(Err(broadcast::error::RecvError::Lagged(_))) => continue,
-            Err(_) => return RunCompletion::Timeout(out),
+            Err(_) => {
+                flush_pending_text(&mut out, &mut pending_text);
+                return RunCompletion::Timeout(out);
+            }
         }
     }
 }
