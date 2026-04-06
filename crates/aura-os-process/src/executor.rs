@@ -15,7 +15,10 @@ use aura_os_core::{
     ProcessEventStatus, ProcessNode, ProcessNodeId, ProcessNodeType, ProcessRun, ProcessRunId,
     ProcessRunStatus, ProcessRunTrigger, ProcessId, ProjectId, TaskStatus,
 };
-use aura_os_link::{AutomatonClient, AutomatonStartParams};
+use aura_os_link::{
+    AutomatonClient, AutomatonStartParams, RunCompletion, start_and_connect,
+    collect_automaton_events,
+};
 use aura_os_orgs::OrgService;
 use aura_os_storage::StorageClient;
 use aura_os_store::RocksStore;
@@ -49,62 +52,49 @@ struct SubTaskPlan {
     description: String,
 }
 
-struct DeltaForwarder<'a> {
-    broadcast: &'a broadcast::Sender<serde_json::Value>,
-    process_id: ProcessId,
-    run_id: ProcessRunId,
-    node_id: ProcessNodeId,
+/// Forward a raw automaton event to the app broadcast, stamping it with
+/// process-specific identifiers.  Only forwards streamable event types.
+fn forward_process_event(
+    tx: &broadcast::Sender<serde_json::Value>,
+    process_id: &str,
+    run_id: &str,
+    node_id: &str,
+    evt: &serde_json::Value,
+    sub_task: Option<&str>,
+) {
+    let mut v = serde_json::json!({
+        "process_id": process_id,
+        "run_id": run_id,
+        "node_id": node_id,
+    });
+    if let Some(obj) = evt.as_object() {
+        if let Some(map) = v.as_object_mut() {
+            for (k, val) in obj {
+                map.insert(k.clone(), val.clone());
+            }
+        }
+    }
+    if let Some(sub) = sub_task {
+        v["sub_task"] = sub.into();
+    }
+    let _ = tx.send(v);
 }
 
-impl DeltaForwarder<'_> {
-    fn ctx(&self) -> serde_json::Value {
-        serde_json::json!({
-            "process_id": self.process_id.to_string(),
-            "run_id": self.run_id.to_string(),
-            "node_id": self.node_id.to_string(),
-        })
-    }
-
-    fn forward_text(&self, text: &str) {
-        let mut v = self.ctx();
-        v["type"] = "text_delta".into();
-        v["text"] = text.into();
-        let _ = self.broadcast.send(v);
-    }
-
-    fn forward_thinking(&self, thinking: &str) {
-        let mut v = self.ctx();
-        v["type"] = "thinking_delta".into();
-        v["thinking"] = thinking.into();
-        let _ = self.broadcast.send(v);
-    }
-
-    fn forward_tool_start(&self, id: &str, name: &str) {
-        let mut v = self.ctx();
-        v["type"] = "tool_use_start".into();
-        v["id"] = id.into();
-        v["name"] = name.into();
-        let _ = self.broadcast.send(v);
-    }
-
-    #[allow(dead_code)]
-    fn forward_tool_snapshot(&self, id: &str, name: &str, input: &serde_json::Value) {
-        let mut v = self.ctx();
-        v["type"] = "tool_call_snapshot".into();
-        v["id"] = id.into();
-        v["name"] = name.into();
-        v["input"] = input.clone();
-        let _ = self.broadcast.send(v);
-    }
-
-    fn forward_tool_result(&self, name: &str, result: &str, is_error: bool) {
-        let mut v = self.ctx();
-        v["type"] = "tool_result".into();
-        v["name"] = name.into();
-        v["result"] = result.into();
-        v["is_error"] = is_error.into();
-        let _ = self.broadcast.send(v);
-    }
+/// Send a progress text message to the app broadcast with process context.
+fn send_process_text(
+    tx: &broadcast::Sender<serde_json::Value>,
+    process_id: &str,
+    run_id: &str,
+    node_id: &str,
+    text: &str,
+) {
+    let _ = tx.send(serde_json::json!({
+        "type": "text_delta",
+        "text": text,
+        "process_id": process_id,
+        "run_id": run_id,
+        "node_id": node_id,
+    }));
 }
 
 fn estimate_cost_usd(input_tokens: u64, output_tokens: u64) -> f64 {
@@ -593,13 +583,6 @@ fn execute_run<'a>(
         }
 
         // ── execute node ───────────────────────────────────────────────
-        let fwd = DeltaForwarder {
-            broadcast,
-            process_id: run.process_id,
-            run_id: run.run_id,
-            node_id,
-        };
-
         if node.node_type == ProcessNodeType::Ignition {
             if let Some(ref override_text) = run.input_override {
                 let now = Utc::now();
@@ -626,7 +609,7 @@ fn execute_run<'a>(
                 execute_action_via_automaton(
                     node, task_id, &project_id, &run.process_id, &run.run_id,
                     &executor.automaton_client, store, storage, &spec_id_for_run,
-                    Some(&fwd), &workspace_path,
+                    Some(broadcast), &workspace_path,
                     timeout_secs, jwt.as_deref(), &executor.task_service,
                     agent_service, org_service, &upstream_context,
                 ).await
@@ -1013,7 +996,7 @@ async fn execute_action_via_automaton(
     store: &ProcessStore,
     storage_client: &StorageClient,
     spec_id: &str,
-    forwarder: Option<&DeltaForwarder<'_>>,
+    broadcast: Option<&broadcast::Sender<serde_json::Value>>,
     project_path: &str,
     timeout_secs: u64,
     token: Option<&str>,
@@ -1022,10 +1005,14 @@ async fn execute_action_via_automaton(
     org_service: &OrgService,
     upstream_context: &str,
 ) -> Result<NodeResult, ProcessError> {
+    let pid_str = process_id.to_string();
+    let rid_str = run_id.to_string();
+    let nid_str = node.node_id.to_string();
+
     if node.node_type == ProcessNodeType::Condition {
         return execute_single_automaton(
             node, task_id, project_id, process_id, run_id,
-            automaton_client, store, forwarder, project_path,
+            automaton_client, store, broadcast, project_path,
             timeout_secs, token, task_service, agent_service, org_service,
         ).await;
     }
@@ -1033,12 +1020,12 @@ async fn execute_action_via_automaton(
     let sub_tasks = plan_sub_tasks(node, upstream_context);
 
     if sub_tasks.len() <= 1 {
-        if let Some(fwd) = forwarder {
-            fwd.forward_text("Single task — executing directly.\n\n");
+        if let Some(tx) = broadcast {
+            send_process_text(tx, &pid_str, &rid_str, &nid_str, "Single task — executing directly.\n\n");
         }
         return execute_single_automaton(
             node, task_id, project_id, process_id, run_id,
-            automaton_client, store, forwarder, project_path,
+            automaton_client, store, broadcast, project_path,
             timeout_secs, token, task_service, agent_service, org_service,
         ).await;
     }
@@ -1049,8 +1036,8 @@ async fn execute_action_via_automaton(
         "Executing node with parallel sub-tasks"
     );
 
-    if let Some(fwd) = forwarder {
-        fwd.forward_text(&format!("\n\nCreating {} sub-tasks...\n", sub_tasks.len()));
+    if let Some(tx) = broadcast {
+        send_process_text(tx, &pid_str, &rid_str, &nid_str, &format!("\n\nCreating {} sub-tasks...\n", sub_tasks.len()));
     }
 
     let max_concurrency = node
@@ -1092,8 +1079,9 @@ async fn execute_action_via_automaton(
             "Created sub-task"
         );
 
-        if let Some(fwd) = forwarder {
-            fwd.forward_text(&format!("  Creating task {}/{}... {}\n", idx + 1, sub_tasks.len(), sub_task.title));
+        if let Some(tx) = broadcast {
+            send_process_text(tx, &pid_str, &rid_str, &nid_str,
+                &format!("  Creating task {}/{}... {}\n", idx + 1, sub_tasks.len(), sub_task.title));
         }
 
         let sem = semaphore.clone();
@@ -1107,7 +1095,7 @@ async fn execute_action_via_automaton(
         let sub_timeout = timeout_secs;
         let sub_node_id = node.node_id;
         let sub_title = sub_task.title.clone();
-        let broadcast_tx = forwarder.map(|f| f.broadcast.clone());
+        let broadcast_tx = broadcast.cloned();
         let model = {
             let loaded_agent = node.agent_id.as_ref().and_then(|aid| {
                 agent_service.get_agent_local(aid).ok()
@@ -1121,8 +1109,9 @@ async fn execute_action_via_automaton(
                 ProcessError::Execution(format!("Semaphore error: {e}"))
             })?;
 
-            let start_result = ac
-                .start(AutomatonStartParams {
+            let (_start_result, events_tx) = start_and_connect(
+                &ac,
+                AutomatonStartParams {
                     project_id: sub_project_id.to_string(),
                     auth_token: sub_token.clone(),
                     model,
@@ -1130,136 +1119,57 @@ async fn execute_action_via_automaton(
                     task_id: Some(sub_task_id.clone()),
                     git_repo_url: None,
                     git_branch: None,
-                })
-                .await
-                .map_err(|e| ProcessError::Execution(format!("Sub-task automaton failed: {e}")))?;
+                },
+                0,
+            )
+            .await
+            .map_err(|e| ProcessError::Execution(format!("Sub-task automaton failed: {e}")))?;
 
-            let event_tx = ac
-                .connect_event_stream(
-                    &start_result.automaton_id,
-                    Some(&start_result.event_stream_url),
-                )
-                .await
-                .map_err(|e| ProcessError::Execution(format!("Sub-task event stream failed: {e}")))?;
+            let rx = events_tx.subscribe();
+            let fwd_pid = sub_process_id.to_string();
+            let fwd_rid = sub_run_id.to_string();
+            let fwd_nid = sub_node_id.to_string();
+            let fwd_title = sub_title.clone();
 
-            let mut rx = event_tx.subscribe();
-            let mut output = String::new();
-            let mut input_tokens: u64 = 0;
-            let mut output_tokens: u64 = 0;
-            let mut model_name: Option<String> = None;
-            let mut failed = false;
-            let mut err_msg: Option<String> = None;
-            let deadline = Duration::from_secs(sub_timeout);
-
-            let fwd_ctx = broadcast_tx.as_ref().map(|tx| {
-                (tx.clone(), sub_process_id, sub_run_id, sub_node_id)
-            });
-
-            let collect = async {
-                loop {
-                    match rx.recv().await {
-                        Ok(evt) => {
-                            let evt_type = evt.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                            match evt_type {
-                                "text_delta" => {
-                                    if let Some(text) = evt.get("text").and_then(|t| t.as_str()) {
-                                        output.push_str(text);
-                                        if let Some((ref tx, pid, rid, nid)) = fwd_ctx {
-                                            let _ = tx.send(serde_json::json!({
-                                                "type": "text_delta",
-                                                "text": text,
-                                                "process_id": pid.to_string(),
-                                                "run_id": rid.to_string(),
-                                                "node_id": nid.to_string(),
-                                                "sub_task": &sub_title,
-                                            }));
-                                        }
-                                    }
-                                }
-                                "tool_use_start" => {
-                                    if let Some((ref tx, pid, rid, nid)) = fwd_ctx {
-                                        let id = evt.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                        let name = evt.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                                        let _ = tx.send(serde_json::json!({
-                                            "type": "tool_use_start",
-                                            "id": id, "name": name,
-                                            "process_id": pid.to_string(),
-                                            "run_id": rid.to_string(),
-                                            "node_id": nid.to_string(),
-                                            "sub_task": &sub_title,
-                                        }));
-                                    }
-                                }
-                                "tool_result" => {
-                                    if let Some((ref tx, pid, rid, nid)) = fwd_ctx {
-                                        let name = evt.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                                        let result = evt.get("result").and_then(|v| v.as_str()).unwrap_or("");
-                                        let is_error = evt.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
-                                        let _ = tx.send(serde_json::json!({
-                                            "type": "tool_result",
-                                            "name": name, "result": result, "is_error": is_error,
-                                            "process_id": pid.to_string(),
-                                            "run_id": rid.to_string(),
-                                            "node_id": nid.to_string(),
-                                            "sub_task": &sub_title,
-                                        }));
-                                    }
-                                }
-                                "usage" | "session_usage" => {
-                                    if let Some(inp) = evt.get("input_tokens").and_then(|v| v.as_u64()) {
-                                        input_tokens = inp;
-                                    }
-                                    if let Some(out) = evt.get("output_tokens").and_then(|v| v.as_u64()) {
-                                        output_tokens = out;
-                                    }
-                                    if let Some(m) = evt.get("model").and_then(|v| v.as_str()) {
-                                        model_name = Some(m.to_string());
-                                    }
-                                }
-                                "task_completed" | "done" => break,
-                                "task_failed" | "error" => {
-                                    failed = true;
-                                    err_msg = evt.get("message")
-                                        .or_else(|| evt.get("error"))
-                                        .and_then(|v| v.as_str())
-                                        .map(|s| s.to_string());
-                                    break;
-                                }
-                                _ => {}
-                            }
+            let completion = collect_automaton_events(
+                rx,
+                Duration::from_secs(sub_timeout),
+                |evt, evt_type| {
+                    if let Some(ref tx) = broadcast_tx {
+                        if matches!(evt_type, "text_delta" | "tool_use_start" | "tool_result") {
+                            forward_process_event(tx, &fwd_pid, &fwd_rid, &fwd_nid, evt, Some(&fwd_title));
                         }
-                        Err(broadcast::error::RecvError::Closed) => break,
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
                     }
+                },
+            )
+            .await;
+
+            match completion {
+                RunCompletion::Done(out) | RunCompletion::StreamClosed(out) => {
+                    let output_file_path = Path::new(&sub_project_path)
+                        .join(format!("output-{}.txt", sub_task_id));
+                    let file_content = match tokio::fs::read_to_string(&output_file_path).await {
+                        Ok(content) if !content.trim().is_empty() => Some(content),
+                        _ => None,
+                    };
+                    let final_output = file_content.unwrap_or(out.output_text);
+                    Ok((final_output, out.input_tokens, out.output_tokens, out.model))
                 }
-            };
-
-            if tokio::time::timeout(deadline, collect).await.is_err() {
-                return Err(ProcessError::Execution(format!(
-                    "Sub-task timed out after {sub_timeout}s for node {sub_node_id}"
-                )));
+                RunCompletion::Failed { message, .. } => {
+                    Err(ProcessError::Execution(message))
+                }
+                RunCompletion::Timeout(_) => {
+                    Err(ProcessError::Execution(format!(
+                        "Sub-task timed out after {sub_timeout}s for node {sub_node_id}"
+                    )))
+                }
             }
-
-            if failed {
-                return Err(ProcessError::Execution(
-                    err_msg.unwrap_or_else(|| "Sub-task failed".to_string()),
-                ));
-            }
-
-            let output_file_path = Path::new(&sub_project_path).join(format!("output-{}.txt", sub_task_id));
-            let file_content = match tokio::fs::read_to_string(&output_file_path).await {
-                Ok(content) if !content.trim().is_empty() => Some(content),
-                _ => None,
-            };
-
-            let final_output = file_content.unwrap_or(output);
-
-            Ok((final_output, input_tokens, output_tokens, model_name))
         }));
     }
 
-    if let Some(fwd) = forwarder {
-        fwd.forward_text(&format!("\nExecuting {} sub-tasks (max {} concurrent)...\n\n", sub_tasks.len(), max_concurrency));
+    if let Some(tx) = broadcast {
+        send_process_text(tx, &pid_str, &rid_str, &nid_str,
+            &format!("\nExecuting {} sub-tasks (max {} concurrent)...\n\n", sub_tasks.len(), max_concurrency));
     }
 
     let mut merged_parts: Vec<String> = Vec::with_capacity(handles.len());
@@ -1277,24 +1187,25 @@ async fn execute_action_via_automaton(
                 if model.is_some() {
                     last_model = model;
                 }
-                if let Some(fwd) = forwarder {
-                    fwd.forward_text(&format!("\n--- Sub-task {}/{} completed: {} ({} bytes) ---\n", idx + 1, sub_tasks.len(), task_title, output.len()));
+                if let Some(tx) = broadcast {
+                    send_process_text(tx, &pid_str, &rid_str, &nid_str,
+                        &format!("\n--- Sub-task {}/{} completed: {} ({} bytes) ---\n", idx + 1, sub_tasks.len(), task_title, output.len()));
                 }
                 merged_parts.push(output);
             }
             Ok(Err(e)) => {
                 let msg = format!("Sub-task #{} ({}) failed: {}", idx, task_title, e);
                 failures.push(msg.clone());
-                if let Some(fwd) = forwarder {
-                    fwd.forward_text(&format!("\n--- {} ---\n", msg));
+                if let Some(tx) = broadcast {
+                    send_process_text(tx, &pid_str, &rid_str, &nid_str, &format!("\n--- {} ---\n", msg));
                 }
                 merged_parts.push(format!("(sub-task #{} failed: {})", idx, e));
             }
             Err(e) => {
                 let msg = format!("Sub-task #{} ({}) panicked: {}", idx, task_title, e);
                 failures.push(msg.clone());
-                if let Some(fwd) = forwarder {
-                    fwd.forward_text(&format!("\n--- {} ---\n", msg));
+                if let Some(tx) = broadcast {
+                    send_process_text(tx, &pid_str, &rid_str, &nid_str, &format!("\n--- {} ---\n", msg));
                 }
                 merged_parts.push(format!("(sub-task #{} panicked: {})", idx, e));
             }
@@ -1371,7 +1282,7 @@ async fn execute_single_automaton(
     run_id: &ProcessRunId,
     automaton_client: &AutomatonClient,
     store: &ProcessStore,
-    forwarder: Option<&DeltaForwarder<'_>>,
+    broadcast: Option<&broadcast::Sender<serde_json::Value>>,
     project_path: &str,
     timeout_secs: u64,
     token: Option<&str>,
@@ -1387,8 +1298,9 @@ async fn execute_single_automaton(
         effective_model(node, loaded_agent.as_ref(), ri.as_ref())
     };
 
-    let start_result = automaton_client
-        .start(AutomatonStartParams {
+    let (start_result, events_tx) = start_and_connect(
+        automaton_client,
+        AutomatonStartParams {
             project_id: project_id.to_string(),
             auth_token: token.map(|s| s.to_string()),
             model,
@@ -1396,9 +1308,11 @@ async fn execute_single_automaton(
             task_id: Some(task_id.to_string()),
             git_repo_url: None,
             git_branch: None,
-        })
-        .await
-        .map_err(|e| ProcessError::Execution(format!("Failed to start automaton: {e}")))?;
+        },
+        0,
+    )
+    .await
+    .map_err(|e| ProcessError::Execution(format!("Failed to start automaton: {e}")))?;
 
     info!(
         automaton_id = %start_result.automaton_id,
@@ -1407,115 +1321,37 @@ async fn execute_single_automaton(
         "Automaton started for process node"
     );
 
-    let event_tx = automaton_client
-        .connect_event_stream(
-            &start_result.automaton_id,
-            Some(&start_result.event_stream_url),
-        )
-        .await
-        .map_err(|e| ProcessError::Execution(format!("Failed to connect automaton event stream: {e}")))?;
+    let rx = events_tx.subscribe();
+    let pid = process_id.to_string();
+    let rid = run_id.to_string();
+    let nid = node.node_id.to_string();
+    let tx = broadcast.cloned();
 
-    let mut rx = event_tx.subscribe();
-    let mut output_text = String::new();
-    let mut total_input_tokens: u64 = 0;
-    let mut total_output_tokens: u64 = 0;
-    let mut last_model: Option<String> = None;
-    let mut content_blocks: Vec<serde_json::Value> = Vec::new();
-    let mut automaton_failed = false;
-    let mut error_message: Option<String> = None;
-    let deadline = Duration::from_secs(timeout_secs);
-
-    let collect = async {
-        loop {
-            match rx.recv().await {
-                Ok(evt) => {
-                    let evt_type = evt.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                    match evt_type {
-                        "text_delta" => {
-                            if let Some(text) = evt.get("text").and_then(|t| t.as_str()) {
-                                output_text.push_str(text);
-                                if let Some(fwd) = forwarder {
-                                    fwd.forward_text(text);
-                                }
-                            }
-                        }
-                        "thinking_delta" => {
-                            if let Some(thinking) = evt.get("thinking").and_then(|t| t.as_str()) {
-                                if let Some(fwd) = forwarder {
-                                    fwd.forward_thinking(thinking);
-                                }
-                            }
-                        }
-                        "tool_use_start" => {
-                            let id = evt.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                            let name = evt.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                            content_blocks.push(serde_json::json!({
-                                "type": "tool_use", "id": id, "name": name,
-                            }));
-                            if let Some(fwd) = forwarder {
-                                fwd.forward_tool_start(id, name);
-                            }
-                        }
-                        "tool_result" => {
-                            let name = evt.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                            let result = evt.get("result").and_then(|v| v.as_str()).unwrap_or("");
-                            let is_error = evt.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
-                            content_blocks.push(serde_json::json!({
-                                "type": "tool_result", "name": name, "result": result, "is_error": is_error,
-                            }));
-                            if let Some(fwd) = forwarder {
-                                fwd.forward_tool_result(name, result, is_error);
-                            }
-                        }
-                        "usage" | "session_usage" => {
-                            if let Some(inp) = evt.get("input_tokens").and_then(|v| v.as_u64()) {
-                                total_input_tokens = inp;
-                            }
-                            if let Some(out) = evt.get("output_tokens").and_then(|v| v.as_u64()) {
-                                total_output_tokens = out;
-                            }
-                            if let Some(m) = evt.get("model").and_then(|v| v.as_str()) {
-                                last_model = Some(m.to_string());
-                            }
-                        }
-                        "task_completed" | "done" => {
-                            break;
-                        }
-                        "task_failed" | "error" => {
-                            automaton_failed = true;
-                            error_message = evt.get("message")
-                                .or_else(|| evt.get("error"))
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!(skipped = n, "Automaton event receiver lagged");
-                    continue;
+    let completion = collect_automaton_events(
+        rx,
+        Duration::from_secs(timeout_secs),
+        |evt, evt_type| {
+            if let Some(ref tx) = tx {
+                if matches!(evt_type, "text_delta" | "thinking_delta" | "tool_use_start" | "tool_result") {
+                    forward_process_event(tx, &pid, &rid, &nid, evt, None);
                 }
             }
-        }
-    };
+        },
+    )
+    .await;
 
-    match tokio::time::timeout(deadline, collect).await {
-        Ok(()) => {}
-        Err(_) => {
+    let out = match completion {
+        RunCompletion::Done(out) | RunCompletion::StreamClosed(out) => out,
+        RunCompletion::Failed { message, .. } => {
+            return Err(ProcessError::Execution(message));
+        }
+        RunCompletion::Timeout(_) => {
             return Err(ProcessError::Execution(format!(
                 "Automaton timed out after {timeout_secs}s for node {}", node.node_id
             )));
         }
-    }
+    };
 
-    if automaton_failed {
-        let msg = error_message.unwrap_or_else(|| "Automaton execution failed".to_string());
-        return Err(ProcessError::Execution(msg));
-    }
-
-    // Read output file if applicable
     let output_file = node
         .config
         .get("output_file")
@@ -1527,14 +1363,13 @@ async fn execute_single_automaton(
         _ => None,
     };
 
-    let downstream = file_content.unwrap_or(output_text);
+    let downstream = file_content.unwrap_or(out.output_text.clone());
     if downstream.trim().is_empty() {
         return Err(ProcessError::Execution(format!(
             "Automaton produced no output for node {}", node.node_id
         )));
     }
 
-    // Persist artifact
     let rel_path = format!("process-workspaces/{}/{}/{}", process_id, run_id, output_file);
     let artifact = ProcessArtifact {
         artifact_id: ProcessArtifactId::new(),
@@ -1552,11 +1387,11 @@ async fn execute_single_automaton(
         warn!(node_id = %node.node_id, error = %e, "Failed to save automaton artifact");
     }
 
-    let token_usage = if total_input_tokens > 0 || total_output_tokens > 0 {
+    let token_usage = if out.input_tokens > 0 || out.output_tokens > 0 {
         Some(NodeTokenUsage {
-            input_tokens: total_input_tokens,
-            output_tokens: total_output_tokens,
-            model: last_model,
+            input_tokens: out.input_tokens,
+            output_tokens: out.output_tokens,
+            model: out.model,
         })
     } else {
         None
@@ -1566,7 +1401,7 @@ async fn execute_single_automaton(
         downstream_output: downstream,
         display_output: None,
         token_usage,
-        content_blocks: if content_blocks.is_empty() { None } else { Some(content_blocks) },
+        content_blocks: if out.content_blocks.is_empty() { None } else { Some(out.content_blocks) },
     })
 }
 

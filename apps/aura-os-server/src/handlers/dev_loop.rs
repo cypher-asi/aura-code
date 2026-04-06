@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, SessionId, TaskId, TaskStatus};
-use aura_os_link::{AutomatonStartError, AutomatonStartParams};
+use aura_os_link::{AutomatonStartError, AutomatonStartParams, connect_with_retries};
 use aura_os_network::{NetworkClient, ReportUsageRequest};
 use aura_os_sessions::{CreateSessionParams, UpdateContextUsageParams};
 use aura_os_storage::StorageTaskFileChangeSummary;
@@ -1806,32 +1806,11 @@ pub(crate) async fn run_single_task(
     // Connect to the event stream as early as possible to minimise the window
     // between automaton start and WS attach.  Retry a few times because the
     // harness may reset the connection if the automaton isn't ready yet.
-    let mut events_tx = None;
-    for attempt in 0..3u32 {
-        if attempt > 0 {
-            let delay_ms = 500 * (1u64 << attempt.min(2));
-            warn!(
-                %project_id, %task_id, %automaton_id, attempt,
-                "Retrying automaton event stream connection in {delay_ms}ms"
-            );
-            tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
-        }
-        match automaton_client
-            .connect_event_stream(&automaton_id, Some(&event_stream_url))
-            .await
-        {
-            Ok(tx) => {
-                events_tx = Some(tx);
-                break;
-            }
-            Err(e) => {
-                warn!(
-                    %project_id, %task_id, %automaton_id, attempt,
-                    error = %e, "Failed to connect to automaton event stream"
-                );
-            }
-        }
-    }
+    let events_tx = connect_with_retries(
+        &automaton_client, &automaton_id, &event_stream_url, 2,
+    )
+    .await
+    .ok();
 
     // Emit task_started immediately so the frontend gets the signal even if
     // early automaton events are lost in the race between start and WS connect.

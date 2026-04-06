@@ -2,11 +2,16 @@
 mod automaton_client;
 mod harness;
 mod local_harness;
+pub mod runner;
 mod swarm_harness;
 mod ws_bridge;
 
 pub use automaton_client::{
     AutomatonClient, AutomatonStartError, AutomatonStartParams, AutomatonStartResult,
+};
+pub use runner::{
+    collect_automaton_events, connect_with_retries, start_and_connect, CollectedOutput,
+    RunCompletion, RunStartError,
 };
 pub use harness::{HarnessLink, HarnessSession, SessionConfig};
 pub use local_harness::LocalHarness;
