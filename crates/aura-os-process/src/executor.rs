@@ -1057,12 +1057,19 @@ async fn execute_action_via_automaton(
         ).await;
     }
 
+    if let Some(fwd) = forwarder {
+        fwd.forward_text("Planning sub-tasks...\n");
+    }
+
     let sub_tasks = plan_sub_tasks(
         node, upstream_context, automaton_client, project_id,
         project_path, token, agent_service, org_service,
     ).await?;
 
     if sub_tasks.len() <= 1 {
+        if let Some(fwd) = forwarder {
+            fwd.forward_text("Single task — executing directly.\n\n");
+        }
         return execute_single_automaton(
             node, task_id, project_id, process_id, run_id,
             automaton_client, store, forwarder, project_path,
@@ -1075,6 +1082,15 @@ async fn execute_action_via_automaton(
         sub_task_count = sub_tasks.len(),
         "Executing node with parallel sub-tasks"
     );
+
+    if let Some(fwd) = forwarder {
+        let titles: Vec<&str> = sub_tasks.iter().map(|t| t.title.as_str()).collect();
+        fwd.forward_text(&format!(
+            "Planned {} parallel sub-tasks:\n{}\n\nExecuting...\n\n",
+            sub_tasks.len(),
+            titles.iter().enumerate().map(|(i, t)| format!("  {}. {}", i + 1, t)).collect::<Vec<_>>().join("\n")
+        ));
+    }
 
     let max_concurrency = node
         .config
@@ -1119,12 +1135,14 @@ async fn execute_action_via_automaton(
         let ac = automaton_client.clone();
         let sub_task_id = created_task.id.clone();
         let sub_project_id = *project_id;
-        let _sub_process_id = *process_id;
-        let _sub_run_id = *run_id;
+        let sub_process_id = *process_id;
+        let sub_run_id = *run_id;
         let sub_project_path = project_path.to_string();
         let sub_token = token.map(|s| s.to_string());
         let sub_timeout = timeout_secs;
         let sub_node_id = node.node_id;
+        let sub_title = sub_task.title.clone();
+        let broadcast_tx = forwarder.map(|f| f.broadcast.clone());
         let model = {
             let loaded_agent = node.agent_id.as_ref().and_then(|aid| {
                 agent_service.get_agent_local(aid).ok()
@@ -1168,6 +1186,10 @@ async fn execute_action_via_automaton(
             let mut err_msg: Option<String> = None;
             let deadline = Duration::from_secs(sub_timeout);
 
+            let fwd_ctx = broadcast_tx.as_ref().map(|tx| {
+                (tx.clone(), sub_process_id, sub_run_id, sub_node_id)
+            });
+
             let collect = async {
                 loop {
                     match rx.recv().await {
@@ -1177,6 +1199,45 @@ async fn execute_action_via_automaton(
                                 "text_delta" => {
                                     if let Some(text) = evt.get("text").and_then(|t| t.as_str()) {
                                         output.push_str(text);
+                                        if let Some((ref tx, pid, rid, nid)) = fwd_ctx {
+                                            let _ = tx.send(serde_json::json!({
+                                                "type": "text_delta",
+                                                "text": text,
+                                                "process_id": pid.to_string(),
+                                                "run_id": rid.to_string(),
+                                                "node_id": nid.to_string(),
+                                                "sub_task": &sub_title,
+                                            }));
+                                        }
+                                    }
+                                }
+                                "tool_use_start" => {
+                                    if let Some((ref tx, pid, rid, nid)) = fwd_ctx {
+                                        let id = evt.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                        let name = evt.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                                        let _ = tx.send(serde_json::json!({
+                                            "type": "tool_use_start",
+                                            "id": id, "name": name,
+                                            "process_id": pid.to_string(),
+                                            "run_id": rid.to_string(),
+                                            "node_id": nid.to_string(),
+                                            "sub_task": &sub_title,
+                                        }));
+                                    }
+                                }
+                                "tool_result" => {
+                                    if let Some((ref tx, pid, rid, nid)) = fwd_ctx {
+                                        let name = evt.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                                        let result = evt.get("result").and_then(|v| v.as_str()).unwrap_or("");
+                                        let is_error = evt.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+                                        let _ = tx.send(serde_json::json!({
+                                            "type": "tool_result",
+                                            "name": name, "result": result, "is_error": is_error,
+                                            "process_id": pid.to_string(),
+                                            "run_id": rid.to_string(),
+                                            "node_id": nid.to_string(),
+                                            "sub_task": &sub_title,
+                                        }));
                                     }
                                 }
                                 "usage" | "session_usage" => {
@@ -1239,6 +1300,7 @@ async fn execute_action_via_automaton(
     let mut failures: Vec<String> = Vec::new();
 
     for (idx, handle) in handles.into_iter().enumerate() {
+        let task_title = sub_tasks.get(idx).map(|t| t.title.as_str()).unwrap_or("?");
         match handle.await {
             Ok(Ok((output, inp, out, model))) => {
                 total_input_tokens += inp;
@@ -1246,14 +1308,25 @@ async fn execute_action_via_automaton(
                 if model.is_some() {
                     last_model = model;
                 }
+                if let Some(fwd) = forwarder {
+                    fwd.forward_text(&format!("\n--- Sub-task {}/{} completed: {} ({} bytes) ---\n", idx + 1, sub_tasks.len(), task_title, output.len()));
+                }
                 merged_parts.push(output);
             }
             Ok(Err(e)) => {
-                failures.push(format!("Sub-task #{} failed: {}", idx, e));
+                let msg = format!("Sub-task #{} ({}) failed: {}", idx, task_title, e);
+                failures.push(msg.clone());
+                if let Some(fwd) = forwarder {
+                    fwd.forward_text(&format!("\n--- {} ---\n", msg));
+                }
                 merged_parts.push(format!("(sub-task #{} failed: {})", idx, e));
             }
             Err(e) => {
-                failures.push(format!("Sub-task #{} panicked: {}", idx, e));
+                let msg = format!("Sub-task #{} ({}) panicked: {}", idx, task_title, e);
+                failures.push(msg.clone());
+                if let Some(fwd) = forwarder {
+                    fwd.forward_text(&format!("\n--- {} ---\n", msg));
+                }
                 merged_parts.push(format!("(sub-task #{} panicked: {})", idx, e));
             }
         }
