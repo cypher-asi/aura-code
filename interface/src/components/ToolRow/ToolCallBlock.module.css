@@ -5,40 +5,18 @@
   margin-bottom: 0;
 }
 
-/* ── Summary header: ● Working on N to-dos ── */
+/* ── Summary header ── */
 
 .toolCallsHeader {
   display: flex;
   align-items: center;
-  gap: 8px;
   padding: 4px 0;
   margin-bottom: 2px;
 }
 
-.headerDot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--color-text-muted, #888);
-  flex-shrink: 0;
-}
-
-@keyframes dotPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-.headerDot:not(.headerDotDone) {
-  animation: dotPulse 1.5s ease-in-out infinite;
-}
-
-.headerDotDone {
-  background: #fff;
-}
-
 .headerText {
-  font-size: 13px;
-  color: var(--color-text, #ddd);
+  font-size: 12px;
+  color: var(--color-text-muted, #555);
 }
 
 /* ── Checklist item row ── */

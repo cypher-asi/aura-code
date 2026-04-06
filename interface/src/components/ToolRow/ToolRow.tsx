@@ -202,14 +202,13 @@ export function ToolCallsList({ entries }: { entries: ToolCallEntry[] }) {
   return (
     <div className={toolStyles.toolCallsContainer}>
       <div className={toolStyles.toolCallsHeader}>
-        <span className={`${toolStyles.headerDot} ${allDone ? toolStyles.headerDotDone : ""}`} />
         <span className={toolStyles.headerText}>
           {isBatch ? (
             batchLabel()
           ) : allDone ? (
-            <>Ran <strong>{total}</strong> {total === 1 ? "action" : "actions"}</>
+            <>{total} {total === 1 ? "action" : "actions"} completed</>
           ) : (
-            <><strong>Working</strong> on {total} to-do{total !== 1 ? "s" : ""}</>
+            <>Working on {total} {total === 1 ? "action" : "actions"}...</>
           )}
         </span>
       </div>
