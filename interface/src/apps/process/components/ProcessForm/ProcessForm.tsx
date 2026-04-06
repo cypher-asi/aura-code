@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Modal, Button } from "@cypher-asi/zui";
 import { processApi } from "../../../../api/process";
+import { projectsApi } from "../../../../api/projects";
 import { useProcessStore } from "../../stores/process-store";
+import type { Project } from "../../../../types";
 
 interface ProcessFormProps {
   onClose: () => void;
@@ -13,6 +15,8 @@ interface ProcessFormProps {
 export function ProcessForm({ onClose, folderId, onCreated }: ProcessFormProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const addProcess = useProcessStore((s) => s.addProcess);
@@ -21,6 +25,7 @@ export function ProcessForm({ onClose, folderId, onCreated }: ProcessFormProps) 
 
   useEffect(() => {
     requestAnimationFrame(() => inputRef.current?.focus());
+    projectsApi.listProjects().then(setProjects).catch(() => {});
   }, []);
 
   const handleSubmit = async () => {
@@ -31,6 +36,7 @@ export function ProcessForm({ onClose, folderId, onCreated }: ProcessFormProps) 
       const process = await processApi.createProcess({
         name: name.trim(),
         description: description.trim() || undefined,
+        project_id: projectId || undefined,
         folder_id: folderId ?? undefined,
       });
       addProcess(process);
@@ -42,6 +48,15 @@ export function ProcessForm({ onClose, folderId, onCreated }: ProcessFormProps) 
     } finally {
       setLoading(false);
     }
+  };
+
+  const selectStyle: React.CSSProperties = {
+    padding: "8px 10px",
+    borderRadius: "var(--radius-sm)",
+    border: "1px solid var(--color-border)",
+    background: "var(--color-bg-input)",
+    color: "var(--color-text)",
+    fontSize: 13,
   };
 
   return (
@@ -89,6 +104,19 @@ export function ProcessForm({ onClose, folderId, onCreated }: ProcessFormProps) 
             placeholder="Optional description"
           />
         </div>
+        {projects.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-muted)" }}>
+              Project <span style={{ fontWeight: 400, color: "var(--color-text-faint)" }}>(optional)</span>
+            </label>
+            <select style={selectStyle} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">None</option>
+              {projects.map((p) => (
+                <option key={p.project_id} value={p.project_id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         {error && <div style={{ fontSize: 12, color: "var(--color-error)" }}>{error}</div>}
       </div>
     </Modal>

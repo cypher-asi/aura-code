@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Modal, Button } from "@cypher-asi/zui";
-import type { Process } from "../../../../types";
+import type { Process, Project } from "../../../../types";
 import { processApi } from "../../../../api/process";
+import { projectsApi } from "../../../../api/projects";
 import { useProcessStore } from "../../stores/process-store";
 import { SchedulePicker } from "../../../../components/SchedulePicker";
 
@@ -27,6 +28,8 @@ export function ProcessEditorModal({ isOpen, process, onClose }: ProcessEditorMo
   const [description, setDescription] = useState(process.description);
   const [schedule, setSchedule] = useState(process.schedule ?? "");
   const [tags, setTags] = useState(process.tags.join(", "));
+  const [projectId, setProjectId] = useState(process.project_id ?? "");
+  const [projects, setProjects] = useState<Project[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const updateProcess = useProcessStore((s) => s.updateProcess);
@@ -38,8 +41,10 @@ export function ProcessEditorModal({ isOpen, process, onClose }: ProcessEditorMo
       setDescription(process.description);
       setSchedule(process.schedule ?? "");
       setTags(process.tags.join(", "));
+      setProjectId(process.project_id ?? "");
       setError(null);
       requestAnimationFrame(() => inputRef.current?.focus());
+      projectsApi.listProjects().then(setProjects).catch(() => {});
     }
   }, [isOpen, process]);
 
@@ -51,6 +56,7 @@ export function ProcessEditorModal({ isOpen, process, onClose }: ProcessEditorMo
       const updated = await processApi.updateProcess(process.process_id, {
         name: name.trim(),
         description: description.trim(),
+        project_id: projectId || null,
         schedule: schedule.trim() || undefined,
         tags: tags
           .split(",")
@@ -104,6 +110,19 @@ export function ProcessEditorModal({ isOpen, process, onClose }: ProcessEditorMo
             placeholder="Optional description"
           />
         </div>
+        {projects.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-muted)" }}>
+              Project <span style={{ fontWeight: 400, color: "var(--color-text-faint)" }}>(optional)</span>
+            </label>
+            <select style={inputStyle} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">None</option>
+              {projects.map((p) => (
+                <option key={p.project_id} value={p.project_id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-muted)" }}>Schedule</label>
           <SchedulePicker value={schedule} onChange={setSchedule} />

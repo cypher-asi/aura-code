@@ -461,6 +461,7 @@ export interface Process {
   process_id: string;
   org_id: string;
   user_id: string;
+  project_id?: string | null;
   name: string;
   description: string;
   enabled: boolean;

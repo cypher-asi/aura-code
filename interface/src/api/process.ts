@@ -13,6 +13,7 @@ import type { ProcessNodeType } from "../types/enums";
 export interface CreateProcessRequest {
   name: string;
   description?: string;
+  project_id?: string;
   folder_id?: string;
   schedule?: string;
   tags?: string[];
@@ -21,6 +22,7 @@ export interface CreateProcessRequest {
 export interface UpdateProcessRequest {
   name?: string;
   description?: string;
+  project_id?: string | null;
   folder_id?: string | null;
   schedule?: string;
   tags?: string[];
