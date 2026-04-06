@@ -12,12 +12,9 @@
   margin-top: 4px;
 }
 
-/* Visual rail for grouped tool calls */
+/* Grouped tool calls — slightly tighter than default gap */
 .toolGroup {
-  border-left: 1px solid rgba(255, 255, 255, 0.04);
-  margin-left: 0;
-  padding-left: 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 2px;
 }
