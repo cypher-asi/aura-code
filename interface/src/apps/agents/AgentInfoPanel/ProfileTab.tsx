@@ -32,26 +32,37 @@ export interface ProfileTabProps {
   runtimeReadiness: RuntimeReadiness;
 }
 
+function ProfileImage({ agent }: { agent: Agent }) {
+  const [broken, setBroken] = useState(false);
+  const showCover = !!agent.icon && !broken;
+
+  if (showCover) {
+    return (
+      <div className={styles.profileCover}>
+        <img
+          src={agent.icon!}
+          alt={agent.name}
+          className={styles.profileCoverImage}
+          onError={() => setBroken(true)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.profileImageBlock}>
+      <Avatar avatarUrl={undefined} name={agent.name} type="agent" size={80} />
+    </div>
+  );
+}
+
 function ProfileHeader({
   agent,
   isOwnAgent,
 }: Pick<ProfileTabProps, "agent" | "isOwnAgent">) {
   return (
     <>
-      {agent.icon ? (
-        <div className={styles.profileCover}>
-          <img
-            src={agent.icon}
-            alt={agent.name}
-            className={styles.profileCoverImage}
-            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-          />
-        </div>
-      ) : (
-        <div className={styles.profileImageBlock}>
-          <Avatar avatarUrl={undefined} name={agent.name} type="agent" size={80} />
-        </div>
-      )}
+      <ProfileImage agent={agent} />
 
       <div className={styles.nameBlock}>
         <div className={styles.nameText}>
