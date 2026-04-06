@@ -110,11 +110,20 @@ export function summarizeInput(name: string, input: Record<string, unknown>): st
   switch (name) {
     case "read_file":
     case "write_file":
+    case "edit_file":
     case "delete_file":
       return (input.path as string) || "";
     case "list_files": {
       const path = (input.path as string) || "";
       return path === "." ? "" : path;
+    }
+    case "find_files":
+      return (input.pattern as string) || "";
+    case "search_code":
+      return (input.query as string) || "";
+    case "run_command": {
+      const cmd = (input.command as string) || "";
+      return cmd.length > 80 ? cmd.slice(0, 77) + "…" : cmd;
     }
     case "create_spec":
     case "create_task":

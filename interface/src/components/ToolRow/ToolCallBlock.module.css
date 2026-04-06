@@ -23,6 +23,15 @@
   flex-shrink: 0;
 }
 
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.headerDot:not(.headerDotDone) {
+  animation: dotPulse 1.5s ease-in-out infinite;
+}
+
 .headerDotDone {
   background: #fff;
 }
@@ -40,6 +49,11 @@
   background: none;
   overflow: visible;
   padding-left: 0;
+  border-left: 2px solid transparent;
+}
+
+.toolBlock + .toolBlock {
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
 }
 
 .toolHeader {
@@ -47,7 +61,7 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 1px 0;
+  padding: 1px 0 1px 10px;
   border: none;
   background: transparent;
   color: var(--color-text-secondary);
@@ -74,9 +88,18 @@
   box-sizing: border-box;
 }
 
-/* Active: filled inner square */
+/* Active: filled inner square with pulse */
+.taskActive {
+  border-left-color: var(--color-text, #ddd);
+}
+
 .taskActive .taskCheck {
   border-color: var(--color-text, #ddd);
+}
+
+@keyframes checkPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 .taskActive .taskCheck::before {
@@ -87,6 +110,7 @@
   right: 2px;
   bottom: 2px;
   background: var(--color-text, #ddd);
+  animation: checkPulse 1.5s ease-in-out infinite;
 }
 
 .taskActive .toolName {
@@ -95,6 +119,10 @@
 }
 
 /* Done: green checkmark (Lucide icon), no square border */
+.taskDone {
+  border-left-color: rgba(255, 255, 255, 0.06);
+}
+
 .taskDone .taskCheck {
   border: none;
   display: flex;
@@ -112,6 +140,10 @@
 }
 
 /* Error: square with X in red */
+.taskError {
+  border-left-color: #f87171;
+}
+
 .taskError .taskCheck {
   border-color: #f87171;
 }
@@ -194,9 +226,9 @@
 }
 
 .toolBody {
-  padding: 4px 0 8px 0;
-  margin-left: 0;
-  border-left: none;
+  padding: 6px 0 8px 12px;
+  margin-left: 6px;
+  border-left: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .section {
