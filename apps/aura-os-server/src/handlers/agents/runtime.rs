@@ -30,7 +30,10 @@ use crate::error::{ApiError, ApiResult};
 use crate::handlers::agents::chat::{
     setup_agent_chat_persistence, spawn_chat_persist_task, SseResponse, SseStream,
 };
-use crate::handlers::agents::workspace_tools::{active_workspace_tools, workspace_tool};
+use crate::handlers::agents::workspace_tools::{
+    active_workspace_tools, control_plane_api_base_url as workspace_control_plane_api_base_url,
+    workspace_tool,
+};
 use crate::handlers::projects_helpers::resolve_project_workspace_path_for_machine;
 use crate::handlers::sse::harness_event_to_sse;
 use crate::state::{AppState, AuthJwt};
@@ -1324,22 +1327,7 @@ async fn resolve_or_create_project_agent_instance_id(
 }
 
 fn control_plane_api_base_url() -> String {
-    let port = std::env::var("AURA_SERVER_PORT")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "3100".to_string());
-    let host = std::env::var("AURA_SERVER_HOST")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "127.0.0.1".to_string());
-
-    let normalized_host = match host.as_str() {
-        "0.0.0.0" | "::" => "127.0.0.1".to_string(),
-        other if other.contains(':') && !other.starts_with('[') => format!("[{other}]"),
-        other => other.to_string(),
-    };
-
-    format!("http://{normalized_host}:{port}")
+    workspace_control_plane_api_base_url()
 }
 
 fn mcp_server_secrets_json(state: &AppState, agent: &Agent) -> Option<String> {
