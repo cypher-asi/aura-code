@@ -1,5 +1,23 @@
 .timeline {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+}
+
+/* Extra spacing between different item kinds */
+.timeline > .toolGroup + [data-kind="text"],
+.timeline > [data-kind="text"] + .toolGroup,
+.timeline > [data-kind="thinking"] + .toolGroup,
+.timeline > .toolGroup + [data-kind="thinking"] {
+  margin-top: 4px;
+}
+
+/* Visual rail for grouped tool calls */
+.toolGroup {
+  border-left: 1px solid rgba(255, 255, 255, 0.04);
+  margin-left: 0;
+  padding-left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
