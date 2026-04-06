@@ -918,141 +918,88 @@ async fn create_spec_and_tasks(
 // Automaton-based execution for Action nodes
 // ---------------------------------------------------------------------------
 
-async fn plan_sub_tasks(
+/// Split a node's work into sub-tasks by examining the upstream context.
+/// Uses deterministic heuristics — no LLM call needed:
+///   1. If upstream is a JSON array → one sub-task per element
+///   2. If upstream has `---` delimited sections → one sub-task per section
+///   3. If upstream has bullet/numbered lists → one sub-task per item
+///   4. Otherwise → single task (no split)
+fn plan_sub_tasks(
     node: &ProcessNode,
     upstream_context: &str,
-    automaton_client: &AutomatonClient,
-    project_id: &ProjectId,
-    project_path: &str,
-    token: Option<&str>,
-    agent_service: &AgentService,
-    org_service: &OrgService,
-    forwarder: Option<&DeltaForwarder<'_>>,
-) -> Result<Vec<SubTaskPlan>, ProcessError> {
-    let model = {
-        let loaded_agent = node.agent_id.as_ref().and_then(|aid| {
-            agent_service.get_agent_local(aid).ok()
-        });
-        let ri = loaded_agent.as_ref().and_then(|a| resolve_agent_integration(a, org_service));
-        effective_model(node, loaded_agent.as_ref(), ri.as_ref())
-    };
-
-    let _planning_prompt = format!(
-        "You are a task planner for an automated workflow.\n\n\
-         ## Node Task\n{}\n\n\
-         ## Upstream Context\n{}\n\n\
-         Break this task into independent sub-tasks that can be executed in parallel.\n\
-         Each sub-task should produce a self-contained section of the output.\n\n\
-         Output ONLY a JSON array, no other text:\n\
-         [{{\"title\": \"short title\", \"description\": \"what to do\"}}]\n\n\
-         Rules:\n\
-         - Each sub-task must be independently executable\n\
-         - 2-10 sub-tasks typically\n\
-         - If the task is simple or atomic, return a single-element array\n\
-         - The description should be specific enough for an agent to execute without additional context",
-        node.prompt, upstream_context
-    );
-
-    let start_result = automaton_client
-        .start(AutomatonStartParams {
-            project_id: project_id.to_string(),
-            auth_token: token.map(|s| s.to_string()),
-            model,
-            workspace_root: Some(project_path.to_string()),
-            task_id: None,
-            git_repo_url: None,
-            git_branch: None,
-        })
-        .await
-        .map_err(|e| ProcessError::Execution(format!("Planning automaton failed to start: {e}")))?;
-
-    let event_tx = automaton_client
-        .connect_event_stream(
-            &start_result.automaton_id,
-            Some(&start_result.event_stream_url),
-        )
-        .await
-        .map_err(|e| ProcessError::Execution(format!("Planning event stream failed: {e}")))?;
-
-    let mut rx = event_tx.subscribe();
-    let mut output_text = String::new();
-    let deadline = Duration::from_secs(120);
-
-    let collect = async {
-        loop {
-            match rx.recv().await {
-                Ok(evt) => {
-                    let evt_type = evt.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                    match evt_type {
-                        "text_delta" => {
-                            if let Some(text) = evt.get("text").and_then(|t| t.as_str()) {
-                                output_text.push_str(text);
-                                if let Some(fwd) = forwarder {
-                                    fwd.forward_text(text);
-                                }
-                            }
-                        }
-                        "thinking_delta" => {
-                            if let Some(thinking) = evt.get("thinking").and_then(|t| t.as_str()) {
-                                if let Some(fwd) = forwarder {
-                                    fwd.forward_thinking(thinking);
-                                }
-                            }
-                        }
-                        "tool_use_start" => {
-                            if let Some(fwd) = forwarder {
-                                let id = evt.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                let name = evt.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                                fwd.forward_tool_start(id, name);
-                            }
-                        }
-                        "tool_result" => {
-                            if let Some(fwd) = forwarder {
-                                let name = evt.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                                let result = evt.get("result").and_then(|v| v.as_str()).unwrap_or("");
-                                let is_error = evt.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
-                                fwd.forward_tool_result(name, result, is_error);
-                            }
-                        }
-                        "task_completed" | "done" | "task_failed" | "error" => break,
-                        _ => {}
-                    }
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
-            }
-        }
-    };
-
-    if tokio::time::timeout(deadline, collect).await.is_err() {
-        warn!(node_id = %node.node_id, "Planning automaton timed out; using single-task fallback");
-        return Ok(vec![SubTaskPlan {
+) -> Vec<SubTaskPlan> {
+    let trimmed = upstream_context.trim();
+    if trimmed.is_empty() {
+        return vec![SubTaskPlan {
             title: node.label.clone(),
             description: node.prompt.clone(),
-        }]);
+        }];
     }
 
-    let trimmed = output_text.trim();
-    let json_start = trimmed.find('[');
-    let json_end = trimmed.rfind(']');
-
-    if let (Some(start), Some(end)) = (json_start, json_end) {
-        if end > start {
-            let json_str = &trimmed[start..=end];
-            if let Ok(plans) = serde_json::from_str::<Vec<SubTaskPlan>>(json_str) {
-                if !plans.is_empty() {
-                    info!(node_id = %node.node_id, sub_tasks = plans.len(), "Planning produced sub-tasks");
-                    return Ok(plans);
-                }
+    // 1. JSON array upstream → one sub-task per element
+    if trimmed.starts_with('[') {
+        if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(trimmed) {
+            if arr.len() > 1 {
+                return arr.iter().enumerate().map(|(i, v)| {
+                    let item_str = if let Some(s) = v.as_str() {
+                        s.to_string()
+                    } else {
+                        serde_json::to_string(v).unwrap_or_default()
+                    };
+                    let title = v.get("name").or_else(|| v.get("title"))
+                        .and_then(|n| n.as_str())
+                        .unwrap_or(&item_str);
+                    let short_title = if title.len() > 60 { &title[..60] } else { title };
+                    SubTaskPlan {
+                        title: format!("#{}: {}", i + 1, short_title),
+                        description: format!("{}\n\nItem:\n{}", node.prompt, item_str),
+                    }
+                }).collect();
             }
         }
     }
 
-    warn!(node_id = %node.node_id, "Planning output not valid JSON; using single-task fallback");
-    Ok(vec![SubTaskPlan {
+    // 2. Section-delimited upstream (---) → one sub-task per section
+    let sections: Vec<&str> = trimmed.split("\n---\n")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if sections.len() > 1 {
+        return sections.iter().enumerate().map(|(i, section)| {
+            let first_line = section.lines().next().unwrap_or("Section");
+            let title = first_line.trim_start_matches('#').trim();
+            let short_title = if title.len() > 60 { &title[..60] } else { title };
+            SubTaskPlan {
+                title: format!("#{}: {}", i + 1, short_title),
+                description: format!("{}\n\nSection:\n{}", node.prompt, section),
+            }
+        }).collect();
+    }
+
+    // 3. Bullet/numbered list upstream → one sub-task per item
+    let list_items: Vec<&str> = trimmed.lines()
+        .map(|l| l.trim())
+        .filter(|l| {
+            l.starts_with("- ") || l.starts_with("* ") ||
+            l.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) && l.contains(". ")
+        })
+        .collect();
+    if list_items.len() > 1 {
+        return list_items.iter().enumerate().map(|(i, item)| {
+            let cleaned = item.trim_start_matches(|c: char| c == '-' || c == '*' || c.is_ascii_digit() || c == '.' || c == ' ');
+            let short_title = if cleaned.len() > 60 { &cleaned[..60] } else { cleaned };
+            SubTaskPlan {
+                title: format!("#{}: {}", i + 1, short_title),
+                description: format!("{}\n\nItem: {}", node.prompt, cleaned),
+            }
+        }).collect();
+    }
+
+    // 4. Default: single task
+    vec![SubTaskPlan {
         title: node.label.clone(),
-        description: node.prompt.clone(),
-    }])
+        description: format!("{}\n\nContext:\n{}", node.prompt, upstream_context),
+    }]
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1083,10 +1030,7 @@ async fn execute_action_via_automaton(
         ).await;
     }
 
-    let sub_tasks = plan_sub_tasks(
-        node, upstream_context, automaton_client, project_id,
-        project_path, token, agent_service, org_service, forwarder,
-    ).await?;
+    let sub_tasks = plan_sub_tasks(node, upstream_context);
 
     if sub_tasks.len() <= 1 {
         if let Some(fwd) = forwarder {
