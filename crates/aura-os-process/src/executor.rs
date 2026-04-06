@@ -29,6 +29,37 @@ use crate::process_store::ProcessStore;
 
 const DEFAULT_HARNESS_TIMEOUT_SECS: u64 = 600; // 10 minutes
 
+/// Scan a workspace directory for the best candidate output file.
+///
+/// Called as a fallback when the expected output file (e.g. `output.txt`) is
+/// missing. Since process workspaces are fresh directories, any file present
+/// was written by the automaton. Returns the content of the largest non-hidden
+/// file in the workspace root.
+async fn find_workspace_output(workspace: &Path) -> Option<String> {
+    let mut best: Option<(u64, PathBuf)> = None;
+    let mut entries = tokio::fs::read_dir(workspace).await.ok()?;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with('.') || name_str == "node_modules" {
+            continue;
+        }
+        if let Ok(meta) = entry.metadata().await {
+            if meta.is_file() && meta.len() > 0 {
+                let dominated = best.as_ref().map_or(false, |(sz, _)| meta.len() <= *sz);
+                if !dominated {
+                    best = Some((meta.len(), entry.path()));
+                }
+            }
+        }
+    }
+    let (_, path) = best?;
+    tokio::fs::read_to_string(&path)
+        .await
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+}
+
 #[derive(Debug, Clone, Default)]
 struct NodeTokenUsage {
     input_tokens: u64,
@@ -1171,7 +1202,14 @@ async fn execute_action_via_automaton(
                         Ok(content) if !content.trim().is_empty() => Some(content),
                         _ => None,
                     };
-                    let final_output = file_content.unwrap_or(out.output_text);
+                    let workspace_content = if file_content.is_none() {
+                        find_workspace_output(Path::new(&sub_project_path)).await
+                    } else {
+                        None
+                    };
+                    let final_output = file_content
+                        .or(workspace_content)
+                        .unwrap_or(out.output_text);
                     Ok((final_output, out.input_tokens, out.output_tokens, out.model))
                 }
                 RunCompletion::Failed { message, .. } => {
@@ -1317,6 +1355,18 @@ async fn execute_single_automaton(
         effective_model(node, loaded_agent.as_ref(), ri.as_ref())
     };
 
+    let output_file = node
+        .config
+        .get("output_file")
+        .and_then(|v| v.as_str())
+        .unwrap_or("output.txt");
+    let instructions = format!(
+        "Write your final deliverable to `{output_file}` in the workspace root. \
+         This file is used as the node's downstream output for the next process step."
+    );
+    let instructions_path = Path::new(project_path).join(".process-instructions");
+    let _ = tokio::fs::write(&instructions_path, instructions.as_bytes()).await;
+
     let authed_client = automaton_client.clone()
         .with_auth(token.map(|s| s.to_string()));
     let (start_result, events_tx) = start_and_connect(
@@ -1376,18 +1426,22 @@ async fn execute_single_automaton(
         }
     };
 
-    let output_file = node
-        .config
-        .get("output_file")
-        .and_then(|v| v.as_str())
-        .unwrap_or("output.txt");
     let output_file_path = Path::new(project_path).join(output_file);
     let file_content = match tokio::fs::read_to_string(&output_file_path).await {
         Ok(content) if !content.trim().is_empty() => Some(content),
         _ => None,
     };
 
-    let downstream = file_content.unwrap_or(out.output_text.clone());
+    let workspace_content = if file_content.is_none() {
+        find_workspace_output(Path::new(project_path)).await
+    } else {
+        None
+    };
+
+    let downstream = file_content
+        .or(workspace_content)
+        .unwrap_or_else(|| out.output_text.clone());
+
     if downstream.trim().is_empty() {
         return Err(ProcessError::Execution(format!(
             "Automaton produced no output for node {}", node.node_id

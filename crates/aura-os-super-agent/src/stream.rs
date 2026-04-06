@@ -77,7 +77,9 @@ use crate::tools::{SuperAgentContext, ToolRegistry};
 use types::*;
 
 const DEFAULT_MAX_TOOL_TURNS: usize = 25;
+const DEFAULT_MAX_TOKENS: u32 = 16_384;
 const DEFAULT_MODEL: &str = "claude-sonnet-4-5-20250514";
+const MAX_CONSECUTIVE_TRUNCATIONS: usize = 3;
 
 #[derive(Serialize)]
 struct MessagesRequest {
@@ -110,6 +112,7 @@ pub struct SuperAgentStream {
     tx: broadcast::Sender<HarnessOutbound>,
     model: String,
     max_turns: usize,
+    max_tokens: u32,
 }
 
 impl SuperAgentStream {
@@ -135,12 +138,20 @@ impl SuperAgentStream {
             tx,
             model: model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
             max_turns: DEFAULT_MAX_TOOL_TURNS,
+            max_tokens: DEFAULT_MAX_TOKENS,
         }
     }
 
     pub fn with_max_turns(mut self, max_turns: Option<u32>) -> Self {
         if let Some(n) = max_turns {
             self.max_turns = n as usize;
+        }
+        self
+    }
+
+    pub fn with_max_tokens(mut self, max_tokens: Option<u32>) -> Self {
+        if let Some(n) = max_tokens {
+            self.max_tokens = n;
         }
         self
     }
@@ -183,11 +194,12 @@ impl SuperAgentStream {
 
         let mut cumulative_input: u64 = 0;
         let mut cumulative_output: u64 = 0;
+        let mut consecutive_truncations: usize = 0;
 
         for _turn in 0..self.max_turns {
             let req = MessagesRequest {
                 model: self.model.clone(),
-                max_tokens: 8192,
+                max_tokens: self.max_tokens,
                 system: self.system_prompt.clone(),
                 tools: self.tool_defs.clone(),
                 messages: self.messages.clone(),
@@ -239,30 +251,59 @@ impl SuperAgentStream {
             cumulative_input += usage.input_tokens;
             cumulative_output += usage.output_tokens;
 
-            if stop_reason.as_deref() != Some("tool_use") {
-                self.emit(HarnessOutbound::AssistantMessageEnd(AssistantMessageEnd {
-                    message_id: msg_id,
-                    stop_reason: stop_reason.unwrap_or_else(|| "end_turn".into()),
-                    usage: SessionUsage {
-                        input_tokens: usage.input_tokens,
-                        output_tokens: usage.output_tokens,
-                        cache_creation_input_tokens: 0,
-                        cache_read_input_tokens: 0,
-                        cumulative_input_tokens: cumulative_input,
-                        cumulative_output_tokens: cumulative_output,
-                        cumulative_cache_creation_input_tokens: 0,
-                        cumulative_cache_read_input_tokens: 0,
-                        estimated_context_tokens: 0,
-                        context_utilization: 0.0,
-                        model: self.model.clone(),
-                        provider: "anthropic".into(),
-                    },
-                    files_changed: FilesChanged::default(),
-                }));
-                return self.messages;
+            match stop_reason.as_deref() {
+                Some("tool_use") => {
+                    consecutive_truncations = 0;
+                }
+                Some("max_tokens") => {
+                    consecutive_truncations += 1;
+                    warn!(
+                        consecutive = consecutive_truncations,
+                        "Response truncated by max_tokens, continuing tool loop"
+                    );
+                    let has_tool_results = self.messages.last()
+                        .and_then(|m| m.get("content"))
+                        .and_then(|c| c.as_array())
+                        .map(|arr| arr.iter().any(|v| {
+                            v.get("type").and_then(|t| t.as_str()) == Some("tool_result")
+                        }))
+                        .unwrap_or(false);
+                    if !has_tool_results {
+                        self.messages.push(json!({
+                            "role": "user",
+                            "content": "Your response was truncated due to length limits. Please continue.",
+                        }));
+                    }
+                    if consecutive_truncations >= MAX_CONSECUTIVE_TRUNCATIONS {
+                        self.messages.push(json!({
+                            "role": "user",
+                            "content": "Your responses are repeatedly being truncated. Break large file writes into smaller chunks or use shorter responses.",
+                        }));
+                    }
+                }
+                _ => {
+                    self.emit(HarnessOutbound::AssistantMessageEnd(AssistantMessageEnd {
+                        message_id: msg_id,
+                        stop_reason: stop_reason.unwrap_or_else(|| "end_turn".into()),
+                        usage: SessionUsage {
+                            input_tokens: usage.input_tokens,
+                            output_tokens: usage.output_tokens,
+                            cache_creation_input_tokens: 0,
+                            cache_read_input_tokens: 0,
+                            cumulative_input_tokens: cumulative_input,
+                            cumulative_output_tokens: cumulative_output,
+                            cumulative_cache_creation_input_tokens: 0,
+                            cumulative_cache_read_input_tokens: 0,
+                            estimated_context_tokens: 0,
+                            context_utilization: 0.0,
+                            model: self.model.clone(),
+                            provider: "anthropic".into(),
+                        },
+                        files_changed: FilesChanged::default(),
+                    }));
+                    return self.messages;
+                }
             }
-
-            // stop_reason == tool_use: continue the loop
         }
 
         warn!("Super Agent hit max tool turns ({})", self.max_turns);
@@ -304,6 +345,7 @@ impl SuperAgentStream {
 
         let mut text_buf = String::new();
         let mut tool_accumulators: Vec<ToolUseAccumulator> = Vec::new();
+        let mut completed_tool_count: usize = 0;
         let mut current_block_type: Option<String> = None;
         let mut assistant_content_blocks: Vec<Value> = Vec::new();
 
@@ -410,6 +452,7 @@ impl SuperAgentStream {
                                         "input": input,
                                     }));
                                 }
+                                completed_tool_count += 1;
                             }
                             Some("thinking") => {
                                 assistant_content_blocks.push(json!({
@@ -437,17 +480,71 @@ impl SuperAgentStream {
             }
         }
 
+        // Recover partial tool_use blocks truncated by max_tokens.
+        let has_partial_tools = tool_accumulators.len() > completed_tool_count;
+        if has_partial_tools && current_block_type.as_deref() == Some("tool_use") {
+            if let Some(acc) = tool_accumulators.last() {
+                warn!(
+                    tool_name = %acc.name,
+                    tool_id = %acc.id,
+                    json_len = acc.input_json.len(),
+                    "Stream ended with in-progress tool_use block — recovering partial tool call"
+                );
+                let input: Value =
+                    serde_json::from_str(&acc.input_json).unwrap_or(json!({}));
+                assistant_content_blocks.push(json!({
+                    "type": "tool_use",
+                    "id": acc.id,
+                    "name": acc.name,
+                    "input": input,
+                }));
+            }
+        }
+
         // Append the assistant message to conversation
         self.messages.push(json!({
             "role": "assistant",
             "content": assistant_content_blocks,
         }));
 
-        // If stop_reason is tool_use, execute tools and append results
-        if stop_reason.as_deref() == Some("tool_use") {
+        // Execute tools for tool_use, or inject errors for max_tokens with pending tools.
+        let should_process_tools = stop_reason.as_deref() == Some("tool_use")
+            || (stop_reason.as_deref() == Some("max_tokens") && !tool_accumulators.is_empty());
+
+        if should_process_tools {
+            if has_partial_tools {
+                warn!(
+                    pending = tool_accumulators.len() - completed_tool_count,
+                    "MaxTokens with pending tool_use blocks — injecting error results"
+                );
+            }
+
             let mut tool_results: Vec<Value> = Vec::new();
 
-            for acc in &tool_accumulators {
+            for (idx, acc) in tool_accumulators.iter().enumerate() {
+                let is_partial = idx >= completed_tool_count;
+
+                if is_partial {
+                    let error_msg = "Error: Your response was truncated due to length limits. \
+                        This tool call was incomplete and not executed. \
+                        Please retry with a shorter response or break the task into smaller steps.";
+
+                    self.emit(HarnessOutbound::ToolResult(ToolResultMsg {
+                        name: acc.name.clone(),
+                        result: error_msg.to_string(),
+                        is_error: true,
+                        tool_use_id: Some(acc.id.clone()),
+                    }));
+
+                    tool_results.push(json!({
+                        "type": "tool_result",
+                        "tool_use_id": acc.id,
+                        "content": error_msg,
+                        "is_error": true,
+                    }));
+                    continue;
+                }
+
                 let input: Value = serde_json::from_str(&acc.input_json).unwrap_or(json!({}));
 
                 info!(tool = %acc.name, id = %acc.id, "Executing super agent tool");
