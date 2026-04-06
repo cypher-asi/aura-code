@@ -246,6 +246,12 @@ impl ProcessExecutor {
             .await
             {
                 warn!(run_id = %run_clone.run_id, error = %e, "Process run failed");
+                mark_run_failed_if_active(
+                    &executor.store,
+                    &executor.event_broadcast,
+                    &run_clone,
+                    &e.to_string(),
+                );
             }
         });
 
@@ -298,7 +304,7 @@ impl ProcessExecutor {
             "Child process run triggered (await)"
         );
 
-        execute_run(
+        if let Err(e) = execute_run(
             self,
             &self.store,
             &self.event_broadcast,
@@ -308,7 +314,16 @@ impl ProcessExecutor {
             &self.agent_service,
             &self.org_service,
         )
-        .await?;
+        .await
+        {
+            mark_run_failed_if_active(
+                &self.store,
+                &self.event_broadcast,
+                &run,
+                &e.to_string(),
+            );
+            return Err(e);
+        }
 
         let completed_run = self
             .store
@@ -1465,6 +1480,39 @@ async fn resolve_artifact_ref(
     let artifact = matched?;
     let file_path = data_dir.join(&artifact.file_path);
     tokio::fs::read_to_string(&file_path).await.ok()
+}
+
+/// If the run is still active (Pending/Running), mark it as Failed with the
+/// given error and broadcast `process_run_failed`. This is a safety net for
+/// early errors in `execute_run` that exit before the per-node error handler.
+fn mark_run_failed_if_active(
+    store: &ProcessStore,
+    broadcast: &broadcast::Sender<serde_json::Value>,
+    run: &ProcessRun,
+    error: &str,
+) {
+    let current = store.list_runs(&run.process_id).ok().and_then(|runs| {
+        runs.into_iter().find(|r| r.run_id == run.run_id)
+    });
+    let dominated = current.as_ref().map_or(true, |r| {
+        matches!(r.status, ProcessRunStatus::Pending | ProcessRunStatus::Running)
+    });
+    if !dominated {
+        return;
+    }
+
+    let mut failed_run = current.unwrap_or_else(|| run.clone());
+    failed_run.status = ProcessRunStatus::Failed;
+    failed_run.error = Some(error.to_string());
+    failed_run.completed_at = Some(Utc::now());
+    let _ = store.save_run(&failed_run);
+
+    let _ = broadcast.send(serde_json::json!({
+        "type": "process_run_failed",
+        "process_id": run.process_id.to_string(),
+        "run_id": run.run_id.to_string(),
+        "error": error,
+    }));
 }
 
 /// Create a new "running" event and persist + broadcast it. Returns the event
