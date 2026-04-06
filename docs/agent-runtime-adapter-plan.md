@@ -52,6 +52,12 @@ Examples:
 - `GitHub`
 - `Slack`
 - `Notion`
+- `Brave Search`
+- `Freepik`
+- `Buffer`
+- `Apify`
+- `Metricool`
+- `Mailchimp`
 
 Apps can contribute tools into Aura OS through a first-class app provider contract.
 

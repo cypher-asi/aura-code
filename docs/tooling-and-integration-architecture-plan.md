@@ -101,6 +101,12 @@ Examples:
 - `Slack`
 - `GitHub`
 - `Notion`
+- `Brave Search`
+- `Freepik`
+- `Buffer`
+- `Apify`
+- `Metricool`
+- `Mailchimp`
 - `Jira`
 - `Confluence`
 - `Figma`
