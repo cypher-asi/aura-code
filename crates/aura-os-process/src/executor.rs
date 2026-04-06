@@ -170,6 +170,34 @@ fn action_preamble(output_file: &str) -> String {
     )
 }
 
+fn continuation_prompt(output_file: &str, byte_count: usize) -> String {
+    format!(
+        "The previous session ran out of time before completing the output file.\n\
+         The file `{output_file}` has {byte_count} bytes of partial content.\n\n\
+         INSTRUCTIONS:\n\
+         1. Read `{output_file}` to see what is already written.\n\
+         2. COMPLETE the file by appending the remaining content using `edit_file`.\n\
+         3. Do NOT rewrite or duplicate content that is already present.\n\
+         4. Ensure all JSON braces/brackets are properly closed at the end.\n\
+         5. Each write must be under 4000 characters."
+    )
+}
+
+fn is_truncated_output(content: &str) -> bool {
+    let trimmed = content.trim();
+    if trimmed.len() < 100 {
+        return false;
+    }
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        let open = trimmed.matches('{').count() + trimmed.matches('[').count();
+        let close = trimmed.matches('}').count() + trimmed.matches(']').count();
+        if open > close {
+            return true;
+        }
+    }
+    trimmed.ends_with(',')
+}
+
 #[derive(Clone)]
 pub struct ProcessExecutor {
     store: Arc<ProcessStore>,
@@ -1067,14 +1095,90 @@ async fn execute_action(
 
     let output_file_path = Path::new(project_path.unwrap_or(".")).join(&output_file);
 
-    let harness_result = run_harness_session(
-        node, full_prompt,
-        Some(action_preamble(&output_file)),
-        harness, token, agent_service, org_service, forwarder, project_path,
-        timeout_secs,
-    ).await;
+    let max_continuations: u64 = node
+        .config
+        .get("max_continuations")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(2);
 
-    // Read the on-disk output file (agent may have written it during the session).
+    // -- Continuation loop --------------------------------------------------
+    // Run the initial harness session, then check if the output file is
+    // structurally truncated (unclosed JSON, trailing commas). If so, spawn
+    // additional "continuation" sessions that read the existing file and
+    // append the remaining content.
+    let mut cumulative_input_tokens: u64 = 0;
+    let mut cumulative_output_tokens: u64 = 0;
+    let mut last_model: Option<String> = None;
+    let mut last_harness_result: Option<Result<(HarnessResponse, Option<NodeTokenUsage>), ProcessError>> = None;
+    let mut last_content_blocks: Option<Vec<serde_json::Value>> = None;
+
+    for attempt in 0..=max_continuations {
+        let prompt = if attempt == 0 {
+            full_prompt.clone()
+        } else {
+            let bytes = tokio::fs::metadata(&output_file_path)
+                .await
+                .map(|m| m.len() as usize)
+                .unwrap_or(0);
+            info!(
+                node_id = %node.node_id,
+                attempt,
+                file_bytes = bytes,
+                "Starting continuation session for truncated output"
+            );
+            continuation_prompt(&output_file, bytes)
+        };
+
+        let result = run_harness_session(
+            node,
+            prompt,
+            Some(action_preamble(&output_file)),
+            harness,
+            token,
+            agent_service,
+            org_service,
+            forwarder,
+            project_path,
+            timeout_secs,
+        )
+        .await;
+
+        if let Ok((ref resp, ref tu)) = result {
+            if let Some(ref u) = tu {
+                cumulative_input_tokens += u.input_tokens;
+                cumulative_output_tokens += u.output_tokens;
+                last_model = u.model.clone();
+            }
+            last_content_blocks = Some(resp.content_blocks.clone());
+        }
+        last_harness_result = Some(result);
+
+        if attempt == max_continuations {
+            break;
+        }
+
+        // Check whether the output file still needs continuation.
+        let needs_more = match tokio::fs::read_to_string(&output_file_path).await {
+            Ok(ref content) if !content.trim().is_empty() => is_truncated_output(content),
+            _ => false,
+        };
+        if !needs_more {
+            break;
+        }
+    }
+
+    let harness_result = last_harness_result.unwrap();
+    let cumulative_usage = if cumulative_input_tokens > 0 || cumulative_output_tokens > 0 {
+        Some(NodeTokenUsage {
+            input_tokens: cumulative_input_tokens,
+            output_tokens: cumulative_output_tokens,
+            model: last_model,
+        })
+    } else {
+        None
+    };
+
+    // -- Read final output file ---------------------------------------------
     let file_content = match tokio::fs::read_to_string(&output_file_path).await {
         Ok(content) if !content.trim().is_empty() => {
             info!(path = %output_file_path.display(), bytes = content.len(), "Read designated output file");
@@ -1084,14 +1188,9 @@ async fn execute_action(
     };
 
     // Try to extract recovery candidates from the harness response.
-    // We do this even when the file exists so we can pick the richer content.
-    //
     // Priority: final_text (last turn only) > synthesized blocks > all_text.
-    // final_text is preferred because it contains the model's actual answer
-    // (e.g. the fallback text output after write_file failures), while all_text
-    // includes the full conversation narration which pollutes the artifact.
     let (recovery_content, token_usage, content_blocks) = match harness_result {
-        Ok((resp, tu)) => {
+        Ok((resp, _tu)) => {
             let final_text_clean = canonicalize_output(&resp.final_text, false);
             let all_text_clean = canonicalize_output(&resp.all_text, false);
             let synthesized = synthesize_output_from_blocks(&resp.content_blocks);
@@ -1105,11 +1204,11 @@ async fn execute_action(
             } else {
                 None
             };
-            (best_recovery, tu, Some(resp.content_blocks))
+            (best_recovery, cumulative_usage, last_content_blocks)
         }
         Err(e) => {
             if file_content.is_some() {
-                (None, None, None)
+                (None, cumulative_usage, last_content_blocks)
             } else {
                 return Err(e);
             }
