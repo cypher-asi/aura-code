@@ -15,10 +15,7 @@ use aura_os_core::{
     ProcessEventStatus, ProcessNode, ProcessNodeId, ProcessNodeType, ProcessRun, ProcessRunId,
     ProcessRunStatus, ProcessRunTrigger, ProcessId, ProjectId, TaskStatus,
 };
-use aura_os_link::{
-    AutomatonClient, AutomatonStartParams, HarnessInbound, HarnessLink, HarnessOutbound,
-    SessionConfig, SessionProviderConfig, SessionUsage, UserMessage,
-};
+use aura_os_link::{AutomatonClient, AutomatonStartParams};
 use aura_os_orgs::OrgService;
 use aura_os_storage::StorageClient;
 use aura_os_store::RocksStore;
@@ -44,18 +41,6 @@ struct NodeResult {
     display_output: Option<String>,
     token_usage: Option<NodeTokenUsage>,
     content_blocks: Option<Vec<serde_json::Value>>,
-}
-
-/// Shared output-extraction pipeline applied to every LLM-backed node.
-/// Strips `<thinking>` tags and trims whitespace. When `extract_code_block`
-/// is true (artifact nodes), also unwraps a trailing fenced code block.
-fn canonicalize_output(raw: &str, extract_code_block: bool) -> String {
-    let cleaned = strip_thinking_tags(raw.trim());
-    if extract_code_block {
-        extract_final_output(&cleaned)
-    } else {
-        cleaned
-    }
 }
 
 struct DeltaForwarder<'a> {
@@ -96,6 +81,7 @@ impl DeltaForwarder<'_> {
         let _ = self.broadcast.send(v);
     }
 
+    #[allow(dead_code)]
     fn forward_tool_snapshot(&self, id: &str, name: &str, input: &serde_json::Value) {
         let mut v = self.ctx();
         v["type"] = "tool_call_snapshot".into();
@@ -121,90 +107,10 @@ fn estimate_cost_usd(input_tokens: u64, output_tokens: u64) -> f64 {
     input_cost + output_cost
 }
 
-const PROCESS_EXECUTION_PREAMBLE: &str = "\
-You are executing a step in an automated workflow process. \
-Output ONLY the final result. No planning, no narration, no \"let me try\" preamble. \
-Never describe your process — just output the finished product as text.\n\n\
-TOOL RULES:\n\
-- Use `read_file` / `write_file` / `edit_file` for file operations.\n\
-- Use `list_files` or `find_files` to browse the filesystem.\n\
-- Use `run_command` for build, test, git, and other shell commands.\n\
-- Treat the project root as `.` and always use relative paths.\n\n\
-TOOL-FAILURE RULE: If the majority of your tool calls fail or return errors, \
-STOP immediately and output a structured error report listing each failed tool call, \
-the error, and what data is missing. Do NOT fabricate results, echo back your search \
-queries, or produce placeholder output. Downstream nodes depend on real data — passing \
-garbage forward is worse than reporting an honest failure.";
-
-const PROCESS_EXECUTION_PREAMBLE_WITH_OUTPUT_FILE: &str = "\
-You are executing a step in an automated workflow process.\n\n\
-OUTPUT FILE REQUIREMENT: You MUST write your final results to the designated \
-output file using `write_file`. This file is the ONLY output passed to \
-downstream nodes. If the file is empty when your session ends, the node \
-FAILS and the workflow stops.\n\n\
-WRITE INCREMENTALLY: Write to the output file after each batch of results you \
-collect, not just at the end. This way partial progress survives if you run out \
-of time.\n\n\
-SIZE LIMIT: Each individual `write_file` call MUST contain fewer than 4000 \
-characters of content. If your output is larger, split it across multiple \
-writes — write the first section, then use `edit_file` or another `write_file` \
-to append subsequent sections.\n\n\
-WRITE-FAILURE FALLBACK: If `write_file` fails 3 or more times in a row, STOP \
-trying to write to the file. Instead, output your complete results directly as \
-text in your response message. The system will recover this text automatically. \
-Do NOT keep retrying `write_file` indefinitely.\n\n\
-TOOL RULES:\n\
-- Use `read_file` / `write_file` / `edit_file` for file operations.\n\
-- Use `list_files` or `find_files` to browse the filesystem.\n\
-- Use `run_command` for build, test, git, and other shell commands.\n\
-- Treat the project root as `.` and always use relative paths.\n\n\
-TOOL-FAILURE RULE: If the majority of your tool calls fail or return errors, \
-STOP immediately and write a structured error report TO THE OUTPUT FILE listing \
-each failed tool call, the error, and what data is missing. Do NOT fabricate \
-results or produce placeholder output.";
-
-fn action_preamble(output_file: &str) -> String {
-    let now = Utc::now();
-    format!(
-        "{PROCESS_EXECUTION_PREAMBLE_WITH_OUTPUT_FILE}\n\n\
-         Current UTC date/time: {now}\n\
-         Your output file is: `{output_file}`"
-    )
-}
-
-fn continuation_prompt(output_file: &str, byte_count: usize) -> String {
-    format!(
-        "The previous session ran out of time before completing the output file.\n\
-         The file `{output_file}` has {byte_count} bytes of partial content.\n\n\
-         INSTRUCTIONS:\n\
-         1. Read `{output_file}` to see what is already written.\n\
-         2. COMPLETE the file by appending the remaining content using `edit_file`.\n\
-         3. Do NOT rewrite or duplicate content that is already present.\n\
-         4. Ensure all JSON braces/brackets are properly closed at the end.\n\
-         5. Each write must be under 4000 characters."
-    )
-}
-
-fn is_truncated_output(content: &str) -> bool {
-    let trimmed = content.trim();
-    if trimmed.len() < 100 {
-        return false;
-    }
-    if trimmed.starts_with('{') || trimmed.starts_with('[') {
-        let open = trimmed.matches('{').count() + trimmed.matches('[').count();
-        let close = trimmed.matches('}').count() + trimmed.matches(']').count();
-        if open > close {
-            return true;
-        }
-    }
-    trimmed.ends_with(',')
-}
-
 #[derive(Clone)]
 pub struct ProcessExecutor {
     store: Arc<ProcessStore>,
     event_broadcast: broadcast::Sender<serde_json::Value>,
-    harness: Arc<dyn HarnessLink>,
     data_dir: PathBuf,
     rocks_store: Arc<RocksStore>,
     agent_service: Arc<AgentService>,
@@ -219,7 +125,6 @@ impl ProcessExecutor {
     pub fn new(
         store: Arc<ProcessStore>,
         event_broadcast: broadcast::Sender<serde_json::Value>,
-        harness: Arc<dyn HarnessLink>,
         data_dir: PathBuf,
         rocks_store: Arc<RocksStore>,
         agent_service: Arc<AgentService>,
@@ -231,7 +136,6 @@ impl ProcessExecutor {
         Self {
             store,
             event_broadcast,
-            harness,
             data_dir,
             rocks_store,
             agent_service,
@@ -334,7 +238,6 @@ impl ProcessExecutor {
                 &executor.store,
                 &executor.event_broadcast,
                 &run_clone,
-                &*executor.harness,
                 &executor.data_dir,
                 &executor.rocks_store,
                 &executor.agent_service,
@@ -400,7 +303,6 @@ impl ProcessExecutor {
             &self.store,
             &self.event_broadcast,
             &run,
-            &*self.harness,
             &self.data_dir,
             &self.rocks_store,
             &self.agent_service,
@@ -523,7 +425,6 @@ fn execute_run<'a>(
     store: &'a ProcessStore,
     broadcast: &'a broadcast::Sender<serde_json::Value>,
     run: &'a ProcessRun,
-    harness: &'a dyn HarnessLink,
     data_dir: &'a Path,
     rocks_store: &'a RocksStore,
     agent_service: &'a AgentService,
@@ -557,30 +458,16 @@ fn execute_run<'a>(
         .map_err(|e| ProcessError::Execution(format!("Failed to create process workspace: {e}")))?;
     let workspace_path = workspace_dir.to_string_lossy().to_string();
 
-    // ── create spec + tasks when process is linked to a project ────────
+    // ── create spec + tasks ────────────────────────────────────────────
     let process = store.get_process(&run.process_id)?
         .ok_or_else(|| ProcessError::NotFound(run.process_id.to_string()))?;
-    let mut node_task_ids: HashMap<ProcessNodeId, String> = HashMap::new();
-    let spec_id_for_run: Option<String> = if let Some(ref project_id) = process.project_id {
-        if let Some(ref sc) = executor.storage_client {
-            match create_spec_and_tasks(
-                sc, jwt.as_deref(), project_id, &process, &nodes, &sorted, &reachable,
-            ).await {
-                Ok((sid, task_map)) => {
-                    node_task_ids = task_map;
-                    Some(sid)
-                }
-                Err(e) => {
-                    warn!(error = %e, "Failed to create spec/tasks for process run; falling back to harness path");
-                    None
-                }
-            }
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let project_id = process.project_id
+        .ok_or_else(|| ProcessError::Execution("Process has no project_id".into()))?;
+    let storage = executor.storage_client.as_ref()
+        .ok_or_else(|| ProcessError::Execution("StorageClient required for process execution".into()))?;
+    let (spec_id_for_run, node_task_ids) = create_spec_and_tasks(
+        storage, jwt.as_deref(), &project_id, &process, &nodes, &sorted, &reachable,
+    ).await?;
 
     // node_id → output text (only present for completed nodes)
     let mut node_outputs: HashMap<ProcessNodeId, String> = HashMap::new();
@@ -707,70 +594,24 @@ fn execute_run<'a>(
             }
         }
 
-        let use_automaton = node_task_ids.contains_key(&node_id)
-            && process.project_id.is_some()
-            && matches!(node.node_type, ProcessNodeType::Action | ProcessNodeType::Prompt | ProcessNodeType::Artifact);
-
         let result: Result<NodeResult, ProcessError> = match node.node_type {
             ProcessNodeType::Ignition => execute_ignition(node).map(|s| NodeResult {
                 downstream_output: s, display_output: None, token_usage: None, content_blocks: None,
             }),
-            ProcessNodeType::Action if use_automaton => {
-                let task_id = &node_task_ids[&node_id];
-                let project_id = process.project_id.as_ref().unwrap();
+            ProcessNodeType::Action | ProcessNodeType::Prompt | ProcessNodeType::Artifact | ProcessNodeType::Condition => {
+                let task_id = node_task_ids.get(&node_id)
+                    .ok_or_else(|| ProcessError::Execution(format!("No task created for node {}", node_id)))?;
                 let timeout_secs = node.config.get("timeout_seconds").and_then(|v| v.as_u64()).unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
                 execute_action_via_automaton(
-                    node, task_id, project_id, &run.process_id, &run.run_id,
+                    node, task_id, &project_id, &run.process_id, &run.run_id,
                     &executor.automaton_client, store, Some(&fwd), &workspace_path,
                     timeout_secs, jwt.as_deref(), &executor.task_service,
                     agent_service, org_service,
                 ).await
-            }
-            ProcessNodeType::Action => {
-                execute_action(node, &upstream_context, &run.process_id, &run.run_id, store, harness, jwt.as_deref(), agent_service, org_service, Some(&fwd), Some(&workspace_path)).await
-            }
-            ProcessNodeType::Condition => {
-                execute_condition(node, &upstream_context, harness, jwt.as_deref(), agent_service, org_service, Some(&fwd), Some(&workspace_path)).await
             }
             ProcessNodeType::Delay => execute_delay(node).await.map(|s| NodeResult {
                 downstream_output: s, display_output: None, token_usage: None, content_blocks: None,
             }),
-            ProcessNodeType::Artifact if use_automaton => {
-                let task_id = &node_task_ids[&node_id];
-                let project_id = process.project_id.as_ref().unwrap();
-                let timeout_secs = node.config.get("timeout_seconds").and_then(|v| v.as_u64()).unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
-                execute_action_via_automaton(
-                    node, task_id, project_id, &run.process_id, &run.run_id,
-                    &executor.automaton_client, store, Some(&fwd), &workspace_path,
-                    timeout_secs, jwt.as_deref(), &executor.task_service,
-                    agent_service, org_service,
-                ).await
-            }
-            ProcessNodeType::Artifact => {
-                execute_artifact(
-                    node, &upstream_context, &run.process_id, &run.run_id,
-                    data_dir, store, harness, jwt.as_deref(),
-                    agent_service, org_service, Some(&fwd), Some(&workspace_path),
-                ).await
-            }
-            ProcessNodeType::Prompt if use_automaton => {
-                let task_id = &node_task_ids[&node_id];
-                let project_id = process.project_id.as_ref().unwrap();
-                let timeout_secs = node.config.get("timeout_seconds").and_then(|v| v.as_u64()).unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
-                execute_action_via_automaton(
-                    node, task_id, project_id, &run.process_id, &run.run_id,
-                    &executor.automaton_client, store, Some(&fwd), &workspace_path,
-                    timeout_secs, jwt.as_deref(), &executor.task_service,
-                    agent_service, org_service,
-                ).await
-            }
-            ProcessNodeType::Prompt => {
-                execute_prompt(
-                    node, &upstream_context, &run.process_id, &run.run_id,
-                    data_dir, store, harness, jwt.as_deref(),
-                    agent_service, org_service, Some(&fwd), Some(&workspace_path),
-                ).await
-            }
             ProcessNodeType::SubProcess => {
                 execute_subprocess(node, &upstream_context, executor, &run.run_id).await
             }
@@ -817,13 +658,9 @@ fn execute_run<'a>(
                 }
 
                 if let Some(tid) = node_task_ids.get(&node_id) {
-                    if let Some(ref pid) = process.project_id {
-                        let tid_parsed = tid.parse().ok();
-                        let sid = spec_id_for_run.as_ref().and_then(|s| s.parse().ok());
-                        if let (Some(task_id), Some(spec_id)) = (tid_parsed, sid) {
-                            if let Err(e) = executor.task_service.transition_task(pid, &spec_id, &task_id, TaskStatus::Done).await {
-                                warn!(task_id = %tid, error = %e, "Failed to transition task to Done");
-                            }
+                    if let (Some(task_id), Some(spec_id)) = (tid.parse().ok(), spec_id_for_run.parse().ok()) {
+                        if let Err(e) = executor.task_service.transition_task(&project_id, &spec_id, &task_id, TaskStatus::Done).await {
+                            warn!(task_id = %tid, error = %e, "Failed to transition task to Done");
                         }
                     }
                 }
@@ -841,13 +678,9 @@ fn execute_run<'a>(
                 }
 
                 if let Some(tid) = node_task_ids.get(&node_id) {
-                    if let Some(ref pid) = process.project_id {
-                        let tid_parsed = tid.parse().ok();
-                        let sid = spec_id_for_run.as_ref().and_then(|s| s.parse().ok());
-                        if let (Some(task_id), Some(spec_id)) = (tid_parsed, sid) {
-                            if let Err(te) = executor.task_service.transition_task(pid, &spec_id, &task_id, TaskStatus::Failed).await {
-                                warn!(task_id = %tid, error = %te, "Failed to transition task to Failed");
-                            }
+                    if let (Some(task_id), Some(spec_id)) = (tid.parse().ok(), spec_id_for_run.parse().ok()) {
+                        if let Err(te) = executor.task_service.transition_task(&project_id, &spec_id, &task_id, TaskStatus::Failed).await {
+                            warn!(task_id = %tid, error = %te, "Failed to transition task to Failed");
                         }
                     }
                 }
@@ -921,6 +754,7 @@ fn execute_run<'a>(
 // ---------------------------------------------------------------------------
 
 /// Resolved integration data for building provider config.
+#[allow(dead_code)]
 struct ResolvedIntegration {
     metadata: aura_os_core::OrgIntegration,
     secret: Option<String>,
@@ -985,157 +819,6 @@ fn effective_model(
         })
 }
 
-/// Build a `SessionProviderConfig` from a resolved integration and the
-/// effective model, matching the chat handler's `build_harness_provider_config`.
-fn build_provider_config(
-    integration: &ResolvedIntegration,
-    model: Option<&str>,
-) -> Option<SessionProviderConfig> {
-    if integration.metadata.provider != "anthropic" {
-        warn!(provider = %integration.metadata.provider, "Process executor only supports anthropic provider");
-        return None;
-    }
-
-    Some(SessionProviderConfig {
-        provider: "anthropic".to_string(),
-        routing_mode: Some("direct".to_string()),
-        api_key: integration.secret.clone(),
-        base_url: None,
-        default_model: model
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .or_else(|| integration.metadata.default_model.clone()),
-        fallback_model: None,
-        prompt_caching_enabled: Some(true),
-    })
-}
-
-/// Build a SessionConfig enriched with the agent's system prompt, name,
-/// provider config, and node-level overrides (model, max_turns). Mirrors the
-/// same session setup path as the chat handler to ensure identical behaviour.
-fn build_session_config(
-    node: &ProcessNode,
-    token: Option<&str>,
-    agent_service: &AgentService,
-    org_service: &OrgService,
-    system_prompt_override: Option<String>,
-    project_path: Option<&str>,
-) -> SessionConfig {
-    let agent_id_str = node.agent_id.as_ref().map(|id| id.to_string());
-
-    let (system_prompt, agent_name, resolved_integration, loaded_agent) =
-        match node.agent_id.as_ref() {
-            Some(aid) => match agent_service.get_agent_local(aid) {
-                Ok(agent) => {
-                    let prompt = system_prompt_override.unwrap_or_else(|| {
-                        let now = Utc::now();
-                        if agent.system_prompt.is_empty() {
-                            format!("{PROCESS_EXECUTION_PREAMBLE}\n\nCurrent UTC date/time: {now}")
-                        } else {
-                            format!("{PROCESS_EXECUTION_PREAMBLE}\n\nCurrent UTC date/time: {now}\n\n{}", agent.system_prompt)
-                        }
-                    });
-                    let ri = resolve_agent_integration(&agent, org_service);
-                    (Some(prompt), Some(agent.name.clone()), ri, Some(agent))
-                }
-                Err(e) => {
-                    warn!(agent_id = %aid, error = %e, "Could not load agent for process node; using defaults");
-                    let now = Utc::now();
-                    (
-                        Some(format!("{PROCESS_EXECUTION_PREAMBLE}\n\nCurrent UTC date/time: {now}")),
-                        None,
-                        None,
-                        None,
-                    )
-                }
-            },
-            None => {
-                let now = Utc::now();
-                (
-                    Some(format!("{PROCESS_EXECUTION_PREAMBLE}\n\nCurrent UTC date/time: {now}")),
-                    None,
-                    None,
-                    None,
-                )
-            },
-        };
-
-    let model = effective_model(node, loaded_agent.as_ref(), resolved_integration.as_ref());
-    let provider_config = resolved_integration
-        .as_ref()
-        .and_then(|ri| build_provider_config(ri, model.as_deref()));
-
-    let max_turns = node
-        .config
-        .get("max_turns")
-        .and_then(|v| v.as_u64())
-        .map(|n| n as u32)
-        .or(Some(100));
-
-    SessionConfig {
-        system_prompt,
-        agent_id: agent_id_str,
-        agent_name,
-        model,
-        max_turns,
-        token: token.map(|s| s.to_string()),
-        project_path: project_path.map(|s| s.to_string()),
-        provider_config,
-        ..Default::default()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Shared harness session helper
-// ---------------------------------------------------------------------------
-
-#[allow(clippy::too_many_arguments)]
-async fn run_harness_session(
-    node: &ProcessNode,
-    prompt: String,
-    system_prompt_override: Option<String>,
-    harness: &dyn HarnessLink,
-    token: Option<&str>,
-    agent_service: &AgentService,
-    org_service: &OrgService,
-    forwarder: Option<&DeltaForwarder<'_>>,
-    project_path: Option<&str>,
-    timeout_secs: u64,
-) -> Result<(HarnessResponse, Option<NodeTokenUsage>), ProcessError> {
-    let config = build_session_config(
-        node, token, agent_service, org_service, system_prompt_override, project_path,
-    );
-
-    let session = harness
-        .open_session(config)
-        .await
-        .map_err(|e| ProcessError::Execution(format!("Failed to open harness session: {e}")))?;
-
-    session
-        .commands_tx
-        .send(HarnessInbound::UserMessage(UserMessage {
-            content: prompt,
-            tool_hints: None,
-            attachments: None,
-        }))
-        .map_err(|e| ProcessError::Execution(format!("Failed to send message: {e}")))?;
-
-    let resp = collect_harness_response(&session.events_tx, timeout_secs, forwarder).await?;
-
-    if let Err(e) = harness.close_session(&session.session_id).await {
-        warn!(session_id = %session.session_id, error = %e, "Failed to close harness session");
-    }
-
-    let token_usage = resp.usage.as_ref().map(|u| NodeTokenUsage {
-        input_tokens: u.cumulative_input_tokens,
-        output_tokens: u.cumulative_output_tokens,
-        model: Some(u.model.clone()),
-    });
-
-    Ok((resp, token_usage))
-}
-
 // ---------------------------------------------------------------------------
 // Spec/Task creation for project-linked processes
 // ---------------------------------------------------------------------------
@@ -1178,7 +861,7 @@ async fn create_spec_and_tasks(
         let Some(node) = nodes_by_id.get(&nid) else { continue };
         let eligible = matches!(
             node.node_type,
-            ProcessNodeType::Action | ProcessNodeType::Prompt | ProcessNodeType::Artifact
+            ProcessNodeType::Action | ProcessNodeType::Prompt | ProcessNodeType::Artifact | ProcessNodeType::Condition
         );
         if !eligible {
             continue;
@@ -1440,369 +1123,6 @@ fn execute_ignition(node: &ProcessNode) -> Result<String, ProcessError> {
     }
 
     Ok(parts.join("\n\n"))
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn execute_action(
-    node: &ProcessNode,
-    upstream_context: &str,
-    process_id: &ProcessId,
-    run_id: &ProcessRunId,
-    store: &ProcessStore,
-    harness: &dyn HarnessLink,
-    token: Option<&str>,
-    agent_service: &AgentService,
-    org_service: &OrgService,
-    forwarder: Option<&DeltaForwarder<'_>>,
-    project_path: Option<&str>,
-) -> Result<NodeResult, ProcessError> {
-    let timeout_secs = node
-        .config
-        .get("timeout_seconds")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
-
-    let output_file = node
-        .config
-        .get("output_file")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "output.txt".to_string());
-
-    let full_prompt = if upstream_context.is_empty() {
-        node.prompt.clone()
-    } else {
-        format!(
-            "## Context from previous steps\n\n{upstream_context}\n\n## Task\n\n{}",
-            node.prompt
-        )
-    };
-
-    let output_file_path = Path::new(project_path.unwrap_or(".")).join(&output_file);
-
-    let max_continuations: u64 = node
-        .config
-        .get("max_continuations")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(2);
-
-    // -- Continuation loop --------------------------------------------------
-    // Run the initial harness session, then check if the output file is
-    // structurally truncated (unclosed JSON, trailing commas). If so, spawn
-    // additional "continuation" sessions that read the existing file and
-    // append the remaining content.
-    let mut cumulative_input_tokens: u64 = 0;
-    let mut cumulative_output_tokens: u64 = 0;
-    let mut last_model: Option<String> = None;
-    let mut last_harness_result: Option<Result<(HarnessResponse, Option<NodeTokenUsage>), ProcessError>> = None;
-    let mut last_content_blocks: Option<Vec<serde_json::Value>> = None;
-
-    for attempt in 0..=max_continuations {
-        let prompt = if attempt == 0 {
-            full_prompt.clone()
-        } else {
-            let bytes = tokio::fs::metadata(&output_file_path)
-                .await
-                .map(|m| m.len() as usize)
-                .unwrap_or(0);
-            info!(
-                node_id = %node.node_id,
-                attempt,
-                file_bytes = bytes,
-                "Starting continuation session for truncated output"
-            );
-            continuation_prompt(&output_file, bytes)
-        };
-
-        let result = run_harness_session(
-            node,
-            prompt,
-            Some(action_preamble(&output_file)),
-            harness,
-            token,
-            agent_service,
-            org_service,
-            forwarder,
-            project_path,
-            timeout_secs,
-        )
-        .await;
-
-        if let Ok((ref resp, ref tu)) = result {
-            if let Some(ref u) = tu {
-                cumulative_input_tokens += u.input_tokens;
-                cumulative_output_tokens += u.output_tokens;
-                last_model = u.model.clone();
-            }
-            last_content_blocks = Some(resp.content_blocks.clone());
-        }
-        last_harness_result = Some(result);
-
-        if attempt == max_continuations {
-            break;
-        }
-
-        // Check whether the output file still needs continuation.
-        let needs_more = match tokio::fs::read_to_string(&output_file_path).await {
-            Ok(ref content) if !content.trim().is_empty() => is_truncated_output(content),
-            _ => false,
-        };
-        if !needs_more {
-            break;
-        }
-    }
-
-    let harness_result = last_harness_result.unwrap();
-    let cumulative_usage = if cumulative_input_tokens > 0 || cumulative_output_tokens > 0 {
-        Some(NodeTokenUsage {
-            input_tokens: cumulative_input_tokens,
-            output_tokens: cumulative_output_tokens,
-            model: last_model,
-        })
-    } else {
-        None
-    };
-
-    // -- Read final output file ---------------------------------------------
-    let file_content = match tokio::fs::read_to_string(&output_file_path).await {
-        Ok(content) if !content.trim().is_empty() => {
-            info!(path = %output_file_path.display(), bytes = content.len(), "Read designated output file");
-            Some(content)
-        }
-        _ => None,
-    };
-
-    // Try to extract recovery candidates from the harness response.
-    // Priority: final_text (last turn only) > synthesized blocks > all_text.
-    let (recovery_content, token_usage, content_blocks) = match harness_result {
-        Ok((resp, _tu)) => {
-            let final_text_clean = canonicalize_output(&resp.final_text, false);
-            let all_text_clean = canonicalize_output(&resp.all_text, false);
-            let synthesized = synthesize_output_from_blocks(&resp.content_blocks);
-
-            let best_recovery = if final_text_clean.len() > 500 {
-                Some(final_text_clean)
-            } else if let Some(s) = synthesized {
-                Some(s)
-            } else if all_text_clean.len() > 500 {
-                Some(all_text_clean)
-            } else {
-                None
-            };
-            (best_recovery, cumulative_usage, last_content_blocks)
-        }
-        Err(e) => {
-            if file_content.is_some() {
-                (None, cumulative_usage, last_content_blocks)
-            } else {
-                return Err(e);
-            }
-        }
-    };
-
-    // Pick the best available content: prefer whichever source is largest,
-    // but only override the file when recovery is substantially better.
-    let chosen = match (&file_content, &recovery_content) {
-        (Some(fc), Some(rc))
-            if rc.len() > fc.len() * 3 && rc.len() > fc.len() + 500 =>
-        {
-            warn!(
-                node_id = %node.node_id,
-                file_bytes = fc.len(),
-                recovered_bytes = rc.len(),
-                "Recovery content is substantially larger than output file; using recovery"
-            );
-            recovery_content.unwrap()
-        }
-        (Some(fc), _) => fc.clone(),
-        (None, Some(_)) => {
-            warn!(
-                node_id = %node.node_id,
-                output_file = %output_file,
-                recovered_bytes = recovery_content.as_ref().map_or(0, |r| r.len()),
-                "Output file missing; using recovered content"
-            );
-            recovery_content.unwrap()
-        }
-        (None, None) => {
-            return Err(ProcessError::Execution(format!(
-                "Action node output file '{}' is missing/empty and no substantial output \
-                 could be recovered. This usually means the agent got stuck or ran out of \
-                 turns before writing results. Check the prompt, increase max_turns, or \
-                 increase timeout_seconds.",
-                output_file,
-            )));
-        }
-    };
-
-    // Persist the chosen content to disk and save the artifact.
-    if let Err(e) = tokio::fs::write(&output_file_path, chosen.as_bytes()).await {
-        warn!(node_id = %node.node_id, error = %e, "Failed to write action output to disk");
-    }
-    let rel_path = format!(
-        "process-workspaces/{}/{}/{}",
-        process_id, run_id, output_file
-    );
-    let artifact = ProcessArtifact {
-        artifact_id: ProcessArtifactId::new(),
-        process_id: *process_id,
-        run_id: *run_id,
-        node_id: node.node_id,
-        artifact_type: ArtifactType::Document,
-        name: output_file.clone(),
-        file_path: rel_path,
-        size_bytes: chosen.len() as u64,
-        metadata: serde_json::json!({}),
-        created_at: Utc::now(),
-    };
-    if let Err(e) = store.save_artifact(&artifact) {
-        warn!(node_id = %node.node_id, error = %e, "Failed to save action artifact");
-    }
-
-    Ok(NodeResult {
-        downstream_output: chosen,
-        display_output: None,
-        token_usage,
-        content_blocks,
-    })
-}
-
-fn sanitize_label_to_filename(label: &str) -> String {
-    let sanitized: String = label
-        .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
-        .collect();
-    let trimmed = sanitized.trim_matches('-').to_lowercase();
-    if trimmed.is_empty() {
-        "prompt-output.md".to_string()
-    } else {
-        format!("{trimmed}.md")
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn execute_prompt(
-    node: &ProcessNode,
-    upstream_context: &str,
-    process_id: &ProcessId,
-    run_id: &ProcessRunId,
-    _data_dir: &Path,
-    store: &ProcessStore,
-    harness: &dyn HarnessLink,
-    token: Option<&str>,
-    agent_service: &AgentService,
-    org_service: &OrgService,
-    forwarder: Option<&DeltaForwarder<'_>>,
-    project_path: Option<&str>,
-) -> Result<NodeResult, ProcessError> {
-    let timeout_secs = node
-        .config
-        .get("timeout_seconds")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
-
-    let output_file = node
-        .config
-        .get("output_file")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| sanitize_label_to_filename(&node.label));
-
-    let full_prompt = if upstream_context.is_empty() {
-        node.prompt.clone()
-    } else {
-        format!(
-            "## Context from previous steps\n\n{upstream_context}\n\n## Task\n\n{}",
-            node.prompt
-        )
-    };
-
-    let output_file_path = Path::new(project_path.unwrap_or(".")).join(&output_file);
-
-    let harness_result = run_harness_session(
-        node, full_prompt,
-        Some(action_preamble(&output_file)),
-        harness, token, agent_service, org_service, forwarder, project_path,
-        timeout_secs,
-    ).await;
-
-    let file_content = match tokio::fs::read_to_string(&output_file_path).await {
-        Ok(content) if !content.trim().is_empty() => {
-            info!(path = %output_file_path.display(), bytes = content.len(), "Read prompt output file");
-            Some(content)
-        }
-        _ => None,
-    };
-
-    let (content, token_usage, content_blocks, from_file) = if let Some(fc) = file_content {
-        let token_usage = harness_result.ok().and_then(|(_, tu)| tu);
-        (fc, token_usage, None, true)
-    } else {
-        let (resp, token_usage) = harness_result?;
-        let cleaned = canonicalize_output(&resp.final_text, false);
-        if cleaned.is_empty() {
-            return Err(ProcessError::Execution(
-                "Prompt node produced empty output".into(),
-            ));
-        }
-        (cleaned, token_usage, Some(resp.content_blocks), false)
-    };
-
-    // When content was recovered from the LLM response (not the file), write
-    // it to disk so get_artifact_content can serve it.
-    if !from_file {
-        if let Err(e) = tokio::fs::write(&output_file_path, content.as_bytes()).await {
-            warn!(
-                node_id = %node.node_id,
-                error = %e,
-                "Failed to write prompt fallback content to disk"
-            );
-        }
-    }
-
-    let artifact_type_str = node
-        .config
-        .get("artifact_type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("document");
-    let artifact_type: ArtifactType =
-        serde_json::from_value(serde_json::Value::String(artifact_type_str.to_string()))
-            .unwrap_or(ArtifactType::Document);
-
-    let rel_path = format!(
-        "process-workspaces/{}/{}/{}",
-        process_id, run_id, output_file
-    );
-    let artifact = ProcessArtifact {
-        artifact_id: ProcessArtifactId::new(),
-        process_id: *process_id,
-        run_id: *run_id,
-        node_id: node.node_id,
-        artifact_type,
-        name: output_file.clone(),
-        file_path: rel_path,
-        size_bytes: content.len() as u64,
-        metadata: serde_json::json!({}),
-        created_at: Utc::now(),
-    };
-    if let Err(e) = store.save_artifact(&artifact) {
-        warn!(node_id = %node.node_id, error = %e, "Failed to save prompt artifact");
-    }
-
-    info!(
-        node_id = %node.node_id,
-        artifact_id = %artifact.artifact_id,
-        output_file = %output_file,
-        bytes = content.len(),
-        "Prompt artifact saved"
-    );
-
-    Ok(NodeResult {
-        downstream_output: content,
-        display_output: None,
-        token_usage,
-        content_blocks,
-    })
 }
 
 async fn execute_subprocess(
@@ -2090,49 +1410,6 @@ async fn execute_foreach(
     })
 }
 
-async fn execute_condition(
-    node: &ProcessNode,
-    upstream_context: &str,
-    harness: &dyn HarnessLink,
-    token: Option<&str>,
-    agent_service: &AgentService,
-    org_service: &OrgService,
-    forwarder: Option<&DeltaForwarder<'_>>,
-    project_path: Option<&str>,
-) -> Result<NodeResult, ProcessError> {
-    let cfg = &node.config;
-    let condition_expr = cfg
-        .get("condition_expression")
-        .and_then(|v| v.as_str())
-        .unwrap_or(&node.prompt);
-
-    let evaluation_prompt = format!(
-        "Evaluate the following condition and respond with ONLY the word \"true\" or \"false\".\n\n\
-         ## Condition\n{condition_expr}\n\n\
-         ## Context\n{upstream_context}"
-    );
-
-    let condition_system = Some(
-        "You are a condition evaluator in an automated workflow. \
-         Respond with ONLY the word \"true\" or \"false\". Do not use tools."
-            .to_string(),
-    );
-
-    let (resp, token_usage) = run_harness_session(
-        node, evaluation_prompt,
-        condition_system,
-        harness, token, agent_service, org_service, forwarder, project_path,
-        60,
-    ).await?;
-
-    Ok(NodeResult {
-        downstream_output: canonicalize_output(&resp.final_text, false),
-        display_output: None,
-        token_usage,
-        content_blocks: Some(resp.content_blocks),
-    })
-}
-
 async fn execute_delay(node: &ProcessNode) -> Result<String, ProcessError> {
     let seconds = node
         .config
@@ -2146,468 +1423,9 @@ async fn execute_delay(node: &ProcessNode) -> Result<String, ProcessError> {
     Ok(format!("Delayed {seconds} seconds"))
 }
 
-const ARTIFACT_PROMPT_PREAMBLE: &str = "\
-You are producing a structured artifact in an automated workflow. \
-You will receive context from previous steps and instructions for how to \
-refine or transform that context into the final artifact. \
-Output ONLY the refined result as text in your response. No narration, no commentary, \
-no markdown wrappers unless the instructions explicitly request them.\n\n\
-NEVER use write_file or any file-writing tools. Your text response IS the artifact. \
-Even for large outputs (JSON, reports, etc.), emit everything directly as text.";
-
-const ARTIFACT_SCHEMA_PREAMBLE: &str = "\
-You are a data transformation engine in an automated workflow. \
-You will receive raw data from previous steps and a target JSON structure. \
-Your job is to extract and transform the input data so it conforms to the \
-target JSON structure. Output ONLY valid JSON matching the target shape. \
-No narration, no commentary, no markdown wrappers. \
-Fill in every field from the input data. Use null for fields you cannot populate.\n\n\
-NEVER use write_file or any file-writing tools. Your text response IS the artifact. \
-Emit the full JSON directly as text, no matter how large.";
-
-#[allow(clippy::too_many_arguments)]
-async fn execute_artifact(
-    node: &ProcessNode,
-    upstream_context: &str,
-    process_id: &ProcessId,
-    run_id: &ProcessRunId,
-    data_dir: &Path,
-    store: &ProcessStore,
-    harness: &dyn HarnessLink,
-    token: Option<&str>,
-    agent_service: &AgentService,
-    org_service: &OrgService,
-    forwarder: Option<&DeltaForwarder<'_>>,
-    project_path: Option<&str>,
-) -> Result<NodeResult, ProcessError> {
-    let cfg = &node.config;
-    let artifact_name = cfg
-        .get("artifact_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or(&node.label);
-    let artifact_type_str = cfg
-        .get("artifact_type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("report");
-    let artifact_type: ArtifactType =
-        serde_json::from_value(serde_json::Value::String(artifact_type_str.to_string()))
-            .unwrap_or(ArtifactType::Report);
-
-    let safe_name = artifact_name
-        .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "_");
-    let date_str = Utc::now().format("%Y-%m-%d");
-    let short_id = &run_id.to_string()[..8];
-    let filename = format!("{safe_name} - {date_str} - {short_id}.md");
-
-    let rel_path = format!(
-        "process-artifacts/{}/{}/{}",
-        process_id, run_id, filename
-    );
-    let dir = data_dir
-        .join("process-artifacts")
-        .join(process_id.to_string())
-        .join(run_id.to_string());
-
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .map_err(|e| ProcessError::Execution(format!("Failed to create artifact dir: {e}")))?;
-
-    let artifact_mode = cfg
-        .get("artifact_mode")
-        .and_then(|v| v.as_str())
-        .unwrap_or("prompt");
-
-    let data_content = cfg.get("data").and_then(|v| {
-        if v.is_null() {
-            return None;
-        }
-        Some(if v.is_string() {
-            v.as_str().unwrap_or_default().to_string()
-        } else {
-            serde_json::to_string_pretty(v).unwrap_or_default()
-        })
-    });
-
-    let is_schema_mode = artifact_mode == "json_schema";
-
-    let upstream_degraded = upstream_context.contains("⚠ DEGRADED OUTPUT:");
-
-    let upstream_warning = if upstream_degraded {
-        "\n\n⚠ WARNING: The input from previous steps is flagged as degraded \
-         (most tool calls failed). The data below may be incomplete or missing \
-         entirely. Use null for any fields you cannot populate from the available \
-         input. Do NOT invent data.\n"
-    } else {
-        ""
-    };
-
-    let (preamble, user_message) = if is_schema_mode {
-        let schema = data_content.as_deref().unwrap_or("{}");
-        let instructions = if node.prompt.trim().is_empty() {
-            "Transform the input data to match the target JSON structure.".to_string()
-        } else {
-            node.prompt.clone()
-        };
-        let msg = if upstream_context.is_empty() {
-            format!("## Target JSON structure\n\n{schema}\n\n## Instructions\n\n{instructions}")
-        } else {
-            format!("## Input from previous steps\n{upstream_warning}\n{upstream_context}\n\n## Target JSON structure\n\n{schema}\n\n## Instructions\n\n{instructions}")
-        };
-        (ARTIFACT_SCHEMA_PREAMBLE, msg)
-    } else {
-        let msg = if upstream_context.is_empty() {
-            format!("## Instructions\n\n{}", node.prompt)
-        } else {
-            format!(
-                "## Input from previous steps\n{upstream_warning}\n{upstream_context}\n\n## Instructions\n\n{}",
-                node.prompt
-            )
-        };
-        (ARTIFACT_PROMPT_PREAMBLE, msg)
-    };
-
-    let timeout_secs = node
-        .config
-        .get("timeout_seconds")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(DEFAULT_HARNESS_TIMEOUT_SECS);
-
-    let (resp, token_usage) = run_harness_session(
-        node, user_message,
-        Some(preamble.to_string()),
-        harness, token, agent_service, org_service, forwarder, project_path,
-        timeout_secs,
-    ).await?;
-
-    let content = canonicalize_output(&resp.final_text, true);
-    if content.is_empty() {
-        return Err(ProcessError::Execution(
-            "Artifact node produced empty output from harness".into(),
-        ));
-    }
-
-    let file_path = dir.join(&filename);
-    tokio::fs::write(&file_path, content.as_bytes())
-        .await
-        .map_err(|e| ProcessError::Execution(format!("Failed to write artifact: {e}")))?;
-
-    let artifact = ProcessArtifact {
-        artifact_id: ProcessArtifactId::new(),
-        process_id: *process_id,
-        run_id: *run_id,
-        node_id: node.node_id,
-        artifact_type,
-        name: artifact_name.to_string(),
-        file_path: rel_path,
-        size_bytes: content.len() as u64,
-        metadata: serde_json::json!({}),
-        created_at: Utc::now(),
-    };
-    store.save_artifact(&artifact)?;
-
-    info!(
-        node_id = %node.node_id,
-        artifact_id = %artifact.artifact_id,
-        path = %file_path.display(),
-        bytes = content.len(),
-        "Artifact saved"
-    );
-
-    let display = format!("Artifact saved: {} ({} bytes)", artifact_name, content.len());
-
-    Ok(NodeResult {
-        downstream_output: content,
-        display_output: Some(display),
-        token_usage,
-        content_blocks: Some(resp.content_blocks),
-    })
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-struct HarnessResponse {
-    /// Text from the model's final turn only (after the last tool result).
-    final_text: String,
-    /// Full accumulated text across all turns (for recovery when final_text is
-    /// just narration but the agent actually produced substantial output).
-    all_text: String,
-    /// Structured content blocks mirroring the agents-app conversation format.
-    content_blocks: Vec<serde_json::Value>,
-    usage: Option<SessionUsage>,
-}
-
-/// Collect the full harness conversation, capturing structured content blocks
-/// (text, tool_use, tool_result, thinking) exactly like the agents app does.
-///
-/// Also tracks tool-call boundaries so `final_text` contains only the model's
-/// output from its last turn — the actual answer, not intermediate narration.
-async fn collect_harness_response(
-    events_tx: &broadcast::Sender<HarnessOutbound>,
-    timeout_secs: u64,
-    forwarder: Option<&DeltaForwarder<'_>>,
-) -> Result<HarnessResponse, ProcessError> {
-    let mut rx = events_tx.subscribe();
-    let mut all_text = String::new();
-    let mut last_turn_text = String::new();
-    let mut text_segment = String::new();
-    let mut thinking_buf = String::new();
-    let mut in_tool_call = false;
-    let mut had_tool_calls = false;
-    let mut content_blocks: Vec<serde_json::Value> = Vec::new();
-    let mut last_tool_use_id = String::new();
-    let mut usage: Option<SessionUsage> = None;
-    let deadline = Duration::from_secs(timeout_secs);
-
-    let collect = async {
-        loop {
-            match rx.recv().await {
-                Ok(HarnessOutbound::TextDelta(delta)) => {
-                    if let Some(fwd) = forwarder {
-                        fwd.forward_text(&delta.text);
-                    }
-                    all_text.push_str(&delta.text);
-                    text_segment.push_str(&delta.text);
-                    if !in_tool_call {
-                        last_turn_text.push_str(&delta.text);
-                    }
-                }
-                Ok(HarnessOutbound::ThinkingDelta(delta)) => {
-                    if let Some(fwd) = forwarder {
-                        fwd.forward_thinking(&delta.thinking);
-                    }
-                    thinking_buf.push_str(&delta.thinking);
-                }
-                Ok(HarnessOutbound::ToolUseStart(tool)) => {
-                    if !text_segment.is_empty() {
-                        content_blocks.push(serde_json::json!({
-                            "type": "text", "text": &text_segment
-                        }));
-                        text_segment.clear();
-                    }
-                    if !thinking_buf.is_empty() {
-                        content_blocks.push(serde_json::json!({
-                            "type": "thinking", "thinking": &thinking_buf
-                        }));
-                        thinking_buf.clear();
-                    }
-                    last_tool_use_id = tool.id.clone();
-                    content_blocks.push(serde_json::json!({
-                        "type": "tool_use",
-                        "id": &tool.id,
-                        "name": &tool.name,
-                    }));
-                    if let Some(fwd) = forwarder {
-                        fwd.forward_tool_start(&tool.id, &tool.name);
-                    }
-                    in_tool_call = true;
-                    had_tool_calls = true;
-                }
-                Ok(HarnessOutbound::ToolCallSnapshot(snap)) => {
-                    if let Some(block) = content_blocks.iter_mut().rev().find(|b| {
-                        b.get("type").and_then(|t| t.as_str()) == Some("tool_use")
-                            && b.get("id").and_then(|i| i.as_str()) == Some(&snap.id)
-                    }) {
-                        block["input"] = snap.input.clone();
-                    }
-                    if let Some(fwd) = forwarder {
-                        fwd.forward_tool_snapshot(&snap.id, &snap.name, &snap.input);
-                    }
-                }
-                Ok(HarnessOutbound::ToolResult(result)) => {
-                    content_blocks.push(serde_json::json!({
-                        "type": "tool_result",
-                        "tool_use_id": &last_tool_use_id,
-                        "name": &result.name,
-                        "result": &result.result,
-                        "is_error": result.is_error,
-                    }));
-                    if let Some(fwd) = forwarder {
-                        fwd.forward_tool_result(&result.name, &result.result, result.is_error);
-                    }
-                    in_tool_call = false;
-                    last_turn_text.clear();
-                }
-                Ok(HarnessOutbound::AssistantMessageEnd(end)) => {
-                    usage = Some(end.usage);
-                    break;
-                }
-                Ok(HarnessOutbound::Error(err)) => {
-                    return Err(ProcessError::Execution(format!(
-                        "Harness error ({}): {}",
-                        err.code, err.message
-                    )));
-                }
-                Err(broadcast::error::RecvError::Closed) => {
-                    let tool_count = content_blocks.iter()
-                        .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
-                        .count();
-                    return Err(ProcessError::Execution(format!(
-                        "Harness connection closed unexpectedly after {} bytes of text \
-                         and {} tool calls. The harness process may have crashed.",
-                        all_text.len(), tool_count,
-                    )));
-                }
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!(skipped = n, "Harness event receiver lagged");
-                    continue;
-                }
-                _ => continue,
-            }
-        }
-        Ok(())
-    };
-
-    match tokio::time::timeout(deadline, collect).await {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => return Err(e),
-        Err(_) => {
-            let tool_count = content_blocks.iter()
-                .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
-                .count();
-            return Err(ProcessError::Execution(format!(
-                "Harness timed out after {timeout_secs}s. Collected {} bytes of text \
-                 and {} tool calls but session did not complete. Increase \
-                 timeout_seconds in node config or simplify the task.",
-                all_text.len(), tool_count,
-            )));
-        }
-    };
-
-    if !text_segment.is_empty() {
-        content_blocks.push(serde_json::json!({
-            "type": "text", "text": &text_segment
-        }));
-    }
-    if !thinking_buf.is_empty() {
-        content_blocks.push(serde_json::json!({
-            "type": "thinking", "thinking": &thinking_buf
-        }));
-    }
-
-    let final_text = if had_tool_calls && !last_turn_text.trim().is_empty() {
-        last_turn_text
-    } else {
-        all_text.clone()
-    };
-
-    Ok(HarnessResponse {
-        final_text,
-        all_text,
-        content_blocks,
-        usage,
-    })
-}
-
-/// Strip `<thinking>...</thinking>` blocks that some models emit as plain text
-/// instead of using the structured thinking protocol.
-fn strip_thinking_tags(text: &str) -> String {
-    let mut result = text.to_string();
-    while let Some(start) = result.find("<thinking>") {
-        if let Some(end_offset) = result[start..].find("</thinking>") {
-            result.replace_range(start..start + end_offset + "</thinking>".len(), "");
-        } else {
-            break;
-        }
-    }
-    result.trim().to_string()
-}
-
-/// Extract the final meaningful output from a multi-turn agentic response.
-///
-/// If the output ends with a fenced code block, return its contents (strips
-/// the wrapping fences). Otherwise return the full trimmed text.
-fn extract_final_output(raw: &str) -> String {
-    let trimmed = raw.trim();
-
-    if let Some(last_fence_start) = trimmed.rfind("\n```") {
-        let before_close = &trimmed[..last_fence_start];
-        if let Some(open_pos) = before_close.rfind("```") {
-            let inside_start = before_close[open_pos + 3..]
-                .find('\n')
-                .map(|i| open_pos + 3 + i + 1)
-                .unwrap_or(open_pos + 3);
-            let block = before_close[inside_start..].trim();
-            if !block.is_empty() {
-                return block.to_string();
-            }
-        }
-    }
-
-    trimmed.to_string()
-}
-
-/// Attempt to recover output from content blocks when the output file is
-/// missing and the conversation text is too short. Looks for `write_file`
-/// tool calls and returns the largest content payload, since the agent may
-/// have tried to write the file but the tool call failed.
-fn synthesize_output_from_blocks(blocks: &[serde_json::Value]) -> Option<String> {
-    // Tier 1: find the largest write_file call that has actual content.
-    let mut best_write: Option<String> = None;
-    for block in blocks {
-        let is_write = block.get("type").and_then(|t| t.as_str()) == Some("tool_use")
-            && block
-                .get("name")
-                .and_then(|n| n.as_str())
-                .map(|n| n == "write_file" || n == "write")
-                .unwrap_or(false);
-        if !is_write {
-            continue;
-        }
-        let content = block
-            .get("input")
-            .and_then(|inp| {
-                inp.get("content")
-                    .or_else(|| inp.get("contents"))
-                    .or_else(|| inp.get("text"))
-            })
-            .and_then(|v| v.as_str());
-        if let Some(c) = content {
-            if c.len() > best_write.as_ref().map_or(0, |b| b.len()) {
-                best_write = Some(c.to_string());
-            }
-        }
-    }
-    if let Some(ref w) = best_write {
-        if w.len() > 200 {
-            return best_write;
-        }
-    }
-
-    // Tier 2: concatenate substantial results from successful tool calls.
-    // When write_file calls were all truncated by MaxTokens, the actual research
-    // data lives in tool_result blocks from run_command and similar tools.
-    let skip_tools: &[&str] = &[
-        "write_file", "write", "read_file", "list_files", "find_files", "edit_file",
-    ];
-    let mut tool_outputs: Vec<&str> = Vec::new();
-    for block in blocks {
-        if block.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
-            continue;
-        }
-        if block.get("is_error").and_then(|e| e.as_bool()).unwrap_or(false) {
-            continue;
-        }
-        let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("");
-        if skip_tools.contains(&name) {
-            continue;
-        }
-        if let Some(result) = block.get("result").and_then(|r| r.as_str()) {
-            if result.len() > 200 {
-                tool_outputs.push(result);
-            }
-        }
-    }
-    if !tool_outputs.is_empty() {
-        let combined = tool_outputs.join("\n\n---\n\n");
-        if combined.len() > 500 {
-            return Some(combined);
-        }
-    }
-
-    None
-}
 
 fn parse_condition_result(output: &str) -> bool {
     let normalized = output.trim().to_lowercase();

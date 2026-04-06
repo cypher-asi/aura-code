@@ -81,7 +81,7 @@ impl SuperAgentService {
         orbit_client: Option<Arc<OrbitClient>>,
         store: Arc<RocksStore>,
         event_broadcast: broadcast::Sender<serde_json::Value>,
-        harness: Arc<dyn HarnessLink>,
+        _harness: Arc<dyn HarnessLink>,
         data_dir: std::path::PathBuf,
     ) -> Self {
         let cron_store = Arc::new(cron_store::CronStore::new(store.clone()));
@@ -94,7 +94,6 @@ impl SuperAgentService {
         let process_executor = Arc::new(aura_os_process::ProcessExecutor::new(
             process_store.clone(),
             event_broadcast.clone(),
-            harness,
             data_dir,
             store.clone(),
             agent_service.clone(),
