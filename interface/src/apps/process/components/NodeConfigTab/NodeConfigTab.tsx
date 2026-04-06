@@ -37,7 +37,7 @@ function TruncatedText({ text, mono }: { text: string; mono?: boolean }) {
             padding: 0,
             marginTop: 4,
             fontSize: 11,
-            color: "var(--color-text-link, #3b82f6)",
+            color: "var(--color-text)",
             cursor: "pointer",
           }}
         >
