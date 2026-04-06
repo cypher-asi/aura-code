@@ -1085,15 +1085,25 @@ async fn execute_action(
 
     // Try to extract recovery candidates from the harness response.
     // We do this even when the file exists so we can pick the richer content.
+    //
+    // Priority: final_text (last turn only) > synthesized blocks > all_text.
+    // final_text is preferred because it contains the model's actual answer
+    // (e.g. the fallback text output after write_file failures), while all_text
+    // includes the full conversation narration which pollutes the artifact.
     let (recovery_content, token_usage, content_blocks) = match harness_result {
         Ok((resp, tu)) => {
+            let final_text_clean = canonicalize_output(&resp.final_text, false);
             let all_text_clean = canonicalize_output(&resp.all_text, false);
             let synthesized = synthesize_output_from_blocks(&resp.content_blocks);
-            let best_recovery = match (all_text_clean.len() > 500, synthesized) {
-                (true, Some(ref s)) if all_text_clean.len() >= s.len() => Some(all_text_clean),
-                (_, Some(s)) => Some(s),
-                (true, None) => Some(all_text_clean),
-                _ => None,
+
+            let best_recovery = if final_text_clean.len() > 500 {
+                Some(final_text_clean)
+            } else if let Some(s) = synthesized {
+                Some(s)
+            } else if all_text_clean.len() > 500 {
+                Some(all_text_clean)
+            } else {
+                None
             };
             (best_recovery, tu, Some(resp.content_blocks))
         }
