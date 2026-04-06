@@ -64,7 +64,7 @@ function useRuntimeTest(selectedAgent: Agent | null) {
       setRuntimeTestMessage(result.message || "Runtime test passed.");
       const details = [
         `${formatAdapterLabel(result.adapter_type)} on ${formatRunsOnLabel(result.environment)}`,
-        `Authentication: ${formatAuthSourceLabel(result.auth_source)}`,
+        `Authentication: ${formatAuthSourceLabel(result.auth_source, result.adapter_type)}`,
         result.integration_name ? `Integration: ${result.integration_name}` : null,
         result.provider ? `Provider: ${result.provider}` : null,
         result.model ? `Model: ${result.model}` : null,

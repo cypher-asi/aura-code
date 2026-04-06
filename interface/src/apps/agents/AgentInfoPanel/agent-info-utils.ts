@@ -1,7 +1,13 @@
 import type { Agent, Session } from "../../../types";
+import {
+  getAdapterLabel,
+  getConnectionAuthLabel,
+  getLocalAuthLabel,
+} from "../../../lib/integrationCatalog";
 
 export interface RuntimeReadiness {
   tone: "info" | "success" | "warning";
+  label: string;
   title: string;
   message: string;
 }
@@ -13,26 +19,21 @@ export type AnnotatedSession = Session & {
 };
 
 export function formatAdapterLabel(adapterType?: string | null): string {
-  switch (adapterType) {
-    case "claude_code":
-      return "Claude Code";
-    case "codex":
-      return "Codex";
-    case "aura_harness":
-    default:
-      return "Aura";
-  }
+  return getAdapterLabel(adapterType ?? "aura_harness");
 }
 
-export function formatAuthSourceLabel(authSource?: string | null): string {
+export function formatAuthSourceLabel(
+  authSource?: string | null,
+  adapterType?: string | null,
+): string {
   switch (authSource) {
     case "org_integration":
-      return "Team Integration";
+      return getConnectionAuthLabel(adapterType ?? "aura_harness");
     case "local_cli_auth":
-      return "Local Login";
+      return getLocalAuthLabel(adapterType ?? "aura_harness");
     case "aura_managed":
     default:
-      return "Aura Billing";
+      return "Managed by Aura";
   }
 }
 
@@ -59,40 +60,43 @@ export function describeRuntimeReadiness(
     if (!integration) {
       return {
         tone: "warning",
-        title: "Team integration missing",
+        label: "Needs connection",
+        title: "Connection missing",
         message:
-          "This agent expects a team integration, but none is currently attached. Attach one before running the agent.",
+          "This agent expects a workspace connection, but none is currently attached. Attach one before running the agent.",
       };
     }
     if (!integration.has_secret) {
       return {
         tone: "warning",
-        title: "Integration missing a key",
-        message: `${integration.name} is attached, but it does not have a stored key yet. Add one in Integrations before running this agent.`,
+        label: "Needs key",
+        title: "Connection missing a key",
+        message: `${integration.name} is attached, but it does not have a stored key yet. Add one in Connections before running this agent.`,
       };
     }
     return {
       tone: "success",
-      title: "Team integration ready",
-      message: `${integration.name} has a stored key. Keys stay at the org integration layer and are resolved only at runtime.`,
+      label: "Ready",
+      title: "Connection ready",
+      message: `${integration.name} has a stored key. Keys stay in Connections and are resolved only at runtime.`,
     };
   }
 
   if (agent.auth_source === "local_cli_auth") {
-    const runtimeName =
-      agent.adapter_type === "claude_code" ? "Claude Code" : "Codex";
     return {
       tone: "info",
+      label: "Local login",
       title: "Uses a local login",
-      message: `${runtimeName} uses the CLI login available to aura-os-server on this machine. Check Runtime verifies that the CLI is installed and logged in.`,
+      message: `${getLocalAuthLabel(agent.adapter_type ?? "aura_harness")} uses the login available to aura-os-server on this machine.`,
     };
   }
 
   return {
     tone: "success",
-    title: "Uses Aura billing",
+    label: "Managed",
+    title: "Managed by Aura",
     message:
-      "Aura Billing is managed by Aura. Check Runtime verifies the live runtime path for this agent.",
+      "Aura provides the credentials and billing for this runtime path.",
   };
 }
 

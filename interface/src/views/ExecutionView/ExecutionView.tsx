@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { useEventStore } from "../../stores/event-store";
+import { useEventStore } from "../../stores/event-store/index";
 import { useLoopControl } from "../../hooks/use-loop-control";
 import { AgentStatusBar } from "../AgentStatusBar";
 import { TaskFeed } from "../TaskFeed";

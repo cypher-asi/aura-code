@@ -4,6 +4,7 @@ mod crud;
 mod instances;
 mod runtime;
 mod sessions;
+mod workspace_tools;
 
 pub(crate) use chat::{list_agent_events, list_events, send_agent_event_stream, send_event_stream};
 pub(crate) use crud::{
@@ -27,5 +28,4 @@ pub mod conversions_pub {
 }
 pub mod chat_pub {
     pub use super::chat::session_events_to_conversation_history;
-    pub(crate) use super::chat::get_or_create_chat_session;
 }

@@ -21,7 +21,7 @@ import { ProjectStatsView } from "./views/ProjectStatsView";
 import { apps } from "./apps/registry";
 import { getLastApp } from "./utils/storage";
 
-import "./stores/event-store";
+import "./stores/event-store/index";
 import "./stores/follow-store";
 import "./stores/profile-status-store";
 

@@ -1,10 +1,13 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
+use reqwest::Url;
 use serde::Serialize;
+use serde_json::Value;
 
 use aura_os_core::*;
 use aura_os_network::{NetworkOrg, NetworkOrgInvite, NetworkOrgMember};
+use aura_os_orgs::IntegrationSecretUpdate;
 
 use crate::dto::SetBillingRequest;
 use crate::dto::{CreateOrgIntegrationRequest, UpdateOrgIntegrationRequest};
@@ -117,6 +120,88 @@ fn map_org_err(e: aura_os_orgs::OrgError) -> (StatusCode, Json<ApiError>) {
     }
 }
 
+fn validate_mcp_server_config(
+    kind: &OrgIntegrationKind,
+    provider: &str,
+    provider_config: Option<&Value>,
+) -> ApiResult<()> {
+    if *kind != OrgIntegrationKind::McpServer {
+        return Ok(());
+    }
+    if provider.trim() != "mcp_server" {
+        return Err(ApiError::bad_request(
+            "MCP server integrations must use the `mcp_server` provider.",
+        ));
+    }
+    let config = provider_config
+        .and_then(Value::as_object)
+        .ok_or_else(|| ApiError::bad_request("MCP server integrations require an object provider_config."))?;
+    let transport = config
+        .get("transport")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ApiError::bad_request("MCP server integrations require a `transport`."))?;
+
+    match transport {
+        "stdio" => {
+            let command = config.get("command").and_then(Value::as_str).map(str::trim);
+            if command.filter(|value| !value.is_empty()).is_none() {
+                return Err(ApiError::bad_request(
+                    "Stdio MCP servers require a non-empty `command`.",
+                ));
+            }
+        }
+        "http" | "streamable_http" => {
+            let url = config.get("url").and_then(Value::as_str).map(str::trim);
+            let url = url.filter(|value| !value.is_empty()).ok_or_else(|| {
+                ApiError::bad_request("HTTP MCP servers require a non-empty `url`.")
+            })?;
+            if Url::parse(url).is_err() {
+                return Err(ApiError::bad_request("HTTP MCP servers require a valid absolute `url`."));
+            }
+        }
+        other => {
+            return Err(ApiError::bad_request(format!(
+                "Unsupported MCP transport `{other}`. Expected `stdio` or `http`."
+            )));
+        }
+    }
+
+    if let Some(env) = config.get("env") {
+        let env = env.as_object().ok_or_else(|| {
+            ApiError::bad_request("MCP server `env` must be a JSON object of string values.")
+        })?;
+        if env.values().any(|value| !value.is_string()) {
+            return Err(ApiError::bad_request(
+                "MCP server `env` must only contain string values.",
+            ));
+        }
+    }
+
+    if let Some(secret_env_var) = config.get("secretEnvVar") {
+        let secret_env_var = secret_env_var.as_str().map(str::trim).ok_or_else(|| {
+            ApiError::bad_request("MCP server `secretEnvVar` must be a string when provided.")
+        })?;
+        if secret_env_var.is_empty() {
+            return Err(ApiError::bad_request(
+                "MCP server `secretEnvVar` cannot be empty when provided.",
+            ));
+        }
+    }
+
+    if let Some(cwd) = config.get("cwd") {
+        let cwd = cwd.as_str().map(str::trim).ok_or_else(|| {
+            ApiError::bad_request("MCP server `cwd` must be a string when provided.")
+        })?;
+        if cwd.is_empty() {
+            return Err(ApiError::bad_request("MCP server `cwd` cannot be empty when provided."));
+        }
+    }
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Org CRUD — network only; billing from settings
 // ---------------------------------------------------------------------------
@@ -227,6 +312,7 @@ pub(crate) async fn create_integration(
     Path(org_id): Path<OrgId>,
     Json(req): Json<CreateOrgIntegrationRequest>,
 ) -> ApiResult<(StatusCode, Json<OrgIntegration>)> {
+    validate_mcp_server_config(&req.kind, &req.provider, req.provider_config.as_ref())?;
     let integration = state
         .org_service
         .upsert_integration(
@@ -234,8 +320,13 @@ pub(crate) async fn create_integration(
             None,
             req.name,
             req.provider,
+            req.kind,
             req.default_model,
-            req.api_key,
+            req.provider_config,
+            match req.api_key {
+                Some(secret) => IntegrationSecretUpdate::Set(secret),
+                None => IntegrationSecretUpdate::Preserve,
+            },
         )
         .map_err(map_org_err)?;
     Ok((StatusCode::CREATED, Json(integration)))
@@ -252,20 +343,30 @@ pub(crate) async fn update_integration(
         .get_integration(&org_id, &integration_id)
         .map_err(map_org_err)?
         .ok_or_else(|| ApiError::not_found("integration not found"))?;
+    let provider = req.provider.clone().unwrap_or_else(|| existing.provider.clone());
+    let kind = req.kind.clone().unwrap_or_else(|| existing.kind.clone());
+    let provider_config = match req.provider_config.clone() {
+        Some(value) => value,
+        None => existing.provider_config.clone(),
+    };
+    validate_mcp_server_config(&kind, &provider, provider_config.as_ref())?;
     let integration = state
         .org_service
         .upsert_integration(
             &org_id,
             Some(&integration_id),
             req.name.unwrap_or(existing.name),
-            req.provider.unwrap_or(existing.provider),
+            provider,
+            kind,
             match req.default_model {
                 Some(value) => value,
                 None => existing.default_model,
             },
+            provider_config,
             match req.api_key {
-                Some(value) => value,
-                None => None,
+                Some(Some(value)) => IntegrationSecretUpdate::Set(value),
+                Some(None) => IntegrationSecretUpdate::Clear,
+                None => IntegrationSecretUpdate::Preserve,
             },
         )
         .map_err(map_org_err)?;

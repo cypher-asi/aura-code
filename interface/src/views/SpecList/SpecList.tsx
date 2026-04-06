@@ -3,7 +3,7 @@ import { api } from "../../api/client";
 import type { Spec } from "../../types";
 import type { AuraEvent } from "../../types/aura-events";
 import { EventType } from "../../types/aura-events";
-import { useEventStore } from "../../stores/event-store";
+import { useEventStore } from "../../stores/event-store/index";
 import { useSidekickStore } from "../../stores/sidekick-store";
 import { useShallow } from "zustand/react/shallow";
 import { useProjectActions } from "../../stores/project-action-store";

@@ -1,5 +1,5 @@
 import { GroupCollapsible, Panel, Badge, Text } from "@cypher-asi/zui";
-import { useEventStore } from "../../stores/event-store";
+import { useEventStore } from "../../stores/event-store/index";
 import { useLoopControl } from "../../hooks/use-loop-control";
 import { AgentStatusBar } from "../AgentStatusBar";
 import { LoopControls } from "../LoopControls";

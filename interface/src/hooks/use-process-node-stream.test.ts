@@ -3,7 +3,7 @@ import { renderHook } from "@testing-library/react";
 type SubscribeCallback = (event: { content: Record<string, unknown> }) => void;
 const subscribeMap = new Map<string, Set<SubscribeCallback>>();
 
-vi.mock("../stores/event-store", () => ({
+vi.mock("../stores/event-store/index", () => ({
   useEventStore: (selector: (s: { subscribe: unknown }) => unknown) =>
     selector({
       subscribe: (type: string, cb: SubscribeCallback) => {

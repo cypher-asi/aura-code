@@ -1,0 +1,142 @@
+[
+  {
+    "name": "list_org_integrations",
+    "description": "List saved org integrations that Aura OS can use for shared tools or runtime auth.",
+    "promptSignature": "list_org_integrations(provider?)",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Optional provider filter such as github, linear, slack, or notion."
+        }
+      }
+    }
+  },
+  {
+    "name": "github_list_repos",
+    "provider": "github",
+    "description": "List GitHub repositories accessible through a saved org integration.",
+    "promptSignature": "github_list_repos(integration_id?)",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "integration_id": {
+          "type": "string",
+          "description": "Optional org integration id when multiple GitHub integrations exist."
+        }
+      }
+    }
+  },
+  {
+    "name": "github_create_issue",
+    "provider": "github",
+    "description": "Create a GitHub issue through a saved org integration.",
+    "promptSignature": "github_create_issue(owner, repo, title, body?, integration_id?)",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "integration_id": { "type": "string" },
+        "owner": { "type": "string", "description": "Repository owner or org name." },
+        "repo": { "type": "string", "description": "Repository name." },
+        "title": { "type": "string", "description": "Issue title." },
+        "body": { "type": "string", "description": "Optional markdown issue body." }
+      },
+      "required": ["owner", "repo", "title"]
+    }
+  },
+  {
+    "name": "linear_list_teams",
+    "provider": "linear",
+    "description": "List Linear teams available through a saved org integration.",
+    "promptSignature": "linear_list_teams(integration_id?)",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "integration_id": { "type": "string" }
+      }
+    }
+  },
+  {
+    "name": "linear_create_issue",
+    "provider": "linear",
+    "description": "Create a Linear issue through a saved org integration.",
+    "promptSignature": "linear_create_issue(team_id, title, description?, integration_id?)",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "integration_id": { "type": "string" },
+        "team_id": { "type": "string", "description": "Linear team id from linear_list_teams." },
+        "title": { "type": "string", "description": "Issue title." },
+        "description": { "type": "string", "description": "Optional issue description." }
+      },
+      "required": ["team_id", "title"]
+    }
+  },
+  {
+    "name": "slack_list_channels",
+    "provider": "slack",
+    "description": "List Slack channels available through a saved org integration.",
+    "promptSignature": "slack_list_channels(integration_id?)",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "integration_id": { "type": "string" }
+      }
+    }
+  },
+  {
+    "name": "slack_post_message",
+    "provider": "slack",
+    "description": "Post a message to Slack through a saved org integration.",
+    "promptSignature": "slack_post_message(channel_id, text, integration_id?)",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "integration_id": { "type": "string" },
+        "channel_id": { "type": "string", "description": "Slack channel id." },
+        "text": { "type": "string", "description": "Message text to send." }
+      },
+      "required": ["channel_id", "text"]
+    }
+  },
+  {
+    "name": "notion_search_pages",
+    "provider": "notion",
+    "description": "Search Notion pages through a saved org integration.",
+    "promptSignature": "notion_search_pages(query, integration_id?)",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "integration_id": { "type": "string" },
+        "query": { "type": "string", "description": "Search query." }
+      },
+      "required": ["query"]
+    }
+  },
+  {
+    "name": "notion_create_page",
+    "provider": "notion",
+    "description": "Create a Notion page under a parent page through a saved org integration.",
+    "promptSignature": "notion_create_page(parent_page_id, title, content?, integration_id?)",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "integration_id": { "type": "string" },
+        "parent_page_id": { "type": "string", "description": "Parent Notion page id." },
+        "title": { "type": "string", "description": "Page title." },
+        "content": { "type": "string", "description": "Optional page body content." }
+      },
+      "required": ["parent_page_id", "title"]
+    }
+  }
+]

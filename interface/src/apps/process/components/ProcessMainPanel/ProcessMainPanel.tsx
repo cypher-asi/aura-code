@@ -5,7 +5,7 @@ import { PageEmptyState } from "@cypher-asi/zui";
 import { ResponsiveMainLane } from "../../../../components/ResponsiveMainLane";
 import { useProcessStore } from "../../stores/process-store";
 import { useProcessSidekickStore, type NodeRunStatus } from "../../stores/process-sidekick-store";
-import { useEventStore } from "../../../../stores/event-store";
+import { useEventStore } from "../../../../stores/event-store/index";
 import { EventType } from "../../../../types/aura-events";
 import { processApi } from "../../../../api/process";
 import type { ProcessRun } from "../../../../types";

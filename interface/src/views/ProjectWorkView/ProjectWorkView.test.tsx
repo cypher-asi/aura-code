@@ -26,7 +26,7 @@ vi.mock("../../stores/project-action-store", () => ({
   useProjectActions: () => mockUseProjectContext(),
 }));
 
-vi.mock("../../stores/event-store", () => ({
+vi.mock("../../stores/event-store/index", () => ({
   useEventStore: (selector: (state: { connected: boolean }) => unknown) => selector({ connected: true }),
 }));
 

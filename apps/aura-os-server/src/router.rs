@@ -12,8 +12,8 @@ use tower_http::trace::TraceLayer;
 
 use crate::handlers::{
     agents, auth, billing, cron, dev_loop, feed, files, follows, generation, harness_proxy,
-    leaderboard, log, orgs, process, project_stats, projects, remote_files, remote_terminal, specs,
-    super_agent, swarm, system, tasks, terminal, users, ws,
+    leaderboard, log, org_tools, orgs, process, project_stats, projects, remote_files,
+    remote_terminal, specs, super_agent, swarm, system, tasks, terminal, users, ws,
 };
 use crate::state::AppState;
 
@@ -177,6 +177,10 @@ fn org_routes() -> Router<AppState> {
         .route(
             "/api/orgs/:org_id/integrations/:integration_id",
             put(orgs::update_integration).delete(orgs::delete_integration),
+        )
+        .route(
+            "/api/orgs/:org_id/tool-actions/:tool_name",
+            post(org_tools::call_tool),
         )
         .route("/api/invites/:token/accept", post(orgs::accept_invite))
         .route(

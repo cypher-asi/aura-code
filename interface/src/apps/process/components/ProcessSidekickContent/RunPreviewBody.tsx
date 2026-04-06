@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Check } from "lucide-react";
 import { useProcessStore } from "../../stores/process-store";
 import { useProcessSidekickStore } from "../../stores/process-sidekick-store";
-import { useEventStore } from "../../../../stores/event-store";
+import { useEventStore } from "../../../../stores/event-store/index";
 import { EventType } from "../../../../types/aura-events";
 import { processApi } from "../../../../api/process";
 import { formatTokensCompact as formatTokens, formatCost } from "../../../../utils/format";

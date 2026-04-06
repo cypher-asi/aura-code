@@ -1,6 +1,6 @@
-# Agent Runtime And Integrations Plan
+# Agent Runtime And Execution Plan
 
-This document is the current reference for Aura OS runtimes, org-level integrations, and the shared project loop.
+This document is the current reference for Aura OS adapters, connections, apps, MCP servers, and execution placement.
 
 It is intentionally product-shaped, not infrastructure-shaped:
 - what the user-facing model is
@@ -11,12 +11,14 @@ It is intentionally product-shaped, not infrastructure-shaped:
 
 ## Goal
 
-Support multiple agent runtimes without fragmenting the product.
+Support multiple agent adapters without fragmenting the product.
 
 The intended model is:
 - Aura OS is the control plane
 - adapters are execution layers
-- integrations are org-level shared credentials and external connections
+- connections are org-level provider credentials
+- apps are org-level external work systems
+- MCP servers are another source of external tools
 - environments decide where execution runs
 
 The product should not become:
@@ -24,40 +26,52 @@ The product should not become:
 - another loop for Codex
 - another loop for Claude Code
 
-If Aura OS exposes a governed workflow surface, all supported runtimes should converge on that same surface.
+If Aura OS exposes a governed workflow surface, all supported adapters should converge on that same surface.
 
 ## Product Model
 
-### Integrations
+### Connections
 
-Integrations are org-level shared setup.
+Connections are org-level provider credentials used by adapters.
 
-Today, the primary integrations are model/provider integrations:
-- Anthropic
-- OpenAI
+Examples:
+- `Anthropic`
+- `OpenAI`
+- `Google Gemini`
+- `xAI`
+- `OpenRouter`
 
-Later, the same org-level concept should also hold tool integrations:
-- Linear
-- GitHub
-- Slack
-- MCP servers
-- internal APIs
+Connections power model/runtime access.
 
-So the durable top-level product term is:
-- `Integrations`
+### Apps
 
-And later we can split that into:
-- model integrations
-- tool integrations
+Apps are org-level external work systems.
 
-### Runtime
+Examples:
+- `Linear`
+- `GitHub`
+- `Slack`
+- `Notion`
 
-Agents choose a runtime.
+Apps can contribute tools into Aura OS through a first-class app provider contract.
 
-Current runtimes:
+### MCP Servers
+
+MCP Servers are attachable external tool sources.
+
+They can contribute dynamic tools into the same workspace tool surface that adapters and Aura OS consume.
+
+### Adapter
+
+Agents choose an adapter.
+
+Current adapters:
 - `Aura`
 - `Claude Code`
 - `Codex`
+- `Gemini CLI`
+- `OpenCode`
+- `Cursor`
 
 Internal ids still exist in code:
 - `aura_harness`
@@ -65,11 +79,11 @@ Internal ids still exist in code:
 - `codex`
 
 But the user-facing concept is:
-- `Runtime`
+- `Adapter`
 
 ### Authentication
 
-Authentication explains how the selected runtime gets access.
+Authentication explains how the selected adapter gets access.
 
 Current modes:
 - `Aura Billing`
@@ -81,7 +95,7 @@ Current modes:
 
 ### Runs On
 
-Runs On explains where the runtime executes.
+Runs On explains where the adapter executes.
 
 Current environments:
 - `This Machine`
@@ -91,9 +105,10 @@ Current environments:
 
 ## Simple Rule
 
-- runtime chooses the execution brain
-- integration is the shared external setup
-- authentication explains how that runtime gets access
+- adapter chooses the execution brain
+- connection explains which provider credentials are available
+- app explains which external systems are connected
+- authentication explains how that adapter gets access
 - runs on chooses execution placement
 
 ## Authority Boundary
@@ -119,15 +134,15 @@ Adapters do runtime work:
 
 Important practical rule:
 - if something does not require AI, Aura OS should just do it directly
-- if something requires AI work, the selected runtime path is used
+- if something requires AI work, the selected adapter path is used
 
 Examples:
 - move task -> Aura OS
 - update workflow state -> Aura OS
 - save project metadata -> Aura OS
-- create a Linear issue later -> Aura OS
-- generate a response -> selected runtime
-- write code -> selected runtime
+- create a Linear issue later -> Aura OS or a governed app tool path
+- generate a response -> selected adapter
+- write code -> selected adapter
 
 ## Shared Project Loop
 
@@ -138,12 +153,12 @@ The most important architectural rule now is:
 
 This means:
 - Aura OS conducts the project workflow
-- the runtime is the execution layer that reasons and decides which tool to call
+- the adapter is the execution layer that reasons and decides which tool to call
 - persisted state changes still happen through Aura OS
 
 ### What Shared Means
 
-For project-attached chat, the runtime should be able to use the same control-plane surface regardless of whether the runtime is:
+For project-attached chat, the adapter should be able to use the same control-plane surface regardless of whether the adapter is:
 - Aura
 - Codex
 - Claude Code
@@ -181,7 +196,7 @@ This is the key product shift:
 
 ## How The Shared Loop Works
 
-For external runtimes, Aura OS now uses an MCP bridge for project-attached chat.
+For external adapters, Aura OS now uses an MCP bridge for project-attached chat.
 
 That means:
 - Aura OS starts a session-scoped MCP server
@@ -196,6 +211,15 @@ Important details:
 - no second runtime protocol was invented
 - workspace/file operations still belong to the runtime layer
 - control-plane actions stay in Aura OS
+
+One important transport detail:
+- inside Aura OS, tools can come from multiple source kinds:
+  - Aura-native tools
+  - first-class app-provider tools
+  - dynamic MCP-backed tools
+- but for external project-attached adapters like `Codex` and `Claude Code`, Aura packages the active tool surface through one session-scoped MCP bridge
+- so those adapters do not need separate logic for each internal tool source
+- from the adapter's perspective, they are all just MCP tools exposed by Aura for that session
 
 ## Guardrails Against Drift
 
@@ -225,49 +249,64 @@ This manifest is the source of truth for:
 
 This does not make drift impossible forever, but it makes silent drift much harder.
 
-## Tool Integration Boundary
+## Tool Boundary
 
-Tool integrations should usually be mediated by Aura OS, not directly owned by each adapter.
+External tools should usually be mediated by Aura OS, not directly owned by each adapter.
 
 That means:
 - stateful product actions stay governed by Aura OS
 - adapters should not become the source of truth for external business state
 
-Example with Linear later:
-- org adds a Linear integration
+Example with Linear:
+- org adds a Linear app
 - an agent may ask to create or update a Linear issue
-- Aura OS should perform the Linear action through the org integration layer
+- Aura OS should perform the Linear action through the shared app-provider or MCP tool layer
 - the adapter should not permanently own the Linear token
 
 This keeps the system cleaner:
 - one source of truth
 - better auditability
 - easier permission control
-- less duplicated secret handling across runtimes
+- less duplicated secret handling across adapters
 
-## Current Offering
+## Current Product Model
 
 Today, Aura OS offers:
 
-1. Org-level model integrations
-- Anthropic integration
-- OpenAI integration
+1. Org-level `Connections`
+- Anthropic
+- OpenAI
+- Google Gemini
+- xAI
+- OpenRouter
 
-2. Agent runtime selection
+2. Org-level `Apps`
+- GitHub
+- Linear
+- Slack
+- Notion
+
+3. Org-level `MCP Servers`
+- dynamic external tool sources
+
+4. Per-agent `Adapters`
 - Aura
 - Claude Code
 - Codex
+- Gemini CLI
+- OpenCode
+- Cursor
 
-3. Per-agent authentication choice
+5. Per-agent authentication choice
 - Aura Billing
 - Use Team Integration
 - Use Local Login
 
-4. Per-agent execution placement
-- local path working today
-- cloud/swarm path modeled, but not yet fully validated end to end
+6. Per-agent execution placement
+- `This Machine`
+- `Isolated Cloud Runtime`
 
-5. Shared project control-plane tools for project-attached chat
+7. Shared project control-plane tools for project-attached chat
 - available across the supported runtime paths described below
 
 ## Current Support Matrix
@@ -277,6 +316,8 @@ Today, Aura OS offers:
 Supports:
 - `Aura Billing`
 - `Use Team Integration`
+- `This Machine`
+- `Isolated Cloud Runtime`
 
 Current practical provider support for `Use Team Integration`:
 - Anthropic only
@@ -291,6 +332,7 @@ So today:
 Supports:
 - `Use Local Login`
 - `Use Team Integration`
+- `This Machine`
 
 Current provider expectation for team integration:
 - Anthropic
@@ -304,6 +346,7 @@ So today:
 Supports:
 - `Use Local Login`
 - `Use Team Integration`
+- `This Machine`
 
 Current provider expectation for team integration:
 - OpenAI
@@ -312,9 +355,37 @@ So today:
 - `Codex + local login` works if the `aura-os-server` process can run Codex with valid local auth
 - `Codex + OpenAI team integration` is the matching provider-backed path
 
+### Gemini CLI
+
+Supports:
+- `Use Local Login`
+- `Use Team Integration`
+- `This Machine`
+
+Current provider expectation for team integration:
+- Google Gemini
+
+### OpenCode
+
+Supports:
+- `Use Team Integration`
+- `This Machine`
+
+Current provider expectation for team integration:
+- provider-backed multi-model routing through workspace connections
+
+### Cursor
+
+Supports:
+- `Use Local Login`
+- `This Machine`
+
+Current provider expectation for team integration:
+- not implemented as a remote/provider-backed path yet
+
 ## Important Local-Login Truth
 
-For local-login runtimes, the login state belongs to the server process environment.
+For local-login adapters, the login state belongs to the server process environment.
 
 That means:
 - `Claude Code + Use Local Login + This Machine`
@@ -349,7 +420,10 @@ So the current product truth is:
 The current user-facing language should be:
 
 - `Integrations`
-- `Runtime`
+- `Connections`
+- `Apps`
+- `MCP Servers`
+- `Adapter`
 - `Runs On`
 - `Authentication`
 - `Use Team Integration`
@@ -374,10 +448,30 @@ Stronger future model:
 - `Isolated Cloud Runtime` is the stronger boundary for BYOK and sensitive workloads
 
 Bridge-specific truth:
-- runtime-side project tool access is session-scoped
+- adapter-side project tool access is session-scoped
 - external project tool bridges are initialized with runtime-scoped auth/context
 - for local/dev this is acceptable today
 - future hardening can tighten how that context is injected and audited
+
+## Why Swarm Exists
+
+Swarm does not exist to improve model quality.
+
+It exists to provide:
+- isolated execution
+- more consistent environments
+- background durability
+- centralized policy and secret handling
+- better scaling than one local host process per agent
+
+Local execution still has benefits:
+- easier CLI reuse
+- easier local-login reuse
+- closer parity with the user's workstation
+
+So the tradeoff is:
+- local is simpler and more flexible
+- swarm is cleaner, more durable, and more governable
 
 ## Swarm Expectations
 
@@ -395,7 +489,48 @@ So for swarm/cloud later we still want:
 
 Today:
 - swarm is modeled in the product
-- the fully validated product path is still local
+- the fully validated product path is still local for non-Aura adapters
+
+## Harness Path vs External Adapter Path
+
+This is the most important implementation distinction.
+
+### Aura / Harness Path
+
+For `Aura`, the harness is the runtime.
+
+That means:
+- Aura OS opens a harness session
+- the harness talks directly to the model provider
+- the harness emits the runtime event stream
+
+In this path, the harness itself must know how to speak to the provider.
+
+### External Adapter Path
+
+For `Claude Code`, `Codex`, `Gemini CLI`, `OpenCode`, and `Cursor`, the adapter CLI is the runtime.
+
+That means:
+- Aura OS prepares context, tools, and orchestration
+- Aura OS launches the adapter locally
+- the adapter talks to its provider itself
+- Aura OS parses the adapter output back into Aura events
+
+In this path, Aura OS is still the control plane, but it is not the inner model loop.
+
+### Why This Matters For Swarm
+
+Supporting a non-Aura adapter on swarm is not just "pass the API key into a VM".
+
+We would need one of two things:
+
+1. teach the harness more providers
+- so the harness itself can execute OpenAI, Gemini, and others remotely
+
+2. build a remote external-adapter runner
+- so swarm can run the actual CLI remotely instead of only on the local host
+
+Today, the harness path is the only fully modeled swarm path.
 
 ## What Works Today
 
@@ -416,9 +551,9 @@ Also true:
 
 These should stay explicit:
 
-1. Aura BYOK is Anthropic-only today
+1. Aura team-integration support in the harness is Anthropic-only today
 - the framework is generic enough to grow
-- the current server-to-harness provider override is only implemented for Anthropic
+- the current harness provider factory only implements Anthropic
 
 2. Claude local login is environment-dependent
 - if the server process is not logged into Claude, this path fails
@@ -430,25 +565,26 @@ These should stay explicit:
 4. Standalone chat is not yet the full shared workflow surface
 - the strongest parity story today is project-attached chat
 
-5. Swarm path is not the fully validated path yet
-- the local product path is still the main working path today
+5. Swarm path is not universal yet
+- Aura can use swarm
+- non-Aura adapters are still local-only today
 
 6. Deeper internal convergence is not fully done yet
 - the exposed shared project surface is aligned
 - there is still room to further converge internal service paths over time
 
-## Why Aura Supports Only Anthropic Today
+## Why Aura Supports Only Anthropic In Swarm Today
 
 The limitation is not the overall model. It is the current provider implementation.
 
 Today:
-- Aura OS builds session provider config only for Anthropic
-- the harness provider factory only instantiates Anthropic from session overrides
+- Aura OS can build session provider config for workspace-backed auth
+- but the harness provider factory only instantiates Anthropic from those overrides
 
 So supporting more providers requires:
 - adding another provider implementation in the harness
 - extending the provider factory
-- extending Aura OS integration-to-provider mapping
+- extending Aura OS connection-to-provider mapping
 - validating the full path end to end
 
 This is additive work, not a redesign.
@@ -471,9 +607,9 @@ We now have three useful confidence layers:
 
 This does not remove all operational risk, but it is a much stronger position than ad hoc manual validation alone.
 
-## Tool Integration Direction
+## Tool Direction
 
-Later, integrations should expand beyond model providers.
+The product already needs to support more than model providers.
 
 Example:
 - org adds Anthropic
@@ -481,35 +617,35 @@ Example:
 
 Then:
 - Aura, Claude, or Codex may use Anthropic or OpenAI for model execution
-- Aura OS should use the Linear integration when the system needs to create or update Linear state
+- Aura OS should use the Linear app or Linear MCP tools when the system needs to create or update Linear state
 
 Important distinction:
-- model integrations help a runtime talk to a model
-- tool integrations help Aura OS perform governed external actions
+- connections help an adapter talk to a model
+- apps and MCP servers help Aura OS and adapters access governed external actions
 
 ## What This Does Not Change
 
-Even with more runtimes and more integrations:
+Even with more adapters and more external systems:
 - Aura OS still owns workflow state
 - Aura OS still owns projects/specs/tasks
 - Aura OS still owns non-AI actions
-- integrations stay org-level
-- runtimes stay execution-level
+- connections, apps, and MCP servers stay org-level
+- adapters stay execution-level
 
 ## Practical Build Order
 
 The practical order now looks like:
 
-1. runtime / auth / environment foundation
-2. Aura BYOK through per-session provider config
+1. adapter / auth / environment foundation
+2. Aura team integration through per-session provider config
 3. shared project control-plane surface for project-attached chat
 4. drift guardrails and parity validation
 5. stronger cloud/swarm hardening
-6. more provider support for Aura BYOK
-7. broader tool integrations through the org integration layer
+6. more provider support for Aura team integration in swarm
+7. broader app-provider and MCP tool support
 
 That keeps the system understandable:
-- integrations connect
-- runtimes execute
+- connections, apps, and MCP servers connect
+- adapters execute
 - Aura OS governs
-- environments place the runtime
+- environments place the adapter

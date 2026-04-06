@@ -9,7 +9,7 @@ import {
 } from "../../stores/task-output-panel-store";
 import { useTerminalPanelStore } from "../../stores/terminal-panel-store";
 import { useShallow } from "zustand/react/shallow";
-import { useEventStore } from "../../stores/event-store";
+import { useEventStore } from "../../stores/event-store/index";
 import { useProjectActions } from "../../stores/project-action-store";
 import { useAutomationStatus } from "../AutomationBar/useAutomationStatus";
 import { EventType } from "../../types/aura-events";

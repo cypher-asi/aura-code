@@ -4,7 +4,7 @@ import { filterExplorerNodes } from "../../utils/filterExplorerNodes";
 import type { ExplorerNode } from "@cypher-asi/zui";
 import { Folder, File, FolderOpen, FolderOutput } from "lucide-react";
 import { useAuraCapabilities } from "../../hooks/use-aura-capabilities";
-import { useEventStore } from "../../stores/event-store";
+import { useEventStore } from "../../stores/event-store/index";
 import { EventType } from "../../types/aura-events";
 import { createElement } from "react";
 import styles from "./FileExplorer.module.css";

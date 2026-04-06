@@ -37,7 +37,15 @@ export const useOrgStore = create<OrgState>()((set, get) => ({
       const savedId = localStorage.getItem(ACTIVE_ORG_KEY);
       const match = list.find((o) => o.org_id === savedId);
       const selected = match ?? list[0] ?? null;
-      set({ orgs: list, activeOrg: selected });
+      set((state) => {
+        const orgChanged = state.activeOrg?.org_id !== selected?.org_id;
+        return {
+          orgs: list,
+          activeOrg: selected,
+          members: orgChanged ? [] : state.members,
+          integrations: orgChanged ? [] : state.integrations,
+        };
+      });
       if (selected) {
         localStorage.setItem(ACTIVE_ORG_KEY, selected.org_id);
       }
@@ -80,7 +88,11 @@ export const useOrgStore = create<OrgState>()((set, get) => ({
     const { orgs } = get();
     const org = orgs.find((o) => o.org_id === orgId);
     if (org) {
-      set({ activeOrg: org });
+      set((state) => ({
+        activeOrg: org,
+        members: state.activeOrg?.org_id === orgId ? state.members : [],
+        integrations: state.activeOrg?.org_id === orgId ? state.integrations : [],
+      }));
       localStorage.setItem(ACTIVE_ORG_KEY, orgId);
     }
   },

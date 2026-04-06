@@ -101,33 +101,43 @@ function ProfileMetaGrid({ agent }: { agent: Agent }) {
         ) : (
           <Monitor size={13} className={styles.metaIcon} />
         )}
-        <span className={styles.metaValue}>
-          {formatRunsOnLabel(agent.environment, agent.machine_type)}
-        </span>
+        <div className={styles.metaText}>
+          <span className={styles.metaLabel}>Runs On</span>
+          <span className={styles.metaValue}>
+            {formatRunsOnLabel(agent.environment, agent.machine_type)}
+          </span>
+        </div>
       </div>
       <div className={styles.metaRow}>
         <Bot size={13} className={styles.metaIcon} />
-        <span className={styles.metaValue}>{formatAdapterLabel(agent.adapter_type)}</span>
+        <div className={styles.metaText}>
+          <span className={styles.metaLabel}>Agent Type</span>
+          <span className={styles.metaValue}>{formatAdapterLabel(agent.adapter_type)}</span>
+        </div>
       </div>
       <div className={styles.metaRow}>
         <KeyRound size={13} className={styles.metaIcon} />
-        <span className={styles.metaValue}>
-          {formatAuthSourceLabel(agent.auth_source)}
-          {agent.integration_id ? " \u2022 team integration attached" : ""}
-        </span>
+        <div className={styles.metaText}>
+          <span className={styles.metaLabel}>Credentials</span>
+          <span className={styles.metaValue}>
+            {formatAuthSourceLabel(agent.auth_source, agent.adapter_type)}
+          </span>
+        </div>
       </div>
       <div className={styles.metaRow}>
         <Calendar size={13} className={styles.metaIcon} />
-        <span className={styles.metaValue}>
-          Birthed {new Date(agent.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-        </span>
+        <div className={styles.metaText}>
+          <span className={styles.metaLabel}>Birthed</span>
+          <span className={styles.metaValue}>
+            {new Date(agent.created_at).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+          </span>
+        </div>
       </div>
     </div>
   );
 }
 
 function RuntimeSection({
-  agent,
   runtimeReadiness,
   runtimeTesting,
   runtimeTestMessage,
@@ -136,7 +146,6 @@ function RuntimeSection({
   onRuntimeTest,
   runtimeResultRef,
 }: {
-  agent: Agent;
   runtimeReadiness: RuntimeReadiness;
   runtimeTesting: boolean;
   runtimeTestMessage: string | null;
@@ -145,38 +154,61 @@ function RuntimeSection({
   onRuntimeTest: () => void;
   runtimeResultRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  const [showDetails, setShowDetails] = useState(false);
   const readinessClass =
     runtimeReadiness.tone === "success"
       ? styles.runtimeReadinessSuccess
       : runtimeReadiness.tone === "warning"
         ? styles.runtimeReadinessWarning
         : styles.runtimeReadinessInfo;
+  const shouldShowReadiness = runtimeReadiness.tone === "warning" || showDetails;
+  const hasExtraDetails = !!runtimeReadiness.message || !!runtimeTestDetails;
 
   return (
     <div className={styles.section}>
-      <Text size="xs" variant="muted" weight="medium">Runtime</Text>
-      <Text size="sm">
-        {formatAdapterLabel(agent.adapter_type)} &bull; Runs On:{" "}
-        {formatRunsOnLabel(agent.environment, agent.machine_type)} &bull; Authentication:{" "}
-        {formatAuthSourceLabel(agent.auth_source)}
-      </Text>
-      <div className={`${styles.runtimeReadiness} ${readinessClass}`}>
-        <Text size="xs" weight="medium" className={styles.runtimeReadinessTitle}>
-          {runtimeReadiness.title}
-        </Text>
-        <Text size="xs" variant="muted">{runtimeReadiness.message}</Text>
+      <Text size="xs" variant="muted" weight="medium">Runtime Tools</Text>
+      <div className={styles.runtimeToolbar}>
+        <div className={styles.runtimeToolbarActions}>
+          <Button variant="secondary" size="sm" onClick={onRuntimeTest} disabled={runtimeTesting}>
+            {runtimeTesting ? "Checking..." : "Check Runtime"}
+          </Button>
+          <span
+            className={`${styles.runtimeStatusBadge} ${
+              runtimeReadiness.tone === "success"
+                ? styles.runtimeStatusSuccess
+                : runtimeReadiness.tone === "warning"
+                  ? styles.runtimeStatusWarning
+                  : styles.runtimeStatusInfo
+            }`}
+          >
+            {runtimeReadiness.label}
+          </span>
+        </div>
+        {hasExtraDetails && (
+          <button
+            type="button"
+            className={styles.inlineAction}
+            onClick={() => setShowDetails((current) => !current)}
+          >
+            {showDetails ? "Hide details" : "Runtime details"}
+          </button>
+        )}
       </div>
-      <div className={styles.nameAction} style={{ marginTop: 8 }}>
-        <Button variant="secondary" size="sm" onClick={onRuntimeTest} disabled={runtimeTesting}>
-          {runtimeTesting ? "Checking..." : "Check Runtime"}
-        </Button>
-      </div>
+      {shouldShowReadiness && (
+        <div className={`${styles.runtimeReadiness} ${readinessClass}`}>
+          <Text size="xs" weight="medium" className={styles.runtimeReadinessTitle}>
+            {runtimeReadiness.title}
+          </Text>
+          <Text size="xs" variant="muted">{runtimeReadiness.message}</Text>
+        </div>
+      )}
       {runtimeTestMessage && (
         <RuntimeTestResult
           runtimeResultRef={runtimeResultRef}
           runtimeTestStatus={runtimeTestStatus}
           runtimeTestMessage={runtimeTestMessage}
           runtimeTestDetails={runtimeTestDetails}
+          collapsed={!showDetails && runtimeTestStatus !== "error"}
         />
       )}
     </div>
@@ -188,11 +220,13 @@ function RuntimeTestResult({
   runtimeTestStatus,
   runtimeTestMessage,
   runtimeTestDetails,
+  collapsed,
 }: {
   runtimeResultRef: React.RefObject<HTMLDivElement | null>;
   runtimeTestStatus: "success" | "error" | null;
   runtimeTestMessage: string;
   runtimeTestDetails: string | null;
+  collapsed: boolean;
 }) {
   return (
     <div
@@ -206,7 +240,7 @@ function RuntimeTestResult({
         {runtimeTestStatus === "error" ? "Runtime check failed" : "Runtime ready"}
       </Text>
       <Text size="xs" variant="muted">{runtimeTestMessage}</Text>
-      {runtimeTestDetails && (
+      {runtimeTestDetails && !collapsed && (
         <Text size="xs" variant="muted" className={styles.runtimeTestMeta}>
           {runtimeTestDetails}
         </Text>
@@ -244,7 +278,6 @@ export function ProfileTab(props: ProfileTabProps) {
       />
       <ProfileMetaGrid agent={agent} />
       <RuntimeSection
-        agent={agent}
         runtimeReadiness={props.runtimeReadiness}
         runtimeTesting={props.runtimeTesting}
         runtimeTestMessage={props.runtimeTestMessage}

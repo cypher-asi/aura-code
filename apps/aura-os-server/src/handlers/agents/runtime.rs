@@ -2,14 +2,12 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use axum::extract::{Path, State};
 use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
-use serde::Deserialize;
 use serde_json::Value;
 use tokio::fs;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -32,6 +30,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::handlers::agents::chat::{
     setup_agent_chat_persistence, spawn_chat_persist_task, SseResponse, SseStream,
 };
+use crate::handlers::agents::workspace_tools::{active_workspace_tools, workspace_tool};
 use crate::handlers::projects_helpers::resolve_project_workspace_path_for_machine;
 use crate::handlers::sse::harness_event_to_sse;
 use crate::state::{AppState, AuthJwt};
@@ -55,42 +54,8 @@ struct ExternalProjectMcpConfig {
     env: HashMap<String, String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SharedProjectTool {
-    name: String,
-    description: String,
-    prompt_signature: String,
-    input_schema: Value,
-    saved_event: Option<String>,
-    saved_payload_key: Option<String>,
-}
-
-fn shared_project_tools() -> &'static [SharedProjectTool] {
-    static TOOLS: OnceLock<Vec<SharedProjectTool>> = OnceLock::new();
-    TOOLS.get_or_init(|| {
-        let tools: Vec<SharedProjectTool> = serde_json::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../infra/shared/project-control-plane-tools.json"
-        )))
-        .expect("shared project control-plane tool manifest must parse");
-        for tool in &tools {
-            assert!(
-                tool.input_schema.is_object(),
-                "shared project control-plane tool `{}` must declare an object input schema",
-                tool.name
-            );
-        }
-        tools
-    })
-}
-
-fn shared_project_tool(name: &str) -> Option<&'static SharedProjectTool> {
-    shared_project_tools().iter().find(|tool| tool.name == name)
-}
-
-fn is_external_project_tool_name(name: &str) -> bool {
-    shared_project_tool(name).is_some()
+fn is_external_tool_name(name: &str) -> bool {
+    workspace_tool(name).is_some()
 }
 
 pub(crate) async fn test_agent_runtime(
@@ -242,7 +207,7 @@ async fn send_external_project_agent_event_stream(
             &sse_tx,
             HarnessOutbound::SessionReady(SessionReady {
                 session_id: Uuid::new_v4().to_string(),
-                tools: external_project_tool_infos(),
+                tools: external_project_tool_infos(&state, &agent),
                 skills: Vec::new(),
             }),
         );
@@ -313,9 +278,39 @@ fn supports_external_project_tools(adapter_type: &str) -> bool {
     matches!(adapter_type, "codex" | "claude_code")
 }
 
-fn external_project_tool_infos() -> Vec<ToolInfo> {
-    shared_project_tools()
-        .iter()
+fn model_provider_env_var(provider: &str) -> Option<&'static str> {
+    match provider {
+        "anthropic" => Some("ANTHROPIC_API_KEY"),
+        "openai" => Some("OPENAI_API_KEY"),
+        "google_gemini" => Some("GEMINI_API_KEY"),
+        "xai" => Some("XAI_API_KEY"),
+        "groq" => Some("GROQ_API_KEY"),
+        "openrouter" => Some("OPENROUTER_API_KEY"),
+        "together" => Some("TOGETHER_API_KEY"),
+        "mistral" => Some("MISTRAL_API_KEY"),
+        "perplexity" => Some("PERPLEXITY_API_KEY"),
+        _ => None,
+    }
+}
+
+fn opencode_default_model(provider: &str) -> Option<&'static str> {
+    match provider {
+        "anthropic" => Some("anthropic/claude-sonnet-4.5"),
+        "openai" => Some("openai/gpt-5.2-codex"),
+        "google_gemini" => Some("google/gemini-2.5-pro"),
+        "xai" => Some("xai/grok-4"),
+        "groq" => Some("groq/llama-3.3-70b-versatile"),
+        "openrouter" => Some("openrouter/openai/gpt-4.1-mini"),
+        "together" => Some("together/meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo"),
+        "mistral" => Some("mistral/mistral-large-latest"),
+        "perplexity" => Some("perplexity/sonar-pro"),
+        _ => None,
+    }
+}
+
+fn external_project_tool_infos(state: &AppState, agent: &Agent) -> Vec<ToolInfo> {
+    active_workspace_tools(state, agent)
+        .into_iter()
         .map(|tool| ToolInfo {
             name: tool.name.clone(),
             description: tool.description.clone(),
@@ -515,6 +510,7 @@ async fn run_external_adapter_prompt(
         .unwrap_or_else(|| state.data_dir.to_string_lossy().to_string());
     let mut env_overrides = HashMap::new();
     let mut env_removals = Vec::new();
+    let mut writes_prompt_to_stdin = true;
 
     let (bin, args) = match agent.adapter_type.as_str() {
         "claude_code" => {
@@ -575,6 +571,90 @@ async fn run_external_adapter_prompt(
             args.push("-".to_string());
             ("codex".to_string(), args)
         }
+        "gemini_cli" => {
+            if let Some(resolved) = integration {
+                if resolved.metadata.provider != "google_gemini" {
+                    return Err(ApiError::bad_request(
+                        "Gemini CLI integrations must use the Google Gemini provider",
+                    ));
+                }
+                if let Some(secret) = resolved.secret.as_deref() {
+                    env_overrides.insert("GEMINI_API_KEY".to_string(), secret.to_string());
+                    env_overrides.insert("GOOGLE_API_KEY".to_string(), secret.to_string());
+                }
+            }
+            writes_prompt_to_stdin = false;
+            let mut args = vec![
+                "--prompt".to_string(),
+                prompt.to_string(),
+                "--output-format".to_string(),
+                "json".to_string(),
+                "--yolo".to_string(),
+            ];
+            if let Some(model) = model.as_deref() {
+                args.push("--model".to_string());
+                args.push(model.to_string());
+            }
+            ("gemini".to_string(), args)
+        }
+        "opencode" => {
+            if let Some(resolved) = integration {
+                let Some(env_var) = model_provider_env_var(&resolved.metadata.provider) else {
+                    return Err(ApiError::bad_request(format!(
+                        "OpenCode does not yet support team integration provider `{}`",
+                        resolved.metadata.provider
+                    )));
+                };
+                if let Some(secret) = resolved.secret.as_deref() {
+                    env_overrides.insert(env_var.to_string(), secret.to_string());
+                }
+            }
+            env_overrides.insert(
+                "OPENCODE_DISABLE_PROJECT_CONFIG".to_string(),
+                "true".to_string(),
+            );
+            writes_prompt_to_stdin = false;
+            let resolved_model = model
+                .clone()
+                .or_else(|| {
+                    integration.and_then(|resolved| {
+                        opencode_default_model(&resolved.metadata.provider).map(str::to_string)
+                    })
+                })
+                .ok_or_else(|| {
+                    ApiError::bad_request(
+                        "OpenCode requires a default model or a compatible integration default model",
+                    )
+                })?;
+            let args = vec![
+                "run".to_string(),
+                "--format".to_string(),
+                "json".to_string(),
+                "--model".to_string(),
+                resolved_model,
+                prompt.to_string(),
+            ];
+            ("opencode".to_string(), args)
+        }
+        "cursor" => {
+            if integration.is_some() {
+                return Err(ApiError::bad_request(
+                    "Cursor currently supports local CLI auth only",
+                ));
+            }
+            writes_prompt_to_stdin = false;
+            let mut args = vec![
+                "--print".to_string(),
+                "--output-format".to_string(),
+                "json".to_string(),
+            ];
+            if let Some(model) = model.as_deref() {
+                args.push("--model".to_string());
+                args.push(model.to_string());
+            }
+            args.push(prompt.to_string());
+            ("cursor-agent".to_string(), args)
+        }
         other => {
             return Err(ApiError::bad_request(format!(
                 "unsupported external adapter `{other}`"
@@ -582,10 +662,17 @@ async fn run_external_adapter_prompt(
         }
     };
 
-    let output = run_cli_command(&bin, &args, &cwd, prompt, &env_overrides, &env_removals).await?;
+    let output = if writes_prompt_to_stdin {
+        run_cli_command(&bin, &args, &cwd, prompt, &env_overrides, &env_removals).await?
+    } else {
+        run_cli_command_no_stdin(&bin, &args, &cwd, &env_overrides, &env_removals).await?
+    };
     match agent.adapter_type.as_str() {
         "claude_code" => parse_claude_output(&output, model),
         "codex" => parse_codex_output(&output, model),
+        "gemini_cli" => parse_gemini_output(&output, model),
+        "opencode" => parse_opencode_output(&output, model),
+        "cursor" => parse_cursor_output(&output, model),
         _ => Err(ApiError::bad_request("unsupported external adapter")),
     }
 }
@@ -1081,6 +1168,51 @@ async fn run_cli_command(
     Ok(stdout)
 }
 
+async fn run_cli_command_no_stdin(
+    bin: &str,
+    args: &[String],
+    cwd: &str,
+    env_overrides: &HashMap<String, String>,
+    env_removals: &[String],
+) -> ApiResult<String> {
+    let mut cmd = Command::new(bin);
+    cmd.args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    for (key, value) in env_overrides {
+        cmd.env(key, value);
+    }
+    for key in env_removals {
+        cmd.env_remove(key);
+    }
+
+    let child = cmd.spawn().map_err(|e| {
+        ApiError::bad_gateway(format!(
+            "failed to start {bin} in `{cwd}`: {e}. If this agent is bound to a project, verify the workspace path still exists."
+        ))
+    })?;
+
+    let output = timeout(Duration::from_secs(120), child.wait_with_output())
+        .await
+        .map_err(|_| ApiError::bad_gateway(format!("{bin} timed out")))?
+        .map_err(|e| ApiError::bad_gateway(format!("waiting for {bin} failed: {e}")))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    if !output.status.success() && stdout.trim().is_empty() {
+        return Err(ApiError::bad_gateway(format!(
+            "{bin} exited with {}: {}",
+            output.status,
+            stderr.trim()
+        )));
+    }
+
+    Ok(stdout)
+}
+
 async fn build_external_project_mcp_config(
     state: &AppState,
     project_id: &str,
@@ -1103,6 +1235,15 @@ async fn build_external_project_mcp_config(
     env.insert("AURA_MCP_PROJECT_ID".to_string(), project_id.to_string());
     env.insert("AURA_MCP_JWT".to_string(), jwt.to_string());
     env.insert("AURA_MCP_AGENT_INSTANCE_ID".to_string(), agent_instance_id);
+    if let Some(workspace_path) = resolve_runtime_cwd(state, Some(project_id)) {
+        env.insert("AURA_MCP_PROJECT_WORKSPACE".to_string(), workspace_path);
+    }
+    if let Some(org_id) = agent.org_id {
+        env.insert("AURA_MCP_ORG_ID".to_string(), org_id.to_string());
+    }
+    if let Some(secrets_json) = mcp_server_secrets_json(state, agent) {
+        env.insert("AURA_MCP_INTEGRATION_SECRETS_JSON".to_string(), secrets_json);
+    }
 
     Ok(ExternalProjectMcpConfig {
         server_name: "aura".to_string(),
@@ -1201,6 +1342,33 @@ fn control_plane_api_base_url() -> String {
     format!("http://{normalized_host}:{port}")
 }
 
+fn mcp_server_secrets_json(state: &AppState, agent: &Agent) -> Option<String> {
+    let org_id = agent.org_id?;
+    let integrations = state.org_service.list_integrations(&org_id).ok()?;
+    let mut secrets = serde_json::Map::new();
+
+    for integration in integrations {
+        if !integration.has_secret || integration.kind != aura_os_core::OrgIntegrationKind::McpServer {
+            continue;
+        }
+        let secret = state
+            .org_service
+            .get_integration_secret(&integration.integration_id)
+            .ok()
+            .flatten()
+            .filter(|value| !value.trim().is_empty());
+        if let Some(secret) = secret {
+            secrets.insert(integration.integration_id, Value::String(secret));
+        }
+    }
+
+    if secrets.is_empty() {
+        None
+    } else {
+        Some(Value::Object(secrets).to_string())
+    }
+}
+
 fn emit_harness_event(
     events_tx: &broadcast::Sender<HarnessOutbound>,
     sse_tx: &mpsc::UnboundedSender<Result<Event, Infallible>>,
@@ -1231,7 +1399,7 @@ fn emit_saved_artifact_events(
     if is_error {
         return;
     }
-    let Some(tool) = shared_project_tool(tool_name) else {
+    let Some(tool) = workspace_tool(tool_name) else {
         return;
     };
     let Some(saved_event) = tool.saved_event.as_deref() else {
@@ -1406,6 +1574,131 @@ fn parse_codex_output(stdout: &str, fallback_model: Option<String>) -> ApiResult
     ensure_non_empty_external_text("Codex", outcome)
 }
 
+fn parse_gemini_output(stdout: &str, fallback_model: Option<String>) -> ApiResult<RuntimeOutcome> {
+    if stdout.contains("Please set an Auth method") {
+        return Err(ApiError::bad_gateway(
+            "Gemini CLI is not authenticated for the aura-os-server process. Configure local Gemini auth in ~/.gemini/settings.json or attach a Google Gemini team integration.",
+        ));
+    }
+
+    let event = parse_json_output(stdout)
+        .or_else(|| parse_jsonl(stdout).into_iter().last())
+        .ok_or_else(|| ApiError::bad_gateway("Gemini CLI produced no structured output"))?;
+
+    if let Some(message) = event
+        .get("error")
+        .and_then(Value::as_str)
+        .or_else(|| event.get("error").and_then(|error| error.get("message")).and_then(Value::as_str))
+    {
+        return Err(ApiError::bad_gateway(message));
+    }
+
+    let text = event
+        .get("response")
+        .and_then(Value::as_str)
+        .or_else(|| event.get("result").and_then(Value::as_str))
+        .or_else(|| event.get("text").and_then(Value::as_str))
+        .unwrap_or_default()
+        .to_string();
+    let stats = event.get("stats").cloned().unwrap_or(Value::Null);
+    let model = event
+        .get("model")
+        .and_then(Value::as_str)
+        .map(sanitize_model)
+        .filter(|value| !value.is_empty())
+        .or(fallback_model)
+        .unwrap_or_else(|| "gemini".to_string());
+
+    ensure_non_empty_external_text(
+        "Gemini CLI",
+        RuntimeOutcome {
+            text,
+            usage: SessionUsage {
+                input_tokens: usage_number(&stats, "input_tokens"),
+                output_tokens: usage_number(&stats, "output_tokens"),
+                estimated_context_tokens: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                cumulative_input_tokens: usage_number(&stats, "input_tokens"),
+                cumulative_output_tokens: usage_number(&stats, "output_tokens"),
+                cumulative_cache_creation_input_tokens: 0,
+                cumulative_cache_read_input_tokens: 0,
+                context_utilization: 0.0,
+                model,
+                provider: "google_gemini".to_string(),
+            },
+        },
+    )
+}
+
+fn parse_opencode_output(stdout: &str, fallback_model: Option<String>) -> ApiResult<RuntimeOutcome> {
+    let parsed = parse_json_output(stdout).or_else(|| parse_jsonl(stdout).into_iter().last());
+    let text = parsed
+        .as_ref()
+        .and_then(|event| {
+            event
+                .get("result")
+                .and_then(Value::as_str)
+                .or_else(|| event.get("text").and_then(Value::as_str))
+                .or_else(|| event.get("response").and_then(Value::as_str))
+        })
+        .unwrap_or_else(|| stdout.trim())
+        .to_string();
+    let model = fallback_model.unwrap_or_else(|| "opencode".to_string());
+    let provider = model
+        .split('/')
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or("opencode")
+        .to_string();
+
+    ensure_non_empty_external_text(
+        "OpenCode",
+        RuntimeOutcome {
+            text,
+            usage: SessionUsage {
+                model,
+                provider,
+                ..Default::default()
+            },
+        },
+    )
+}
+
+fn parse_cursor_output(stdout: &str, fallback_model: Option<String>) -> ApiResult<RuntimeOutcome> {
+    if stdout.contains("Not logged in") || stdout.contains("cursor login") {
+        return Err(ApiError::bad_gateway(
+            "Cursor CLI is not logged in for the aura-os-server process. Authenticate Cursor on this machine before using local login.",
+        ));
+    }
+
+    let event = parse_json_output(stdout).or_else(|| parse_jsonl(stdout).into_iter().last());
+    let text = event
+        .as_ref()
+        .and_then(|value| {
+            value
+                .get("result")
+                .and_then(Value::as_str)
+                .or_else(|| value.get("text").and_then(Value::as_str))
+                .or_else(|| value.get("message").and_then(Value::as_str))
+        })
+        .unwrap_or_else(|| stdout.trim())
+        .to_string();
+    let model = fallback_model.unwrap_or_else(|| "cursor".to_string());
+
+    ensure_non_empty_external_text(
+        "Cursor",
+        RuntimeOutcome {
+            text,
+            usage: SessionUsage {
+                model,
+                provider: "cursor".to_string(),
+                ..Default::default()
+            },
+        },
+    )
+}
+
 fn ensure_non_empty_external_text(
     adapter_label: &str,
     outcome: RuntimeOutcome,
@@ -1424,6 +1717,10 @@ fn parse_jsonl(stdout: &str) -> Vec<Value> {
         .lines()
         .filter_map(|line| serde_json::from_str::<Value>(line.trim()).ok())
         .collect()
+}
+
+fn parse_json_output(stdout: &str) -> Option<Value> {
+    serde_json::from_str::<Value>(stdout.trim()).ok()
 }
 
 fn usage_number(usage: &Value, key: &str) -> u64 {
@@ -1553,7 +1850,7 @@ fn claude_tool_use_starts(event: &Value) -> Vec<aura_os_link::ToolUseStart> {
         .filter_map(|block| {
             let name = block.get("name").and_then(Value::as_str)?;
             let normalized = normalize_external_tool_name(name);
-            if !is_external_project_tool_name(&normalized) {
+            if !is_external_tool_name(&normalized) {
                 return None;
             }
             Some(aura_os_link::ToolUseStart {
@@ -1750,7 +2047,7 @@ fn build_external_prompt(
     }
     if supports_external_project_tools(&agent.adapter_type) && project_id.is_some() {
         prompt.push_str("Aura control-plane tools:\n");
-        for tool in shared_project_tools() {
+        for tool in active_workspace_tools(state, agent) {
             prompt.push_str("- ");
             prompt.push_str(&tool.prompt_signature);
             prompt.push_str(": ");
@@ -1763,6 +2060,7 @@ fn build_external_prompt(
         prompt.push_str("When the user asks to move an existing task between states, use transition_task or update_task(status=...) instead of describing the change in prose.\n");
         prompt.push_str("When the user asks to retry a task, use retry_task. When the user asks to start or run a task through Aura OS, use run_task.\n");
         prompt.push_str("When the user asks to control the project loop itself, use start_dev_loop, pause_dev_loop, stop_dev_loop, or get_loop_status.\n");
+        prompt.push_str("When the user asks to use a connected org system like GitHub, Linear, Slack, or Notion, use the matching Aura tool if it is available instead of only drafting prose.\n");
         prompt.push_str("After creating or transitioning tasks, stop and summarize what changed. Do not start implementation work unless the user explicitly asks for it.\n\n");
     }
     prompt.push_str("User request:\n");
@@ -1774,8 +2072,9 @@ fn build_external_prompt(
 mod tests {
     use super::{
         claude_tool_results, claude_tool_use_starts, codex_tool_result, codex_tool_use_start,
-        codex_turn_usage, shared_project_tools,
+        codex_turn_usage, parse_gemini_output, parse_opencode_output, parse_cursor_output,
     };
+    use crate::handlers::agents::workspace_tools::{shared_workspace_tools, WorkspaceToolSourceKind};
     use serde_json::json;
     use std::collections::{HashMap, HashSet};
 
@@ -1846,6 +2145,42 @@ mod tests {
     }
 
     #[test]
+    fn gemini_auth_error_maps_to_friendly_message() {
+        let result = parse_gemini_output(
+            "Please set an Auth method in your /Users/test/.gemini/settings.json or specify one of the following environment variables before running: GEMINI_API_KEY",
+            Some("gemini-2.5-pro".to_string()),
+        );
+        assert!(result.is_err(), "expected auth failure");
+        let error = result.err().expect("gemini auth error");
+
+        assert!(format!("{error:?}").contains("Gemini CLI is not authenticated"));
+    }
+
+    #[test]
+    fn opencode_plain_text_output_still_produces_a_result() {
+        let outcome = parse_opencode_output(
+            "hello from opencode",
+            Some("openai/gpt-5.2-codex".to_string()),
+        )
+        .expect("parse opencode");
+
+        assert_eq!(outcome.text, "hello from opencode");
+        assert_eq!(outcome.usage.provider, "openai");
+    }
+
+    #[test]
+    fn cursor_json_output_parses_result_text() {
+        let outcome = parse_cursor_output(
+            r#"{"result":"hello from cursor"}"#,
+            Some("auto".to_string()),
+        )
+        .expect("parse cursor");
+
+        assert_eq!(outcome.text, "hello from cursor");
+        assert_eq!(outcome.usage.provider, "cursor");
+    }
+
+    #[test]
     fn claude_mcp_tool_events_map_to_protocol_messages() {
         let assistant = json!({
             "type": "assistant",
@@ -1896,7 +2231,7 @@ mod tests {
 
     #[test]
     fn shared_project_tool_manifest_has_unique_names_and_signatures() {
-        let tools = shared_project_tools();
+        let tools = shared_workspace_tools().iter().collect::<Vec<_>>();
         assert!(!tools.is_empty());
 
         let mut names = HashSet::new();
@@ -1909,5 +2244,15 @@ mod tests {
             );
             assert!(tool.input_schema.is_object(), "input schema must be an object");
         }
+    }
+
+    #[test]
+    fn workspace_tool_registry_tracks_source_kinds() {
+        let tools = shared_workspace_tools();
+        assert!(tools.iter().any(|tool| tool.source_kind == WorkspaceToolSourceKind::AuraNative));
+        assert!(tools
+            .iter()
+            .any(|tool| tool.source_kind == WorkspaceToolSourceKind::AppProvider));
+        assert!(!tools.iter().any(|tool| tool.source_kind == WorkspaceToolSourceKind::Mcp));
     }
 }

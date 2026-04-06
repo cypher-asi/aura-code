@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { api, isInsufficientCreditsError, dispatchInsufficientCredits } from "../../api/client";
 import { useSidekickStore } from "../../stores/sidekick-store";
 import { useProjectActions } from "../../stores/project-action-store";
-import { useTaskOutput, useEventStore } from "../../stores/event-store";
+import { useTaskOutput, useEventStore } from "../../stores/event-store/index";
 import { useTaskStatus } from "../../hooks/use-task-status";
 import { useTaskAgentInstances } from "../../hooks/use-task-agent-instances";
 import { useTaskStream } from "../../hooks/use-task-stream";

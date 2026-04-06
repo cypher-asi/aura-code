@@ -73,6 +73,8 @@ export function AgentEditorModal({
           setEnvironment={form.setEnvironment}
           authSource={form.authSource}
           setAuthSource={form.setAuthSource}
+          showAdvancedRuntime={form.showAdvancedRuntime}
+          setShowAdvancedRuntime={form.setShowAdvancedRuntime}
           integrationId={form.integrationId}
           setIntegrationId={form.setIntegrationId}
           defaultModel={form.defaultModel}
@@ -82,11 +84,11 @@ export function AgentEditorModal({
           setNameError={form.setNameError}
           nameRef={form.nameRef}
           fileInputRef={form.fileInputRef}
-          error={form.error}
-          handleFileSelect={form.handleFileSelect}
-          handleAvatarClick={form.handleAvatarClick}
-          handleAvatarRemove={form.handleAvatarRemove}
-        />
+           error={form.error}
+           handleFileSelect={form.handleFileSelect}
+           handleAvatarClick={form.handleAvatarClick}
+           handleAvatarRemove={form.handleAvatarRemove}
+         />
       </Modal>
 
       <ImageCropModal

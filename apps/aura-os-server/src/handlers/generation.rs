@@ -5,20 +5,14 @@ use axum::extract::State;
 use axum::http::HeaderValue;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
-use futures_util::stream;
+use futures_util::StreamExt;
+use reqwest::StatusCode as ReqwestStatus;
 use serde_json::json;
-use tracing::info;
-
-use aura_os_core::HarnessMode;
-use aura_os_link::{
-    GenerationRequest, HarnessInbound, HarnessOutbound, SessionConfig,
-};
+use tracing::{error, info};
 
 use crate::dto::{Generate3dRequest, GenerateImageRequest};
 use crate::error::{ApiError, ApiResult};
 use crate::state::{AppState, AuthJwt};
-
-use super::agents::chat_pub::get_or_create_chat_session;
 
 type SseStream = Pin<Box<dyn futures_core::Stream<Item = Result<Event, Infallible>> + Send>>;
 type SseResponse = ([(&'static str, HeaderValue); 1], Sse<SseStream>);
@@ -28,104 +22,200 @@ const SSE_NO_BUFFERING_HEADERS: [(&str, HeaderValue); 1] = [(
     HeaderValue::from_static("no"),
 )];
 
-fn generation_session_key(jwt: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    jwt.hash(&mut hasher);
-    format!("generation:{:x}", hasher.finish())
+fn router_url(state: &AppState) -> String {
+    state.super_agent_service.router_url.clone()
 }
 
-fn generation_event_to_sse(evt: &HarnessOutbound) -> Option<Result<Event, Infallible>> {
-    match evt {
-        HarnessOutbound::GenerationStart(s) => Some(Ok(Event::default()
+/// Re-emit an upstream SSE frame from aura-router into our own SSE stream,
+/// translating the router event types into the `generation_*` namespace that
+/// the frontend understands.
+fn translate_router_event(event_type: &str, data: &str, mode: &str) -> Event {
+    match event_type {
+        "start" => Event::default()
             .event("generation_start")
-            .json_data(&json!({ "mode": s.mode }))
-            .unwrap_or_else(|_| Event::default().data("{}")))),
-        HarnessOutbound::GenerationProgress(p) => Some(Ok(Event::default()
-            .event("generation_progress")
-            .json_data(&json!({ "percent": p.percent, "message": p.message }))
-            .unwrap_or_else(|_| Event::default().data("{}")))),
-        HarnessOutbound::GenerationPartialImage(pi) => Some(Ok(Event::default()
-            .event("generation_partial_image")
-            .json_data(&json!({ "data": pi.data }))
-            .unwrap_or_else(|_| Event::default().data("{}")))),
-        HarnessOutbound::GenerationCompleted(c) => {
-            let mut data = c.payload.clone();
-            if let Some(obj) = data.as_object_mut() {
-                obj.insert("mode".to_string(), json!(c.mode));
-            }
-            Some(Ok(Event::default()
-                .event("generation_completed")
-                .json_data(&data)
-                .unwrap_or_else(|_| Event::default().data("{}"))))
+            .json_data(&json!({ "mode": mode, "ts": data }))
+            .unwrap_or_else(|_| Event::default().data("{}")),
+        "progress" => {
+            let parsed: serde_json::Value = serde_json::from_str(data).unwrap_or(json!({}));
+            Event::default()
+                .event("generation_progress")
+                .json_data(&json!({
+                    "percent": parsed.get("percent").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                    "message": parsed.get("message").and_then(|v| v.as_str()).unwrap_or(""),
+                }))
+                .unwrap_or_else(|_| Event::default().data("{}"))
         }
-        HarnessOutbound::GenerationError(e) => Some(Ok(Event::default()
-            .event("generation_error")
-            .json_data(&json!({ "code": e.code, "message": e.message }))
-            .unwrap_or_else(|_| Event::default().data("{}")))),
-        HarnessOutbound::Error(e) => Some(Ok(Event::default()
-            .event("generation_error")
-            .json_data(&json!({ "code": e.code, "message": e.message }))
-            .unwrap_or_else(|_| Event::default().data("{}")))),
-        _ => None,
+        "partial-image" => {
+            let parsed: serde_json::Value = serde_json::from_str(data).unwrap_or(json!({}));
+            Event::default()
+                .event("generation_partial_image")
+                .json_data(&json!({
+                    "data": parsed.get("data").and_then(|v| v.as_str()).unwrap_or(""),
+                }))
+                .unwrap_or_else(|_| Event::default().data("{}"))
+        }
+        "completed" => {
+            let mut parsed: serde_json::Value = serde_json::from_str(data).unwrap_or(json!({}));
+            if let Some(obj) = parsed.as_object_mut() {
+                obj.insert("mode".to_string(), json!(mode));
+            }
+            Event::default()
+                .event("generation_completed")
+                .json_data(&parsed)
+                .unwrap_or_else(|_| Event::default().data("{}"))
+        }
+        "submitted" => {
+            let parsed: serde_json::Value = serde_json::from_str(data).unwrap_or(json!({}));
+            Event::default()
+                .event("generation_progress")
+                .json_data(&json!({
+                    "percent": 5,
+                    "message": format!(
+                        "Task submitted: {}",
+                        parsed.get("taskId").and_then(|v| v.as_str()).unwrap_or("")
+                    ),
+                }))
+                .unwrap_or_else(|_| Event::default().data("{}"))
+        }
+        "error" => {
+            let parsed: serde_json::Value = serde_json::from_str(data).unwrap_or(json!({}));
+            Event::default()
+                .event("generation_error")
+                .json_data(&json!({
+                    "code": parsed
+                        .get("code")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("GENERATION_FAILED"),
+                    "message": parsed
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Generation failed"),
+                }))
+                .unwrap_or_else(|_| Event::default().data("{}"))
+        }
+        _ => {
+            let parsed: serde_json::Value = serde_json::from_str(data).unwrap_or(json!(data));
+            Event::default()
+                .event(event_type)
+                .json_data(&parsed)
+                .unwrap_or_else(|_| Event::default().data("{}"))
+        }
     }
 }
 
-fn generation_broadcast_to_sse(
-    rx: tokio::sync::broadcast::Receiver<HarnessOutbound>,
-) -> impl futures_core::Stream<Item = Result<Event, Infallible>> + Send {
-    stream::unfold((rx, false, false), |(mut rx, emit_done, done)| async move {
-        if done {
-            return None;
-        }
-        if emit_done {
-            let evt = Event::default()
-                .event("done")
-                .json_data(&json!({}))
-                .unwrap_or_else(|_| Event::default().data("{}"));
-            return Some((Ok(evt), (rx, false, true)));
-        }
-        loop {
-            match rx.recv().await {
-                Ok(evt) => {
-                    let is_terminal = matches!(
-                        evt,
-                        HarnessOutbound::GenerationCompleted(_)
-                            | HarnessOutbound::GenerationError(_)
-                            | HarnessOutbound::Error(_)
-                    );
-                    if let Some(sse_event) = generation_event_to_sse(&evt) {
-                        return Some((sse_event, (rx, is_terminal, false)));
+/// Stream SSE from aura-router back to the client, translating events.
+async fn proxy_sse_stream(
+    url: &str,
+    jwt: &str,
+    body: serde_json::Value,
+    mode: &'static str,
+) -> ApiResult<SseResponse> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(url)
+        .bearer_auth(jwt)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| {
+            error!(error = %e, "generation proxy: upstream request failed");
+            ApiError::bad_gateway(format!("upstream request failed: {e}"))
+        })?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        error!(%status, body = %text, "generation proxy: upstream error");
+        return match status {
+            ReqwestStatus::UNAUTHORIZED => Err(ApiError::unauthorized("router rejected token")),
+            ReqwestStatus::PAYMENT_REQUIRED => {
+                Err(ApiError::payment_required("insufficient credits"))
+            }
+            ReqwestStatus::TOO_MANY_REQUESTS => Err(ApiError::service_unavailable("rate limited")),
+            _ => Err(ApiError::bad_gateway(format!(
+                "upstream returned {status}: {text}"
+            ))),
+        };
+    }
+
+    let byte_stream = resp.bytes_stream();
+    let mode_static: &'static str = mode;
+
+    let sse_stream = futures_util::stream::unfold(
+        (byte_stream, String::new(), false),
+        move |(mut stream, mut buffer, done)| async move {
+            if done {
+                return None;
+            }
+            loop {
+                if let Some(sep_pos) = buffer.find("\n\n") {
+                    let frame = buffer[..sep_pos].to_string();
+                    buffer = buffer[sep_pos + 2..].to_string();
+
+                    if frame.trim().is_empty() {
+                        continue;
+                    }
+
+                    let mut event_type = String::new();
+                    let mut data = String::new();
+                    for line in frame.split('\n') {
+                        if let Some(rest) = line.strip_prefix("event: ") {
+                            event_type = rest.trim().to_string();
+                        } else if let Some(rest) = line.strip_prefix("data: ") {
+                            data = rest.trim().to_string();
+                        }
+                    }
+
+                    if !event_type.is_empty() && !data.is_empty() {
+                        let evt = translate_router_event(&event_type, &data, mode_static);
+                        return Some((Ok(evt), (stream, buffer, false)));
                     }
                     continue;
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
+
+                match stream.next().await {
+                    Some(Ok(chunk)) => {
+                        buffer.push_str(&String::from_utf8_lossy(&chunk));
+                    }
+                    Some(Err(e)) => {
+                        let evt = Event::default()
+                            .event("generation_error")
+                            .json_data(&json!({
+                                "code": "STREAM_ERROR",
+                                "message": format!("Stream error: {e}"),
+                            }))
+                            .unwrap_or_else(|_| Event::default().data("{}"));
+                        return Some((Ok(evt), (stream, buffer, true)));
+                    }
+                    None => {
+                        if !buffer.trim().is_empty() {
+                            let mut event_type = String::new();
+                            let mut data = String::new();
+                            for line in buffer.split('\n') {
+                                if let Some(rest) = line.strip_prefix("event: ") {
+                                    event_type = rest.trim().to_string();
+                                } else if let Some(rest) = line.strip_prefix("data: ") {
+                                    data = rest.trim().to_string();
+                                }
+                            }
+                            buffer.clear();
+                            if !event_type.is_empty() && !data.is_empty() {
+                                let evt = translate_router_event(&event_type, &data, mode_static);
+                                return Some((Ok(evt), (stream, buffer, false)));
+                            }
+                        }
+
+                        let done_evt = Event::default()
+                            .event("done")
+                            .json_data(&json!({}))
+                            .unwrap_or_else(|_| Event::default().data("{}"));
+                        return Some((Ok::<_, Infallible>(done_evt), (stream, String::new(), true)));
+                    }
+                }
             }
-        }
-    })
-}
+        },
+    );
 
-async fn open_generation_stream(
-    state: &AppState,
-    jwt: &str,
-    gen_request: GenerationRequest,
-) -> ApiResult<SseResponse> {
-    let session_key = generation_session_key(jwt);
-    let config = SessionConfig {
-        token: Some(jwt.to_string()),
-        ..Default::default()
-    };
-
-    let (_is_new, rx, commands_tx) =
-        get_or_create_chat_session(state, &session_key, HarnessMode::Local, config, None).await?;
-
-    commands_tx
-        .send(HarnessInbound::GenerationRequest(gen_request))
-        .map_err(|e| ApiError::internal(format!("sending generation request: {e}")))?;
-
-    let sse_stream = generation_broadcast_to_sse(rx);
     let boxed: SseStream = Box::pin(sse_stream);
     Ok((
         SSE_NO_BUFFERING_HEADERS,
@@ -139,20 +229,30 @@ pub(crate) async fn generate_image_stream(
     Json(body): Json<GenerateImageRequest>,
 ) -> ApiResult<SseResponse> {
     super::billing::require_credits(&state, &jwt).await?;
-    info!(model = ?body.model, "Image generation stream requested (harness)");
+    info!(model = ?body.model, "Image generation stream requested");
 
-    let req = GenerationRequest {
-        mode: "image".to_string(),
-        prompt: Some(body.prompt),
-        model: body.model,
-        size: body.size,
-        image_url: None,
-        images: body.images,
-        project_id: body.project_id,
-        is_iteration: body.is_iteration,
-    };
+    let url = format!("{}/v1/generate-image/stream", router_url(&state));
 
-    open_generation_stream(&state, &jwt, req).await
+    let mut payload = json!({
+        "prompt": body.prompt,
+    });
+    if let Some(model) = &body.model {
+        payload["model"] = json!(model);
+    }
+    if let Some(size) = &body.size {
+        payload["size"] = json!(size);
+    }
+    if let Some(images) = &body.images {
+        payload["images"] = json!(images);
+    }
+    if let Some(project_id) = &body.project_id {
+        payload["projectId"] = json!(project_id);
+    }
+    if let Some(is_iteration) = body.is_iteration {
+        payload["isIteration"] = json!(is_iteration);
+    }
+
+    proxy_sse_stream(&url, &jwt, payload, "image").await
 }
 
 pub(crate) async fn generate_3d_stream(
@@ -161,18 +261,19 @@ pub(crate) async fn generate_3d_stream(
     Json(body): Json<Generate3dRequest>,
 ) -> ApiResult<SseResponse> {
     super::billing::require_credits(&state, &jwt).await?;
-    info!("3D generation stream requested (harness)");
+    info!("3D generation stream requested");
 
-    let req = GenerationRequest {
-        mode: "3d".to_string(),
-        prompt: body.prompt,
-        model: None,
-        size: None,
-        image_url: Some(body.image_url),
-        images: None,
-        project_id: body.project_id,
-        is_iteration: None,
-    };
+    let url = format!("{}/v1/generate-3d/stream", router_url(&state));
 
-    open_generation_stream(&state, &jwt, req).await
+    let mut payload = json!({
+        "imageUrl": body.image_url,
+    });
+    if let Some(prompt) = &body.prompt {
+        payload["prompt"] = json!(prompt);
+    }
+    if let Some(project_id) = &body.project_id {
+        payload["projectId"] = json!(project_id);
+    }
+
+    proxy_sse_stream(&url, &jwt, payload, "3d").await
 }

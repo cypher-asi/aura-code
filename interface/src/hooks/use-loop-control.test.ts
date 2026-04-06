@@ -4,7 +4,7 @@ type SubscribeCallback = (event: { content: Record<string, unknown>; project_id?
 const subscribeMap = new Map<string, Set<SubscribeCallback>>();
 let mockConnected = true;
 
-vi.mock("../stores/event-store", () => ({
+vi.mock("../stores/event-store/index", () => ({
   useEventStore: (selector: (s: { subscribe: unknown; connected: boolean }) => unknown) =>
     selector({
       subscribe: (type: string, cb: SubscribeCallback) => {

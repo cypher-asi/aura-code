@@ -340,7 +340,11 @@ pub(crate) fn spawn_chat_persist_task(
                             .await;
                             break;
                         }
-                        _ => {}
+                        HarnessOutbound::GenerationStart(_)
+                        | HarnessOutbound::GenerationProgress(_)
+                        | HarnessOutbound::GenerationPartialImage(_)
+                        | HarnessOutbound::GenerationCompleted(_)
+                        | HarnessOutbound::GenerationError(_) => {}
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
