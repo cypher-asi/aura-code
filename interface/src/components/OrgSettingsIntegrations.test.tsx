@@ -93,8 +93,8 @@ describe("OrgSettingsIntegrations", () => {
       screen.getByText(/Use a bot token with only the channels and posting scopes your workspace needs./i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Messaging, channel access, and workspace coordination workflows./i),
-    ).toBeInTheDocument();
+      screen.queryByText(/Messaging, channel access, and workspace coordination workflows./i),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the lighter top-level structure by default", () => {

@@ -171,13 +171,11 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
               <div className={styles.integrationFields}>
                 <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
                   <span className={styles.integrationFieldLabel}>Choose Provider</span>
-                  <Text size="sm" variant="muted" className={styles.integrationHint}>
-                    Pick what you want to connect first. Connections add shared model access, Apps add workspace tools, and MCP Servers attach external tool sources.
-                  </Text>
                   <ProviderButtons
                     value=""
                     onChange={(provider) => setNewIntegration(emptyDraft(provider))}
-                    showSectionDescriptions
+                    showSectionDescriptions={false}
+                    compact
                   />
                 </div>
               </div>
@@ -194,7 +192,9 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                       Change
                     </Button>
                   </div>
-                  <Text size="xs" variant="muted">{providerDescription(newIntegration.provider)}</Text>
+                  {newAuthHint ? (
+                    <Text size="xs" variant="muted">{newAuthHint}</Text>
+                  ) : null}
                 </div>
                 <div className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull}`}>
                   <label className={styles.integrationFieldLabel} htmlFor="new-integration-name">Name</label>
@@ -216,7 +216,6 @@ export function OrgSettingsIntegrations({ integrations, busyId, onCreate, onUpda
                     onChange={(e) => setNewIntegration((prev) => prev ? { ...prev, apiKey: e.target.value } : prev)}
                     placeholder={newSecretPlaceholder}
                   />
-                  {newAuthHint && <Text size="xs" variant="muted">{newAuthHint}</Text>}
                 </div>
                 {(newSupportsModel || newConfigFields.length > 0) && (
                   <details className={`${styles.integrationFieldGroup} ${styles.integrationFieldGroupFull} ${styles.integrationAdvanced}`}>
@@ -448,10 +447,12 @@ function ProviderButtons({
   value,
   onChange,
   showSectionDescriptions = true,
+  compact = false,
 }: {
   value: string;
   onChange: (provider: string) => void;
   showSectionDescriptions?: boolean;
+  compact?: boolean;
 }) {
   const sections = integrationSections();
 
@@ -481,7 +482,9 @@ function ProviderButtons({
                       ? "Workspace app tools"
                       : "External MCP tools"}
                 </span>
-                <span className={styles.providerCardBody}>{provider.description}</span>
+                {!compact ? (
+                  <span className={styles.providerCardBody}>{provider.description}</span>
+                ) : null}
               </button>
             ))}
           </div>

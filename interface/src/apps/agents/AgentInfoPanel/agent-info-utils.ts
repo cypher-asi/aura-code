@@ -7,6 +7,7 @@ import {
 
 export interface RuntimeReadiness {
   tone: "info" | "success" | "warning";
+  label: string;
   title: string;
   message: string;
 }
@@ -59,6 +60,7 @@ export function describeRuntimeReadiness(
     if (!integration) {
       return {
         tone: "warning",
+        label: "Needs connection",
         title: "Connection missing",
         message:
           "This agent expects a workspace connection, but none is currently attached. Attach one before running the agent.",
@@ -67,12 +69,14 @@ export function describeRuntimeReadiness(
     if (!integration.has_secret) {
       return {
         tone: "warning",
+        label: "Needs key",
         title: "Connection missing a key",
         message: `${integration.name} is attached, but it does not have a stored key yet. Add one in Connections before running this agent.`,
       };
     }
     return {
       tone: "success",
+      label: "Ready",
       title: "Connection ready",
       message: `${integration.name} has a stored key. Keys stay in Connections and are resolved only at runtime.`,
     };
@@ -81,6 +85,7 @@ export function describeRuntimeReadiness(
   if (agent.auth_source === "local_cli_auth") {
     return {
       tone: "info",
+      label: "Local login",
       title: "Uses a local login",
       message: `${getLocalAuthLabel(agent.adapter_type ?? "aura_harness")} uses the login available to aura-os-server on this machine.`,
     };
@@ -88,6 +93,7 @@ export function describeRuntimeReadiness(
 
   return {
     tone: "success",
+    label: "Managed",
     title: "Managed by Aura",
     message:
       "Aura provides the credentials and billing for this runtime path.",
