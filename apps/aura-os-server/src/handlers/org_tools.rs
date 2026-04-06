@@ -250,6 +250,7 @@ async fn list_org_integrations(state: &AppState, org_id: &OrgId, args: &Value) -
                 "provider": integration.provider,
                 "default_model": integration.default_model,
                 "has_secret": integration.has_secret,
+                "enabled": integration.enabled,
             })
         })
         .collect::<Vec<_>>();
@@ -1005,6 +1006,12 @@ fn resolve_org_integration(
                 integration.name
             )));
         }
+        if !integration.enabled {
+            return Err(ApiError::bad_request(format!(
+                "integration `{}` is disabled",
+                integration.name
+            )));
+        }
         integration
     } else {
         state
@@ -1015,11 +1022,12 @@ fn resolve_org_integration(
             .find(|integration| {
                 integration.provider == provider
                     && integration.has_secret
+                    && integration.enabled
                     && integration.kind == OrgIntegrationKind::WorkspaceIntegration
             })
             .ok_or_else(|| {
                 ApiError::bad_request(format!(
-                    "no saved `{provider}` org integration with a key is available"
+                    "no enabled `{provider}` org integration with a key is available"
                 ))
             })?
     };

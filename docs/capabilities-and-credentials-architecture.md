@@ -124,6 +124,7 @@ Prefer:
 Current:
 - Aura OS owns integration registry and credentials
 - Aura agents receive integrations as session-installed tools
+- app integrations and MCP servers now have explicit `enabled` capability state
 - the harness can use them in the loop
 - app-provider API calls still go back through Aura OS
 

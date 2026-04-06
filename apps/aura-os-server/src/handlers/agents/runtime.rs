@@ -1336,7 +1336,10 @@ fn mcp_server_secrets_json(state: &AppState, agent: &Agent) -> Option<String> {
     let mut secrets = serde_json::Map::new();
 
     for integration in integrations {
-        if !integration.has_secret || integration.kind != aura_os_core::OrgIntegrationKind::McpServer {
+        if !integration.has_secret
+            || !integration.enabled
+            || integration.kind != aura_os_core::OrgIntegrationKind::McpServer
+        {
             continue;
         }
         let secret = state

@@ -389,6 +389,7 @@ pub(crate) async fn create_integration(
             req.kind,
             req.default_model,
             req.provider_config,
+            req.enabled,
             match req.api_key {
                 Some(secret) => IntegrationSecretUpdate::Set(secret),
                 None => IntegrationSecretUpdate::Preserve,
@@ -418,6 +419,10 @@ pub(crate) async fn update_integration(
         Some(value) => value,
         None => existing.provider_config.clone(),
     };
+    let enabled = match req.enabled {
+        Some(value) => value,
+        None => Some(existing.enabled),
+    };
     validate_org_integration_config(&kind, &provider, provider_config.as_ref())?;
     let integration = state
         .org_service
@@ -432,6 +437,7 @@ pub(crate) async fn update_integration(
                 None => existing.default_model,
             },
             provider_config,
+            enabled,
             match req.api_key {
                 Some(Some(value)) => IntegrationSecretUpdate::Set(value),
                 Some(None) => IntegrationSecretUpdate::Clear,

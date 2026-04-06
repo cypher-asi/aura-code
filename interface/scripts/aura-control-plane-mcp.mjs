@@ -138,6 +138,7 @@ async function listSavedMcpServers() {
   const integrations = await getOrgIntegrations();
   return integrations.filter((integration) => {
     if (integration?.kind !== "mcp_server") return false;
+    if (integration?.enabled === false) return false;
     const config = configObject(integration.provider_config);
     return transportKind(config) === "http"
       ? typeof config.url === "string" && config.url.trim().length > 0
@@ -254,7 +255,7 @@ async function availableAppProviderTools() {
   const integrations = await getOrgIntegrations();
   const availableProviders = new Set(
     integrations
-      .filter((integration) => integration?.has_secret && integration?.kind === "workspace_integration")
+      .filter((integration) => integration?.has_secret && integration?.enabled !== false && integration?.kind === "workspace_integration")
       .map((integration) => integration.provider)
       .filter((provider) => typeof provider === "string" && provider),
   );

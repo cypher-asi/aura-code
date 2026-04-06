@@ -119,6 +119,7 @@ fn available_workspace_integration_providers_for_org(
                 .into_iter()
                 .filter(|integration| {
                     integration.has_secret
+                        && integration.enabled
                         && matches!(
                             integration.kind,
                             aura_os_core::OrgIntegrationKind::WorkspaceIntegration
@@ -231,6 +232,7 @@ mod tests {
                 OrgIntegrationKind::WorkspaceIntegration,
                 None,
                 None,
+                Some(true),
                 IntegrationSecretUpdate::Set("brave-secret".to_string()),
             )
             .expect("save brave integration");

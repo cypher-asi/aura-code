@@ -127,6 +127,7 @@ async fn org_integrations_support_tool_and_model_provider_strings() {
     assert_eq!(created["kind"], "workspace_integration");
     assert_eq!(created["default_model"], serde_json::Value::Null);
     assert_eq!(created["has_secret"], true);
+    assert_eq!(created["enabled"], true);
 
     let req = json_request("GET", &format!("/api/orgs/{org_id}/integrations"), None);
     let resp = app.clone().oneshot(req).await.unwrap();
@@ -154,6 +155,7 @@ async fn org_integrations_support_tool_and_model_provider_strings() {
     assert_eq!(updated["kind"], "workspace_connection");
     assert_eq!(updated["default_model"], "gpt-5.1");
     assert_eq!(updated["has_secret"], true);
+    assert_eq!(updated["enabled"], true);
 
     let req = json_request(
         "DELETE",
@@ -198,6 +200,7 @@ async fn org_integrations_support_mcp_server_provider_config() {
     assert_eq!(created["kind"], "mcp_server");
     assert_eq!(created["provider"], "mcp_server");
     assert_eq!(created["provider_config"]["transport"], "stdio");
+    assert_eq!(created["enabled"], true);
     assert_eq!(
         created["provider_config"]["secretEnvVar"],
         "GITHUB_PERSONAL_ACCESS_TOKEN"
@@ -230,6 +233,7 @@ async fn org_integrations_support_mcp_server_provider_config() {
     assert_eq!(resp.status(), StatusCode::OK);
     let updated = response_json(resp).await;
     assert_eq!(updated["has_secret"], false);
+    assert_eq!(updated["enabled"], true);
     assert_eq!(
         state
             .org_service
@@ -951,6 +955,50 @@ async fn org_tool_actions_use_saved_integrations() {
         std::env::remove_var("AURA_METRICOOL_API_BASE_URL");
         std::env::remove_var("AURA_MAILCHIMP_API_BASE_URL");
     }
+}
+
+#[tokio::test]
+async fn disabled_workspace_integrations_are_kept_but_not_exposed_as_active_capabilities() {
+    let (app, _state, _db) = build_test_app();
+    let org_id = OrgId::new();
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/integrations"),
+        Some(serde_json::json!({
+            "name": "Brave Search",
+            "provider": "brave_search",
+            "kind": "workspace_integration",
+            "api_key": "brave_test",
+            "enabled": false
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let created = response_json(resp).await;
+    assert_eq!(created["enabled"], false);
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/list_org_integrations"),
+        Some(serde_json::json!({})),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let listed = response_json(resp).await;
+    assert_eq!(listed["integrations"][0]["enabled"], false);
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/brave_search_web"),
+        Some(serde_json::json!({
+            "query": "aura"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let body = response_json(resp).await;
+    assert_eq!(body["code"], "bad_request");
 }
 
 // ---------------------------------------------------------------------------
