@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import type { ToolCallEntry } from "../../types/stream";
-import { TOOL_LABELS, FILE_OPS } from "../../constants/tools";
+import { TOOL_LABELS, FILE_OPS, COMMAND_OPS } from "../../constants/tools";
 import { summarizeInput, formatResult } from "../../utils/format";
 import { FilePreviewCard } from "../FilePreviewCard";
+import { CommandPreviewCard } from "./CommandPreviewCard";
 import { SpecPreviewCard } from "./SpecPreviewCard";
 import { getSuperAgentCardRenderer } from "./SuperAgentToolCards";
 import { TaskCreatedIndicator } from "./TaskCreatedIndicator";
@@ -42,7 +43,8 @@ export function ToolCallBlock({
   const isSpec = entry.name === "create_spec" || entry.name === "update_spec";
   const isTask = entry.name === "create_task";
   const isFileOp = FILE_OPS.has(entry.name);
-  const autoExpand = isFileOp ? false : (defaultExpanded ?? (isSpec && !entry.pending && !entry.started));
+  const isCommand = COMMAND_OPS.has(entry.name);
+  const autoExpand = isFileOp || isCommand ? false : (defaultExpanded ?? (isSpec && !entry.pending && !entry.started));
   const [expanded, setExpanded] = useState(autoExpand);
   const label = TOOL_LABELS[entry.name] || entry.name;
   const inputSummary = (entry.started && !isTask) ? "" : summarizeInput(entry.name, entry.input);
@@ -85,6 +87,15 @@ export function ToolCallBlock({
         <div className={`${toolStyles.toolBodyWrap} ${toolStyles.toolBodyExpanded}`}>
           <div className={toolStyles.toolBody}>
             <FilePreviewCard entry={entry} />
+          </div>
+        </div>
+      );
+    }
+    if (isCommand) {
+      return (
+        <div className={`${toolStyles.toolBodyWrap} ${toolStyles.toolBodyExpanded}`}>
+          <div className={toolStyles.toolBody}>
+            <CommandPreviewCard entry={entry} />
           </div>
         </div>
       );
