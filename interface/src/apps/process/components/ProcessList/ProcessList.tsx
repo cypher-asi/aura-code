@@ -1,10 +1,9 @@
 import { createPortal } from "react-dom";
 import { Explorer, Menu, PageEmptyState } from "@cypher-asi/zui";
 import type { MenuItem } from "@cypher-asi/zui";
-import { Cpu, FolderOpen, Pencil, Trash2, FolderPlus } from "lucide-react";
+import { Cpu, FolderOpen, Pencil, Trash2 } from "lucide-react";
 import { InlineRenameInput } from "../../../../components/InlineRenameInput";
 import { ProcessForm } from "../ProcessForm";
-import { ProcessFolderForm } from "../ProcessFolderForm";
 import { useProcessListState } from "./use-process-list";
 
 import styles from "../../../../components/ProjectList/ProjectList.module.css";
@@ -13,11 +12,8 @@ import styles from "../../../../components/ProjectList/ProjectList.module.css";
 // Context-menu items
 // ---------------------------------------------------------------------------
 
-const folderMenuItems: MenuItem[] = [
+const projectMenuItems: MenuItem[] = [
   { id: "add-process", label: "Add Process", icon: <Cpu size={14} /> },
-  { id: "rename-folder", label: "Rename", icon: <Pencil size={14} /> },
-  { type: "separator" },
-  { id: "delete-folder", label: "Delete", icon: <Trash2 size={14} /> },
 ];
 
 const processMenuItems: MenuItem[] = [
@@ -28,7 +24,6 @@ const processMenuItems: MenuItem[] = [
 
 const addMenuItems: MenuItem[] = [
   { id: "new-process", label: "New Process", icon: <Cpu size={14} /> },
-  { id: "new-folder", label: "New Folder", icon: <FolderPlus size={14} /> },
 ];
 
 // ---------------------------------------------------------------------------
@@ -38,7 +33,7 @@ const addMenuItems: MenuItem[] = [
 export function ProcessList() {
   const s = useProcessListState();
 
-  if (!s.loading && s.processes.length === 0 && s.folders.length === 0) {
+  if (!s.loading && s.processes.length === 0 && s.projects.length === 0) {
     return (
       <div className={styles.root}>
         <PageEmptyState
@@ -49,12 +44,9 @@ export function ProcessList() {
         {s.showProcessForm && (
           <ProcessForm
             onClose={() => s.setShowProcessForm(false)}
-            folderId={s.processFormFolderId}
+            projectId={s.processFormProjectId}
             onCreated={s.setPendingSelectId}
           />
-        )}
-        {s.showFolderForm && (
-          <ProcessFolderForm onClose={() => s.setShowFolderForm(false)} />
         )}
         {s.addMenuAnchor &&
           createPortal(
@@ -111,7 +103,7 @@ export function ProcessList() {
           >
             <Menu
               items={
-                s.ctxMenu.folderId ? folderMenuItems : processMenuItems
+                s.ctxMenu.projectId ? projectMenuItems : processMenuItems
               }
               onChange={s.handleCtxMenuAction}
               background="solid"
@@ -159,12 +151,9 @@ export function ProcessList() {
       {s.showProcessForm && (
         <ProcessForm
           onClose={() => s.setShowProcessForm(false)}
-          folderId={s.processFormFolderId}
+          projectId={s.processFormProjectId}
           onCreated={s.setPendingSelectId}
         />
-      )}
-      {s.showFolderForm && (
-        <ProcessFolderForm onClose={() => s.setShowFolderForm(false)} />
       )}
     </div>
   );

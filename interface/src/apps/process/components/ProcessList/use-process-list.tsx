@@ -4,6 +4,7 @@ import { ButtonPlus } from "@cypher-asi/zui";
 import type { ExplorerNode, DropPosition } from "@cypher-asi/zui";
 import { Cpu } from "lucide-react";
 import { useProcessStore, LAST_PROCESS_ID_KEY } from "../../stores/process-store";
+import { useProjectsListStore } from "../../../../stores/projects-list-store";
 import { useSidebarSearch } from "../../../../hooks/use-sidebar-search";
 import { processApi } from "../../../../api/process";
 import type { InlineRenameTarget } from "../../../../components/InlineRenameInput";
@@ -40,31 +41,29 @@ function getLastSelectedId(ids: Iterable<string>): string | null {
 type CtxMenuState = {
   x: number;
   y: number;
-  folderId?: string;
+  projectId?: string;
   processId?: string;
 };
 
 export type RenameTargetExt = InlineRenameTarget & {
-  kind: "folder" | "process";
+  kind: "process";
 };
 
 export function useProcessListState() {
   const processes = useProcessStore((s) => s.processes);
-  const folders = useProcessStore((s) => s.folders);
+  const projects = useProjectsListStore((s) => s.projects);
   const loading = useProcessStore((s) => s.loading);
+  const loadingProjects = useProjectsListStore((s) => s.loadingProjects);
   const updateProcess = useProcessStore((s) => s.updateProcess);
   const removeProcess = useProcessStore((s) => s.removeProcess);
-  const updateFolder = useProcessStore((s) => s.updateFolder);
-  const removeFolder = useProcessStore((s) => s.removeFolder);
   const navigate = useNavigate();
   const { processId } = useParams<{ processId: string }>();
   const { query: searchQuery, setAction } = useSidebarSearch();
 
   const [showProcessForm, setShowProcessForm] = useState(false);
-  const [showFolderForm, setShowFolderForm] = useState(false);
-  const [processFormFolderId, setProcessFormFolderId] = useState<string | null>(
-    null,
-  );
+  const [processFormProjectId, setProcessFormProjectId] = useState<
+    string | null
+  >(null);
   const [addMenuAnchor, setAddMenuAnchor] = useState<{
     x: number;
     y: number;
@@ -115,7 +114,7 @@ export function useProcessListState() {
           setAddMenuAnchor({ x: rect.left, y: rect.bottom + 4 });
         }}
         size="sm"
-        title="New..."
+        title="New Process"
       />,
     );
     return () => setAction("process", null);
@@ -124,60 +123,64 @@ export function useProcessListState() {
   const handleAddMenuAction = useCallback((id: string) => {
     setAddMenuAnchor(null);
     if (id === "new-process") {
-      setProcessFormFolderId(null);
+      setProcessFormProjectId(null);
       setShowProcessForm(true);
     }
-    if (id === "new-folder") setShowFolderForm(true);
   }, []);
 
-  const folderMap = useMemo(
-    () => new Map(folders.map((f) => [f.folder_id, f])),
-    [folders],
+  const projectMap = useMemo(
+    () => new Map(projects.map((p) => [p.project_id, p])),
+    [projects],
   );
   const processMap = useMemo(
     () => new Map(processes.map((p) => [p.process_id, p])),
     [processes],
   );
 
-  const processesByFolder = useMemo(() => {
+  const processesByProject = useMemo(() => {
     const map: Record<string, typeof processes> = {};
     for (const p of processes) {
-      const key = p.folder_id ?? "__root__";
+      const key = p.project_id ?? "__unassigned__";
       (map[key] ??= []).push(p);
     }
     return map;
   }, [processes]);
 
-  // Build explorer data
+  const enabledDot = useCallback(
+    (enabled: boolean) => (
+      <span className={styles.sessionIndicator}>
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            display: "inline-block",
+            background: enabled
+              ? "var(--color-success)"
+              : "var(--color-text-muted)",
+          }}
+        />
+      </span>
+    ),
+    [],
+  );
+
+  // Build explorer data: projects as parents, processes as children
   const explorerData: ExplorerNode[] = useMemo(() => {
-    const folderNodes: ExplorerNode[] = folders.map((f) => {
+    const projectNodes: ExplorerNode[] = projects.map((proj) => {
       const children: ExplorerNode[] = (
-        processesByFolder[f.folder_id] ?? []
+        processesByProject[proj.project_id] ?? []
       ).map((p) => ({
         id: p.process_id,
         label: p.name,
         icon: <Cpu size={16} />,
-        suffix: (
-          <span className={styles.sessionIndicator}>
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                display: "inline-block",
-                background: p.enabled
-                  ? "var(--color-success)"
-                  : "var(--color-text-muted)",
-              }}
-            />
-          </span>
-        ),
-        metadata: { type: "process", folderId: f.folder_id },
+        suffix: enabledDot(p.enabled),
+        metadata: { type: "process", projectId: proj.project_id },
       }));
 
       return {
-        id: f.folder_id,
-        label: f.name,
+        id: proj.project_id,
+        label: proj.name,
         suffix: (
           <span className={styles.projectSuffix}>
             <span
@@ -186,7 +189,7 @@ export function useProcessListState() {
             >
               <ButtonPlus
                 onClick={() => {
-                  setProcessFormFolderId(f.folder_id);
+                  setProcessFormProjectId(proj.project_id);
                   setShowProcessForm(true);
                 }}
                 size="sm"
@@ -195,37 +198,22 @@ export function useProcessListState() {
             </span>
           </span>
         ),
-        metadata: { type: "folder" },
+        metadata: { type: "project" },
         children,
       };
     });
 
-    const rootProcesses: ExplorerNode[] = (
-      processesByFolder["__root__"] ?? []
-    ).map((p) => ({
+    const orphans = processesByProject["__unassigned__"] ?? [];
+    const orphanNodes: ExplorerNode[] = orphans.map((p) => ({
       id: p.process_id,
       label: p.name,
       icon: <Cpu size={16} />,
-      suffix: (
-        <span className={styles.sessionIndicator}>
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              display: "inline-block",
-              background: p.enabled
-                ? "var(--color-success)"
-                : "var(--color-text-muted)",
-            }}
-          />
-        </span>
-      ),
-      metadata: { type: "process", folderId: null },
+      suffix: enabledDot(p.enabled),
+      metadata: { type: "process", projectId: null },
     }));
 
-    return [...folderNodes, ...rootProcesses];
-  }, [folders, processesByFolder]);
+    return [...projectNodes, ...orphanNodes];
+  }, [projects, processesByProject, enabledDot]);
 
   const filteredExplorerData = useMemo(
     () => filterTree(explorerData, searchQuery),
@@ -245,12 +233,12 @@ export function useProcessListState() {
   const activeId = pendingSelectId ?? processId ?? lastStoredId;
   const explorerKey = useMemo(
     () =>
-      folders.map((f) => f.folder_id).join() +
+      projects.map((p) => p.project_id).join() +
       ":" +
       processes.length +
       ":" +
       (pendingSelectId ?? ""),
-    [folders, processes.length, pendingSelectId],
+    [projects, processes.length, pendingSelectId],
   );
   const defaultSelectedIds = useMemo(
     () => (activeId ? [activeId] : []),
@@ -273,28 +261,28 @@ export function useProcessListState() {
       const draggedProcess = processMap.get(draggedId);
       if (!draggedProcess) return;
 
-      let newFolderId: string | null;
-      if (folderMap.has(targetId)) {
-        newFolderId = targetId;
+      let newProjectId: string | null;
+      if (projectMap.has(targetId)) {
+        newProjectId = targetId;
       } else {
         const targetProcess = processMap.get(targetId);
         if (!targetProcess) return;
-        newFolderId = targetProcess.folder_id;
+        newProjectId = targetProcess.project_id ?? null;
       }
 
-      if (newFolderId === draggedProcess.folder_id) return;
+      if (newProjectId === (draggedProcess.project_id ?? null)) return;
 
       const previous = draggedProcess;
-      updateProcess({ ...draggedProcess, folder_id: newFolderId });
+      updateProcess({ ...draggedProcess, project_id: newProjectId });
       try {
         await processApi.updateProcess(draggedProcess.process_id, {
-          folder_id: newFolderId,
+          project_id: newProjectId,
         });
       } catch {
         updateProcess(previous);
       }
     },
-    [processMap, folderMap, updateProcess],
+    [processMap, projectMap, updateProcess],
   );
 
   const handleContextMenu = useCallback(
@@ -302,51 +290,24 @@ export function useProcessListState() {
       const target = (e.target as HTMLElement).closest("button[id]");
       if (!target) return;
       const nodeId = target.id;
-      if (folderMap.has(nodeId)) {
+      if (projectMap.has(nodeId)) {
         e.preventDefault();
-        setCtxMenu({ x: e.clientX, y: e.clientY, folderId: nodeId });
+        setCtxMenu({ x: e.clientX, y: e.clientY, projectId: nodeId });
       } else if (processMap.has(nodeId)) {
         e.preventDefault();
         setCtxMenu({ x: e.clientX, y: e.clientY, processId: nodeId });
       }
     },
-    [folderMap, processMap],
+    [projectMap, processMap],
   );
 
   const handleCtxMenuAction = useCallback(
     async (id: string) => {
       if (!ctxMenu) return;
 
-      if (id === "add-process" && ctxMenu.folderId) {
-        setProcessFormFolderId(ctxMenu.folderId);
+      if (id === "add-process" && ctxMenu.projectId) {
+        setProcessFormProjectId(ctxMenu.projectId);
         setShowProcessForm(true);
-      }
-
-      if (id === "rename-folder" && ctxMenu.folderId) {
-        const folder = folderMap.get(ctxMenu.folderId);
-        if (!folder) return;
-        setRenameTarget({
-          id: folder.folder_id,
-          name: folder.name,
-          kind: "folder",
-        });
-      }
-
-      if (id === "delete-folder" && ctxMenu.folderId) {
-        const folder = folderMap.get(ctxMenu.folderId);
-        if (!folder) return;
-        if (
-          window.confirm(
-            `Delete folder "${folder.name}"? Processes inside will be moved to the root.`,
-          )
-        ) {
-          try {
-            await processApi.deleteFolder(folder.folder_id);
-            removeFolder(folder.folder_id);
-          } catch {
-            /* ignore */
-          }
-        }
       }
 
       if (id === "rename-process" && ctxMenu.processId) {
@@ -382,9 +343,7 @@ export function useProcessListState() {
     },
     [
       ctxMenu,
-      folderMap,
       processMap,
-      removeFolder,
       removeProcess,
       navigate,
       processId,
@@ -395,23 +354,16 @@ export function useProcessListState() {
     async (newName: string) => {
       if (!renameTarget) return;
       try {
-        if (renameTarget.kind === "folder") {
-          const updated = await processApi.updateFolder(renameTarget.id, {
-            name: newName,
-          });
-          updateFolder(updated);
-        } else {
-          const updated = await processApi.updateProcess(renameTarget.id, {
-            name: newName,
-          });
-          updateProcess(updated);
-        }
+        const updated = await processApi.updateProcess(renameTarget.id, {
+          name: newName,
+        });
+        updateProcess(updated);
       } catch {
         /* ignore */
       }
       setRenameTarget(null);
     },
-    [renameTarget, updateFolder, updateProcess],
+    [renameTarget, updateProcess],
   );
 
   const handleKeyDown = useCallback(
@@ -419,16 +371,6 @@ export function useProcessListState() {
       if (e.key !== "F2") return;
       const focused = (e.target as HTMLElement).closest("button[id]");
       if (!focused) return;
-      const folder = folderMap.get(focused.id);
-      if (folder) {
-        e.preventDefault();
-        setRenameTarget({
-          id: folder.folder_id,
-          name: folder.name,
-          kind: "folder",
-        });
-        return;
-      }
       const proc = processMap.get(focused.id);
       if (proc) {
         e.preventDefault();
@@ -439,18 +381,16 @@ export function useProcessListState() {
         });
       }
     },
-    [folderMap, processMap],
+    [processMap],
   );
 
   return {
     processes,
-    folders,
-    loading,
+    projects,
+    loading: loading || loadingProjects,
     showProcessForm,
     setShowProcessForm,
-    showFolderForm,
-    setShowFolderForm,
-    processFormFolderId,
+    processFormProjectId,
     addMenuAnchor,
     ctxMenu,
     ctxMenuRef,

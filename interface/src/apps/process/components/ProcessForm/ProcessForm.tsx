@@ -2,21 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Modal, Button } from "@cypher-asi/zui";
 import { processApi } from "../../../../api/process";
-import { projectsApi } from "../../../../api/projects";
 import { useProcessStore } from "../../stores/process-store";
-import type { Project } from "../../../../types";
+import { useProjectsListStore } from "../../../../stores/projects-list-store";
 
 interface ProcessFormProps {
   onClose: () => void;
-  folderId?: string | null;
+  projectId?: string | null;
   onCreated?: (processId: string) => void;
 }
 
-export function ProcessForm({ onClose, folderId, onCreated }: ProcessFormProps) {
+export function ProcessForm({ onClose, projectId: initialProjectId, onCreated }: ProcessFormProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [projectId, setProjectId] = useState("");
-  const [projects, setProjects] = useState<Project[]>([]);
+  const projects = useProjectsListStore((s) => s.projects);
+  const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const addProcess = useProcessStore((s) => s.addProcess);
@@ -25,22 +24,23 @@ export function ProcessForm({ onClose, folderId, onCreated }: ProcessFormProps) 
 
   useEffect(() => {
     requestAnimationFrame(() => inputRef.current?.focus());
-    projectsApi.listProjects().then((ps) => {
-      setProjects(ps);
-      if (ps.length > 0 && !projectId) setProjectId(ps[0].project_id);
-    }).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!selectedProjectId && projects.length > 0) {
+      setSelectedProjectId(initialProjectId ?? projects[0].project_id);
+    }
+  }, [projects, initialProjectId, selectedProjectId]);
+
   const handleSubmit = async () => {
-    if (!name.trim() || !projectId) return;
+    if (!name.trim() || !selectedProjectId) return;
     setLoading(true);
     setError(null);
     try {
       const process = await processApi.createProcess({
         name: name.trim(),
         description: description.trim() || undefined,
-        project_id: projectId,
-        folder_id: folderId ?? undefined,
+        project_id: selectedProjectId,
       });
       addProcess(process);
       onCreated?.(process.process_id);
@@ -73,7 +73,7 @@ export function ProcessForm({ onClose, folderId, onCreated }: ProcessFormProps) 
           <Button variant="ghost" size="sm" onClick={onClose} disabled={loading}>
             Cancel
           </Button>
-          <Button variant="primary" size="sm" onClick={handleSubmit} disabled={loading || !name.trim() || !projectId}>
+          <Button variant="primary" size="sm" onClick={handleSubmit} disabled={loading || !name.trim() || !selectedProjectId}>
             {loading ? "Creating..." : "Create"}
           </Button>
         </div>
@@ -110,7 +110,7 @@ export function ProcessForm({ onClose, folderId, onCreated }: ProcessFormProps) 
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <label style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-muted)" }}>Project</label>
           {projects.length > 0 ? (
-            <select style={selectStyle} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+            <select style={selectStyle} value={selectedProjectId} onChange={(e) => setSelectedProjectId(e.target.value)}>
               {projects.map((p) => (
                 <option key={p.project_id} value={p.project_id}>{p.name}</option>
               ))}

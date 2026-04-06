@@ -2,16 +2,17 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
 import { useProcessStore, LAST_PROCESS_ID_KEY } from "../../stores/process-store";
 import { useProcessSidekickStore } from "../../stores/process-sidekick-store";
+import { useProjectsListStore } from "../../../../stores/projects-list-store";
 
 export function ProcessProvider({ children }: { children: ReactNode }) {
   const fetchProcesses = useProcessStore((s) => s.fetchProcesses);
-  const fetchFolders = useProcessStore((s) => s.fetchFolders);
+  const refreshProjects = useProjectsListStore((s) => s.refreshProjects);
   const fetchNodes = useProcessStore((s) => s.fetchNodes);
   const fetchConnections = useProcessStore((s) => s.fetchConnections);
   const fetchRuns = useProcessStore((s) => s.fetchRuns);
   const { processId } = useParams<{ processId: string }>();
 
-  useEffect(() => { fetchProcesses(); fetchFolders(); }, [fetchProcesses, fetchFolders]);
+  useEffect(() => { fetchProcesses(); refreshProjects(); }, [fetchProcesses, refreshProjects]);
 
   useEffect(() => {
     if (processId) {
