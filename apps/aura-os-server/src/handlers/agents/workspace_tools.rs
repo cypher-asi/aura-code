@@ -1,14 +1,17 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
-use aura_os_integrations::org_integration_tool_manifest_entries;
+use aura_os_integrations::{
+    control_plane_api_base_url as shared_control_plane_api_base_url,
+    installed_workspace_app_tools as build_installed_workspace_app_tools,
+    installed_workspace_integrations as build_installed_workspace_integrations,
+    org_integration_tool_manifest_entries,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
 use aura_os_core::{Agent, OrgId};
-use aura_os_link::{
-    InstalledIntegration, InstalledTool, InstalledToolIntegrationRequirement, ToolAuth,
-};
+use aura_os_link::{InstalledIntegration, InstalledTool};
 
 use crate::state::AppState;
 
@@ -81,13 +84,12 @@ pub(crate) fn shared_workspace_tools() -> &'static [WorkspaceToolDefinition] {
     static TOOLS: OnceLock<Vec<WorkspaceToolDefinition>> = OnceLock::new();
     TOOLS.get_or_init(|| {
         let mut tools = Vec::new();
-        let project_entries: Vec<WorkspaceToolManifestEntry> = serde_json::from_str(include_str!(
-            concat!(
+        let project_entries: Vec<WorkspaceToolManifestEntry> =
+            serde_json::from_str(include_str!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/../../infra/shared/project-control-plane-tools.json"
-            )
-        ))
-        .expect("workspace tool manifest should parse");
+            )))
+            .expect("workspace tool manifest should parse");
         tools.extend(load_manifest_entries(
             &project_entries,
             "aura native",
@@ -175,30 +177,7 @@ pub(crate) fn active_workspace_tools<'a>(
 }
 
 pub(crate) fn control_plane_api_base_url() -> String {
-    if let Some(url) = std::env::var("AURA_CONTROL_PLANE_API_BASE_URL")
-        .ok()
-        .map(|value| value.trim().trim_end_matches('/').to_string())
-        .filter(|value| !value.is_empty())
-    {
-        return url;
-    }
-
-    let port = std::env::var("AURA_SERVER_PORT")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "3100".to_string());
-    let host = std::env::var("AURA_SERVER_HOST")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "127.0.0.1".to_string());
-
-    let normalized_host = match host.as_str() {
-        "0.0.0.0" | "::" => "127.0.0.1".to_string(),
-        other if other.contains(':') && !other.starts_with('[') => format!("[{other}]"),
-        other => other.to_string(),
-    };
-
-    format!("http://{normalized_host}:{port}")
+    shared_control_plane_api_base_url()
 }
 
 pub(crate) fn installed_workspace_app_tools(
@@ -206,28 +185,13 @@ pub(crate) fn installed_workspace_app_tools(
     org_id: &OrgId,
     bearer_token: &str,
 ) -> Vec<InstalledTool> {
-    let base_url = control_plane_api_base_url();
-    active_workspace_tools_for_org(state, org_id)
-        .into_iter()
-        .filter(|tool| matches!(tool.source_kind, WorkspaceToolSourceKind::AppProvider))
-        .map(|tool| InstalledTool {
-            name: tool.name.clone(),
-            description: tool.description.clone(),
-            input_schema: tool.input_schema.clone(),
-            endpoint: format!("{base_url}/api/orgs/{org_id}/tool-actions/{}", tool.name),
-            auth: ToolAuth::Bearer {
-                token: bearer_token.to_string(),
-            },
-            timeout_ms: Some(30_000),
-            namespace: Some("aura_org_tools".to_string()),
-            required_integration: Some(InstalledToolIntegrationRequirement {
-                integration_id: None,
-                provider: tool.provider.clone(),
-                kind: Some("workspace_integration".to_string()),
-            }),
-            metadata: HashMap::new(),
+    state
+        .org_service
+        .list_integrations(org_id)
+        .map(|integrations| {
+            build_installed_workspace_app_tools(org_id, &integrations, bearer_token)
         })
-        .collect()
+        .unwrap_or_default()
 }
 
 pub(crate) fn installed_workspace_integrations_for_org(
@@ -237,37 +201,7 @@ pub(crate) fn installed_workspace_integrations_for_org(
     state
         .org_service
         .list_integrations(org_id)
-        .map(|integrations| {
-            integrations
-                .into_iter()
-                .filter(|integration| {
-                    integration.enabled
-                        && match integration.kind {
-                            aura_os_core::OrgIntegrationKind::WorkspaceIntegration => {
-                                integration.has_secret
-                            }
-                            aura_os_core::OrgIntegrationKind::McpServer => true,
-                            aura_os_core::OrgIntegrationKind::WorkspaceConnection => false,
-                        }
-                })
-                .map(|integration| InstalledIntegration {
-                    integration_id: integration.integration_id,
-                    name: integration.name,
-                    provider: integration.provider,
-                    kind: match integration.kind {
-                        aura_os_core::OrgIntegrationKind::WorkspaceConnection => {
-                            "workspace_connection"
-                        }
-                        aura_os_core::OrgIntegrationKind::WorkspaceIntegration => {
-                            "workspace_integration"
-                        }
-                        aura_os_core::OrgIntegrationKind::McpServer => "mcp_server",
-                    }
-                    .to_string(),
-                    metadata: HashMap::new(),
-                })
-                .collect()
-        })
+        .map(|integrations| build_installed_workspace_integrations(&integrations))
         .unwrap_or_default()
 }
 
@@ -275,6 +209,7 @@ pub(crate) fn installed_workspace_integrations_for_org(
 mod tests {
     use super::*;
     use aura_os_core::{OrgId, OrgIntegrationKind};
+    use aura_os_link::ToolAuth;
     use aura_os_orgs::IntegrationSecretUpdate;
 
     #[tokio::test]
