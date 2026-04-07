@@ -27,7 +27,9 @@ use aura_os_storage::StorageClient;
 
 use crate::dto::{ChatAttachmentDto, SendChatRequest};
 use crate::error::{map_storage_error, ApiError, ApiResult};
-use crate::handlers::agents::workspace_tools::installed_workspace_app_tools;
+use crate::handlers::agents::workspace_tools::{
+    installed_workspace_app_tools, installed_workspace_integrations_for_org,
+};
 use crate::handlers::billing::require_credits_for_auth_source;
 use crate::handlers::{projects, projects_helpers::resolve_agent_instance_workspace_path};
 use crate::state::{AppState, AuthJwt, ChatSession};
@@ -1339,6 +1341,11 @@ pub(crate) async fn send_agent_event_stream(
         .as_ref()
         .map(|org_id| installed_workspace_app_tools(&state, org_id, &jwt))
         .filter(|tools| !tools.is_empty());
+    let installed_integrations = agent
+        .org_id
+        .as_ref()
+        .map(|org_id| installed_workspace_integrations_for_org(&state, org_id))
+        .filter(|integrations| !integrations.is_empty());
     let config = SessionConfig {
         system_prompt: Some(agent.system_prompt.clone()),
         agent_id: Some(agent_id.to_string()),
@@ -1349,6 +1356,7 @@ pub(crate) async fn send_agent_event_stream(
         project_id: body.project_id.clone(),
         provider_config: build_harness_provider_config(integration.as_ref(), model.as_deref())?,
         installed_tools,
+        installed_integrations,
         ..Default::default()
     };
 
@@ -1459,6 +1467,11 @@ pub(crate) async fn send_event_stream(
         .as_ref()
         .map(|org_id| installed_workspace_app_tools(&state, org_id, &jwt))
         .filter(|tools| !tools.is_empty());
+    let installed_integrations = instance
+        .org_id
+        .as_ref()
+        .map(|org_id| installed_workspace_integrations_for_org(&state, org_id))
+        .filter(|integrations| !integrations.is_empty());
     let config = SessionConfig {
         system_prompt: Some(system_prompt),
         agent_id: Some(instance.agent_id.to_string()),
@@ -1470,6 +1483,7 @@ pub(crate) async fn send_event_stream(
         project_path,
         provider_config: build_harness_provider_config(integration.as_ref(), model.as_deref())?,
         installed_tools,
+        installed_integrations,
         ..Default::default()
     };
 

@@ -32,7 +32,7 @@ use crate::handlers::agents::chat::{
 };
 use crate::handlers::agents::workspace_tools::{
     active_workspace_tools, control_plane_api_base_url as workspace_control_plane_api_base_url,
-    workspace_tool,
+    installed_workspace_app_tools, installed_workspace_integrations_for_org, workspace_tool,
 };
 use crate::handlers::projects_helpers::resolve_project_workspace_path_for_machine;
 use crate::handlers::sse::harness_event_to_sse;
@@ -443,6 +443,16 @@ async fn run_harness_test(
     model: Option<String>,
     integration: Option<&ResolvedIntegration>,
 ) -> ApiResult<RuntimeOutcome> {
+    let installed_tools = agent
+        .org_id
+        .as_ref()
+        .map(|org_id| installed_workspace_app_tools(state, org_id, jwt))
+        .filter(|tools| !tools.is_empty());
+    let installed_integrations = agent
+        .org_id
+        .as_ref()
+        .map(|org_id| installed_workspace_integrations_for_org(state, org_id))
+        .filter(|integrations| !integrations.is_empty());
     let config = SessionConfig {
         system_prompt: Some(agent.system_prompt.clone()),
         agent_id: Some(agent.agent_id.to_string()),
@@ -450,6 +460,8 @@ async fn run_harness_test(
         model: model.clone(),
         token: Some(jwt.to_string()),
         provider_config: build_harness_provider_config(integration, model.as_deref())?,
+        installed_tools,
+        installed_integrations,
         ..Default::default()
     };
 

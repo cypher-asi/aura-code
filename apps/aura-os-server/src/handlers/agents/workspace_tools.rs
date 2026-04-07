@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use aura_os_core::{Agent, OrgId};
-use aura_os_link::{InstalledTool, ToolAuth};
+use aura_os_link::{InstalledIntegration, InstalledTool, ToolAuth};
 
 use crate::state::AppState;
 
@@ -204,9 +204,59 @@ pub(crate) fn installed_workspace_app_tools(
             },
             timeout_ms: Some(30_000),
             namespace: Some("aura_org_tools".to_string()),
-            metadata: HashMap::new(),
+            metadata: HashMap::from([
+                (
+                    "required_integration_provider".to_string(),
+                    Value::String(tool.provider.clone().unwrap_or_default()),
+                ),
+                (
+                    "required_integration_kind".to_string(),
+                    Value::String("workspace_integration".to_string()),
+                ),
+            ]),
         })
         .collect()
+}
+
+pub(crate) fn installed_workspace_integrations_for_org(
+    state: &AppState,
+    org_id: &OrgId,
+) -> Vec<InstalledIntegration> {
+    state
+        .org_service
+        .list_integrations(org_id)
+        .map(|integrations| {
+            integrations
+                .into_iter()
+                .filter(|integration| {
+                    integration.enabled
+                        && match integration.kind {
+                            aura_os_core::OrgIntegrationKind::WorkspaceIntegration => {
+                                integration.has_secret
+                            }
+                            aura_os_core::OrgIntegrationKind::McpServer => true,
+                            aura_os_core::OrgIntegrationKind::WorkspaceConnection => false,
+                        }
+                })
+                .map(|integration| InstalledIntegration {
+                    integration_id: integration.integration_id,
+                    name: integration.name,
+                    provider: integration.provider,
+                    kind: match integration.kind {
+                        aura_os_core::OrgIntegrationKind::WorkspaceConnection => {
+                            "workspace_connection"
+                        }
+                        aura_os_core::OrgIntegrationKind::WorkspaceIntegration => {
+                            "workspace_integration"
+                        }
+                        aura_os_core::OrgIntegrationKind::McpServer => "mcp_server",
+                    }
+                    .to_string(),
+                    metadata: HashMap::new(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -254,5 +304,66 @@ mod tests {
         assert!(brave.endpoint.contains("/api/orgs/"));
         assert!(brave.endpoint.ends_with("/tool-actions/brave_search_web"));
         assert!(matches!(brave.auth, ToolAuth::Bearer { .. }));
+        assert_eq!(
+            brave
+                .metadata
+                .get("required_integration_provider")
+                .and_then(Value::as_str),
+            Some("brave_search")
+        );
+        assert_eq!(
+            brave
+                .metadata
+                .get("required_integration_kind")
+                .and_then(Value::as_str),
+            Some("workspace_integration")
+        );
+    }
+
+    #[tokio::test]
+    async fn installed_workspace_integrations_include_enabled_runtime_capabilities() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("settings.db");
+        let state = crate::build_app_state(&db_path).expect("build app state");
+        let org_id = OrgId::new();
+
+        state
+            .org_service
+            .upsert_integration(
+                &org_id,
+                None,
+                "Brave Search".to_string(),
+                "brave_search".to_string(),
+                OrgIntegrationKind::WorkspaceIntegration,
+                None,
+                None,
+                Some(true),
+                IntegrationSecretUpdate::Set("brave-secret".to_string()),
+            )
+            .expect("save brave integration");
+
+        state
+            .org_service
+            .upsert_integration(
+                &org_id,
+                None,
+                "Filesystem MCP".to_string(),
+                "mcp_server".to_string(),
+                OrgIntegrationKind::McpServer,
+                None,
+                Some(serde_json::json!({"command":"npx","args":["-y","pkg"]})),
+                Some(true),
+                IntegrationSecretUpdate::Preserve,
+            )
+            .expect("save mcp integration");
+
+        let integrations = installed_workspace_integrations_for_org(&state, &org_id);
+        let ids = integrations
+            .iter()
+            .map(|integration| integration.provider.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(ids.contains(&"brave_search"));
+        assert!(ids.contains(&"mcp_server"));
     }
 }
