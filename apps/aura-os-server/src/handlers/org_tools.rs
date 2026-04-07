@@ -1,16 +1,16 @@
 use axum::extract::{Path, State};
 use axum::Json;
-use aura_os_integrations::{app_provider_contract_by_tool, AppProviderKind};
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use aura_os_integrations::{
+    app_provider_authenticated_url, app_provider_base_url, app_provider_contract_by_tool,
+    app_provider_headers, AppProviderKind,
+};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT};
 use serde_json::{json, Value};
 
 use aura_os_core::{OrgId, OrgIntegration, OrgIntegrationKind};
 
 use crate::error::{ApiError, ApiResult};
 use crate::state::{AppState, AuthJwt};
-
-const NOTION_VERSION: &str = "2022-06-28";
 
 struct ResolvedOrgIntegration {
     metadata: OrgIntegration,
@@ -149,14 +149,15 @@ async fn github_list_repos(state: &AppState, org_id: &OrgId, args: &Value) -> Ap
     let integration = resolve_org_integration(state, org_id, "github", args)?;
     let url = format!(
         "{}/user/repos?per_page=20&sort=updated",
-        provider_base_url("AURA_GITHUB_API_BASE_URL", "https://api.github.com")
+        app_provider_base_url(AppProviderKind::Github)
+            .ok_or_else(|| ApiError::internal("github provider base url missing"))?
     );
     let response = provider_json_request(
         &state.super_agent_service.http_client,
         state,
         reqwest::Method::GET,
         &url,
-        provider_headers("github", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Github, &integration.secret)?,
         None,
     )
     .await?;
@@ -187,14 +188,15 @@ async fn github_create_issue(state: &AppState, org_id: &OrgId, args: &Value) -> 
     let body = optional_string(args, &["body", "markdown_contents", "markdownContents"]);
     let url = format!(
         "{}/repos/{owner}/{repo}/issues",
-        provider_base_url("AURA_GITHUB_API_BASE_URL", "https://api.github.com")
+        app_provider_base_url(AppProviderKind::Github)
+            .ok_or_else(|| ApiError::internal("github provider base url missing"))?
     );
     let response = provider_json_request(
         &state.super_agent_service.http_client,
         state,
         reqwest::Method::POST,
         &url,
-        provider_headers("github", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Github, &integration.secret)?,
         Some(json!({
             "title": title,
             "body": body,
@@ -263,14 +265,15 @@ async fn slack_list_channels(state: &AppState, org_id: &OrgId, args: &Value) -> 
     let integration = resolve_org_integration(state, org_id, "slack", args)?;
     let url = format!(
         "{}/conversations.list?types=public_channel,private_channel&exclude_archived=true&limit=100",
-        provider_base_url("AURA_SLACK_API_BASE_URL", "https://slack.com/api")
+        app_provider_base_url(AppProviderKind::Slack)
+            .expect("slack provider contract must declare a base url")
     );
     let response = provider_json_request(
         &state.super_agent_service.http_client,
         state,
         reqwest::Method::GET,
         &url,
-        provider_headers("slack", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Slack, &integration.secret)?,
         None,
     )
     .await?;
@@ -298,14 +301,15 @@ async fn slack_post_message(state: &AppState, org_id: &OrgId, args: &Value) -> A
     let text = required_string(args, &["text", "message"])?;
     let url = format!(
         "{}/chat.postMessage",
-        provider_base_url("AURA_SLACK_API_BASE_URL", "https://slack.com/api")
+        app_provider_base_url(AppProviderKind::Slack)
+            .expect("slack provider contract must declare a base url")
     );
     let response = provider_json_request(
         &state.super_agent_service.http_client,
         state,
         reqwest::Method::POST,
         &url,
-        provider_headers("slack", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Slack, &integration.secret)?,
         Some(json!({
             "channel": channel_id,
             "text": text,
@@ -326,14 +330,15 @@ async fn notion_search_pages(state: &AppState, org_id: &OrgId, args: &Value) -> 
     let query = required_string(args, &["query"])?;
     let url = format!(
         "{}/search",
-        provider_base_url("AURA_NOTION_API_BASE_URL", "https://api.notion.com/v1")
+        app_provider_base_url(AppProviderKind::Notion)
+            .expect("notion provider contract must declare a base url")
     );
     let response = provider_json_request(
         &state.super_agent_service.http_client,
         state,
         reqwest::Method::POST,
         &url,
-        provider_headers("notion", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Notion, &integration.secret)?,
         Some(json!({
             "query": query,
             "filter": { "property": "object", "value": "page" }
@@ -367,14 +372,15 @@ async fn notion_create_page(state: &AppState, org_id: &OrgId, args: &Value) -> A
     );
     let url = format!(
         "{}/pages",
-        provider_base_url("AURA_NOTION_API_BASE_URL", "https://api.notion.com/v1")
+        app_provider_base_url(AppProviderKind::Notion)
+            .expect("notion provider contract must declare a base url")
     );
     let response = provider_json_request(
         &state.super_agent_service.http_client,
         state,
         reqwest::Method::POST,
         &url,
-        provider_headers("notion", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Notion, &integration.secret)?,
         Some(json!({
             "parent": { "page_id": parent_page_id },
             "properties": {
@@ -414,10 +420,8 @@ async fn brave_search(
     vertical: &str,
 ) -> ApiResult<Value> {
     let query = required_string(args, &["query", "q"])?;
-    let base_url = provider_base_url(
-        "AURA_BRAVE_SEARCH_API_BASE_URL",
-        "https://api.search.brave.com",
-    );
+    let base_url = app_provider_base_url(AppProviderKind::BraveSearch)
+        .expect("brave provider contract must declare a base url");
     let mut url = reqwest::Url::parse(&format!("{base_url}/res/v1/{vertical}/search"))
         .map_err(|e| ApiError::internal(format!("invalid brave search base url: {e}")))?;
     {
@@ -444,7 +448,7 @@ async fn brave_search(
         state,
         reqwest::Method::GET,
         url.as_str(),
-        provider_headers("brave_search", &integration.secret)?,
+        map_provider_headers(AppProviderKind::BraveSearch, &integration.secret)?,
         None,
     )
     .await?;
@@ -480,7 +484,8 @@ async fn brave_search(
 
 async fn freepik_list_icons(state: &AppState, org_id: &OrgId, args: &Value) -> ApiResult<Value> {
     let integration = resolve_org_integration(state, org_id, "freepik", args)?;
-    let base_url = provider_base_url("AURA_FREEPIK_API_BASE_URL", "https://api.freepik.com");
+    let base_url = app_provider_base_url(AppProviderKind::Freepik)
+        .expect("freepik provider contract must declare a base url");
     let mut url = reqwest::Url::parse(&format!("{base_url}/v1/icons"))
         .map_err(|e| ApiError::internal(format!("invalid freepik base url: {e}")))?;
     {
@@ -507,7 +512,7 @@ async fn freepik_list_icons(state: &AppState, org_id: &OrgId, args: &Value) -> A
             params.append_pair("order", &order);
         }
     }
-    let mut headers = provider_headers("freepik", &integration.secret)?;
+    let mut headers = map_provider_headers(AppProviderKind::Freepik, &integration.secret)?;
     if let Some(language) =
         optional_string(args, &["language", "accept_language", "acceptLanguage"])
     {
@@ -567,9 +572,10 @@ async fn freepik_improve_prompt(
         reqwest::Method::POST,
         &format!(
             "{}/v1/ai/improve-prompt",
-            provider_base_url("AURA_FREEPIK_API_BASE_URL", "https://api.freepik.com")
+            app_provider_base_url(AppProviderKind::Freepik)
+                .expect("freepik provider contract must declare a base url")
         ),
-        provider_headers("freepik", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Freepik, &integration.secret)?,
         Some(payload),
     )
     .await?;
@@ -585,17 +591,18 @@ async fn freepik_improve_prompt(
 
 async fn buffer_list_profiles(state: &AppState, org_id: &OrgId, args: &Value) -> ApiResult<Value> {
     let integration = resolve_org_integration(state, org_id, "buffer", args)?;
-    let url = buffer_authenticated_url(
-        &provider_base_url("AURA_BUFFER_API_BASE_URL", "https://api.bufferapp.com/1"),
+    let url = app_provider_authenticated_url(
+        AppProviderKind::Buffer,
         "/profiles.json",
         &integration.secret,
-    )?;
+    )
+    .map_err(ApiError::bad_request)?;
     let response = provider_json_request(
         &state.super_agent_service.http_client,
         state,
         reqwest::Method::GET,
         url.as_str(),
-        default_json_headers(),
+        map_provider_headers(AppProviderKind::Buffer, &integration.secret)?,
         None,
     )
     .await?;
@@ -620,11 +627,12 @@ async fn buffer_create_update(state: &AppState, org_id: &OrgId, args: &Value) ->
     let integration = resolve_org_integration(state, org_id, "buffer", args)?;
     let profile_id = required_string(args, &["profile_id", "profileId"])?;
     let text = required_string(args, &["text"])?;
-    let url = buffer_authenticated_url(
-        &provider_base_url("AURA_BUFFER_API_BASE_URL", "https://api.bufferapp.com/1"),
+    let url = app_provider_authenticated_url(
+        AppProviderKind::Buffer,
         "/updates/create.json",
         &integration.secret,
-    )?;
+    )
+    .map_err(ApiError::bad_request)?;
     let response = provider_form_request(
         &state.super_agent_service.http_client,
         reqwest::Method::POST,
@@ -658,7 +666,8 @@ async fn buffer_create_update(state: &AppState, org_id: &OrgId, args: &Value) ->
 
 async fn apify_list_actors(state: &AppState, org_id: &OrgId, args: &Value) -> ApiResult<Value> {
     let integration = resolve_org_integration(state, org_id, "apify", args)?;
-    let base_url = provider_base_url("AURA_APIFY_API_BASE_URL", "https://api.apify.com/v2");
+    let base_url = app_provider_base_url(AppProviderKind::Apify)
+        .expect("apify provider contract must declare a base url");
     let mut url = reqwest::Url::parse(&format!("{base_url}/acts"))
         .map_err(|e| ApiError::internal(format!("invalid apify base url: {e}")))?;
     {
@@ -676,7 +685,7 @@ async fn apify_list_actors(state: &AppState, org_id: &OrgId, args: &Value) -> Ap
         state,
         reqwest::Method::GET,
         url.as_str(),
-        provider_headers("apify", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Apify, &integration.secret)?,
         None,
     )
     .await?;
@@ -710,9 +719,10 @@ async fn apify_run_actor(state: &AppState, org_id: &OrgId, args: &Value) -> ApiR
         reqwest::Method::POST,
         &format!(
             "{}/acts/{actor_id}/runs",
-            provider_base_url("AURA_APIFY_API_BASE_URL", "https://api.apify.com/v2")
+            app_provider_base_url(AppProviderKind::Apify)
+                .expect("apify provider contract must declare a base url")
         ),
-        provider_headers("apify", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Apify, &integration.secret)?,
         Some(payload),
     )
     .await?;
@@ -729,10 +739,8 @@ async fn apify_run_actor(state: &AppState, org_id: &OrgId, args: &Value) -> ApiR
 async fn metricool_list_brands(state: &AppState, org_id: &OrgId, args: &Value) -> ApiResult<Value> {
     let integration = resolve_org_integration(state, org_id, "metricool", args)?;
     let url = metricool_url(
-        &provider_base_url(
-            "AURA_METRICOOL_API_BASE_URL",
-            "https://app.metricool.com/api",
-        ),
+        &app_provider_base_url(AppProviderKind::Metricool)
+            .expect("metricool provider contract must declare a base url"),
         "/admin/simpleProfiles",
         &integration,
         args,
@@ -743,7 +751,7 @@ async fn metricool_list_brands(state: &AppState, org_id: &OrgId, args: &Value) -
         state,
         reqwest::Method::GET,
         url.as_str(),
-        provider_headers("metricool", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Metricool, &integration.secret)?,
         None,
     )
     .await?;
@@ -766,10 +774,8 @@ async fn metricool_list_brands(state: &AppState, org_id: &OrgId, args: &Value) -
 async fn metricool_list_posts(state: &AppState, org_id: &OrgId, args: &Value) -> ApiResult<Value> {
     let integration = resolve_org_integration(state, org_id, "metricool", args)?;
     let url = metricool_url(
-        &provider_base_url(
-            "AURA_METRICOOL_API_BASE_URL",
-            "https://app.metricool.com/api",
-        ),
+        &app_provider_base_url(AppProviderKind::Metricool)
+            .expect("metricool provider contract must declare a base url"),
         "/stats/posts",
         &integration,
         args,
@@ -780,7 +786,7 @@ async fn metricool_list_posts(state: &AppState, org_id: &OrgId, args: &Value) ->
         state,
         reqwest::Method::GET,
         url.as_str(),
-        provider_headers("metricool", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Metricool, &integration.secret)?,
         None,
     )
     .await?;
@@ -813,7 +819,7 @@ async fn mailchimp_list_audiences(
         state,
         reqwest::Method::GET,
         &format!("{base_url}/lists"),
-        provider_headers("mailchimp", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Mailchimp, &integration.secret)?,
         None,
     )
     .await?;
@@ -846,7 +852,7 @@ async fn mailchimp_list_campaigns(
         state,
         reqwest::Method::GET,
         &format!("{base_url}/campaigns"),
-        provider_headers("mailchimp", &integration.secret)?,
+        map_provider_headers(AppProviderKind::Mailchimp, &integration.secret)?,
         None,
     )
     .await?;
@@ -932,75 +938,8 @@ fn resolve_org_integration(
     })
 }
 
-fn provider_base_url(env_key: &str, default_url: &str) -> String {
-    std::env::var(env_key)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| default_url.to_string())
-}
-
-fn provider_headers(provider: &str, secret: &str) -> ApiResult<HeaderMap> {
-    let mut headers = default_json_headers();
-
-    match provider {
-        "github" => {
-            headers.insert(
-                "X-GitHub-Api-Version",
-                HeaderValue::from_static("2022-11-28"),
-            );
-            headers.insert("User-Agent", HeaderValue::from_static("aura-os"));
-            let value = HeaderValue::from_str(&format!("Bearer {secret}"))
-                .map_err(|e| ApiError::bad_request(format!("invalid github auth header: {e}")))?;
-            headers.insert(AUTHORIZATION, value);
-        }
-        "linear" | "slack" | "notion" | "apify" => {
-            let value = HeaderValue::from_str(&format!("Bearer {secret}"))
-                .map_err(|e| ApiError::bad_request(format!("invalid auth header: {e}")))?;
-            headers.insert(AUTHORIZATION, value);
-            if provider == "notion" {
-                headers.insert("Notion-Version", HeaderValue::from_static(NOTION_VERSION));
-            }
-        }
-        "brave_search" => {
-            let value = HeaderValue::from_str(secret).map_err(|e| {
-                ApiError::bad_request(format!("invalid brave search auth header: {e}"))
-            })?;
-            headers.insert("X-Subscription-Token", value);
-        }
-        "freepik" => {
-            let value = HeaderValue::from_str(secret).map_err(|e| {
-                ApiError::bad_request(format!("invalid freepik api key header: {e}"))
-            })?;
-            headers.insert("x-freepik-api-key", value);
-        }
-        "metricool" => {
-            let value = HeaderValue::from_str(secret).map_err(|e| {
-                ApiError::bad_request(format!("invalid metricool auth header: {e}"))
-            })?;
-            headers.insert("X-Mc-Auth", value);
-        }
-        "mailchimp" => {
-            let basic_auth = BASE64_STANDARD.encode(format!("anystring:{secret}"));
-            let value = HeaderValue::from_str(&format!("Basic {basic_auth}")).map_err(|e| {
-                ApiError::bad_request(format!("invalid mailchimp auth header: {e}"))
-            })?;
-            headers.insert(AUTHORIZATION, value);
-        }
-        other => {
-            return Err(ApiError::bad_request(format!(
-                "unsupported provider `{other}`"
-            )))
-        }
-    }
-
-    Ok(headers)
-}
-
-fn default_json_headers() -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    headers
+fn map_provider_headers(kind: AppProviderKind, secret: &str) -> ApiResult<HeaderMap> {
+    app_provider_headers(kind, secret).map_err(ApiError::bad_request)
 }
 
 async fn provider_json_request(
@@ -1068,13 +1007,14 @@ async fn linear_graphql(
     query: &str,
     variables: Value,
 ) -> ApiResult<Value> {
-    let url = provider_base_url("AURA_LINEAR_API_BASE_URL", "https://api.linear.app/graphql");
+    let url = app_provider_base_url(AppProviderKind::Linear)
+        .expect("linear provider contract must declare a base url");
     let response = provider_json_request(
         &state.super_agent_service.http_client,
         state,
         reqwest::Method::POST,
         &url,
-        provider_headers("linear", secret)?,
+        map_provider_headers(AppProviderKind::Linear, secret)?,
         Some(json!({
             "query": query,
             "variables": variables,
@@ -1138,13 +1078,6 @@ fn integration_config_string(integration: &ResolvedOrgIntegration, key: &str) ->
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
-}
-
-fn buffer_authenticated_url(base_url: &str, path: &str, secret: &str) -> ApiResult<reqwest::Url> {
-    let mut url = reqwest::Url::parse(&format!("{base_url}{path}"))
-        .map_err(|e| ApiError::internal(format!("invalid buffer base url: {e}")))?;
-    url.query_pairs_mut().append_pair("access_token", secret);
-    Ok(url)
 }
 
 fn metricool_url(
@@ -1256,7 +1189,11 @@ fn notion_page_title(page: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::app_provider_contract_by_tool;
-    use aura_os_integrations::{app_provider_contracts, org_integration_tool_manifest_entries};
+    use aura_os_integrations::{
+        app_provider_authenticated_url, app_provider_contracts, app_provider_headers,
+        AppProviderKind, org_integration_tool_manifest_entries,
+    };
+    use reqwest::header::AUTHORIZATION;
     use std::collections::{HashMap, HashSet};
 
     #[test]
@@ -1310,5 +1247,30 @@ mod tests {
 
         assert!(app_provider_contract_by_tool("list_org_integrations").is_none());
         assert!(app_provider_contract_by_tool("missing_tool").is_none());
+    }
+
+    #[test]
+    fn linear_headers_use_raw_api_key_without_bearer_prefix() {
+        let headers = app_provider_headers(AppProviderKind::Linear, "lin_test_123")
+            .expect("linear headers");
+        let auth = headers
+            .get(AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .expect("authorization header");
+        assert_eq!(auth, "lin_test_123");
+    }
+
+    #[test]
+    fn buffer_authenticated_url_uses_query_token_contract() {
+        let url = app_provider_authenticated_url(
+            AppProviderKind::Buffer,
+            "/profiles.json",
+            "buf_test_123",
+        )
+        .expect("buffer url");
+        assert_eq!(
+            url.query_pairs().find(|(key, _)| key == "access_token"),
+            Some(("access_token".into(), "buf_test_123".into()))
+        );
     }
 }

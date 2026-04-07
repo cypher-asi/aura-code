@@ -385,6 +385,7 @@ version = "0.1.0"
 dependencies = [
  "aura-os-core",
  "aura-os-link",
+ "base64 0.22.1",
  "chrono",
  "reqwest 0.11.27",
  "serde",
