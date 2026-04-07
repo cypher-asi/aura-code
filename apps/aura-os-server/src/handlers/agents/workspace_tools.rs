@@ -6,7 +6,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use aura_os_core::{Agent, OrgId};
-use aura_os_link::{InstalledIntegration, InstalledTool, ToolAuth};
+use aura_os_link::{
+    InstalledIntegration, InstalledTool, InstalledToolIntegrationRequirement, ToolAuth,
+};
 
 use crate::state::AppState;
 
@@ -218,16 +220,12 @@ pub(crate) fn installed_workspace_app_tools(
             },
             timeout_ms: Some(30_000),
             namespace: Some("aura_org_tools".to_string()),
-            metadata: HashMap::from([
-                (
-                    "required_integration_provider".to_string(),
-                    Value::String(tool.provider.clone().unwrap_or_default()),
-                ),
-                (
-                    "required_integration_kind".to_string(),
-                    Value::String("workspace_integration".to_string()),
-                ),
-            ]),
+            required_integration: Some(InstalledToolIntegrationRequirement {
+                integration_id: None,
+                provider: tool.provider.clone(),
+                kind: Some("workspace_integration".to_string()),
+            }),
+            metadata: HashMap::new(),
         })
         .collect()
 }
@@ -320,16 +318,16 @@ mod tests {
         assert!(matches!(brave.auth, ToolAuth::Bearer { .. }));
         assert_eq!(
             brave
-                .metadata
-                .get("required_integration_provider")
-                .and_then(Value::as_str),
+                .required_integration
+                .as_ref()
+                .and_then(|requirement| requirement.provider.as_deref()),
             Some("brave_search")
         );
         assert_eq!(
             brave
-                .metadata
-                .get("required_integration_kind")
-                .and_then(Value::as_str),
+                .required_integration
+                .as_ref()
+                .and_then(|requirement| requirement.kind.as_deref()),
             Some("workspace_integration")
         );
     }

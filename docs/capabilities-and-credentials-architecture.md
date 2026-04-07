@@ -123,13 +123,16 @@ Prefer:
 
 Current:
 - Aura OS owns integration registry and credentials
-- Aura agents receive integrations as session-installed tools
+- Aura OS sends integrations into Aura sessions as installed integrations
 - app integrations and MCP servers now have explicit `enabled` capability state
+- integration-backed tools declare a typed required integration contract
 - the harness can use them in the loop
+- the harness only exposes integration-backed tools when the matching integration is installed
 - app-provider API calls still go back through Aura OS
 
 Next:
 - keep credentials in Aura OS
-- make integrations explicit first-class installed capabilities in the harness/runtime model
 - route install and enable state through policy enforcement
+- make installed capability state feel more like true harness-owned runtime state
+- extend the same installed integration model to workflows and processes
 - make capability state and usage auditable across agents and workflows
