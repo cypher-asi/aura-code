@@ -246,7 +246,7 @@ pub(crate) struct UpdateOrgRequest {
     pub name: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct CreateOrgIntegrationRequest {
     pub name: String,
     pub provider: String,
@@ -262,7 +262,7 @@ pub(crate) struct CreateOrgIntegrationRequest {
     pub enabled: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct UpdateOrgIntegrationRequest {
     pub name: Option<String>,
     pub provider: Option<String>,

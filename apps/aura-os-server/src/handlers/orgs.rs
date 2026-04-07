@@ -11,7 +11,7 @@ use aura_os_orgs::IntegrationSecretUpdate;
 
 use crate::dto::SetBillingRequest;
 use crate::dto::{CreateOrgIntegrationRequest, UpdateOrgIntegrationRequest};
-use crate::error::{map_network_error, ApiError, ApiResult};
+use crate::error::{map_integrations_error, map_network_error, ApiError, ApiResult};
 use crate::state::{AppState, AuthJwt, AuthSession};
 
 // ---------------------------------------------------------------------------
@@ -362,9 +362,16 @@ pub(crate) async fn update_org(
 
 pub(crate) async fn list_integrations(
     State(state): State<AppState>,
-    AuthJwt(_jwt): AuthJwt,
+    AuthJwt(jwt): AuthJwt,
     Path(org_id): Path<OrgId>,
 ) -> ApiResult<Json<Vec<OrgIntegration>>> {
+    if let Some(client) = &state.integrations_client {
+        let integrations = client
+            .list_integrations(&org_id, &jwt)
+            .await
+            .map_err(map_integrations_error)?;
+        return Ok(Json(integrations));
+    }
     let integrations = state
         .org_service
         .list_integrations(&org_id)
@@ -374,10 +381,18 @@ pub(crate) async fn list_integrations(
 
 pub(crate) async fn create_integration(
     State(state): State<AppState>,
-    AuthJwt(_jwt): AuthJwt,
+    AuthJwt(jwt): AuthJwt,
     Path(org_id): Path<OrgId>,
     Json(req): Json<CreateOrgIntegrationRequest>,
 ) -> ApiResult<(StatusCode, Json<OrgIntegration>)> {
+    if let Some(client) = &state.integrations_client {
+        let body = serde_json::to_value(&req).map_err(|e| ApiError::internal(e.to_string()))?;
+        let integration = client
+            .create_integration(&org_id, &jwt, &body)
+            .await
+            .map_err(map_integrations_error)?;
+        return Ok((StatusCode::CREATED, Json(integration)));
+    }
     validate_org_integration_config(&req.kind, &req.provider, req.provider_config.as_ref())?;
     let integration = state
         .org_service
@@ -401,10 +416,18 @@ pub(crate) async fn create_integration(
 
 pub(crate) async fn update_integration(
     State(state): State<AppState>,
-    AuthJwt(_jwt): AuthJwt,
+    AuthJwt(jwt): AuthJwt,
     Path((org_id, integration_id)): Path<(OrgId, String)>,
     Json(req): Json<UpdateOrgIntegrationRequest>,
 ) -> ApiResult<Json<OrgIntegration>> {
+    if let Some(client) = &state.integrations_client {
+        let body = serde_json::to_value(&req).map_err(|e| ApiError::internal(e.to_string()))?;
+        let integration = client
+            .update_integration(&org_id, &integration_id, &jwt, &body)
+            .await
+            .map_err(map_integrations_error)?;
+        return Ok(Json(integration));
+    }
     let existing = state
         .org_service
         .get_integration(&org_id, &integration_id)
@@ -450,9 +473,16 @@ pub(crate) async fn update_integration(
 
 pub(crate) async fn delete_integration(
     State(state): State<AppState>,
-    AuthJwt(_jwt): AuthJwt,
+    AuthJwt(jwt): AuthJwt,
     Path((org_id, integration_id)): Path<(OrgId, String)>,
 ) -> ApiResult<Json<()>> {
+    if let Some(client) = &state.integrations_client {
+        client
+            .delete_integration(&org_id, &integration_id, &jwt)
+            .await
+            .map_err(map_integrations_error)?;
+        return Ok(Json(()));
+    }
     state
         .org_service
         .delete_integration(&org_id, &integration_id)

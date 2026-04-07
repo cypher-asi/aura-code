@@ -325,6 +325,7 @@ pub fn build_test_app_from_store(
         terminal_manager: Arc::new(aura_os_terminal::TerminalManager::new()),
         network_client,
         storage_client,
+        integrations_client: None,
         require_zero_pro: false,
         automaton_client,
         automaton_registry: Arc::new(Mutex::new(HashMap::new())),

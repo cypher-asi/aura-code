@@ -73,7 +73,7 @@ pub(crate) async fn test_agent_runtime(
         .or_else(|_| state.agent_service.get_agent_local(&agent_id))
         .map_err(|e| ApiError::not_found(format!("agent not found: {e}")))?;
 
-    let integration = resolve_integration(&state, &agent)?;
+    let integration = resolve_integration(&state, &agent).await?;
     let model = effective_model(&agent, integration.as_ref(), None);
 
     let outcome = if agent.adapter_type == "aura_harness" {
@@ -118,7 +118,7 @@ pub(crate) async fn send_external_agent_event_stream(
         return send_external_project_agent_event_stream(state, jwt, agent, body).await;
     }
 
-    let integration = resolve_integration(state, agent)?;
+    let integration = resolve_integration(state, agent).await?;
     let model = effective_model(agent, integration.as_ref(), body.model.clone());
     let persist_ctx = setup_agent_chat_persistence(state, &agent.agent_id, &agent.name, jwt).await;
     if let Some(ref ctx) = persist_ctx {
@@ -184,7 +184,7 @@ async fn send_external_project_agent_event_stream(
         .project_id
         .clone()
         .ok_or_else(|| ApiError::bad_request("External project chat requires a project id"))?;
-    let integration = resolve_integration(state, agent)?;
+    let integration = resolve_integration(state, agent).await?;
     let model = effective_model(agent, integration.as_ref(), body.model.clone());
     let persist_ctx = setup_agent_chat_persistence(state, &agent.agent_id, &agent.name, jwt).await;
     if let Some(ref ctx) = persist_ctx {
@@ -350,7 +350,7 @@ fn non_empty_string(value: &str) -> Option<String> {
     }
 }
 
-pub(crate) fn resolve_integration(
+pub(crate) async fn resolve_integration(
     state: &AppState,
     agent: &Agent,
 ) -> Result<Option<ResolvedIntegration>, (axum::http::StatusCode, Json<ApiError>)> {
@@ -365,20 +365,11 @@ pub(crate) fn resolve_integration(
     let org_id = agent.org_id.ok_or_else(|| {
         ApiError::bad_request("Agent must belong to an organization before using integrations")
     })?;
-    let metadata = state
-        .org_service
-        .get_integration(&org_id, integration_id)
-        .map_err(|e| ApiError::internal(format!("loading integration: {e}")))?
-        .ok_or_else(|| ApiError::not_found("Selected integration was not found"))?;
-    let secret = state
-        .org_service
-        .get_integration_secret(integration_id)
-        .map_err(|e| ApiError::internal(format!("loading integration secret: {e}")))?;
 
-    Ok(Some(ResolvedIntegration { metadata, secret }))
+    resolve_integration_inner(state, org_id, integration_id).await
 }
 
-pub(crate) fn resolve_integration_ref(
+pub(crate) async fn resolve_integration_ref(
     state: &AppState,
     org_id: Option<aura_os_core::OrgId>,
     auth_source: &str,
@@ -395,6 +386,27 @@ pub(crate) fn resolve_integration_ref(
     let org_id = org_id.ok_or_else(|| {
         ApiError::bad_request("Agent must belong to an organization before using integrations")
     })?;
+
+    resolve_integration_inner(state, org_id, integration_id).await
+}
+
+async fn resolve_integration_inner(
+    state: &AppState,
+    org_id: aura_os_core::OrgId,
+    integration_id: &str,
+) -> Result<Option<ResolvedIntegration>, (axum::http::StatusCode, Json<ApiError>)> {
+    if let Some(client) = &state.integrations_client {
+        let metadata = client
+            .get_integration_internal(&org_id, integration_id)
+            .await
+            .map_err(|e| ApiError::internal(format!("loading integration: {e}")))?;
+        let secret = client
+            .get_integration_secret(&org_id, integration_id)
+            .await
+            .map_err(|e| ApiError::internal(format!("loading integration secret: {e}")))?;
+        return Ok(Some(ResolvedIntegration { metadata, secret }));
+    }
+
     let metadata = state
         .org_service
         .get_integration(&org_id, integration_id)

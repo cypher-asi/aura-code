@@ -16,6 +16,7 @@ use aura_os_auth::AuthService;
 use aura_os_billing::BillingClient;
 use aura_os_core::{AgentInstanceId, HarnessMode, ProjectId, ZeroAuthSession};
 use aura_os_link::{AutomatonClient, HarnessInbound, HarnessLink, HarnessOutbound};
+use aura_os_integrations::IntegrationsClient;
 use aura_os_network::NetworkClient;
 use aura_os_orgs::OrgService;
 use aura_os_projects::ProjectService;
@@ -275,6 +276,8 @@ pub struct AppState {
     pub network_client: Option<Arc<NetworkClient>>,
     /// Optional aura-storage client. `None` when `AURA_STORAGE_URL` is not set.
     pub storage_client: Option<Arc<StorageClient>>,
+    /// Optional aura-integrations client. `None` when `AURA_INTEGRATIONS_URL` is not set.
+    pub integrations_client: Option<Arc<IntegrationsClient>>,
     /// Broadcast channel for network/social events (JSON payloads).
     pub event_broadcast: broadcast::Sender<serde_json::Value>,
     /// When true, non-Pro users are blocked from API access.

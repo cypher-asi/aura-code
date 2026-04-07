@@ -9,6 +9,7 @@ use aura_os_agents::{AgentInstanceService, AgentService};
 use aura_os_auth::AuthService;
 use aura_os_billing::BillingClient;
 use aura_os_link::{HarnessLink, LocalHarness, SwarmHarness};
+use aura_os_integrations::IntegrationsClient;
 use aura_os_network::{NetworkClient, OrbitClient};
 use aura_os_orgs::OrgService;
 use aura_os_projects::ProjectService;
@@ -391,6 +392,7 @@ pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
     let store = Arc::new(RocksStore::open(db_path)?);
     let network_client = NetworkClient::from_env().map(Arc::new);
     let storage_client = StorageClient::from_env().map(Arc::new);
+    let integrations_client = IntegrationsClient::from_env().map(Arc::new);
     let orbit_client = OrbitClient::from_env().map(Arc::new);
     if orbit_client.is_none() {
         info!("Orbit integration disabled (ORBIT_BASE_URL not set)");
@@ -487,6 +489,7 @@ pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
         terminal_manager: Arc::new(TerminalManager::new()),
         network_client,
         storage_client,
+        integrations_client,
         event_broadcast,
         require_zero_pro: std::env::var("REQUIRE_ZERO_PRO")
             .map(|v| v != "false" && v != "0")

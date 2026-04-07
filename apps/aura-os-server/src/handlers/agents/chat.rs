@@ -1334,7 +1334,7 @@ pub(crate) async fn send_agent_event_stream(
         None
     };
 
-    let integration = resolve_integration(&state, &agent)?;
+    let integration = resolve_integration(&state, &agent).await?;
     let model = effective_model(&agent, integration.as_ref(), body.model.clone());
     let installed_tools = agent
         .org_id
@@ -1445,7 +1445,8 @@ pub(crate) async fn send_event_stream(
         instance.org_id,
         &instance.auth_source,
         instance.integration_id.as_deref(),
-    )?;
+    )
+    .await?;
     let model = body
         .model
         .clone()
