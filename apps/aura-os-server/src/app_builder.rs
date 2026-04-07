@@ -25,6 +25,7 @@ use crate::state::AppState;
 fn spawn_health_checks(
     storage_client: &Option<Arc<StorageClient>>,
     network_client: &Option<Arc<NetworkClient>>,
+    integrations_client: &Option<Arc<IntegrationsClient>>,
 ) {
     if let Some(ref client) = storage_client {
         let health_client = client.clone();
@@ -58,6 +59,21 @@ fn spawn_health_checks(
         });
     } else {
         info!("aura-network integration disabled (AURA_NETWORK_URL not set)");
+    }
+
+    if let Some(ref client) = integrations_client {
+        let health_client = client.clone();
+        tokio::spawn(async move {
+            match health_client.health_check().await {
+                Ok(()) => info!("aura-integrations is reachable"),
+                Err(e) => tracing::warn!(
+                    error = %e,
+                    "aura-integrations health check failed on startup (will retry on first request)"
+                ),
+            }
+        });
+    } else {
+        info!("aura-integrations integration disabled (AURA_INTEGRATIONS_URL not set)");
     }
 }
 
@@ -453,7 +469,7 @@ pub fn build_app_state(db_path: &Path) -> Result<AppState, StoreError> {
         scheduler.spawn();
     }
 
-    spawn_health_checks(&storage_client, &network_client);
+    spawn_health_checks(&storage_client, &network_client, &integrations_client);
     if let Some(ref client) = network_client {
         super::network_bridge::spawn_network_ws_bridge(
             client.clone(),
