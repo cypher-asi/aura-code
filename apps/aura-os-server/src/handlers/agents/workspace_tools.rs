@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
+use aura_os_integrations::org_integration_tool_manifest_entries;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -44,16 +45,15 @@ pub(crate) struct WorkspaceToolDefinition {
     pub(crate) source_id: String,
 }
 
-fn load_manifest(
-    manifest: &str,
+fn load_manifest_entries(
+    entries: &[WorkspaceToolManifestEntry],
     label: &str,
     source_kind: WorkspaceToolSourceKind,
     source_id: &str,
 ) -> Vec<WorkspaceToolDefinition> {
-    let entries: Vec<WorkspaceToolManifestEntry> =
-        serde_json::from_str(manifest).expect("workspace tool manifest should parse");
     entries
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|tool| {
             assert!(
                 tool.input_schema.is_object(),
@@ -79,20 +79,34 @@ pub(crate) fn shared_workspace_tools() -> &'static [WorkspaceToolDefinition] {
     static TOOLS: OnceLock<Vec<WorkspaceToolDefinition>> = OnceLock::new();
     TOOLS.get_or_init(|| {
         let mut tools = Vec::new();
-        tools.extend(load_manifest(
-            include_str!(concat!(
+        let project_entries: Vec<WorkspaceToolManifestEntry> = serde_json::from_str(include_str!(
+            concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/../../infra/shared/project-control-plane-tools.json"
-            )),
+            )
+        ))
+        .expect("workspace tool manifest should parse");
+        tools.extend(load_manifest_entries(
+            &project_entries,
             "aura native",
             WorkspaceToolSourceKind::AuraNative,
             "aura_project_control_plane",
         ));
-        tools.extend(load_manifest(
-            include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../../infra/shared/org-integration-tools.json"
-            )),
+        let integration_entries = org_integration_tool_manifest_entries()
+            .iter()
+            .cloned()
+            .map(|entry| WorkspaceToolManifestEntry {
+                name: entry.name,
+                provider: entry.provider,
+                description: entry.description,
+                prompt_signature: entry.prompt_signature,
+                input_schema: entry.input_schema,
+                saved_event: None,
+                saved_payload_key: None,
+            })
+            .collect::<Vec<_>>();
+        tools.extend(load_manifest_entries(
+            &integration_entries,
             "app provider",
             WorkspaceToolSourceKind::AppProvider,
             "builtin_app_providers",

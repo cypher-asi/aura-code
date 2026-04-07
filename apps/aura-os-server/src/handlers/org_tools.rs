@@ -1,12 +1,9 @@
 use axum::extract::{Path, State};
 use axum::Json;
+use aura_os_integrations::{app_provider_contract_by_tool, AppProviderKind};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
-#[cfg(test)]
-use serde::Deserialize;
 use serde_json::{json, Value};
-#[cfg(test)]
-use std::sync::OnceLock;
 
 use aura_os_core::{OrgId, OrgIntegration, OrgIntegrationKind};
 
@@ -18,116 +15,6 @@ const NOTION_VERSION: &str = "2022-06-28";
 struct ResolvedOrgIntegration {
     metadata: OrgIntegration,
     secret: String,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum AppProviderKind {
-    Github,
-    Linear,
-    Slack,
-    Notion,
-    BraveSearch,
-    Freepik,
-    Buffer,
-    Apify,
-    Metricool,
-    Mailchimp,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct AppProviderContract {
-    kind: AppProviderKind,
-    tool_names: &'static [&'static str],
-}
-
-#[cfg(test)]
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AppToolManifestEntry {
-    name: String,
-    provider: Option<String>,
-    prompt_signature: String,
-}
-
-fn app_provider_contracts() -> &'static [AppProviderContract] {
-    &[
-        AppProviderContract {
-            kind: AppProviderKind::Github,
-            tool_names: &["github_list_repos", "github_create_issue"],
-        },
-        AppProviderContract {
-            kind: AppProviderKind::Linear,
-            tool_names: &["linear_list_teams", "linear_create_issue"],
-        },
-        AppProviderContract {
-            kind: AppProviderKind::Slack,
-            tool_names: &["slack_list_channels", "slack_post_message"],
-        },
-        AppProviderContract {
-            kind: AppProviderKind::Notion,
-            tool_names: &["notion_search_pages", "notion_create_page"],
-        },
-        AppProviderContract {
-            kind: AppProviderKind::BraveSearch,
-            tool_names: &["brave_search_web", "brave_search_news"],
-        },
-        AppProviderContract {
-            kind: AppProviderKind::Freepik,
-            tool_names: &["freepik_list_icons", "freepik_improve_prompt"],
-        },
-        AppProviderContract {
-            kind: AppProviderKind::Buffer,
-            tool_names: &["buffer_list_profiles", "buffer_create_update"],
-        },
-        AppProviderContract {
-            kind: AppProviderKind::Apify,
-            tool_names: &["apify_list_actors", "apify_run_actor"],
-        },
-        AppProviderContract {
-            kind: AppProviderKind::Metricool,
-            tool_names: &["metricool_list_brands", "metricool_list_posts"],
-        },
-        AppProviderContract {
-            kind: AppProviderKind::Mailchimp,
-            tool_names: &["mailchimp_list_audiences", "mailchimp_list_campaigns"],
-        },
-    ]
-}
-
-impl AppProviderKind {
-    #[cfg(test)]
-    fn provider_id(self) -> &'static str {
-        match self {
-            AppProviderKind::Github => "github",
-            AppProviderKind::Linear => "linear",
-            AppProviderKind::Slack => "slack",
-            AppProviderKind::Notion => "notion",
-            AppProviderKind::BraveSearch => "brave_search",
-            AppProviderKind::Freepik => "freepik",
-            AppProviderKind::Buffer => "buffer",
-            AppProviderKind::Apify => "apify",
-            AppProviderKind::Metricool => "metricool",
-            AppProviderKind::Mailchimp => "mailchimp",
-        }
-    }
-}
-
-fn app_provider_contract_by_tool(tool_name: &str) -> Option<&'static AppProviderContract> {
-    app_provider_contracts()
-        .iter()
-        .find(|contract| contract.tool_names.iter().any(|name| *name == tool_name))
-}
-
-#[cfg(test)]
-fn app_tool_manifest_entries() -> &'static [AppToolManifestEntry] {
-    static ENTRIES: OnceLock<Vec<AppToolManifestEntry>> = OnceLock::new();
-    ENTRIES.get_or_init(|| {
-        serde_json::from_str(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../infra/shared/org-integration-tools.json"
-        )))
-        .expect("app tool manifest should parse")
-    })
 }
 
 pub(crate) async fn call_tool(
@@ -1368,12 +1255,13 @@ fn notion_page_title(page: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{app_provider_contract_by_tool, app_provider_contracts, app_tool_manifest_entries};
+    use super::app_provider_contract_by_tool;
+    use aura_os_integrations::{app_provider_contracts, org_integration_tool_manifest_entries};
     use std::collections::{HashMap, HashSet};
 
     #[test]
     fn shared_app_tool_manifest_matches_provider_registry() {
-        let manifest_entries = app_tool_manifest_entries();
+        let manifest_entries = org_integration_tool_manifest_entries();
         assert!(manifest_entries
             .iter()
             .all(|entry| !entry.prompt_signature.trim().is_empty()));
