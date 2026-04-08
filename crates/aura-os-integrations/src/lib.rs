@@ -1,8 +1,17 @@
 pub mod client;
 pub mod error;
+pub mod trusted_methods;
 
 pub use client::IntegrationsClient;
 pub use error::IntegrationsError;
+pub use trusted_methods::{
+    is_trusted_integration_provider, trusted_integration_method_by_tool,
+    trusted_integration_methods, TrustedIntegrationArgBinding, TrustedIntegrationArgValueType,
+    TrustedIntegrationHttpMethod, TrustedIntegrationMethodDefinition,
+    TrustedIntegrationResultExtraField, TrustedIntegrationResultField,
+    TrustedIntegrationResultTransform, TrustedIntegrationRuntimeSpec,
+    TrustedIntegrationSuccessGuard, TRUSTED_INTEGRATION_RUNTIME_METADATA_KEY,
+};
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
@@ -36,7 +45,7 @@ pub enum AppProviderKind {
 #[derive(Clone, Copy, Debug)]
 pub struct AppProviderContract {
     pub kind: AppProviderKind,
-    pub tool_names: &'static [&'static str],
+    pub trusted: bool,
     pub request: AppProviderRequestContract,
 }
 
@@ -80,7 +89,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
     &[
         AppProviderContract {
             kind: AppProviderKind::Github,
-            tool_names: &["github_list_repos", "github_create_issue"],
+            trusted: true,
             request: AppProviderRequestContract {
                 env_base_url_key: Some("AURA_GITHUB_API_BASE_URL"),
                 default_base_url: Some("https://api.github.com"),
@@ -93,7 +102,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::Linear,
-            tool_names: &["linear_list_teams", "linear_create_issue"],
+            trusted: true,
             request: AppProviderRequestContract {
                 env_base_url_key: Some("AURA_LINEAR_API_BASE_URL"),
                 default_base_url: Some("https://api.linear.app/graphql"),
@@ -103,7 +112,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::Slack,
-            tool_names: &["slack_list_channels", "slack_post_message"],
+            trusted: true,
             request: AppProviderRequestContract {
                 env_base_url_key: Some("AURA_SLACK_API_BASE_URL"),
                 default_base_url: Some("https://slack.com/api"),
@@ -113,7 +122,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::Notion,
-            tool_names: &["notion_search_pages", "notion_create_page"],
+            trusted: false,
             request: AppProviderRequestContract {
                 env_base_url_key: Some("AURA_NOTION_API_BASE_URL"),
                 default_base_url: Some("https://api.notion.com/v1"),
@@ -123,7 +132,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::BraveSearch,
-            tool_names: &["brave_search_web", "brave_search_news"],
+            trusted: true,
             request: AppProviderRequestContract {
                 env_base_url_key: Some("AURA_BRAVE_SEARCH_API_BASE_URL"),
                 default_base_url: Some("https://api.search.brave.com"),
@@ -133,7 +142,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::Freepik,
-            tool_names: &["freepik_list_icons", "freepik_improve_prompt"],
+            trusted: false,
             request: AppProviderRequestContract {
                 env_base_url_key: Some("AURA_FREEPIK_API_BASE_URL"),
                 default_base_url: Some("https://api.freepik.com"),
@@ -143,7 +152,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::Buffer,
-            tool_names: &["buffer_list_profiles", "buffer_create_update"],
+            trusted: false,
             request: AppProviderRequestContract {
                 env_base_url_key: Some("AURA_BUFFER_API_BASE_URL"),
                 default_base_url: Some("https://api.bufferapp.com/1"),
@@ -153,7 +162,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::Apify,
-            tool_names: &["apify_list_actors", "apify_run_actor"],
+            trusted: false,
             request: AppProviderRequestContract {
                 env_base_url_key: Some("AURA_APIFY_API_BASE_URL"),
                 default_base_url: Some("https://api.apify.com/v2"),
@@ -163,7 +172,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::Metricool,
-            tool_names: &["metricool_list_brands", "metricool_list_posts"],
+            trusted: false,
             request: AppProviderRequestContract {
                 env_base_url_key: Some("AURA_METRICOOL_API_BASE_URL"),
                 default_base_url: Some("https://app.metricool.com/api"),
@@ -173,7 +182,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::Mailchimp,
-            tool_names: &["mailchimp_list_audiences", "mailchimp_list_campaigns"],
+            trusted: false,
             request: AppProviderRequestContract {
                 env_base_url_key: None,
                 default_base_url: None,
@@ -185,7 +194,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::Resend,
-            tool_names: &["resend_list_domains", "resend_send_email"],
+            trusted: true,
             request: AppProviderRequestContract {
                 env_base_url_key: Some("AURA_RESEND_API_BASE_URL"),
                 default_base_url: Some("https://api.resend.com"),
@@ -197,9 +206,17 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
 }
 
 pub fn app_provider_contract_by_tool(tool_name: &str) -> Option<&'static AppProviderContract> {
+    let provider = trusted_integration_method_by_tool(tool_name)
+        .map(|method| method.provider.as_str())
+        .or_else(|| {
+            legacy_org_integration_tool_manifest_entries()
+                .iter()
+                .find(|entry| entry.name == tool_name)
+                .and_then(|entry| entry.provider.as_deref())
+        })?;
     app_provider_contracts()
         .iter()
-        .find(|contract| contract.tool_names.iter().any(|name| *name == tool_name))
+        .find(|contract| contract.kind.provider_id() == provider)
 }
 
 pub fn app_provider_request_contract(kind: AppProviderKind) -> &'static AppProviderRequestContract {
@@ -226,9 +243,11 @@ pub fn app_provider_base_url(kind: AppProviderKind) -> Option<String> {
 pub fn app_provider_runtime_auth(kind: AppProviderKind, secret: &str) -> InstalledToolRuntimeAuth {
     match app_provider_request_contract(kind).auth_scheme {
         AppProviderAuthScheme::None => InstalledToolRuntimeAuth::None,
-        AppProviderAuthScheme::AuthorizationBearer => InstalledToolRuntimeAuth::AuthorizationBearer {
-            token: secret.to_string(),
-        },
+        AppProviderAuthScheme::AuthorizationBearer => {
+            InstalledToolRuntimeAuth::AuthorizationBearer {
+                token: secret.to_string(),
+            }
+        }
         AppProviderAuthScheme::AuthorizationRaw => InstalledToolRuntimeAuth::AuthorizationRaw {
             value: secret.to_string(),
         },
@@ -346,6 +365,34 @@ pub struct OrgIntegrationToolManifestEntry {
 pub fn org_integration_tool_manifest_entries() -> &'static [OrgIntegrationToolManifestEntry] {
     static ENTRIES: OnceLock<Vec<OrgIntegrationToolManifestEntry>> = OnceLock::new();
     ENTRIES.get_or_init(|| {
+        let mut entries = legacy_org_integration_tool_manifest_entries()
+            .iter()
+            .filter(|entry| {
+                entry.name == "list_org_integrations"
+                    || entry
+                        .provider
+                        .as_deref()
+                        .map(|provider| !is_trusted_integration_provider(provider))
+                        .unwrap_or(true)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        entries.extend(trusted_integration_methods().iter().map(|method| {
+            OrgIntegrationToolManifestEntry {
+                name: method.name.clone(),
+                provider: Some(method.provider.clone()),
+                description: method.description.clone(),
+                prompt_signature: method.prompt_signature.clone(),
+                input_schema: method.input_schema.clone(),
+            }
+        }));
+        entries
+    })
+}
+
+fn legacy_org_integration_tool_manifest_entries() -> &'static [OrgIntegrationToolManifestEntry] {
+    static ENTRIES: OnceLock<Vec<OrgIntegrationToolManifestEntry>> = OnceLock::new();
+    ENTRIES.get_or_init(|| {
         serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../infra/shared/org-integration-tools.json"
@@ -425,9 +472,22 @@ pub fn installed_workspace_app_tools(
                 kind: Some("workspace_integration".to_string()),
             }),
             runtime_execution: None,
-            metadata: HashMap::new(),
+            metadata: trusted_tool_metadata(&tool.name),
         })
         .collect()
+}
+
+fn trusted_tool_metadata(tool_name: &str) -> HashMap<String, serde_json::Value> {
+    let mut metadata = HashMap::new();
+    if let Some(method) = trusted_integration_method_by_tool(tool_name) {
+        if let Ok(runtime) = serde_json::to_value(&method.runtime) {
+            metadata.insert(
+                TRUSTED_INTEGRATION_RUNTIME_METADATA_KEY.to_string(),
+                runtime,
+            );
+        }
+    }
+    metadata
 }
 
 pub fn installed_workspace_integrations(
@@ -482,9 +542,57 @@ mod tests {
                 .get(contract.kind.provider_id())
                 .cloned()
                 .unwrap_or_default();
-            let expected = contract.tool_names.iter().copied().collect::<HashSet<_>>();
+            let expected = org_integration_tool_manifest_entries()
+                .iter()
+                .filter(|entry| entry.provider.as_deref() == Some(contract.kind.provider_id()))
+                .map(|entry| entry.name.as_str())
+                .collect::<HashSet<_>>();
             assert_eq!(actual, expected);
         }
+    }
+
+    #[test]
+    fn trusted_workspace_tools_include_runtime_metadata() {
+        let org_id = OrgId::new();
+        let integrations = vec![
+            test_integration(
+                "Slack",
+                "slack",
+                OrgIntegrationKind::WorkspaceIntegration,
+                true,
+                true,
+            ),
+            test_integration(
+                "Linear",
+                "linear",
+                OrgIntegrationKind::WorkspaceIntegration,
+                true,
+                true,
+            ),
+        ];
+
+        let tools = installed_workspace_app_tools(&org_id, &integrations, "bearer-token");
+        let slack = tools
+            .iter()
+            .find(|tool| tool.name == "slack_post_message")
+            .expect("slack tool");
+        let linear = tools
+            .iter()
+            .find(|tool| tool.name == "linear_list_teams")
+            .expect("linear tool");
+
+        assert!(
+            slack
+                .metadata
+                .contains_key(TRUSTED_INTEGRATION_RUNTIME_METADATA_KEY),
+            "trusted slack tool should carry runtime metadata",
+        );
+        assert!(
+            linear
+                .metadata
+                .contains_key(TRUSTED_INTEGRATION_RUNTIME_METADATA_KEY),
+            "trusted linear tool should carry runtime metadata",
+        );
     }
 
     fn test_integration(

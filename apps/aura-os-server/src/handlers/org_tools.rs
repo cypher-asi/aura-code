@@ -1338,7 +1338,11 @@ mod tests {
         );
 
         for contract in app_provider_contracts() {
-            let expected = contract.tool_names.iter().copied().collect::<HashSet<_>>();
+            let expected = manifest_entries
+                .iter()
+                .filter(|entry| entry.provider.as_deref() == Some(contract.kind.provider_id()))
+                .map(|entry| entry.name.as_str())
+                .collect::<HashSet<_>>();
             let actual = manifest_by_provider
                 .get(contract.kind.provider_id())
                 .cloned()
@@ -1351,9 +1355,9 @@ mod tests {
             );
         }
 
-        let registered_tools = app_provider_contracts()
+        let registered_tools = manifest_entries
             .iter()
-            .flat_map(|contract| contract.tool_names.iter().copied())
+            .filter_map(|entry| entry.provider.as_deref().map(|_| entry.name.as_str()))
             .collect::<HashSet<_>>();
         let manifest_tools = manifest_entries
             .iter()
