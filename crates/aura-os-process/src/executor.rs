@@ -122,6 +122,7 @@ fn conv_connection(sc: StorageProcessNodeConnection) -> ProcessNodeConnection {
 async fn sync_run_to_storage(client: &StorageClient, run: &ProcessRun, is_create: bool) {
     if is_create {
         let req = aura_os_storage::CreateProcessRunRequest {
+            id: Some(run.run_id.to_string()),
             process_id: run.process_id.to_string(),
             trigger: Some(serde_json::to_value(run.trigger)
                 .ok().and_then(|v| v.as_str().map(String::from))
@@ -154,6 +155,7 @@ async fn sync_run_to_storage(client: &StorageClient, run: &ProcessRun, is_create
 async fn sync_event_to_storage(client: &StorageClient, event: &ProcessEvent, is_create: bool) {
     if is_create {
         let req = aura_os_storage::CreateProcessEventRequest {
+            id: Some(event.event_id.to_string()),
             run_id: event.run_id.to_string(),
             node_id: event.node_id.to_string(),
             process_id: event.process_id.to_string(),
@@ -189,6 +191,7 @@ async fn sync_event_to_storage(client: &StorageClient, event: &ProcessEvent, is_
 /// Attempt to sync an artifact to aura-storage. Failures are logged but not fatal.
 async fn sync_artifact_to_storage(client: &StorageClient, artifact: &ProcessArtifact) {
     let req = aura_os_storage::CreateProcessArtifactRequest {
+        id: Some(artifact.artifact_id.to_string()),
         process_id: artifact.process_id.to_string(),
         run_id: artifact.run_id.to_string(),
         node_id: artifact.node_id.to_string(),
@@ -390,7 +393,7 @@ impl ProcessExecutor {
         }
     }
 
-    pub fn cancel_run(
+    pub async fn cancel_run(
         &self,
         process_id: &ProcessId,
         run_id: &ProcessRunId,
@@ -412,6 +415,9 @@ impl ProcessExecutor {
         run.status = ProcessRunStatus::Cancelled;
         run.completed_at = Some(Utc::now());
         self.store.save_run(&run)?;
+        if let Some(client) = &self.storage_client {
+            sync_run_to_storage(client, &run, false).await;
+        }
 
         let _ = self.event_broadcast.send(serde_json::json!({
             "type": "process_run_completed",

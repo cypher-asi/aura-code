@@ -135,6 +135,16 @@ impl StorageClient {
         self.handle_response(resp).await
     }
 
+    pub(crate) async fn put_authed<T: serde::de::DeserializeOwned, B: serde::Serialize>(
+        &self,
+        url: &str,
+        jwt: &str,
+        body: &B,
+    ) -> Result<T, StorageError> {
+        let resp = self.http.put(url).bearer_auth(jwt).json(body).send().await?;
+        self.handle_response(resp).await
+    }
+
     pub(crate) async fn put_authed_no_response<B: serde::Serialize>(
         &self,
         url: &str,

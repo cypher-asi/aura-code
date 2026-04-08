@@ -52,9 +52,9 @@ impl StorageClient {
         process_id: &str,
         jwt: &str,
         req: &UpdateProcessRequest,
-    ) -> Result<(), StorageError> {
+    ) -> Result<StorageProcess, StorageError> {
         validate_url_id(process_id, "process_id")?;
-        self.put_authed_no_response(
+        self.put_authed(
             &format!("{}/api/processes/{}", self.base_url, process_id),
             jwt,
             req,
@@ -113,10 +113,10 @@ impl StorageClient {
         node_id: &str,
         jwt: &str,
         req: &UpdateProcessNodeRequest,
-    ) -> Result<(), StorageError> {
+    ) -> Result<StorageProcessNode, StorageError> {
         validate_url_id(process_id, "process_id")?;
         validate_url_id(node_id, "node_id")?;
-        self.put_authed_no_response(
+        self.put_authed(
             &format!("{}/api/processes/{}/nodes/{}", self.base_url, process_id, node_id),
             jwt,
             req,
@@ -313,9 +313,9 @@ impl StorageClient {
         folder_id: &str,
         jwt: &str,
         req: &UpdateProcessFolderRequest,
-    ) -> Result<(), StorageError> {
+    ) -> Result<StorageProcessFolder, StorageError> {
         validate_url_id(folder_id, "folder_id")?;
-        self.put_authed_no_response(
+        self.put_authed(
             &format!("{}/api/process-folders/{}", self.base_url, folder_id),
             jwt,
             req,

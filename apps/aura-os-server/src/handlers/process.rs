@@ -442,8 +442,7 @@ pub(crate) async fn update_process(
             tags: req.tags.clone(),
             ..Default::default()
         };
-        client.update_process(&id, &jwt, &storage_req).await.map_err(map_storage_error)?;
-        let sp = client.get_process(&id, &jwt).await.map_err(map_storage_error)?;
+        let sp = client.update_process(&id, &jwt, &storage_req).await.map_err(map_storage_error)?;
         return Ok(Json(conv_process(sp)));
     }
 
@@ -630,11 +629,7 @@ pub(crate) async fn update_node(
             position_x: req.position_x,
             position_y: req.position_y,
         };
-        client.update_process_node(&id, &node_id_str, &jwt, &storage_req).await.map_err(map_storage_error)?;
-        // Re-fetch to return updated node
-        let nodes = client.list_process_nodes(&id, &jwt).await.map_err(map_storage_error)?;
-        let node = nodes.into_iter().find(|n| n.id == node_id_str)
-            .ok_or_else(|| ApiError::not_found("node not found"))?;
+        let node = client.update_process_node(&id, &node_id_str, &jwt, &storage_req).await.map_err(map_storage_error)?;
         return Ok(Json(conv_node(node)));
     }
 
@@ -882,6 +877,7 @@ pub(crate) async fn cancel_run(
         .super_agent_service
         .process_executor
         .cancel_run(&process_id, &run_id)
+        .await
         .map_err(|e| {
             if matches!(e, aura_os_process::ProcessError::RunNotActive) {
                 ApiError::conflict(e.to_string())
@@ -999,12 +995,7 @@ pub(crate) async fn update_folder(
         let storage_req = aura_os_storage::UpdateProcessFolderRequest {
             name: req.name.clone(),
         };
-        client.update_process_folder(&id, &jwt, &storage_req).await.map_err(map_storage_error)?;
-        // Re-fetch folder list to find the updated folder
-        let org_id = resolve_org_id(&state, &jwt).await;
-        let folders = client.list_process_folders(&org_id, &jwt).await.map_err(map_storage_error)?;
-        let folder = folders.into_iter().find(|f| f.id == id)
-            .ok_or_else(|| ApiError::not_found("folder not found"))?;
+        let folder = client.update_process_folder(&id, &jwt, &storage_req).await.map_err(map_storage_error)?;
         return Ok(Json(conv_folder(folder)));
     }
 

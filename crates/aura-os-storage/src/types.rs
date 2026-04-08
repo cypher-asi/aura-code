@@ -274,6 +274,8 @@ pub struct CreateProcessConnectionRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateProcessRunRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub process_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger: Option<String>,
@@ -305,6 +307,8 @@ pub struct UpdateProcessRunRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateProcessEventRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub run_id: String,
     pub node_id: String,
     pub process_id: String,
@@ -338,6 +342,8 @@ pub struct UpdateProcessEventRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateProcessArtifactRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub process_id: String,
     pub run_id: String,
     pub node_id: String,
