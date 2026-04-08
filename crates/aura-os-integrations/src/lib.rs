@@ -11,7 +11,9 @@ use std::sync::OnceLock;
 
 use aura_os_core::{OrgId, OrgIntegration, OrgIntegrationKind};
 use aura_os_link::{
-    InstalledIntegration, InstalledTool, InstalledToolIntegrationRequirement, ToolAuth,
+    InstalledIntegration, InstalledTool, InstalledToolIntegrationRequirement,
+    InstalledToolRuntimeAuth, InstalledToolRuntimeExecution, InstalledToolRuntimeIntegration,
+    InstalledToolRuntimeProviderExecution, ToolAuth,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -221,6 +223,50 @@ pub fn app_provider_base_url(kind: AppProviderKind) -> Option<String> {
     })
 }
 
+pub fn app_provider_runtime_auth(kind: AppProviderKind, secret: &str) -> InstalledToolRuntimeAuth {
+    match app_provider_request_contract(kind).auth_scheme {
+        AppProviderAuthScheme::None => InstalledToolRuntimeAuth::None,
+        AppProviderAuthScheme::AuthorizationBearer => InstalledToolRuntimeAuth::AuthorizationBearer {
+            token: secret.to_string(),
+        },
+        AppProviderAuthScheme::AuthorizationRaw => InstalledToolRuntimeAuth::AuthorizationRaw {
+            value: secret.to_string(),
+        },
+        AppProviderAuthScheme::Header(name) => InstalledToolRuntimeAuth::Header {
+            name: name.to_string(),
+            value: secret.to_string(),
+        },
+        AppProviderAuthScheme::Basic { username } => InstalledToolRuntimeAuth::Basic {
+            username: username.to_string(),
+            password: secret.to_string(),
+        },
+        AppProviderAuthScheme::QueryParam(name) => InstalledToolRuntimeAuth::QueryParam {
+            name: name.to_string(),
+            value: secret.to_string(),
+        },
+    }
+}
+
+pub fn installed_tool_runtime_execution_for_provider(
+    kind: AppProviderKind,
+    integrations: Vec<InstalledToolRuntimeIntegration>,
+) -> Option<InstalledToolRuntimeExecution> {
+    let base_url = app_provider_base_url(kind)?;
+    let static_headers = app_provider_request_contract(kind)
+        .static_headers
+        .iter()
+        .map(|(name, value)| ((*name).to_string(), (*value).to_string()))
+        .collect::<HashMap<_, _>>();
+    Some(InstalledToolRuntimeExecution::AppProvider(
+        InstalledToolRuntimeProviderExecution {
+            provider: kind.provider_id().to_string(),
+            base_url,
+            static_headers,
+            integrations,
+        },
+    ))
+}
+
 pub fn app_provider_headers(kind: AppProviderKind, secret: &str) -> Result<HeaderMap, String> {
     let contract = app_provider_request_contract(kind);
     let mut headers = default_json_headers();
@@ -378,6 +424,7 @@ pub fn installed_workspace_app_tools(
                 provider: tool.provider.clone(),
                 kind: Some("workspace_integration".to_string()),
             }),
+            runtime_execution: None,
             metadata: HashMap::new(),
         })
         .collect()

@@ -1,17 +1,22 @@
 use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use aura_os_integrations::{
+    app_provider_contract_by_tool, app_provider_contracts, app_provider_runtime_auth,
     control_plane_api_base_url as shared_control_plane_api_base_url,
     installed_workspace_app_tools as build_installed_workspace_app_tools,
+    installed_tool_runtime_execution_for_provider,
     installed_workspace_integrations as build_installed_workspace_integrations,
     org_integration_tool_manifest_entries,
 };
 use serde::Deserialize;
 use serde_json::Value;
 
-use aura_os_core::{Agent, OrgId};
-use aura_os_link::{InstalledIntegration, InstalledTool};
+use aura_os_core::{Agent, OrgId, OrgIntegration, OrgIntegrationKind};
+use aura_os_link::{
+    InstalledIntegration, InstalledTool, InstalledToolRuntimeIntegration,
+};
 
 use crate::state::AppState;
 
@@ -180,18 +185,98 @@ pub(crate) fn control_plane_api_base_url() -> String {
     shared_control_plane_api_base_url()
 }
 
-pub(crate) fn installed_workspace_app_tools(
+pub(crate) async fn installed_workspace_app_tools(
     state: &AppState,
     org_id: &OrgId,
     bearer_token: &str,
 ) -> Vec<InstalledTool> {
-    state
-        .org_service
-        .list_integrations(org_id)
-        .map(|integrations| {
-            build_installed_workspace_app_tools(org_id, &integrations, bearer_token)
-        })
-        .unwrap_or_default()
+    let Ok(integrations) = state.org_service.list_integrations(org_id) else {
+        return Vec::new();
+    };
+    let runtime_integrations = load_runtime_integrations(state, org_id, &integrations).await;
+    let mut tools = build_installed_workspace_app_tools(org_id, &integrations, bearer_token);
+    for tool in &mut tools {
+        let Some(contract) = app_provider_contract_by_tool(&tool.name) else {
+            continue;
+        };
+        let Some(integrations) = runtime_integrations.get(contract.kind.provider_id()) else {
+            continue;
+        };
+        tool.runtime_execution =
+            installed_tool_runtime_execution_for_provider(contract.kind, integrations.clone());
+    }
+    tools
+}
+
+async fn load_runtime_integrations(
+    state: &AppState,
+    org_id: &OrgId,
+    integrations: &[OrgIntegration],
+) -> HashMap<String, Vec<InstalledToolRuntimeIntegration>> {
+    let mut by_provider = HashMap::<String, Vec<InstalledToolRuntimeIntegration>>::new();
+    for integration in integrations.iter().filter(|integration| {
+        integration.enabled
+            && integration.has_secret
+            && matches!(integration.kind, OrgIntegrationKind::WorkspaceIntegration)
+    }) {
+        let Some(secret) = load_integration_secret(state, org_id, integration).await else {
+            continue;
+        };
+        let auth = match app_provider_contract_by_tool_provider(&integration.provider) {
+            Some(kind) => app_provider_runtime_auth(kind, &secret),
+            None => continue,
+        };
+        by_provider
+            .entry(integration.provider.clone())
+            .or_default()
+            .push(InstalledToolRuntimeIntegration {
+                integration_id: integration.integration_id.clone(),
+                auth,
+                provider_config: integration
+                    .provider_config
+                    .as_ref()
+                    .and_then(Value::as_object)
+                    .map(|config| {
+                        config
+                            .iter()
+                            .map(|(key, value)| (key.clone(), value.clone()))
+                            .collect::<HashMap<_, _>>()
+                    })
+                    .unwrap_or_default(),
+            });
+    }
+    by_provider
+}
+
+fn app_provider_contract_by_tool_provider(
+    provider: &str,
+) -> Option<aura_os_integrations::AppProviderKind> {
+    app_provider_contracts()
+        .iter()
+        .find(|contract| contract.kind.provider_id() == provider)
+        .map(|contract| contract.kind)
+}
+
+async fn load_integration_secret(
+    state: &AppState,
+    org_id: &OrgId,
+    integration: &OrgIntegration,
+) -> Option<String> {
+    if let Some(client) = &state.integrations_client {
+        if let Ok(secret) = client
+            .get_integration_secret(org_id, &integration.integration_id)
+            .await
+        {
+            if let Some(secret) = secret.filter(|value| !value.trim().is_empty()) {
+                return Some(secret);
+            }
+        }
+    }
+    state.org_service
+        .get_integration_secret(&integration.integration_id)
+        .ok()
+        .flatten()
+        .filter(|value| !value.trim().is_empty())
 }
 
 pub(crate) fn installed_workspace_integrations_for_org(
@@ -234,7 +319,7 @@ mod tests {
             )
             .expect("save brave integration");
 
-        let tools = installed_workspace_app_tools(&state, &org_id, "jwt-123");
+        let tools = installed_workspace_app_tools(&state, &org_id, "jwt-123").await;
         let tool_names = tools
             .iter()
             .map(|tool| tool.name.as_str())
@@ -251,6 +336,10 @@ mod tests {
         assert!(brave.endpoint.contains("/api/orgs/"));
         assert!(brave.endpoint.ends_with("/tool-actions/brave_search_web"));
         assert!(matches!(brave.auth, ToolAuth::Bearer { .. }));
+        assert!(matches!(
+            brave.runtime_execution,
+            Some(aura_os_link::InstalledToolRuntimeExecution::AppProvider(_))
+        ));
         assert_eq!(
             brave
                 .required_integration

@@ -16,12 +16,14 @@ use aura_os_core::{
     ProcessRunId, ProcessRunStatus, ProcessRunTrigger, ProjectId, TaskStatus,
 };
 use aura_os_integrations::{
+    app_provider_contracts, app_provider_runtime_auth,
     installed_workspace_app_tools as build_installed_workspace_app_tools,
+    installed_tool_runtime_execution_for_provider,
     installed_workspace_integrations as build_installed_workspace_integrations,
 };
 use aura_os_link::{
     collect_automaton_events, start_and_connect, AutomatonClient, AutomatonStartParams,
-    InstalledIntegration, InstalledTool, RunCompletion,
+    InstalledIntegration, InstalledTool, InstalledToolRuntimeIntegration, RunCompletion,
 };
 use aura_os_orgs::OrgService;
 use aura_os_storage::StorageClient;
@@ -1000,8 +1002,71 @@ fn installed_capabilities_for_agent(
         return (None, None);
     };
 
-    let installed_tools =
-        bearer_token.map(|token| build_installed_workspace_app_tools(org_id, &integrations, token));
+    let installed_tools = bearer_token.map(|token| {
+        let mut tools = build_installed_workspace_app_tools(org_id, &integrations, token);
+        let runtime_integrations = integrations
+            .iter()
+            .filter(|integration| {
+                integration.enabled
+                    && integration.has_secret
+                    && matches!(integration.kind, aura_os_core::OrgIntegrationKind::WorkspaceIntegration)
+            })
+            .filter_map(|integration| {
+                let secret = org_service
+                    .get_integration_secret(&integration.integration_id)
+                    .ok()
+                    .flatten()
+                    .filter(|value| !value.trim().is_empty())?;
+                let provider_kind = app_provider_contracts()
+                    .iter()
+                    .find(|contract| contract.kind.provider_id() == integration.provider)
+                    .map(|contract| contract.kind)?;
+                let runtime = InstalledToolRuntimeIntegration {
+                    integration_id: integration.integration_id.clone(),
+                    auth: app_provider_runtime_auth(provider_kind, &secret),
+                    provider_config: integration
+                        .provider_config
+                        .as_ref()
+                        .and_then(serde_json::Value::as_object)
+                        .map(|config| {
+                            config
+                                .iter()
+                                .map(|(key, value)| (key.clone(), value.clone()))
+                                .collect::<HashMap<_, _>>()
+                        })
+                        .unwrap_or_default(),
+                };
+                Some((integration.provider.clone(), runtime))
+            })
+            .fold(
+                HashMap::<String, Vec<InstalledToolRuntimeIntegration>>::new(),
+                |mut acc, (provider, runtime)| {
+                    acc.entry(provider).or_default().push(runtime);
+                    acc
+                },
+            );
+        for tool in &mut tools {
+            let Some(provider) = tool
+                .required_integration
+                .as_ref()
+                .and_then(|requirement| requirement.provider.as_deref())
+            else {
+                continue;
+            };
+            let Some(contract) = app_provider_contracts()
+                .iter()
+                .find(|contract| contract.kind.provider_id() == provider)
+            else {
+                continue;
+            };
+            let Some(integrations) = runtime_integrations.get(provider) else {
+                continue;
+            };
+            tool.runtime_execution =
+                installed_tool_runtime_execution_for_provider(contract.kind, integrations.clone());
+        }
+        tools
+    });
     let installed_integrations = Some(build_installed_workspace_integrations(&integrations));
     (installed_tools, installed_integrations)
 }

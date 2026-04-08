@@ -1336,11 +1336,12 @@ pub(crate) async fn send_agent_event_stream(
 
     let integration = resolve_integration(&state, &agent).await?;
     let model = effective_model(&agent, integration.as_ref(), body.model.clone());
-    let installed_tools = agent
-        .org_id
-        .as_ref()
-        .map(|org_id| installed_workspace_app_tools(&state, org_id, &jwt))
-        .filter(|tools| !tools.is_empty());
+    let installed_tools = if let Some(org_id) = agent.org_id.as_ref() {
+        let tools = installed_workspace_app_tools(&state, org_id, &jwt).await;
+        (!tools.is_empty()).then_some(tools)
+    } else {
+        None
+    };
     let installed_integrations = agent
         .org_id
         .as_ref()
@@ -1463,11 +1464,12 @@ pub(crate) async fn send_event_stream(
                 .and_then(|resolved| resolved.metadata.default_model.clone())
                 .filter(|value| !value.trim().is_empty())
         });
-    let installed_tools = instance
-        .org_id
-        .as_ref()
-        .map(|org_id| installed_workspace_app_tools(&state, org_id, &jwt))
-        .filter(|tools| !tools.is_empty());
+    let installed_tools = if let Some(org_id) = instance.org_id.as_ref() {
+        let tools = installed_workspace_app_tools(&state, org_id, &jwt).await;
+        (!tools.is_empty()).then_some(tools)
+    } else {
+        None
+    };
     let installed_integrations = instance
         .org_id
         .as_ref()

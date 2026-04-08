@@ -226,7 +226,7 @@ pub(crate) async fn project_tool_session_config(
             .await;
     let installed_tools = match state.project_service.get_project(project_id).ok() {
         Some(project) => {
-            let tools = installed_workspace_app_tools(state, &project.org_id, jwt);
+            let tools = installed_workspace_app_tools(state, &project.org_id, jwt).await;
             if tools.is_empty() {
                 None
             } else {

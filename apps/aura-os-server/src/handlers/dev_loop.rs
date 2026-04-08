@@ -1285,10 +1285,16 @@ pub(crate) async fn start_loop(
     };
 
     let jwt_for_persist = jwt.clone();
-    let installed_tools = jwt
+    let installed_tools = match jwt
         .as_deref()
         .zip(project.as_ref().map(|project| &project.org_id))
-        .map(|(jwt, org_id)| installed_workspace_app_tools(&state, org_id, jwt));
+    {
+        Some((jwt, org_id)) => {
+            let tools = installed_workspace_app_tools(&state, org_id, jwt).await;
+            (!tools.is_empty()).then_some(tools)
+        }
+        None => None,
+    };
     let installed_integrations = project
         .as_ref()
         .map(|project| installed_workspace_integrations_for_org(&state, &project.org_id));
@@ -1787,10 +1793,16 @@ pub(crate) async fn run_single_task(
     .await;
 
     let jwt_for_persist = jwt.clone();
-    let installed_tools = jwt
+    let installed_tools = match jwt
         .as_deref()
         .zip(project.as_ref().map(|project| &project.org_id))
-        .map(|(jwt, org_id)| installed_workspace_app_tools(&state, org_id, jwt));
+    {
+        Some((jwt, org_id)) => {
+            let tools = installed_workspace_app_tools(&state, org_id, jwt).await;
+            (!tools.is_empty()).then_some(tools)
+        }
+        None => None,
+    };
     let installed_integrations = project
         .as_ref()
         .map(|project| installed_workspace_integrations_for_org(&state, &project.org_id));
