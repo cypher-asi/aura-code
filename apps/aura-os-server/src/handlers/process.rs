@@ -522,6 +522,7 @@ pub(crate) async fn trigger_process(
         .super_agent_service
         .process_executor
         .trigger(&process_id, ProcessRunTrigger::Manual)
+        .await
         .map_err(|e| {
             if matches!(e, aura_os_process::ProcessError::RunAlreadyActive) {
                 ApiError::conflict(e.to_string())
