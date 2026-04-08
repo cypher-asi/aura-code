@@ -22,15 +22,17 @@ use crate::state::{AppState, AuthJwt, AuthSession};
 // Org ID resolution for proxy path
 // ---------------------------------------------------------------------------
 
-async fn resolve_org_id(state: &AppState, jwt: &str) -> String {
+/// Resolve the user's org IDs from aura-network.
+async fn resolve_org_ids(state: &AppState, jwt: &str) -> Vec<String> {
     if let Some(ref client) = state.network_client {
         if let Ok(orgs) = client.list_orgs(jwt).await {
-            if let Some(org) = orgs.first() {
-                return org.id.clone();
+            let ids: Vec<String> = orgs.iter().map(|o| o.id.clone()).collect();
+            if !ids.is_empty() {
+                return ids;
             }
         }
     }
-    OrgId::nil().to_string()
+    vec![OrgId::nil().to_string()]
 }
 
 // ---------------------------------------------------------------------------
@@ -289,9 +291,9 @@ pub(crate) async fn create_process(
     Json(req): Json<CreateProcessRequest>,
 ) -> ApiResult<Json<Process>> {
     if let Some(client) = &state.storage_client {
-        let org_id = resolve_org_id(&state, &jwt).await;
+        let org_ids = resolve_org_ids(&state, &jwt).await;
         let storage_req = aura_os_storage::CreateProcessRequest {
-            org_id,
+            org_id: org_ids.first().cloned().unwrap_or_default(),
             name: req.name.clone(),
             project_id: Some(req.project_id.clone()),
             folder_id: req.folder_id.clone(),
@@ -383,12 +385,14 @@ pub(crate) async fn list_processes(
     AuthSession(_session): AuthSession,
 ) -> ApiResult<Json<Vec<Process>>> {
     if let Some(client) = &state.storage_client {
-        let org_id = resolve_org_id(&state, &jwt).await;
-        let list = client
-            .list_processes(&org_id, &jwt)
-            .await
-            .map_err(map_storage_error)?;
-        return Ok(Json(list.into_iter().map(conv_process).collect()));
+        let org_ids = resolve_org_ids(&state, &jwt).await;
+        let mut all = Vec::new();
+        for oid in &org_ids {
+            if let Ok(list) = client.list_processes(oid, &jwt).await {
+                all.extend(list.into_iter().map(conv_process));
+            }
+        }
+        return Ok(Json(all));
     }
 
     let processes = state
@@ -930,9 +934,14 @@ pub(crate) async fn list_folders(
     AuthSession(_session): AuthSession,
 ) -> ApiResult<Json<Vec<ProcessFolder>>> {
     if let Some(client) = &state.storage_client {
-        let org_id = resolve_org_id(&state, &jwt).await;
-        let folders = client.list_process_folders(&org_id, &jwt).await.map_err(map_storage_error)?;
-        return Ok(Json(folders.into_iter().map(conv_folder).collect()));
+        let org_ids = resolve_org_ids(&state, &jwt).await;
+        let mut all = Vec::new();
+        for oid in &org_ids {
+            if let Ok(list) = client.list_process_folders(oid, &jwt).await {
+                all.extend(list.into_iter().map(conv_folder));
+            }
+        }
+        return Ok(Json(all));
     }
 
     let folders = state
@@ -950,9 +959,9 @@ pub(crate) async fn create_folder(
     Json(req): Json<CreateFolderRequest>,
 ) -> ApiResult<Json<ProcessFolder>> {
     if let Some(client) = &state.storage_client {
-        let org_id = resolve_org_id(&state, &jwt).await;
+        let org_ids = resolve_org_ids(&state, &jwt).await;
         let storage_req = aura_os_storage::CreateProcessFolderRequest {
-            org_id,
+            org_id: org_ids.first().cloned().unwrap_or_default(),
             name: req.name.clone(),
         };
         let folder = client.create_process_folder(&jwt, &storage_req).await.map_err(map_storage_error)?;
@@ -1132,8 +1141,13 @@ pub(crate) async fn delete_folder(
 ) -> ApiResult<Json<DeleteResponse>> {
     if let Some(client) = &state.storage_client {
         // Unassign processes from this folder before deleting
-        let org_id = resolve_org_id(&state, &jwt).await;
-        let processes = client.list_processes(&org_id, &jwt).await.map_err(map_storage_error)?;
+        let org_ids = resolve_org_ids(&state, &jwt).await;
+        let mut processes = Vec::new();
+        for oid in &org_ids {
+            if let Ok(list) = client.list_processes(oid, &jwt).await {
+                processes.extend(list);
+            }
+        }
         for p in &processes {
             if p.folder_id.as_deref() == Some(id.as_str()) {
                 let update = aura_os_storage::UpdateProcessRequest {
