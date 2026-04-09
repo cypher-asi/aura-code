@@ -78,6 +78,38 @@ fn resolve_org_for_project(
     select_remote_process_org_id(project_org_id, fallback_org_ids)
 }
 
+async fn list_remote_processes_for_orgs(
+    client: &StorageClient,
+    org_ids: &[String],
+    jwt: &str,
+) -> ApiResult<Vec<StorageProcess>> {
+    let mut all = Vec::new();
+    for org_id in org_ids {
+        let list = client
+            .list_processes(org_id, jwt)
+            .await
+            .map_err(map_storage_error)?;
+        all.extend(list);
+    }
+    Ok(all)
+}
+
+async fn list_remote_process_folders_for_orgs(
+    client: &StorageClient,
+    org_ids: &[String],
+    jwt: &str,
+) -> ApiResult<Vec<StorageProcessFolder>> {
+    let mut all = Vec::new();
+    for org_id in org_ids {
+        let list = client
+            .list_process_folders(org_id, jwt)
+            .await
+            .map_err(map_storage_error)?;
+        all.extend(list);
+    }
+    Ok(all)
+}
+
 // ---------------------------------------------------------------------------
 // StorageX → local entity conversions
 // ---------------------------------------------------------------------------
@@ -446,12 +478,11 @@ pub(crate) async fn list_processes(
 ) -> ApiResult<Json<Vec<Process>>> {
     if let Some(client) = remote_process_storage_client(&state) {
         let org_ids = resolve_org_ids(&state, &jwt).await?;
-        let mut all = Vec::new();
-        for oid in &org_ids {
-            if let Ok(list) = client.list_processes(oid, &jwt).await {
-                all.extend(list.into_iter().map(conv_process));
-            }
-        }
+        let all = list_remote_processes_for_orgs(client, &org_ids, &jwt)
+            .await?
+            .into_iter()
+            .map(conv_process)
+            .collect();
         return Ok(Json(all));
     }
 
@@ -1075,12 +1106,11 @@ pub(crate) async fn list_folders(
 ) -> ApiResult<Json<Vec<ProcessFolder>>> {
     if let Some(client) = remote_process_storage_client(&state) {
         let org_ids = resolve_org_ids(&state, &jwt).await?;
-        let mut all = Vec::new();
-        for oid in &org_ids {
-            if let Ok(list) = client.list_process_folders(oid, &jwt).await {
-                all.extend(list.into_iter().map(conv_folder));
-            }
-        }
+        let all = list_remote_process_folders_for_orgs(client, &org_ids, &jwt)
+            .await?
+            .into_iter()
+            .map(conv_folder)
+            .collect();
         return Ok(Json(all));
     }
 
@@ -1298,12 +1328,7 @@ pub(crate) async fn delete_folder(
     if let Some(client) = remote_process_storage_client(&state) {
         // Unassign processes from this folder before deleting
         let org_ids = resolve_org_ids(&state, &jwt).await?;
-        let mut processes = Vec::new();
-        for oid in &org_ids {
-            if let Ok(list) = client.list_processes(oid, &jwt).await {
-                processes.extend(list);
-            }
-        }
+        let processes = list_remote_processes_for_orgs(client, &org_ids, &jwt).await?;
         for p in &processes {
             if p.folder_id.as_deref() == Some(id.as_str()) {
                 let update = aura_os_storage::UpdateProcessRequest {
