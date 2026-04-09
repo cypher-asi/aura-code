@@ -237,7 +237,8 @@ pub(crate) async fn project_tool_session_config(
     };
     let installed_integrations = match state.project_service.get_project(project_id).ok() {
         Some(project) => {
-            let integrations = installed_workspace_integrations_for_org(state, &project.org_id);
+            let integrations =
+                installed_workspace_integrations_for_org(state, &project.org_id).await;
             if integrations.is_empty() {
                 None
             } else {

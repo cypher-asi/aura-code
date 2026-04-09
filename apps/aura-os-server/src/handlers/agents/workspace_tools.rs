@@ -189,9 +189,7 @@ pub(crate) async fn installed_workspace_app_tools(
     org_id: &OrgId,
     bearer_token: &str,
 ) -> Vec<InstalledTool> {
-    let Ok(integrations) = state.org_service.list_integrations(org_id) else {
-        return Vec::new();
-    };
+    let integrations = workspace_integrations_for_org(state, org_id).await;
     let runtime_integrations = load_runtime_integrations(state, org_id, &integrations).await;
     let mut tools = build_installed_workspace_app_tools(org_id, &integrations, bearer_token);
     for tool in &mut tools {
@@ -205,6 +203,36 @@ pub(crate) async fn installed_workspace_app_tools(
             installed_tool_runtime_execution_for_provider(contract.kind, integrations.clone());
     }
     tools
+}
+
+async fn workspace_integrations_for_org(state: &AppState, org_id: &OrgId) -> Vec<OrgIntegration> {
+    if let Some(client) = &state.integrations_client {
+        match client.list_integrations_internal(org_id).await {
+            Ok(integrations) => {
+                if let Err(error) = state
+                    .org_service
+                    .sync_integrations_shadow(org_id, &integrations)
+                {
+                    warn!(
+                        %org_id,
+                        error = %error,
+                        "failed to sync compatibility-only local integration shadow after canonical internal list"
+                    );
+                }
+                return integrations;
+            }
+            Err(error) => warn!(
+                %org_id,
+                error = %error,
+                "failed to load canonical aura-integrations list for workspace projection; falling back to compatibility-only local shadow"
+            ),
+        }
+    }
+
+    state
+        .org_service
+        .list_integrations(org_id)
+        .unwrap_or_default()
 }
 
 async fn load_runtime_integrations(
@@ -294,15 +322,12 @@ async fn load_integration_secret(
         .filter(|value| !value.trim().is_empty())
 }
 
-pub(crate) fn installed_workspace_integrations_for_org(
+pub(crate) async fn installed_workspace_integrations_for_org(
     state: &AppState,
     org_id: &OrgId,
 ) -> Vec<InstalledIntegration> {
-    state
-        .org_service
-        .list_integrations(org_id)
-        .map(|integrations| build_installed_workspace_integrations(&integrations))
-        .unwrap_or_default()
+    let integrations = workspace_integrations_for_org(state, org_id).await;
+    build_installed_workspace_integrations(&integrations)
 }
 
 #[cfg(test)]
@@ -416,7 +441,7 @@ mod tests {
             )
             .expect("save mcp integration");
 
-        let integrations = installed_workspace_integrations_for_org(&state, &org_id);
+        let integrations = installed_workspace_integrations_for_org(&state, &org_id).await;
         let ids = integrations
             .iter()
             .map(|integration| integration.provider.as_str())

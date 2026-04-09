@@ -163,6 +163,14 @@ impl IntegrationsClient {
         self.get_internal(&url).await
     }
 
+    pub async fn list_integrations_internal(
+        &self,
+        org_id: &OrgId,
+    ) -> Result<Vec<OrgIntegration>, IntegrationsError> {
+        let url = format!("{}/internal/orgs/{}/integrations", self.base_url, org_id);
+        self.get_internal(&url).await
+    }
+
     pub async fn get_integration_secret(
         &self,
         org_id: &OrgId,

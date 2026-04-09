@@ -1295,9 +1295,14 @@ pub(crate) async fn start_loop(
         }
         None => None,
     };
-    let installed_integrations = project
-        .as_ref()
-        .map(|project| installed_workspace_integrations_for_org(&state, &project.org_id));
+    let installed_integrations = match project.as_ref() {
+        Some(project) => {
+            let integrations =
+                installed_workspace_integrations_for_org(&state, &project.org_id).await;
+            (!integrations.is_empty()).then_some(integrations)
+        }
+        None => None,
+    };
     let start_params = AutomatonStartParams {
         project_id: project_id.to_string(),
         auth_token: jwt,
@@ -1803,9 +1808,14 @@ pub(crate) async fn run_single_task(
         }
         None => None,
     };
-    let installed_integrations = project
-        .as_ref()
-        .map(|project| installed_workspace_integrations_for_org(&state, &project.org_id));
+    let installed_integrations = match project.as_ref() {
+        Some(project) => {
+            let integrations =
+                installed_workspace_integrations_for_org(&state, &project.org_id).await;
+            (!integrations.is_empty()).then_some(integrations)
+        }
+        None => None,
+    };
     let result = automaton_client
         .start(AutomatonStartParams {
             project_id: project_id.to_string(),
