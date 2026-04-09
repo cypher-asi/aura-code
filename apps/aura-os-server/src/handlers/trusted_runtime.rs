@@ -4,6 +4,7 @@ use aura_os_integrations::{
     TrustedIntegrationResultField, TrustedIntegrationResultTransform,
     TrustedIntegrationRuntimeSpec, TrustedIntegrationSuccessGuard,
 };
+use aura_os_integrations::trusted_methods::TrustedIntegrationArgSource;
 use reqwest::header::{HeaderMap, ACCEPT};
 use serde_json::{json, Value};
 
@@ -13,6 +14,7 @@ pub(crate) async fn execute_trusted_integration_tool(
     client: &reqwest::Client,
     kind: AppProviderKind,
     secret: &str,
+    provider_config: Option<&Value>,
     args: &Value,
     spec: &TrustedIntegrationRuntimeSpec,
 ) -> ApiResult<Value> {
@@ -25,13 +27,13 @@ pub(crate) async fn execute_trusted_integration_tool(
             success_guard,
             result,
         } => {
-            let url = build_runtime_url(kind, secret, path, query, args)?;
+            let url = build_runtime_url(kind, secret, provider_config, path, query, args)?;
             let response = provider_json_request(
                 client,
                 trusted_http_method(*method),
                 &url,
                 app_provider_headers(kind, secret).map_err(ApiError::bad_request)?,
-                build_object_from_bindings(body, args)?,
+                build_object_from_bindings(body, args, provider_config)?,
             )
             .await?;
             apply_success_guard(&response, success_guard)?;
@@ -45,12 +47,12 @@ pub(crate) async fn execute_trusted_integration_tool(
             success_guard,
             result,
         } => {
-            let url = build_runtime_url(kind, secret, path, query, args)?;
+            let url = build_runtime_url(kind, secret, provider_config, path, query, args)?;
             let response = provider_form_request(
                 client,
                 trusted_http_method(*method),
                 &url,
-                build_form_fields_from_bindings(body, args)?,
+                build_form_fields_from_bindings(body, args, provider_config)?,
             )
             .await?;
             apply_success_guard(&response, success_guard)?;
@@ -71,7 +73,7 @@ pub(crate) async fn execute_trusted_integration_tool(
                 app_provider_headers(kind, secret).map_err(ApiError::bad_request)?,
                 Some(json!({
                     "query": query,
-                    "variables": build_object_from_bindings(variables, args)?
+                    "variables": build_object_from_bindings(variables, args, provider_config)?
                         .unwrap_or_else(|| json!({})),
                 })),
             )
@@ -166,6 +168,7 @@ fn trusted_http_method(method: TrustedIntegrationHttpMethod) -> reqwest::Method 
 fn build_runtime_url(
     kind: AppProviderKind,
     secret: &str,
+    provider_config: Option<&Value>,
     path: &str,
     query_bindings: &[TrustedIntegrationArgBinding],
     args: &Value,
@@ -174,7 +177,7 @@ fn build_runtime_url(
     let mut url = app_provider_authenticated_url(kind, &expanded_path, secret)
         .map_err(ApiError::bad_request)?;
     for binding in query_bindings {
-        if let Some(value) = resolve_binding_value(args, binding)? {
+        if let Some(value) = resolve_binding_value(args, provider_config, binding)? {
             append_query_value(&mut url, &binding.target, value);
         }
     }
@@ -218,6 +221,7 @@ fn append_query_value(url: &mut reqwest::Url, key: &str, value: Value) {
 fn build_object_from_bindings(
     bindings: &[TrustedIntegrationArgBinding],
     args: &Value,
+    provider_config: Option<&Value>,
 ) -> ApiResult<Option<Value>> {
     if bindings.is_empty() {
         return Ok(None);
@@ -226,7 +230,7 @@ fn build_object_from_bindings(
     let mut body = json!({});
     let mut inserted = false;
     for binding in bindings {
-        if let Some(value) = resolve_binding_value(args, binding)? {
+        if let Some(value) = resolve_binding_value(args, provider_config, binding)? {
             insert_json_path(&mut body, &binding.target, value)?;
             inserted = true;
         }
@@ -237,10 +241,11 @@ fn build_object_from_bindings(
 fn build_form_fields_from_bindings(
     bindings: &[TrustedIntegrationArgBinding],
     args: &Value,
+    provider_config: Option<&Value>,
 ) -> ApiResult<Vec<(String, String)>> {
     let mut fields = Vec::new();
     for binding in bindings {
-        if let Some(value) = resolve_binding_value(args, binding)? {
+        if let Some(value) = resolve_binding_value(args, provider_config, binding)? {
             match value {
                 Value::Array(items) => {
                     for item in items {
@@ -263,23 +268,42 @@ fn form_field_value(value: Value) -> String {
 
 fn resolve_binding_value(
     args: &Value,
+    provider_config: Option<&Value>,
     binding: &TrustedIntegrationArgBinding,
 ) -> ApiResult<Option<Value>> {
     if binding.arg_names.is_empty() {
         return Ok(binding.default_value.clone());
     }
 
-    let resolved = match binding.value_type {
-        TrustedIntegrationArgValueType::String => {
-            optional_string_from_names(args, &binding.arg_names).map(Value::String)
-        }
-        TrustedIntegrationArgValueType::StringList => {
-            optional_string_list_from_names(args, &binding.arg_names).map(|items| json!(items))
-        }
-        TrustedIntegrationArgValueType::PositiveNumber => {
-            optional_positive_number_from_names(args, &binding.arg_names).map(|value| json!(value))
-        }
-        TrustedIntegrationArgValueType::Json => optional_json_from_names(args, &binding.arg_names),
+    let resolved = match binding.source {
+        TrustedIntegrationArgSource::InputArgs => match binding.value_type {
+            TrustedIntegrationArgValueType::String => {
+                optional_string_from_names(args, &binding.arg_names).map(Value::String)
+            }
+            TrustedIntegrationArgValueType::StringList => {
+                optional_string_list_from_names(args, &binding.arg_names).map(|items| json!(items))
+            }
+            TrustedIntegrationArgValueType::PositiveNumber => {
+                optional_positive_number_from_names(args, &binding.arg_names)
+                    .map(|value| json!(value))
+            }
+            TrustedIntegrationArgValueType::Json => {
+                optional_json_from_names(args, &binding.arg_names)
+            }
+        },
+        TrustedIntegrationArgSource::ProviderConfig => match binding.value_type {
+            TrustedIntegrationArgValueType::String => provider_config
+                .and_then(|config| optional_string_from_names(config, &binding.arg_names))
+                .map(Value::String),
+            TrustedIntegrationArgValueType::StringList => provider_config
+                .and_then(|config| optional_string_list_from_names(config, &binding.arg_names))
+                .map(|items| json!(items)),
+            TrustedIntegrationArgValueType::PositiveNumber => provider_config
+                .and_then(|config| optional_positive_number_from_names(config, &binding.arg_names))
+                .map(|value| json!(value)),
+            TrustedIntegrationArgValueType::Json => provider_config
+                .and_then(|config| optional_json_from_names(config, &binding.arg_names)),
+        },
     };
 
     if let Some(value) = resolved {

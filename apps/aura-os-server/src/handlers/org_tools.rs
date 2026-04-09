@@ -119,6 +119,7 @@ async fn dispatch_app_provider_tool(
             &state.super_agent_service.http_client,
             kind,
             &integration.secret,
+            integration.metadata.provider_config.as_ref(),
             args,
             &method.runtime,
         )

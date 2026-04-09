@@ -31,11 +31,21 @@ pub enum TrustedIntegrationArgValueType {
     Json,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TrustedIntegrationArgSource {
+    #[default]
+    InputArgs,
+    ProviderConfig,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrustedIntegrationArgBinding {
     pub arg_names: Vec<String>,
     pub target: String,
+    #[serde(default)]
+    pub source: TrustedIntegrationArgSource,
     pub value_type: TrustedIntegrationArgValueType,
     #[serde(default)]
     pub required: bool,
@@ -491,6 +501,117 @@ pub fn trusted_integration_methods() -> &'static [TrustedIntegrationMethodDefini
                 },
             },
             TrustedIntegrationMethodDefinition {
+                name: "metricool_list_brands".to_string(),
+                provider: "metricool".to_string(),
+                description: "List Metricool brands available through a saved org integration."
+                    .to_string(),
+                prompt_signature: "metricool_list_brands(integration_id?)".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "integration_id": { "type": "string" }
+                    }
+                }),
+                runtime: TrustedIntegrationRuntimeSpec::RestJson {
+                    method: TrustedIntegrationHttpMethod::Get,
+                    path: "/admin/simpleProfiles".to_string(),
+                    query: vec![
+                        config_binding(
+                            &["userId"],
+                            "userId",
+                            TrustedIntegrationArgValueType::String,
+                            true,
+                            None,
+                        ),
+                        config_binding(
+                            &["blogId"],
+                            "blogId",
+                            TrustedIntegrationArgValueType::String,
+                            true,
+                            None,
+                        ),
+                    ],
+                    body: vec![],
+                    success_guard: TrustedIntegrationSuccessGuard::None,
+                    result: TrustedIntegrationResultTransform::ProjectArray {
+                        key: "brands".to_string(),
+                        pointer: None,
+                        fields: vec![
+                            result_field("id", "/id"),
+                            result_field("user_id", "/userId"),
+                            result_field("label", "/label"),
+                        ],
+                        extras: vec![],
+                    },
+                },
+            },
+            TrustedIntegrationMethodDefinition {
+                name: "metricool_list_posts".to_string(),
+                provider: "metricool".to_string(),
+                description:
+                    "List Metricool posts for the configured brand through a saved org integration."
+                        .to_string(),
+                prompt_signature:
+                    "metricool_list_posts(start?, end?, integration_id?)".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "integration_id": { "type": "string" },
+                        "start": { "type": "integer", "description": "Optional start date in YYYYMMDD format." },
+                        "end": { "type": "integer", "description": "Optional end date in YYYYMMDD format." }
+                    }
+                }),
+                runtime: TrustedIntegrationRuntimeSpec::RestJson {
+                    method: TrustedIntegrationHttpMethod::Get,
+                    path: "/stats/posts".to_string(),
+                    query: vec![
+                        config_binding(
+                            &["userId"],
+                            "userId",
+                            TrustedIntegrationArgValueType::String,
+                            true,
+                            None,
+                        ),
+                        config_binding(
+                            &["blogId"],
+                            "blogId",
+                            TrustedIntegrationArgValueType::String,
+                            true,
+                            None,
+                        ),
+                        arg_binding(
+                            &["start"],
+                            "start",
+                            TrustedIntegrationArgValueType::PositiveNumber,
+                            false,
+                            None,
+                        ),
+                        arg_binding(
+                            &["end"],
+                            "end",
+                            TrustedIntegrationArgValueType::PositiveNumber,
+                            false,
+                            None,
+                        ),
+                    ],
+                    body: vec![],
+                    success_guard: TrustedIntegrationSuccessGuard::None,
+                    result: TrustedIntegrationResultTransform::ProjectArray {
+                        key: "posts".to_string(),
+                        pointer: None,
+                        fields: vec![
+                            result_field("id", "/id"),
+                            result_field("title", "/title"),
+                            result_field("url", "/url"),
+                            result_field("published", "/published"),
+                        ],
+                        extras: vec![],
+                    },
+                },
+            },
+            TrustedIntegrationMethodDefinition {
                 name: "resend_list_domains".to_string(),
                 provider: "resend".to_string(),
                 description: "List Resend domains through a saved org integration.".to_string(),
@@ -584,6 +705,24 @@ fn arg_binding(
     TrustedIntegrationArgBinding {
         arg_names: arg_names.iter().map(|name| (*name).to_string()).collect(),
         target: target.to_string(),
+        source: TrustedIntegrationArgSource::InputArgs,
+        value_type,
+        required,
+        default_value,
+    }
+}
+
+fn config_binding(
+    arg_names: &[&str],
+    target: &str,
+    value_type: TrustedIntegrationArgValueType,
+    required: bool,
+    default_value: Option<Value>,
+) -> TrustedIntegrationArgBinding {
+    TrustedIntegrationArgBinding {
+        arg_names: arg_names.iter().map(|name| (*name).to_string()).collect(),
+        target: target.to_string(),
+        source: TrustedIntegrationArgSource::ProviderConfig,
         value_type,
         required,
         default_value,
@@ -594,6 +733,7 @@ fn static_binding(target: &str, value: &str) -> TrustedIntegrationArgBinding {
     TrustedIntegrationArgBinding {
         arg_names: Vec::new(),
         target: target.to_string(),
+        source: TrustedIntegrationArgSource::InputArgs,
         value_type: TrustedIntegrationArgValueType::String,
         required: false,
         default_value: Some(Value::String(value.to_string())),

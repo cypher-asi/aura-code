@@ -172,7 +172,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::Metricool,
-            trusted: false,
+            trusted: true,
             request: AppProviderRequestContract {
                 env_base_url_key: Some("AURA_METRICOOL_API_BASE_URL"),
                 default_base_url: Some("https://app.metricool.com/api"),
