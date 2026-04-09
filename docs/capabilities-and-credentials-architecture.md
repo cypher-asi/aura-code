@@ -28,6 +28,9 @@ They include:
 - integration secrets
 - runtime auth/config
 
+The canonical authority for persisted org-level credentials is `aura-integrations`.
+Aura OS may still retain compatibility-only local fallback paths while the migration is incomplete, but those are not the target architecture.
+
 ### Workspace / Runtime State
 
 These are not first-class capabilities:
@@ -40,16 +43,17 @@ They are workspace or runtime state.
 
 ## Current Model
 
-- Aura OS owns the canonical registry for integrations and the org-level credentials behind them.
-- Aura OS is the source of truth for capability definitions and credential storage.
+- `aura-integrations` owns canonical persistence and retrieval for org-level credentials and integration secrets.
+- Aura OS is the source of truth for capability definitions, integration catalog state, enablement, projection, and brokering.
 - The harness does not own org secrets or config.
 - Aura agents receive authorized capabilities at runtime through the harness session.
 - External adapters receive the same capability surface through MCP projection.
-- Provider calls for app integrations still execute through Aura OS callbacks.
+- Trusted integration calls may still be brokered by Aura OS, but the harness remains the runtime authorization and execution boundary.
 
 In simple terms:
-- Aura OS owns definitions and secrets
-- the harness owns runtime authorization and usage
+- `aura-integrations` owns secrets
+- Aura OS owns the control plane and secret broker role
+- the harness owns runtime authorization and execution
 - external adapters consume the same surface through MCP
 
 ## What The Harness Should Own
@@ -71,15 +75,25 @@ That does not require the harness to own:
 Aura OS should continue to own:
 - capability definitions
 - integration schemas
-- org-level credentials
+- integration catalog and enablement state
 - validation
-- provider execution for app integrations
+- projection into installed integrations and installed tools
+- provider dispatch and brokering for trusted integrations
 - central policy and audit records
+
+## What `aura-integrations` Should Own
+
+`aura-integrations` should own:
+- org-level credential persistence
+- integration secret encryption and decryption
+- canonical secret retrieval APIs
+- secret metadata such as `has_secret` and `secret_last4`
 
 ## Security Boundary
 
 The intended security split is:
-- credentials stay in Aura OS
+- credentials stay in `aura-integrations`
+- Aura OS retrieves or brokers secrets only when needed for authorized runtime work
 - capabilities are authorized into the harness/runtime
 - the harness uses only officially registered, authorized capabilities
 - runtime calls remain auditable
@@ -96,7 +110,8 @@ The important rule is "nothing arbitrary can be injected."
 ## Direction We Agreed On
 
 Near-term direction:
-- keep credentials in Aura OS
+- keep credential authority in `aura-integrations`
+- keep any Aura OS local secret storage path explicitly marked as compatibility-only
 - make integrations first-class installed capabilities in the harness/runtime model
 - treat capability install or enable changes as policy-enforced state changes
 - use the same capability model for Aura agents, workflows/processes, and future swarm-native flows
@@ -115,23 +130,26 @@ Avoid:
 - another separate registry in the harness
 
 Prefer:
-- one canonical capability and credential model in Aura OS
+- one canonical capability model in Aura OS
+- one canonical credential authority in `aura-integrations`
 - one runtime-installed capability model in the harness
 - one projection of that same model to external adapters through MCP
 
 ## Current Versus Next
 
 Current:
-- Aura OS owns integration registry and credentials
+- Aura OS owns the integration registry, catalog state, and capability projection
+- `aura-integrations` is the canonical secret authority when configured
 - Aura OS sends integrations into Aura sessions as installed integrations
 - app integrations and MCP servers now have explicit `enabled` capability state
 - integration-backed tools declare a typed required integration contract
 - the harness can use them in the loop
 - the harness only exposes integration-backed tools when the matching integration is installed
-- app-provider API calls still go back through Aura OS
+- trusted integration dispatch may still go back through Aura OS
+- compatibility-only local fallback paths may still exist when `AURA_INTEGRATIONS_URL` is unset
 
 Next:
-- keep credentials in Aura OS
+- keep credentials in `aura-integrations`
 - route install and enable state through policy enforcement
 - make installed capability state feel more like true harness-owned runtime state
 - extend the same installed integration model to workflows and processes
