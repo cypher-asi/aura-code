@@ -113,6 +113,17 @@ pub enum TrustedIntegrationRuntimeSpec {
         success_guard: TrustedIntegrationSuccessGuard,
         result: TrustedIntegrationResultTransform,
     },
+    RestForm {
+        method: TrustedIntegrationHttpMethod,
+        path: String,
+        #[serde(default)]
+        query: Vec<TrustedIntegrationArgBinding>,
+        #[serde(default)]
+        body: Vec<TrustedIntegrationArgBinding>,
+        #[serde(default)]
+        success_guard: TrustedIntegrationSuccessGuard,
+        result: TrustedIntegrationResultTransform,
+    },
     Graphql {
         query: String,
         #[serde(default)]
@@ -266,6 +277,85 @@ pub fn trusted_integration_methods() -> &'static [TrustedIntegrationMethodDefini
                     result: TrustedIntegrationResultTransform::WrapPointer {
                         key: "issue".to_string(),
                         pointer: "/data/issueCreate/issue".to_string(),
+                    },
+                },
+            },
+            TrustedIntegrationMethodDefinition {
+                name: "buffer_list_profiles".to_string(),
+                provider: "buffer".to_string(),
+                description: "List Buffer profiles available through a saved org integration."
+                    .to_string(),
+                prompt_signature: "buffer_list_profiles(integration_id?)".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": { "integration_id": { "type": "string" } }
+                }),
+                runtime: TrustedIntegrationRuntimeSpec::RestJson {
+                    method: TrustedIntegrationHttpMethod::Get,
+                    path: "/profiles.json".to_string(),
+                    query: vec![],
+                    body: vec![],
+                    success_guard: TrustedIntegrationSuccessGuard::None,
+                    result: TrustedIntegrationResultTransform::ProjectArray {
+                        key: "profiles".to_string(),
+                        pointer: None,
+                        fields: vec![
+                            result_field("id", "/id"),
+                            result_field("formatted_username", "/formatted_username"),
+                            result_field("service", "/service"),
+                            result_field("service_username", "/service_username"),
+                        ],
+                        extras: vec![],
+                    },
+                },
+            },
+            TrustedIntegrationMethodDefinition {
+                name: "buffer_create_update".to_string(),
+                provider: "buffer".to_string(),
+                description: "Create a social update in Buffer through a saved org integration."
+                    .to_string(),
+                prompt_signature:
+                    "buffer_create_update(profile_id, text, integration_id?)".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "integration_id": { "type": "string" },
+                        "profile_id": { "type": "string", "description": "Buffer profile id from buffer_list_profiles." },
+                        "text": { "type": "string", "description": "Text to schedule in Buffer." }
+                    },
+                    "required": ["profile_id", "text"]
+                }),
+                runtime: TrustedIntegrationRuntimeSpec::RestForm {
+                    method: TrustedIntegrationHttpMethod::Post,
+                    path: "/updates/create.json".to_string(),
+                    query: vec![],
+                    body: vec![
+                        arg_binding(&["text"], "text", TrustedIntegrationArgValueType::String, true, None),
+                        arg_binding(
+                            &["profile_id", "profileId"],
+                            "profile_ids[]",
+                            TrustedIntegrationArgValueType::String,
+                            true,
+                            None,
+                        ),
+                    ],
+                    success_guard: TrustedIntegrationSuccessGuard::None,
+                    result: TrustedIntegrationResultTransform::ProjectArray {
+                        key: "updates".to_string(),
+                        pointer: Some("/updates".to_string()),
+                        fields: vec![
+                            result_field("id", "/id"),
+                            result_field("status", "/status"),
+                            result_field("text", "/text"),
+                            result_field("service", "/service"),
+                        ],
+                        extras: vec![TrustedIntegrationResultExtraField {
+                            output: "success".to_string(),
+                            pointer: "/success".to_string(),
+                            default_value: Some(Value::Bool(false)),
+                        }],
                     },
                 },
             },

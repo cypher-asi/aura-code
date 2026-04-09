@@ -589,6 +589,13 @@ mod tests {
                 true,
                 true,
             ),
+            test_integration(
+                "Buffer",
+                "buffer",
+                OrgIntegrationKind::WorkspaceIntegration,
+                true,
+                true,
+            ),
         ];
 
         let tools = installed_workspace_app_tools(&org_id, &integrations, "bearer-token");
@@ -600,6 +607,10 @@ mod tests {
             .iter()
             .find(|tool| tool.name == "linear_list_teams")
             .expect("linear tool");
+        let buffer = tools
+            .iter()
+            .find(|tool| tool.name == "buffer_create_update")
+            .expect("buffer tool");
 
         assert!(
             slack
@@ -612,6 +623,12 @@ mod tests {
                 .metadata
                 .contains_key(TRUSTED_INTEGRATION_RUNTIME_METADATA_KEY),
             "trusted linear tool should carry runtime metadata",
+        );
+        assert!(
+            buffer
+                .metadata
+                .contains_key(TRUSTED_INTEGRATION_RUNTIME_METADATA_KEY),
+            "trusted buffer tool should carry runtime metadata",
         );
     }
 
