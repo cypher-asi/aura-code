@@ -10,6 +10,7 @@ use aura_os_integrations::{
     installed_workspace_integrations as build_installed_workspace_integrations,
     org_integration_tool_manifest_entries, TRUSTED_INTEGRATION_RUNTIME_METADATA_KEY,
 };
+use futures_util::stream::{self, StreamExt};
 use serde::Deserialize;
 use serde_json::Value;
 use tracing::warn;
@@ -31,6 +32,26 @@ pub(crate) enum WorkspaceToolSourceKind {
     AuraNative,
     AppProvider,
     Mcp,
+}
+
+const TRUSTED_MCP_DISCOVERY_CONCURRENCY: usize = 4;
+
+#[derive(Clone, Debug)]
+pub(crate) struct InstalledWorkspaceToolCatalog {
+    pub(crate) tools: Vec<InstalledTool>,
+    pub(crate) warnings: Vec<InstalledWorkspaceToolWarning>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct InstalledWorkspaceToolWarning {
+    pub(crate) code: String,
+    pub(crate) message: String,
+    pub(crate) detail: String,
+    pub(crate) source_kind: String,
+    pub(crate) trust_class: String,
+    pub(crate) integration_id: String,
+    pub(crate) integration_name: String,
+    pub(crate) provider: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -135,35 +156,31 @@ pub(crate) fn workspace_tool(name: &str) -> Option<&'static WorkspaceToolDefinit
         .find(|tool| tool.name == name)
 }
 
-fn available_workspace_integration_providers_for_org(
+async fn available_workspace_integration_providers_for_org(
     state: &AppState,
     org_id: &OrgId,
 ) -> HashSet<String> {
-    state
-        .org_service
-        .list_integrations(org_id)
-        .map(|integrations| {
-            integrations
-                .into_iter()
-                .filter(|integration| {
-                    integration.has_secret
-                        && integration.enabled
-                        && matches!(
-                            integration.kind,
-                            aura_os_core::OrgIntegrationKind::WorkspaceIntegration
-                        )
-                })
-                .map(|integration| integration.provider)
-                .collect()
+    integrations_for_org(state, org_id)
+        .await
+        .into_iter()
+        .filter(|integration| {
+            integration.has_secret
+                && integration.enabled
+                && matches!(
+                    integration.kind,
+                    aura_os_core::OrgIntegrationKind::WorkspaceIntegration
+                )
         })
-        .unwrap_or_default()
+        .map(|integration| integration.provider)
+        .collect()
 }
 
-pub(crate) fn active_workspace_tools_for_org(
+pub(crate) async fn active_workspace_tools_for_org(
     state: &AppState,
     org_id: &OrgId,
 ) -> Vec<&'static WorkspaceToolDefinition> {
-    let available_providers = available_workspace_integration_providers_for_org(state, org_id);
+    let available_providers =
+        available_workspace_integration_providers_for_org(state, org_id).await;
     shared_workspace_tools()
         .iter()
         .filter(|tool| {
@@ -175,7 +192,7 @@ pub(crate) fn active_workspace_tools_for_org(
         .collect()
 }
 
-pub(crate) fn active_workspace_tools<'a>(
+pub(crate) async fn active_workspace_tools<'a>(
     state: &'a AppState,
     agent: &'a Agent,
 ) -> Vec<&'static WorkspaceToolDefinition> {
@@ -183,7 +200,7 @@ pub(crate) fn active_workspace_tools<'a>(
         return Vec::new();
     };
 
-    active_workspace_tools_for_org(state, org_id)
+    active_workspace_tools_for_org(state, org_id).await
 }
 
 pub(crate) fn control_plane_api_base_url() -> String {
@@ -195,7 +212,17 @@ pub(crate) async fn installed_workspace_app_tools(
     org_id: &OrgId,
     bearer_token: &str,
 ) -> Vec<InstalledTool> {
-    let integrations = workspace_integrations_for_org(state, org_id).await;
+    installed_workspace_app_tool_catalog(state, org_id, bearer_token)
+        .await
+        .tools
+}
+
+pub(crate) async fn installed_workspace_app_tool_catalog(
+    state: &AppState,
+    org_id: &OrgId,
+    bearer_token: &str,
+) -> InstalledWorkspaceToolCatalog {
+    let integrations = integrations_for_org(state, org_id).await;
     let runtime_integrations = load_runtime_integrations(state, org_id, &integrations).await;
     let mut tools = build_installed_workspace_app_tools(org_id, &integrations, bearer_token);
     for tool in &mut tools {
@@ -209,8 +236,13 @@ pub(crate) async fn installed_workspace_app_tools(
         tool.runtime_execution =
             installed_tool_runtime_execution_for_provider(contract.kind, integrations.clone());
     }
-    tools.extend(discovered_trusted_mcp_tools(state, org_id, bearer_token, &integrations).await);
-    tools
+    let trusted_mcp_catalog =
+        discovered_trusted_mcp_tool_catalog(state, org_id, bearer_token, &integrations).await;
+    tools.extend(trusted_mcp_catalog.tools);
+    InstalledWorkspaceToolCatalog {
+        tools,
+        warnings: trusted_mcp_catalog.warnings,
+    }
 }
 
 fn annotate_tool_metadata(tool: &mut InstalledTool) {
@@ -251,20 +283,38 @@ fn annotate_tool_metadata(tool: &mut InstalledTool) {
     );
 }
 
-async fn discovered_trusted_mcp_tools(
+async fn discovered_trusted_mcp_tool_catalog(
     state: &AppState,
     org_id: &OrgId,
     bearer_token: &str,
     integrations: &[OrgIntegration],
-) -> Vec<InstalledTool> {
+) -> InstalledWorkspaceToolCatalog {
     let base_url = control_plane_api_base_url();
     let mut tools = Vec::new();
+    let mut warnings = Vec::new();
+    let trusted_integrations = integrations
+        .iter()
+        .enumerate()
+        .filter_map(|(index, integration)| {
+            (integration.enabled && matches!(integration.kind, OrgIntegrationKind::McpServer))
+                .then_some((index, integration.clone()))
+        })
+        .collect::<Vec<_>>();
 
-    for integration in integrations.iter().filter(|integration| {
-        integration.enabled && matches!(integration.kind, OrgIntegrationKind::McpServer)
-    }) {
-        let secret = load_integration_secret(state, org_id, integration).await;
-        match trusted_mcp::discover_tools(integration, secret.as_deref()).await {
+    let mut discovered = stream::iter(trusted_integrations.into_iter().map(
+        |(index, integration)| async move {
+            let secret = load_integration_secret(state, org_id, &integration).await;
+            let discovered = trusted_mcp::discover_tools(&integration, secret.as_deref()).await;
+            (index, integration, discovered)
+        },
+    ))
+    .buffer_unordered(TRUSTED_MCP_DISCOVERY_CONCURRENCY)
+    .collect::<Vec<_>>()
+    .await;
+    discovered.sort_by_key(|(index, _, _)| *index);
+
+    for (_, integration, discovered) in discovered {
+        match discovered {
             Ok(discovered) => {
                 for tool in discovered {
                     let endpoint = match discovered_mcp_tool_endpoint(
@@ -332,17 +382,32 @@ async fn discovered_trusted_mcp_tools(
                     });
                 }
             }
-            Err(error) => warn!(
-                %org_id,
-                integration_id = %integration.integration_id,
-                integration_name = %integration.name,
-                error = %error,
-                "failed to discover trusted MCP tools; skipping dynamic MCP projection"
-            ),
+            Err(error) => {
+                warn!(
+                    %org_id,
+                    integration_id = %integration.integration_id,
+                    integration_name = %integration.name,
+                    error = %error,
+                    "failed to discover trusted MCP tools; catalog will be partial"
+                );
+                warnings.push(InstalledWorkspaceToolWarning {
+                    code: "trusted_mcp_discovery_failed".to_string(),
+                    message: format!(
+                        "Trusted MCP discovery failed for `{}`. The tool catalog is partial until this integration responds again.",
+                        integration.name
+                    ),
+                    detail: error,
+                    source_kind: "mcp".to_string(),
+                    trust_class: "trusted_mcp".to_string(),
+                    integration_id: integration.integration_id,
+                    integration_name: integration.name,
+                    provider: integration.provider,
+                });
+            }
         }
     }
 
-    tools
+    InstalledWorkspaceToolCatalog { tools, warnings }
 }
 
 fn discovered_mcp_tool_endpoint(
@@ -361,7 +426,7 @@ fn discovered_mcp_tool_endpoint(
     Ok(endpoint.to_string())
 }
 
-async fn workspace_integrations_for_org(state: &AppState, org_id: &OrgId) -> Vec<OrgIntegration> {
+pub(crate) async fn integrations_for_org(state: &AppState, org_id: &OrgId) -> Vec<OrgIntegration> {
     if let Some(client) = &state.integrations_client {
         match client.list_integrations_internal(org_id).await {
             Ok(integrations) => {
@@ -482,7 +547,7 @@ pub(crate) async fn installed_workspace_integrations_for_org(
     state: &AppState,
     org_id: &OrgId,
 ) -> Vec<InstalledIntegration> {
-    let integrations = workspace_integrations_for_org(state, org_id).await;
+    let integrations = integrations_for_org(state, org_id).await;
     let mut installed = build_installed_workspace_integrations(&integrations);
     for integration in &mut installed {
         if integration.kind == "mcp_server" {
@@ -502,7 +567,7 @@ pub(crate) async fn installed_workspace_integrations_for_org(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
+    use std::sync::{Arc, OnceLock};
 
     use aura_os_core::{OrgId, OrgIntegrationKind};
     use aura_os_integrations::IntegrationsClient;
@@ -513,6 +578,12 @@ mod tests {
     use axum::Json;
     use axum::Router;
     use tokio::net::TcpListener;
+    use tokio::sync::Mutex as AsyncMutex;
+
+    fn trusted_mcp_script_test_lock() -> &'static AsyncMutex<()> {
+        static LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| AsyncMutex::new(()))
+    }
 
     #[tokio::test]
     async fn installed_workspace_app_tools_include_saved_provider_tools() {
@@ -622,6 +693,7 @@ mod tests {
 
     #[tokio::test]
     async fn installed_workspace_app_tools_include_discovered_trusted_mcp_tools() {
+        let _script_lock = trusted_mcp_script_test_lock().lock().await;
         let script_dir = tempfile::tempdir().unwrap();
         let script_path = script_dir.path().join("trusted-mcp-mock.sh");
         std::fs::write(
@@ -688,15 +760,27 @@ printf '%s' '[{"originalName":"search_docs","description":"Search docs","inputSc
         );
     }
 
-    async fn start_mock_integrations_server(secret: Option<&'static str>) -> String {
-        let app = Router::new().route(
-            "/internal/orgs/:org_id/integrations/:integration_id/secret",
-            get(
-                move |Path((_org_id, _integration_id)): Path<(String, String)>| async move {
-                    Json(serde_json::json!({ "secret": secret }))
-                },
-            ),
-        );
+    async fn start_mock_integrations_server(
+        integrations: Vec<OrgIntegration>,
+        secret: Option<&'static str>,
+    ) -> String {
+        let listed_integrations = integrations.clone();
+        let app = Router::new()
+            .route(
+                "/internal/orgs/:org_id/integrations",
+                get(move |Path(_org_id): Path<String>| {
+                    let integrations = listed_integrations.clone();
+                    async move { Json(integrations) }
+                }),
+            )
+            .route(
+                "/internal/orgs/:org_id/integrations/:integration_id/secret",
+                get(
+                    move |Path((_org_id, _integration_id)): Path<(String, String)>| async move {
+                        Json(serde_json::json!({ "secret": secret }))
+                    },
+                ),
+            );
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -727,7 +811,8 @@ printf '%s' '[{"originalName":"search_docs","description":"Search docs","inputSc
             )
             .expect("save brave integration");
 
-        let base_url = start_mock_integrations_server(Some("canonical-remote-secret")).await;
+        let base_url =
+            start_mock_integrations_server(Vec::new(), Some("canonical-remote-secret")).await;
         state.integrations_client = Some(Arc::new(IntegrationsClient::with_base_url(
             &base_url,
             "internal-token",
@@ -759,7 +844,7 @@ printf '%s' '[{"originalName":"search_docs","description":"Search docs","inputSc
             )
             .expect("save brave integration");
 
-        let base_url = start_mock_integrations_server(None).await;
+        let base_url = start_mock_integrations_server(Vec::new(), None).await;
         state.integrations_client = Some(Arc::new(IntegrationsClient::with_base_url(
             &base_url,
             "internal-token",
@@ -767,5 +852,117 @@ printf '%s' '[{"originalName":"search_docs","description":"Search docs","inputSc
 
         let secret = load_integration_secret(&state, &org_id, &integration).await;
         assert_eq!(secret, Some("local-shadow-secret".to_string()));
+    }
+
+    #[tokio::test]
+    async fn active_workspace_tools_for_org_prefers_canonical_provider_list() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("settings.db");
+        let mut state = crate::build_app_state(&db_path).expect("build app state");
+        let org_id = OrgId::new();
+
+        state
+            .org_service
+            .upsert_integration(
+                &org_id,
+                Some("local-brave"),
+                "Local Disabled Brave".to_string(),
+                "brave_search".to_string(),
+                OrgIntegrationKind::WorkspaceIntegration,
+                None,
+                None,
+                Some(false),
+                IntegrationSecretUpdate::Set("local-shadow-secret".to_string()),
+            )
+            .expect("save local shadow");
+
+        let canonical = OrgIntegration {
+            integration_id: "canonical-brave".to_string(),
+            org_id,
+            name: "Canonical Brave".to_string(),
+            provider: "brave_search".to_string(),
+            kind: OrgIntegrationKind::WorkspaceIntegration,
+            default_model: None,
+            provider_config: None,
+            has_secret: true,
+            enabled: true,
+            secret_last4: Some("1234".to_string()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        let base_url =
+            start_mock_integrations_server(vec![canonical], Some("canonical-remote-secret")).await;
+        state.integrations_client = Some(Arc::new(IntegrationsClient::with_base_url(
+            &base_url,
+            "internal-token",
+        )));
+
+        let tools = active_workspace_tools_for_org(&state, &org_id).await;
+        let tool_names = tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(tool_names.contains(&"brave_search_web"));
+        assert!(tool_names.contains(&"brave_search_news"));
+    }
+
+    #[tokio::test]
+    async fn installed_workspace_tool_catalog_surfaces_trusted_mcp_discovery_warnings() {
+        let _script_lock = trusted_mcp_script_test_lock().lock().await;
+        let script_dir = tempfile::tempdir().unwrap();
+        let script_path = script_dir.path().join("trusted-mcp-fail.sh");
+        std::fs::write(
+            &script_path,
+            r#"#!/bin/sh
+echo 'bridge failure' >&2
+exit 1
+"#,
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&script_path).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script_path, perms).unwrap();
+        }
+        crate::handlers::trusted_mcp::set_script_override_for_tests(script_path);
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("settings.db");
+        let state = crate::build_app_state(&db_path).expect("build app state");
+        let org_id = OrgId::new();
+
+        state
+            .org_service
+            .upsert_integration(
+                &org_id,
+                Some("mcp-1"),
+                "Docs MCP".to_string(),
+                "mcp_server".to_string(),
+                OrgIntegrationKind::McpServer,
+                None,
+                Some(serde_json::json!({"transport":"stdio","command":"demo"})),
+                Some(true),
+                IntegrationSecretUpdate::Preserve,
+            )
+            .expect("save mcp integration");
+
+        let catalog = installed_workspace_app_tool_catalog(&state, &org_id, "jwt-123").await;
+
+        assert_eq!(catalog.warnings.len(), 1);
+        assert_eq!(catalog.warnings[0].code, "trusted_mcp_discovery_failed");
+        assert_eq!(catalog.warnings[0].integration_id, "mcp-1");
+        assert_eq!(catalog.warnings[0].integration_name, "Docs MCP");
+        assert_eq!(catalog.warnings[0].source_kind, "mcp");
+        assert_eq!(catalog.warnings[0].trust_class, "trusted_mcp");
+        assert!(catalog.warnings[0]
+            .message
+            .contains("tool catalog is partial"));
+        assert!(catalog
+            .tools
+            .iter()
+            .all(|tool| tool.namespace.as_deref() != Some("aura_trusted_mcp")));
     }
 }

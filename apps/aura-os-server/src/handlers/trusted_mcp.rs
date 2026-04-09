@@ -35,10 +35,15 @@ struct TrustedMcpPayload<'a> {
 }
 
 #[cfg(test)]
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 #[cfg(test)]
-static TRUSTED_MCP_SCRIPT_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+static TRUSTED_MCP_SCRIPT_OVERRIDE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+#[cfg(test)]
+fn trusted_mcp_script_override() -> &'static Mutex<Option<PathBuf>> {
+    TRUSTED_MCP_SCRIPT_OVERRIDE.get_or_init(|| Mutex::new(None))
+}
 
 pub(crate) async fn discover_tools(
     integration: &OrgIntegration,
@@ -74,8 +79,12 @@ pub(crate) fn projected_tool_name(integration_id: &str, original_name: &str) -> 
 
 fn script_path() -> Option<PathBuf> {
     #[cfg(test)]
-    if let Some(path) = TRUSTED_MCP_SCRIPT_OVERRIDE.get() {
-        return Some(path.clone());
+    if let Some(path) = trusted_mcp_script_override()
+        .lock()
+        .ok()
+        .and_then(|override_path| override_path.clone())
+    {
+        return Some(path);
     }
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -175,7 +184,9 @@ fn slugify(value: &str) -> String {
 
 #[cfg(test)]
 pub(crate) fn set_script_override_for_tests(path: PathBuf) {
-    let _ = TRUSTED_MCP_SCRIPT_OVERRIDE.set(path);
+    if let Ok(mut override_path) = trusted_mcp_script_override().lock() {
+        *override_path = Some(path);
+    }
 }
 
 #[cfg(test)]

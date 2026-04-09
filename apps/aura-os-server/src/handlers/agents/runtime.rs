@@ -125,12 +125,14 @@ pub(crate) async fn send_external_agent_event_stream(
     if let Some(ref ctx) = persist_ctx {
         super::chat::persist_user_message(ctx, &body.content, &None);
     }
+    let prompt =
+        build_external_prompt(state, agent, &body.content, body.project_id.as_deref()).await;
 
     let outcome = run_external_adapter_prompt(
         state,
         agent,
         integration.as_ref(),
-        &build_external_prompt(state, agent, &body.content, body.project_id.as_deref()),
+        &prompt,
         model,
         body.project_id.clone(),
     )
@@ -192,7 +194,8 @@ async fn send_external_project_agent_event_stream(
         super::chat::persist_user_message(ctx, &body.content, &None);
     }
 
-    let prompt = build_external_prompt(state, agent, &body.content, Some(project_id.as_str()));
+    let prompt =
+        build_external_prompt(state, agent, &body.content, Some(project_id.as_str())).await;
     let mcp_config = build_external_project_mcp_config(state, &project_id, jwt, agent).await?;
     let tool_infos = external_project_tool_infos(state, agent, jwt).await;
     let (events_tx, _) = broadcast::channel::<HarnessOutbound>(256);
@@ -2055,7 +2058,7 @@ fn codex_turn_usage(event: &Value, model: String) -> Option<SessionUsage> {
     })
 }
 
-fn build_external_prompt(
+async fn build_external_prompt(
     state: &AppState,
     agent: &Agent,
     user_content: &str,
@@ -2088,7 +2091,7 @@ fn build_external_prompt(
     }
     if supports_external_project_tools(&agent.adapter_type) && project_id.is_some() {
         prompt.push_str("Aura control-plane tools:\n");
-        for tool in active_workspace_tools(state, agent) {
+        for tool in active_workspace_tools(state, agent).await {
             prompt.push_str("- ");
             prompt.push_str(&tool.prompt_signature);
             prompt.push_str(": ");

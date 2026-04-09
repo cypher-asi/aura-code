@@ -12,7 +12,9 @@ use tracing::warn;
 use aura_os_core::{OrgId, OrgIntegration, OrgIntegrationKind};
 
 use crate::error::{ApiError, ApiResult};
-use crate::handlers::agents::workspace_tools::installed_workspace_app_tools;
+use crate::handlers::agents::workspace_tools::{
+    installed_workspace_app_tool_catalog, integrations_for_org,
+};
 use crate::handlers::trusted_mcp;
 use crate::handlers::trusted_runtime::execute_trusted_integration_tool;
 use crate::state::{AppState, AuthJwt};
@@ -49,8 +51,9 @@ pub(crate) async fn list_tool_catalog(
     AuthJwt(jwt): AuthJwt,
     Path(org_id): Path<OrgId>,
 ) -> ApiResult<Json<Value>> {
-    let tools = installed_workspace_app_tools(&state, &org_id, &jwt).await;
-    let catalog = tools
+    let catalog = installed_workspace_app_tool_catalog(&state, &org_id, &jwt).await;
+    let tools = catalog
+        .tools
         .into_iter()
         .map(|tool| {
             json!({
@@ -65,7 +68,23 @@ pub(crate) async fn list_tool_catalog(
             })
         })
         .collect::<Vec<_>>();
-    Ok(Json(json!({ "tools": catalog })))
+    let warnings = catalog
+        .warnings
+        .into_iter()
+        .map(|warning| {
+            json!({
+                "code": warning.code,
+                "message": warning.message,
+                "detail": warning.detail,
+                "sourceKind": warning.source_kind,
+                "trustClass": warning.trust_class,
+                "integrationId": warning.integration_id,
+                "integrationName": warning.integration_name,
+                "provider": warning.provider,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(Json(json!({ "tools": tools, "warnings": warnings })))
 }
 
 pub(crate) async fn call_mcp_tool(
@@ -177,10 +196,7 @@ async fn dispatch_app_provider_tool(
 
 async fn list_org_integrations(state: &AppState, org_id: &OrgId, args: &Value) -> ApiResult<Value> {
     let provider = optional_string(args, &["provider"]);
-    let integrations = state
-        .org_service
-        .list_integrations(org_id)
-        .map_err(|e| ApiError::internal(format!("listing org integrations: {e}")))?;
+    let integrations = integrations_for_org(state, org_id).await;
 
     let filtered = integrations
         .into_iter()
@@ -1637,7 +1653,8 @@ fn notion_page_title(page: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        app_provider_contract_by_tool, resolve_mcp_server_integration, resolve_org_integration,
+        app_provider_contract_by_tool, list_org_integrations, resolve_mcp_server_integration,
+        resolve_org_integration,
     };
     use aura_os_core::{OrgId, OrgIntegration, OrgIntegrationKind};
     use aura_os_integrations::{
@@ -1651,6 +1668,7 @@ mod tests {
     use axum::Router;
     use chrono::Utc;
     use reqwest::header::AUTHORIZATION;
+    use serde_json::Value;
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
     use tokio::net::TcpListener;
@@ -1901,6 +1919,64 @@ mod tests {
 
         assert_eq!(resolved.metadata, canonical);
         assert_eq!(resolved.secret, "canonical-secret");
+    }
+
+    #[tokio::test]
+    async fn list_org_integrations_prefers_canonical_backend() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("settings.db");
+        let mut state = crate::build_app_state(&db_path).expect("build app state");
+        let org_id = OrgId::new();
+
+        state
+            .org_service
+            .upsert_integration(
+                &org_id,
+                Some("local-github"),
+                "Local Disabled GitHub".to_string(),
+                "github".to_string(),
+                OrgIntegrationKind::WorkspaceIntegration,
+                None,
+                None,
+                Some(false),
+                IntegrationSecretUpdate::Set("local-shadow-secret".to_string()),
+            )
+            .expect("save local shadow");
+
+        let canonical = sample_integration(
+            org_id,
+            "canonical-github",
+            "Canonical GitHub",
+            "github",
+            true,
+            true,
+        );
+        let base_url =
+            start_mock_integrations_server(canonical.clone(), Some("canonical-secret")).await;
+        state.integrations_client = Some(Arc::new(IntegrationsClient::with_base_url(
+            &base_url,
+            "internal-token",
+        )));
+
+        let listed = list_org_integrations(&state, &org_id, &serde_json::json!({}))
+            .await
+            .expect("list org integrations");
+        let integrations = listed
+            .get("integrations")
+            .and_then(Value::as_array)
+            .expect("integrations array");
+
+        assert_eq!(integrations.len(), 1);
+        assert_eq!(
+            integrations[0]
+                .get("integration_id")
+                .and_then(Value::as_str),
+            Some("canonical-github")
+        );
+        assert_eq!(
+            integrations[0].get("name").and_then(Value::as_str),
+            Some("Canonical GitHub")
+        );
     }
 
     #[tokio::test]
