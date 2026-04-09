@@ -1,6 +1,6 @@
 use aura_os_integrations::{
     app_provider_authenticated_url, app_provider_base_url, app_provider_contract_by_tool,
-    app_provider_headers, AppProviderKind,
+    app_provider_headers, AppProviderKind, IntegrationsError,
 };
 use axum::extract::{Path, State};
 use axum::Json;
@@ -977,48 +977,14 @@ async fn resolve_org_integration(
     args: &Value,
 ) -> ApiResult<ResolvedOrgIntegration> {
     let integration_id = optional_string(args, &["integration_id", "integrationId"]);
-    let integration = if let Some(integration_id) = integration_id {
-        let integration = state
-            .org_service
-            .get_integration(org_id, &integration_id)
-            .map_err(|e| ApiError::internal(format!("loading org integration: {e}")))?
-            .ok_or_else(|| ApiError::not_found("integration not found"))?;
-        if integration.provider != provider {
-            return Err(ApiError::bad_request(format!(
-                "integration `{}` uses provider `{}` instead of `{provider}`",
-                integration.name, integration.provider
-            )));
-        }
-        if integration.kind != OrgIntegrationKind::WorkspaceIntegration {
-            return Err(ApiError::bad_request(format!(
-                "integration `{}` is not a workspace integration",
-                integration.name
-            )));
-        }
-        if !integration.enabled {
-            return Err(ApiError::bad_request(format!(
-                "integration `{}` is disabled",
-                integration.name
-            )));
-        }
+    let integration = if let Some(integration) =
+        load_canonical_org_integration(state, org_id, provider, integration_id.as_deref()).await?
+    {
         integration
+    } else if let Some(integration_id) = integration_id {
+        load_shadow_org_integration_by_id(state, org_id, provider, &integration_id)?
     } else {
-        state
-            .org_service
-            .list_integrations(org_id)
-            .map_err(|e| ApiError::internal(format!("listing org integrations: {e}")))?
-            .into_iter()
-            .find(|integration| {
-                integration.provider == provider
-                    && integration.has_secret
-                    && integration.enabled
-                    && integration.kind == OrgIntegrationKind::WorkspaceIntegration
-            })
-            .ok_or_else(|| {
-                ApiError::bad_request(format!(
-                    "no enabled `{provider}` org integration with a key is available"
-                ))
-            })?
+        load_shadow_org_integration_for_provider(state, org_id, provider)?
     };
 
     let secret = if let Some(client) = &state.integrations_client {
@@ -1081,6 +1047,150 @@ async fn resolve_org_integration(
         metadata: integration,
         secret,
     })
+}
+
+async fn load_canonical_org_integration(
+    state: &AppState,
+    org_id: &OrgId,
+    provider: &str,
+    integration_id: Option<&str>,
+) -> ApiResult<Option<OrgIntegration>> {
+    let Some(client) = &state.integrations_client else {
+        return Ok(None);
+    };
+
+    if let Some(integration_id) = integration_id {
+        return match client
+            .get_integration_internal(org_id, integration_id)
+            .await
+        {
+            Ok(integration) => {
+                let integration = validate_org_tool_integration(integration, provider)?;
+                if let Err(error) = state.org_service.sync_integration_shadow(
+                    &integration,
+                    aura_os_orgs::IntegrationSecretUpdate::Preserve,
+                ) {
+                    warn!(
+                        %org_id,
+                        integration_id = %integration.integration_id,
+                        error = %error,
+                        "failed to sync compatibility-only local integration shadow after canonical org tool lookup"
+                    );
+                }
+                Ok(Some(integration))
+            }
+            Err(IntegrationsError::Server { status: 404, .. }) => {
+                Err(ApiError::not_found("integration not found"))
+            }
+            Err(error) => {
+                warn!(
+                    %org_id,
+                    integration_id,
+                    provider,
+                    error = %error,
+                    "failed to load canonical aura-integrations metadata for org tool dispatch; falling back to compatibility-only local shadow"
+                );
+                Ok(None)
+            }
+        };
+    }
+
+    match client.list_integrations_internal(org_id).await {
+        Ok(integrations) => {
+            if let Err(error) = state
+                .org_service
+                .sync_integrations_shadow(org_id, &integrations)
+            {
+                warn!(
+                    %org_id,
+                    error = %error,
+                    "failed to sync compatibility-only local integration shadow after canonical org tool list"
+                );
+            }
+            let integration = integrations
+                .into_iter()
+                .find(|integration| matches_org_tool_provider(integration, provider))
+                .ok_or_else(|| {
+                    ApiError::bad_request(format!(
+                        "no enabled `{provider}` org integration with a key is available"
+                    ))
+                })?;
+            Ok(Some(integration))
+        }
+        Err(error) => {
+            warn!(
+                %org_id,
+                provider,
+                error = %error,
+                "failed to load canonical aura-integrations list for org tool dispatch; falling back to compatibility-only local shadow"
+            );
+            Ok(None)
+        }
+    }
+}
+
+fn load_shadow_org_integration_by_id(
+    state: &AppState,
+    org_id: &OrgId,
+    provider: &str,
+    integration_id: &str,
+) -> ApiResult<OrgIntegration> {
+    let integration = state
+        .org_service
+        .get_integration(org_id, integration_id)
+        .map_err(|e| ApiError::internal(format!("loading org integration: {e}")))?
+        .ok_or_else(|| ApiError::not_found("integration not found"))?;
+    validate_org_tool_integration(integration, provider)
+}
+
+fn load_shadow_org_integration_for_provider(
+    state: &AppState,
+    org_id: &OrgId,
+    provider: &str,
+) -> ApiResult<OrgIntegration> {
+    state
+        .org_service
+        .list_integrations(org_id)
+        .map_err(|e| ApiError::internal(format!("listing org integrations: {e}")))?
+        .into_iter()
+        .find(|integration| matches_org_tool_provider(integration, provider))
+        .ok_or_else(|| {
+            ApiError::bad_request(format!(
+                "no enabled `{provider}` org integration with a key is available"
+            ))
+        })
+}
+
+fn validate_org_tool_integration(
+    integration: OrgIntegration,
+    provider: &str,
+) -> ApiResult<OrgIntegration> {
+    if integration.provider != provider {
+        return Err(ApiError::bad_request(format!(
+            "integration `{}` uses provider `{}` instead of `{provider}`",
+            integration.name, integration.provider
+        )));
+    }
+    if integration.kind != OrgIntegrationKind::WorkspaceIntegration {
+        return Err(ApiError::bad_request(format!(
+            "integration `{}` is not a workspace integration",
+            integration.name
+        )));
+    }
+    if !integration.enabled {
+        return Err(ApiError::bad_request(format!(
+            "integration `{}` is disabled",
+            integration.name
+        )));
+    }
+    Ok(integration)
+}
+
+fn matches_org_tool_provider(integration: &OrgIntegration, provider: &str) -> bool {
+    integration.provider == provider
+        && integration.has_secret
+        && integration.enabled
+        && integration.kind == OrgIntegrationKind::WorkspaceIntegration
 }
 
 fn map_provider_headers(kind: AppProviderKind, secret: &str) -> ApiResult<HeaderMap> {
@@ -1363,13 +1473,92 @@ fn notion_page_title(page: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::app_provider_contract_by_tool;
+    use super::{app_provider_contract_by_tool, resolve_org_integration};
+    use aura_os_core::{OrgId, OrgIntegration, OrgIntegrationKind};
     use aura_os_integrations::{
         app_provider_authenticated_url, app_provider_contracts, app_provider_headers,
-        org_integration_tool_manifest_entries, AppProviderKind,
+        org_integration_tool_manifest_entries, AppProviderKind, IntegrationsClient,
     };
+    use aura_os_orgs::IntegrationSecretUpdate;
+    use axum::extract::Path;
+    use axum::routing::get;
+    use axum::Json;
+    use axum::Router;
+    use chrono::Utc;
     use reqwest::header::AUTHORIZATION;
     use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
+    use tokio::net::TcpListener;
+
+    fn sample_integration(
+        org_id: OrgId,
+        integration_id: &str,
+        name: &str,
+        provider: &str,
+        enabled: bool,
+        has_secret: bool,
+    ) -> OrgIntegration {
+        let now = Utc::now();
+        OrgIntegration {
+            integration_id: integration_id.to_string(),
+            org_id,
+            name: name.to_string(),
+            provider: provider.to_string(),
+            kind: OrgIntegrationKind::WorkspaceIntegration,
+            default_model: None,
+            provider_config: None,
+            has_secret,
+            enabled,
+            secret_last4: has_secret.then(|| "1234".to_string()),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    async fn start_mock_integrations_server(
+        integration: OrgIntegration,
+        secret: Option<&'static str>,
+    ) -> String {
+        let list_integration = integration.clone();
+        let get_integration = integration.clone();
+        let app = Router::new()
+            .route(
+                "/internal/orgs/:org_id/integrations",
+                get(move |Path(_org_id): Path<String>| {
+                    let integration = list_integration.clone();
+                    async move { Json(vec![integration]) }
+                }),
+            )
+            .route(
+                "/internal/orgs/:org_id/integrations/:integration_id",
+                get(
+                    move |Path((_org_id, integration_id)): Path<(String, String)>| {
+                        let integration = get_integration.clone();
+                        async move {
+                            if integration.integration_id == integration_id {
+                                Ok::<_, axum::http::StatusCode>(Json(integration))
+                            } else {
+                                Err(axum::http::StatusCode::NOT_FOUND)
+                            }
+                        }
+                    },
+                ),
+            )
+            .route(
+                "/internal/orgs/:org_id/integrations/:integration_id/secret",
+                get(
+                    move |Path((_org_id, _integration_id)): Path<(String, String)>| async move {
+                        Json(serde_json::json!({ "secret": secret }))
+                    },
+                ),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{address}")
+    }
 
     #[test]
     fn shared_app_tool_manifest_matches_provider_registry() {
@@ -1451,5 +1640,101 @@ mod tests {
             url.query_pairs().find(|(key, _)| key == "access_token"),
             Some(("access_token".into(), "buf_test_123".into()))
         );
+    }
+
+    #[tokio::test]
+    async fn resolve_org_integration_prefers_canonical_metadata_for_selected_id() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("settings.db");
+        let mut state = crate::build_app_state(&db_path).expect("build app state");
+        let org_id = OrgId::new();
+        let integration_id = "github-ops";
+
+        state
+            .org_service
+            .upsert_integration(
+                &org_id,
+                Some(integration_id),
+                "Local Shadow".to_string(),
+                "github".to_string(),
+                OrgIntegrationKind::WorkspaceIntegration,
+                None,
+                None,
+                Some(false),
+                IntegrationSecretUpdate::Set("local-shadow-secret".to_string()),
+            )
+            .expect("save local shadow");
+
+        let canonical = sample_integration(
+            org_id,
+            integration_id,
+            "Canonical GitHub",
+            "github",
+            true,
+            true,
+        );
+        let base_url =
+            start_mock_integrations_server(canonical.clone(), Some("canonical-secret")).await;
+        state.integrations_client = Some(Arc::new(IntegrationsClient::with_base_url(
+            &base_url,
+            "internal-token",
+        )));
+
+        let resolved = resolve_org_integration(
+            &state,
+            &org_id,
+            "github",
+            &serde_json::json!({ "integration_id": integration_id }),
+        )
+        .await
+        .expect("resolve canonical integration");
+
+        assert_eq!(resolved.metadata, canonical);
+        assert_eq!(resolved.secret, "canonical-secret");
+    }
+
+    #[tokio::test]
+    async fn resolve_org_integration_prefers_canonical_provider_list() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("settings.db");
+        let mut state = crate::build_app_state(&db_path).expect("build app state");
+        let org_id = OrgId::new();
+
+        state
+            .org_service
+            .upsert_integration(
+                &org_id,
+                None,
+                "Local Disabled GitHub".to_string(),
+                "github".to_string(),
+                OrgIntegrationKind::WorkspaceIntegration,
+                None,
+                None,
+                Some(false),
+                IntegrationSecretUpdate::Set("local-shadow-secret".to_string()),
+            )
+            .expect("save local shadow");
+
+        let canonical = sample_integration(
+            org_id,
+            "canonical-github",
+            "Canonical GitHub",
+            "github",
+            true,
+            true,
+        );
+        let base_url =
+            start_mock_integrations_server(canonical.clone(), Some("canonical-secret")).await;
+        state.integrations_client = Some(Arc::new(IntegrationsClient::with_base_url(
+            &base_url,
+            "internal-token",
+        )));
+
+        let resolved = resolve_org_integration(&state, &org_id, "github", &serde_json::json!({}))
+            .await
+            .expect("resolve canonical provider integration");
+
+        assert_eq!(resolved.metadata, canonical);
+        assert_eq!(resolved.secret, "canonical-secret");
     }
 }

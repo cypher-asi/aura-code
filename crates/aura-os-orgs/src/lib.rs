@@ -1,7 +1,6 @@
 mod error;
 pub use error::OrgError;
 
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use aura_os_core::*;
@@ -258,32 +257,16 @@ impl OrgService {
         Ok(())
     }
 
-    /// Reconcile the local compatibility shadow store with the canonical list
-    /// returned by `aura-integrations`.
+    /// Refresh local compatibility shadow entries with canonical metadata
+    /// returned by `aura-integrations` without destructively pruning fallback
+    /// state.
     pub fn sync_integrations_shadow(
         &self,
-        org_id: &OrgId,
+        _org_id: &OrgId,
         integrations: &[OrgIntegration],
     ) -> Result<(), OrgError> {
-        let expected_ids = integrations
-            .iter()
-            .map(|integration| integration.integration_id.clone())
-            .collect::<HashSet<_>>();
-        for existing in self.list_integrations(org_id)? {
-            if !expected_ids.contains(&existing.integration_id) {
-                self.delete_integration(org_id, &existing.integration_id)?;
-            }
-        }
-
         for integration in integrations {
-            self.sync_integration_shadow(
-                integration,
-                if integration.has_secret {
-                    IntegrationSecretUpdate::Preserve
-                } else {
-                    IntegrationSecretUpdate::Clear
-                },
-            )?;
+            self.sync_integration_shadow(integration, IntegrationSecretUpdate::Preserve)?;
         }
         Ok(())
     }
@@ -371,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn sync_integrations_shadow_removes_missing_entries_and_clears_missing_secrets() {
+    fn sync_integrations_shadow_preserves_fallback_entries_and_secrets() {
         let db_dir = tempfile::tempdir().unwrap();
         let store = Arc::new(RocksStore::open(db_dir.path()).unwrap());
         let service = OrgService::new(store);
@@ -390,8 +373,14 @@ mod tests {
             .sync_integrations_shadow(&org_id, &[retained.clone()])
             .unwrap();
 
-        assert_eq!(service.get_integration(&org_id, "stale").unwrap(), None);
-        assert_eq!(service.get_integration_secret("stale").unwrap(), None);
+        assert_eq!(
+            service.get_integration(&org_id, "stale").unwrap(),
+            Some(stale)
+        );
+        assert_eq!(
+            service.get_integration_secret("stale").unwrap(),
+            Some("stale-secret".to_string())
+        );
         assert_eq!(
             service.get_integration(&org_id, "retained").unwrap(),
             Some(retained)
