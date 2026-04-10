@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use aura_os_integrations::{
     app_provider_contract_by_tool, app_provider_contracts, app_provider_runtime_auth,
-    control_plane_api_base_url as shared_control_plane_api_base_url,
+    app_provider_runtime_base_url, control_plane_api_base_url as shared_control_plane_api_base_url,
     installed_tool_runtime_execution_for_provider,
     installed_workspace_app_tools as build_installed_workspace_app_tools,
     installed_workspace_integrations as build_installed_workspace_integrations,
@@ -470,15 +470,21 @@ async fn load_runtime_integrations(
         let Some(secret) = load_integration_secret(state, org_id, integration).await else {
             continue;
         };
-        let auth = match app_provider_contract_by_tool_provider(&integration.provider) {
-            Some(kind) => app_provider_runtime_auth(kind, &secret),
+        let kind = match app_provider_contract_by_tool_provider(&integration.provider) {
+            Some(kind) => kind,
             None => continue,
         };
+        let auth = app_provider_runtime_auth(kind, &secret);
         by_provider
             .entry(integration.provider.clone())
             .or_default()
             .push(InstalledToolRuntimeIntegration {
                 integration_id: integration.integration_id.clone(),
+                base_url: app_provider_runtime_base_url(
+                    kind,
+                    &secret,
+                    integration.provider_config.as_ref(),
+                ),
                 auth,
                 provider_config: integration
                     .provider_config

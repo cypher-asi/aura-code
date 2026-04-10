@@ -16,7 +16,7 @@ use aura_os_core::{
     ProcessRunId, ProcessRunStatus, ProcessRunTrigger, ProjectId, TaskStatus,
 };
 use aura_os_integrations::{
-    app_provider_contracts, app_provider_runtime_auth,
+    app_provider_contracts, app_provider_runtime_auth, app_provider_runtime_base_url,
     installed_tool_runtime_execution_for_provider,
     installed_workspace_app_tools as build_installed_workspace_app_tools,
     installed_workspace_integrations as build_installed_workspace_integrations,
@@ -1357,6 +1357,11 @@ fn installed_capabilities_for_agent(
                     .map(|contract| contract.kind)?;
                 let runtime = InstalledToolRuntimeIntegration {
                     integration_id: integration.integration_id.clone(),
+                    base_url: app_provider_runtime_base_url(
+                        provider_kind,
+                        &secret,
+                        integration.provider_config.as_ref(),
+                    ),
                     auth: app_provider_runtime_auth(provider_kind, &secret),
                     provider_config: integration
                         .provider_config

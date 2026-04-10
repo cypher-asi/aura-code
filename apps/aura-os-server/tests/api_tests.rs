@@ -341,7 +341,16 @@ async fn org_tool_actions_use_saved_integrations() {
         )
         .route(
             "/github/repos/octocat/hello-world/issues",
-            post(|| async {
+            get(|| async {
+                Json(serde_json::json!([{
+                    "number": 42,
+                    "title": "Aura issue",
+                    "state": "open",
+                    "html_url": "https://github.com/octocat/hello-world/issues/42",
+                    "user": { "login": "octocat" }
+                }]))
+            })
+            .post(|| async {
                 (
                     StatusCode::CREATED,
                     Json(serde_json::json!({
@@ -354,6 +363,44 @@ async fn org_tool_actions_use_saved_integrations() {
             }),
         )
         .route(
+            "/github/repos/octocat/hello-world/issues/42/comments",
+            post(|| async {
+                (
+                    StatusCode::CREATED,
+                    Json(serde_json::json!({
+                        "id": 9001,
+                        "html_url": "https://github.com/octocat/hello-world/issues/42#issuecomment-9001",
+                        "body": "Ship it",
+                        "user": { "login": "aura" }
+                    })),
+                )
+            }),
+        )
+        .route(
+            "/github/repos/octocat/hello-world/pulls",
+            get(|| async {
+                Json(serde_json::json!([{
+                    "number": 7,
+                    "title": "Aura PR",
+                    "state": "open",
+                    "html_url": "https://github.com/octocat/hello-world/pull/7",
+                    "head": { "ref": "feature/aura" },
+                    "base": { "ref": "main" }
+                }]))
+            })
+            .post(|| async {
+                (
+                    StatusCode::CREATED,
+                    Json(serde_json::json!({
+                        "number": 7,
+                        "title": "Aura PR",
+                        "state": "open",
+                        "html_url": "https://github.com/octocat/hello-world/pull/7"
+                    })),
+                )
+            }),
+        )
+        .route(
             "/linear/graphql",
             post(|Json(payload): Json<serde_json::Value>| async move {
                 let query = payload["query"].as_str().unwrap_or_default();
@@ -361,6 +408,48 @@ async fn org_tool_actions_use_saved_integrations() {
                     Json(serde_json::json!({
                         "data": {
                             "teams": { "nodes": [{ "id": "team-1", "name": "Platform", "key": "PLAT" }] }
+                        }
+                    }))
+                } else if query.contains("AuraLinearIssues") {
+                    Json(serde_json::json!({
+                        "data": {
+                            "issues": {
+                                "nodes": [{
+                                    "id": "lin-1",
+                                    "identifier": "PLAT-42",
+                                    "title": "Aura linear issue",
+                                    "url": "https://linear.app/test/issue/PLAT-42",
+                                    "state": { "id": "state-1", "name": "Backlog", "type": "backlog" },
+                                    "team": { "id": "team-1", "name": "Platform", "key": "PLAT" }
+                                }]
+                            }
+                        }
+                    }))
+                } else if query.contains("AuraLinearIssueUpdate") {
+                    Json(serde_json::json!({
+                        "data": {
+                            "issueUpdate": {
+                                "success": true,
+                                "issue": {
+                                    "id": "lin-1",
+                                    "identifier": "PLAT-42",
+                                    "title": "Aura linear issue",
+                                    "url": "https://linear.app/test/issue/PLAT-42",
+                                    "state": { "id": "state-2", "name": "In Progress", "type": "started" }
+                                }
+                            }
+                        }
+                    }))
+                } else if query.contains("AuraLinearCommentCreate") {
+                    Json(serde_json::json!({
+                        "data": {
+                            "commentCreate": {
+                                "success": true,
+                                "comment": {
+                                    "id": "comment-1",
+                                    "body": "Looking good"
+                                }
+                            }
                         }
                     }))
                 } else {
@@ -489,6 +578,21 @@ async fn org_tool_actions_use_saved_integrations() {
             }),
         )
         .route(
+            "/freepik/v1/ai/text-to-image",
+            post(|| async {
+                Json(serde_json::json!({
+                    "data": [{
+                        "base64": "ZmFrZS1pbWFnZQ==",
+                        "has_nsfw": false
+                    }],
+                    "meta": {
+                        "image": { "size": "square_1_1", "width": 1024, "height": 1024 },
+                        "prompt": "Aura mascot"
+                    }
+                }))
+            }),
+        )
+        .route(
             "/buffer/profiles.json",
             get(|| async {
                 Json(serde_json::json!([{
@@ -540,6 +644,35 @@ async fn org_tool_actions_use_saved_integrations() {
             }),
         )
         .route(
+            "/apify/actor-runs/run-1",
+            get(|| async {
+                Json(serde_json::json!({
+                    "data": {
+                        "id": "run-1",
+                        "status": "READY",
+                        "actId": "actor-1",
+                        "defaultDatasetId": "dataset-1"
+                    }
+                }))
+            }),
+        )
+        .route(
+            "/apify/datasets/dataset-1/items",
+            get(|| async {
+                Json(serde_json::json!([
+                    { "url": "https://example.com/aura", "title": "Aura result" }
+                ]))
+            }),
+        )
+        .route(
+            "/apify/acts/my-actor/run-sync-get-dataset-items",
+            post(|| async {
+                Json(serde_json::json!([
+                    { "url": "https://example.com/sync", "title": "Sync result" }
+                ]))
+            }),
+        )
+        .route(
             "/metricool/admin/simpleProfiles",
             get(|| async {
                 Json(serde_json::json!([{
@@ -582,6 +715,38 @@ async fn org_tool_actions_use_saved_integrations() {
                         "settings": { "title": "Launch Email" },
                         "emails_sent": 0
                     }]
+                }))
+            }),
+        )
+        .route(
+            "/mailchimp/lists/list-1/members",
+            get(|| async {
+                Json(serde_json::json!({
+                    "members": [{
+                        "id": "member-1",
+                        "email_address": "user@example.com",
+                        "status": "subscribed",
+                        "full_name": "Aura User"
+                    }]
+                }))
+            })
+            .post(|| async {
+                (
+                    StatusCode::CREATED,
+                    Json(serde_json::json!({
+                        "id": "member-2",
+                        "email_address": "new@example.com",
+                        "status": "subscribed"
+                    })),
+                )
+            }),
+        )
+        .route(
+            "/mailchimp/campaigns/camp-1/content",
+            get(|| async {
+                Json(serde_json::json!({
+                    "html": "<p>Hello from Aura</p>",
+                    "plain_text": "Hello from Aura"
                 }))
             }),
         )
@@ -757,6 +922,19 @@ async fn org_tool_actions_use_saved_integrations() {
 
     let req = json_request(
         "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/github_list_issues"),
+        Some(serde_json::json!({
+            "owner": "octocat",
+            "repo": "hello-world"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let github_issues = response_json(resp).await;
+    assert_eq!(github_issues["issues"][0]["number"], 42);
+
+    let req = json_request(
+        "POST",
         &format!("/api/orgs/{org_id}/tool-actions/github_create_issue"),
         Some(serde_json::json!({
             "owner": "octocat",
@@ -771,6 +949,50 @@ async fn org_tool_actions_use_saved_integrations() {
 
     let req = json_request(
         "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/github_comment_issue"),
+        Some(serde_json::json!({
+            "owner": "octocat",
+            "repo": "hello-world",
+            "issue_number": "42",
+            "body": "Ship it"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let github_comment = response_json(resp).await;
+    assert_eq!(github_comment["comment"]["id"], 9001);
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/github_list_pull_requests"),
+        Some(serde_json::json!({
+            "owner": "octocat",
+            "repo": "hello-world"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let github_pulls = response_json(resp).await;
+    assert_eq!(github_pulls["pull_requests"][0]["number"], 7);
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/github_create_pull_request"),
+        Some(serde_json::json!({
+            "owner": "octocat",
+            "repo": "hello-world",
+            "title": "Aura PR",
+            "head": "feature/aura",
+            "base": "main"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let github_pr = response_json(resp).await;
+    assert_eq!(github_pr["pull_request"]["number"], 7);
+
+    let req = json_request(
+        "POST",
         &format!("/api/orgs/{org_id}/tool-actions/linear_list_teams"),
         Some(serde_json::json!({})),
     );
@@ -778,6 +1000,16 @@ async fn org_tool_actions_use_saved_integrations() {
     assert_eq!(resp.status(), StatusCode::OK);
     let linear_teams = response_json(resp).await;
     assert_eq!(linear_teams["teams"][0]["key"], "PLAT");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/linear_list_issues"),
+        Some(serde_json::json!({})),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let linear_issues = response_json(resp).await;
+    assert_eq!(linear_issues["issues"][0]["identifier"], "PLAT-42");
 
     let req = json_request(
         "POST",
@@ -791,6 +1023,32 @@ async fn org_tool_actions_use_saved_integrations() {
     assert_eq!(resp.status(), StatusCode::OK);
     let linear_issue = response_json(resp).await;
     assert_eq!(linear_issue["issue"]["identifier"], "PLAT-42");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/linear_update_issue_status"),
+        Some(serde_json::json!({
+            "issue_id": "lin-1",
+            "state_id": "state-2"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let linear_updated = response_json(resp).await;
+    assert_eq!(linear_updated["issue"]["state"]["name"], "In Progress");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/linear_comment_issue"),
+        Some(serde_json::json!({
+            "issue_id": "lin-1",
+            "body": "Looking good"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let linear_comment = response_json(resp).await;
+    assert_eq!(linear_comment["comment"]["id"], "comment-1");
 
     let req = json_request(
         "POST",
@@ -891,26 +1149,15 @@ async fn org_tool_actions_use_saved_integrations() {
 
     let req = json_request(
         "POST",
-        &format!("/api/orgs/{org_id}/tool-actions/buffer_list_profiles"),
-        Some(serde_json::json!({})),
-    );
-    let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let buffer_profiles = response_json(resp).await;
-    assert_eq!(buffer_profiles["profiles"][0]["id"], "profile-1");
-
-    let req = json_request(
-        "POST",
-        &format!("/api/orgs/{org_id}/tool-actions/buffer_create_update"),
+        &format!("/api/orgs/{org_id}/tool-actions/freepik_generate_image"),
         Some(serde_json::json!({
-            "profile_id": "profile-1",
-            "text": "Ship it"
+            "prompt": "Aura mascot"
         })),
     );
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let buffer_update = response_json(resp).await;
-    assert_eq!(buffer_update["updates"][0]["id"], "update-1");
+    let freepik_images = response_json(resp).await;
+    assert_eq!(freepik_images["images"][0]["has_nsfw"], false);
 
     let req = json_request(
         "POST",
@@ -934,6 +1181,43 @@ async fn org_tool_actions_use_saved_integrations() {
     assert_eq!(resp.status(), StatusCode::OK);
     let apify_run = response_json(resp).await;
     assert_eq!(apify_run["run"]["id"], "run-1");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/apify_get_run"),
+        Some(serde_json::json!({
+            "run_id": "run-1"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let apify_run_details = response_json(resp).await;
+    assert_eq!(apify_run_details["run"]["default_dataset_id"], "dataset-1");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/apify_get_dataset_items"),
+        Some(serde_json::json!({
+            "dataset_id": "dataset-1"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let apify_items = response_json(resp).await;
+    assert_eq!(apify_items["items"][0]["title"], "Aura result");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/apify_run_actor_get_dataset_items"),
+        Some(serde_json::json!({
+            "actor_id": "my-actor",
+            "input": { "query": "aura" }
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let apify_sync_items = response_json(resp).await;
+    assert_eq!(apify_sync_items["items"][0]["title"], "Sync result");
 
     let req = json_request(
         "POST",
@@ -977,6 +1261,46 @@ async fn org_tool_actions_use_saved_integrations() {
     assert_eq!(resp.status(), StatusCode::OK);
     let mailchimp_campaigns = response_json(resp).await;
     assert_eq!(mailchimp_campaigns["campaigns"][0]["id"], "camp-1");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/mailchimp_list_members"),
+        Some(serde_json::json!({
+            "list_id": "list-1"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let mailchimp_members = response_json(resp).await;
+    assert_eq!(mailchimp_members["members"][0]["id"], "member-1");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/mailchimp_add_member"),
+        Some(serde_json::json!({
+            "list_id": "list-1",
+            "email_address": "new@example.com"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let mailchimp_member = response_json(resp).await;
+    assert_eq!(mailchimp_member["member"]["id"], "member-2");
+
+    let req = json_request(
+        "POST",
+        &format!("/api/orgs/{org_id}/tool-actions/mailchimp_get_campaign_content"),
+        Some(serde_json::json!({
+            "campaign_id": "camp-1"
+        })),
+    );
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let mailchimp_content = response_json(resp).await;
+    assert_eq!(
+        mailchimp_content["content"]["plain_text"],
+        "Hello from Aura"
+    );
 
     let req = json_request(
         "POST",

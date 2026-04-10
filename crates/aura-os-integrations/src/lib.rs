@@ -142,7 +142,7 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::Freepik,
-            trusted: false,
+            trusted: true,
             request: AppProviderRequestContract {
                 env_base_url_key: Some("AURA_FREEPIK_API_BASE_URL"),
                 default_base_url: Some("https://api.freepik.com"),
@@ -182,9 +182,9 @@ pub fn app_provider_contracts() -> &'static [AppProviderContract] {
         },
         AppProviderContract {
             kind: AppProviderKind::Mailchimp,
-            trusted: false,
+            trusted: true,
             request: AppProviderRequestContract {
-                env_base_url_key: None,
+                env_base_url_key: Some("AURA_MAILCHIMP_API_BASE_URL"),
                 default_base_url: None,
                 auth_scheme: AppProviderAuthScheme::Basic {
                     username: "anystring",
@@ -229,14 +229,16 @@ pub fn app_provider_request_contract(kind: AppProviderKind) -> &'static AppProvi
 
 pub fn app_provider_base_url(kind: AppProviderKind) -> Option<String> {
     let contract = app_provider_request_contract(kind);
-    contract.default_base_url.map(|default_url| {
+    let env_override = contract
+        .env_base_url_key
+        .and_then(std::env::var_os)
+        .and_then(|value| value.into_string().ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    env_override.or_else(|| {
         contract
-            .env_base_url_key
-            .and_then(std::env::var_os)
-            .and_then(|value| value.into_string().ok())
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| default_url.to_string())
+            .default_base_url
+            .map(|default_url| default_url.to_string())
     })
 }
 
@@ -270,7 +272,7 @@ pub fn installed_tool_runtime_execution_for_provider(
     kind: AppProviderKind,
     integrations: Vec<InstalledToolRuntimeIntegration>,
 ) -> Option<InstalledToolRuntimeExecution> {
-    let base_url = app_provider_base_url(kind)?;
+    let base_url = app_provider_base_url(kind).unwrap_or_default();
     let static_headers = app_provider_request_contract(kind)
         .static_headers
         .iter()
@@ -327,12 +329,22 @@ pub fn app_provider_authenticated_url(
     path: &str,
     secret: &str,
 ) -> Result<reqwest::Url, String> {
-    let base_url = app_provider_base_url(kind).ok_or_else(|| {
-        format!(
-            "provider `{}` does not define a base url",
-            kind.provider_id()
-        )
-    })?;
+    app_provider_authenticated_url_with_config(kind, path, secret, None)
+}
+
+pub fn app_provider_authenticated_url_with_config(
+    kind: AppProviderKind,
+    path: &str,
+    secret: &str,
+    provider_config: Option<&Value>,
+) -> Result<reqwest::Url, String> {
+    let base_url =
+        app_provider_runtime_base_url(kind, secret, provider_config).ok_or_else(|| {
+            format!(
+                "provider `{}` does not define a base url",
+                kind.provider_id()
+            )
+        })?;
     let mut url = reqwest::Url::parse(&format!("{base_url}{path}"))
         .map_err(|e| format!("invalid {} base url: {e}", kind.provider_id()))?;
 
@@ -343,6 +355,40 @@ pub fn app_provider_authenticated_url(
     }
 
     Ok(url)
+}
+
+pub fn app_provider_runtime_base_url(
+    kind: AppProviderKind,
+    secret: &str,
+    provider_config: Option<&Value>,
+) -> Option<String> {
+    if let Some(base_url) = app_provider_base_url(kind) {
+        return Some(base_url);
+    }
+
+    match kind {
+        AppProviderKind::Mailchimp => mailchimp_runtime_base_url(secret, provider_config),
+        _ => None,
+    }
+}
+
+fn mailchimp_runtime_base_url(secret: &str, provider_config: Option<&Value>) -> Option<String> {
+    let server_prefix = provider_config
+        .and_then(Value::as_object)
+        .and_then(|config| config.get("serverPrefix"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            secret
+                .rsplit('-')
+                .next()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })?;
+    Some(format!("https://{server_prefix}.api.mailchimp.com/3.0"))
 }
 
 fn default_json_headers() -> HeaderMap {
@@ -372,7 +418,9 @@ pub fn org_integration_tool_manifest_entries() -> &'static [OrgIntegrationToolMa
                     || entry
                         .provider
                         .as_deref()
-                        .map(|provider| !is_trusted_integration_provider(provider))
+                        .map(|provider| {
+                            provider != "buffer" && !is_trusted_integration_provider(provider)
+                        })
                         .unwrap_or(true)
             })
             .cloned()
@@ -590,8 +638,8 @@ mod tests {
                 true,
             ),
             test_integration(
-                "Buffer",
-                "buffer",
+                "Freepik",
+                "freepik",
                 OrgIntegrationKind::WorkspaceIntegration,
                 true,
                 true,
@@ -614,10 +662,10 @@ mod tests {
             .iter()
             .find(|tool| tool.name == "linear_list_teams")
             .expect("linear tool");
-        let buffer = tools
+        let freepik = tools
             .iter()
-            .find(|tool| tool.name == "buffer_create_update")
-            .expect("buffer tool");
+            .find(|tool| tool.name == "freepik_improve_prompt")
+            .expect("freepik tool");
         let apify = tools
             .iter()
             .find(|tool| tool.name == "apify_run_actor")
@@ -636,10 +684,10 @@ mod tests {
             "trusted linear tool should carry runtime metadata",
         );
         assert!(
-            buffer
+            freepik
                 .metadata
                 .contains_key(TRUSTED_INTEGRATION_RUNTIME_METADATA_KEY),
-            "trusted buffer tool should carry runtime metadata",
+            "trusted freepik tool should carry runtime metadata",
         );
         assert!(
             apify
@@ -690,6 +738,13 @@ mod tests {
                 false,
                 true,
             ),
+            test_integration(
+                "Buffer",
+                "buffer",
+                OrgIntegrationKind::WorkspaceIntegration,
+                true,
+                true,
+            ),
         ];
 
         let tools = installed_workspace_app_tools(&org_id, &integrations, "jwt-123");
@@ -701,6 +756,7 @@ mod tests {
         assert!(names.contains("brave_search_web"));
         assert!(names.contains("brave_search_news"));
         assert!(!names.contains("github_list_repos"));
+        assert!(!names.contains("buffer_create_update"));
 
         let brave = tools
             .iter()

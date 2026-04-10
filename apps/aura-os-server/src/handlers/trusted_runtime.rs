@@ -1,8 +1,8 @@
 use aura_os_integrations::trusted_methods::TrustedIntegrationArgSource;
 use aura_os_integrations::{
-    app_provider_authenticated_url, app_provider_base_url, app_provider_headers, AppProviderKind,
-    TrustedIntegrationArgBinding, TrustedIntegrationArgValueType, TrustedIntegrationHttpMethod,
-    TrustedIntegrationResultField, TrustedIntegrationResultTransform,
+    app_provider_authenticated_url_with_config, app_provider_base_url, app_provider_headers,
+    AppProviderKind, TrustedIntegrationArgBinding, TrustedIntegrationArgValueType,
+    TrustedIntegrationHttpMethod, TrustedIntegrationResultField, TrustedIntegrationResultTransform,
     TrustedIntegrationRuntimeSpec, TrustedIntegrationSuccessGuard,
 };
 use reqwest::header::{HeaderMap, ACCEPT};
@@ -174,8 +174,9 @@ fn build_runtime_url(
     args: &Value,
 ) -> ApiResult<String> {
     let expanded_path = expand_path_template(path, args)?;
-    let mut url = app_provider_authenticated_url(kind, &expanded_path, secret)
-        .map_err(ApiError::bad_request)?;
+    let mut url =
+        app_provider_authenticated_url_with_config(kind, &expanded_path, secret, provider_config)
+            .map_err(ApiError::bad_request)?;
     for binding in query_bindings {
         if let Some(value) = resolve_binding_value(args, provider_config, binding)? {
             append_query_value(&mut url, &binding.target, value);
