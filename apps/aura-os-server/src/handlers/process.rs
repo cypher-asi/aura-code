@@ -17,6 +17,7 @@ use aura_os_storage::{
 };
 
 use crate::error::{map_network_error, map_storage_error, ApiError, ApiResult};
+use crate::handlers::permissions::require_process_edit_permission;
 use crate::state::{AppState, AuthJwt, AuthSession};
 
 // ---------------------------------------------------------------------------
@@ -124,6 +125,26 @@ fn resolve_remote_folder_org_id(
     }
 
     select_remote_process_org_id(None, org_ids)
+}
+
+/// Fetch a remote process and check that the user has edit permission (creator or admin).
+async fn check_remote_process_edit_permission(
+    state: &AppState,
+    client: &StorageClient,
+    process_id: &str,
+    jwt: &str,
+    session: &aura_os_core::ZeroAuthSession,
+) -> ApiResult<()> {
+    let process = client
+        .get_process(process_id, jwt)
+        .await
+        .map_err(map_storage_error)?;
+    let org_id = process
+        .org_id
+        .as_deref()
+        .ok_or_else(|| ApiError::forbidden("process has no org"))?;
+    let created_by = process.created_by.as_deref().unwrap_or_default();
+    require_process_edit_permission(state, org_id, created_by, jwt, session).await
 }
 
 // ---------------------------------------------------------------------------
@@ -542,11 +563,12 @@ pub(crate) async fn get_process(
 pub(crate) async fn update_process(
     State(state): State<AppState>,
     AuthJwt(jwt): AuthJwt,
-    AuthSession(_session): AuthSession,
+    AuthSession(session): AuthSession,
     Path(id): Path<String>,
     Json(req): Json<UpdateProcessRequest>,
 ) -> ApiResult<Json<Process>> {
     if let Some(client) = remote_process_storage_client(&state) {
+        check_remote_process_edit_permission(&state, client, &id, &jwt, &session).await?;
         let storage_req = aura_os_storage::UpdateProcessRequest {
             name: req.name.clone(),
             description: req.description.clone(),
@@ -563,7 +585,7 @@ pub(crate) async fn update_process(
             .map_err(map_storage_error)?;
         return Ok(Json(conv_process(sp)));
     }
-
+    // Local-only mode: ownership check only (no network client for admin role verification)
     let process_id: ProcessId = id
         .parse()
         .map_err(|_| ApiError::bad_request("invalid process ID"))?;
@@ -574,6 +596,10 @@ pub(crate) async fn update_process(
         .get_process(&process_id)
         .map_err(|e| ApiError::internal(e.to_string()))?
         .ok_or_else(|| ApiError::not_found("process not found"))?;
+
+    if process.user_id != session.user_id {
+        return Err(ApiError::forbidden("only the process creator can edit this process"));
+    }
 
     if let Some(name) = req.name {
         process.name = name;
@@ -610,20 +636,32 @@ pub(crate) async fn update_process(
 pub(crate) async fn delete_process(
     State(state): State<AppState>,
     AuthJwt(jwt): AuthJwt,
-    AuthSession(_session): AuthSession,
+    AuthSession(session): AuthSession,
     Path(id): Path<String>,
 ) -> ApiResult<Json<DeleteResponse>> {
     if let Some(client) = remote_process_storage_client(&state) {
+        check_remote_process_edit_permission(&state, client, &id, &jwt, &session).await?;
         client
             .delete_process(&id, &jwt)
             .await
             .map_err(map_storage_error)?;
         return Ok(Json(DeleteResponse { deleted: true }));
     }
-
+    // Local-only mode: ownership check only (no network client for admin role verification)
     let process_id: ProcessId = id
         .parse()
         .map_err(|_| ApiError::bad_request("invalid process ID"))?;
+
+    let process = state
+        .super_agent_service
+        .process_store
+        .get_process(&process_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .ok_or_else(|| ApiError::not_found("process not found"))?;
+
+    if process.user_id != session.user_id {
+        return Err(ApiError::forbidden("only the process creator can delete this process"));
+    }
 
     state
         .super_agent_service
@@ -698,11 +736,12 @@ pub(crate) async fn list_nodes(
 pub(crate) async fn create_node(
     State(state): State<AppState>,
     AuthJwt(jwt): AuthJwt,
-    AuthSession(_session): AuthSession,
+    AuthSession(session): AuthSession,
     Path(id): Path<String>,
     Json(req): Json<CreateNodeRequest>,
 ) -> ApiResult<Json<ProcessNode>> {
     if let Some(client) = remote_process_storage_client(&state) {
+        check_remote_process_edit_permission(&state, client, &id, &jwt, &session).await?;
         let storage_req = aura_os_storage::CreateProcessNodeRequest {
             node_type: serde_json::to_value(req.node_type)
                 .ok()
@@ -725,10 +764,20 @@ pub(crate) async fn create_node(
             .map_err(map_storage_error)?;
         return Ok(Json(conv_node(node)));
     }
-
+    // Local-only mode: ownership check on parent process
     let process_id: ProcessId = id
         .parse()
         .map_err(|_| ApiError::bad_request("invalid process ID"))?;
+
+    let process = state
+        .super_agent_service
+        .process_store
+        .get_process(&process_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .ok_or_else(|| ApiError::not_found("process not found"))?;
+    if process.user_id != session.user_id {
+        return Err(ApiError::forbidden("only the process creator can edit this process"));
+    }
 
     let now = Utc::now();
     let node = ProcessNode {
@@ -761,11 +810,12 @@ pub(crate) async fn create_node(
 pub(crate) async fn update_node(
     State(state): State<AppState>,
     AuthJwt(jwt): AuthJwt,
-    AuthSession(_session): AuthSession,
+    AuthSession(session): AuthSession,
     Path((id, node_id_str)): Path<(String, String)>,
     Json(req): Json<UpdateNodeRequest>,
 ) -> ApiResult<Json<ProcessNode>> {
     if let Some(client) = remote_process_storage_client(&state) {
+        check_remote_process_edit_permission(&state, client, &id, &jwt, &session).await?;
         let storage_req = aura_os_storage::UpdateProcessNodeRequest {
             label: req.label.clone(),
             agent_id: req
@@ -784,9 +834,21 @@ pub(crate) async fn update_node(
         return Ok(Json(conv_node(node)));
     }
 
+    // Local-only mode: ownership check on parent process
     let process_id: ProcessId = id
         .parse()
         .map_err(|_| ApiError::bad_request("invalid process ID"))?;
+
+    let process = state
+        .super_agent_service
+        .process_store
+        .get_process(&process_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .ok_or_else(|| ApiError::not_found("process not found"))?;
+    if process.user_id != session.user_id {
+        return Err(ApiError::forbidden("only the process creator can edit this process"));
+    }
+
     let node_id: ProcessNodeId = node_id_str
         .parse()
         .map_err(|_| ApiError::bad_request("invalid node ID"))?;
@@ -834,10 +896,11 @@ pub(crate) async fn update_node(
 pub(crate) async fn delete_node(
     State(state): State<AppState>,
     AuthJwt(jwt): AuthJwt,
-    AuthSession(_session): AuthSession,
+    AuthSession(session): AuthSession,
     Path((id, node_id_str)): Path<(String, String)>,
 ) -> ApiResult<Json<DeleteResponse>> {
     if let Some(client) = remote_process_storage_client(&state) {
+        check_remote_process_edit_permission(&state, client, &id, &jwt, &session).await?;
         client
             .delete_process_node(&id, &node_id_str, &jwt)
             .await
@@ -845,9 +908,21 @@ pub(crate) async fn delete_node(
         return Ok(Json(DeleteResponse { deleted: true }));
     }
 
+    // Local-only mode: ownership check on parent process
     let process_id: ProcessId = id
         .parse()
         .map_err(|_| ApiError::bad_request("invalid process ID"))?;
+
+    let process = state
+        .super_agent_service
+        .process_store
+        .get_process(&process_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .ok_or_else(|| ApiError::not_found("process not found"))?;
+    if process.user_id != session.user_id {
+        return Err(ApiError::forbidden("only the process creator can delete from this process"));
+    }
+
     let node_id: ProcessNodeId = node_id_str
         .parse()
         .map_err(|_| ApiError::bad_request("invalid node ID"))?;
@@ -901,11 +976,12 @@ pub(crate) async fn list_connections(
 pub(crate) async fn create_connection(
     State(state): State<AppState>,
     AuthJwt(jwt): AuthJwt,
-    AuthSession(_session): AuthSession,
+    AuthSession(session): AuthSession,
     Path(id): Path<String>,
     Json(req): Json<CreateConnectionRequest>,
 ) -> ApiResult<Json<ProcessNodeConnection>> {
     if let Some(client) = remote_process_storage_client(&state) {
+        check_remote_process_edit_permission(&state, client, &id, &jwt, &session).await?;
         let storage_req = aura_os_storage::CreateProcessConnectionRequest {
             source_node_id: req.source_node_id.clone(),
             source_handle: req.source_handle.clone(),
@@ -918,10 +994,20 @@ pub(crate) async fn create_connection(
             .map_err(map_storage_error)?;
         return Ok(Json(conv_connection(conn)));
     }
-
+    // Local-only mode: ownership check on parent process
     let process_id: ProcessId = id
         .parse()
         .map_err(|_| ApiError::bad_request("invalid process ID"))?;
+
+    let process = state
+        .super_agent_service
+        .process_store
+        .get_process(&process_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .ok_or_else(|| ApiError::not_found("process not found"))?;
+    if process.user_id != session.user_id {
+        return Err(ApiError::forbidden("only the process creator can edit this process"));
+    }
 
     let conn = ProcessNodeConnection {
         connection_id: ProcessNodeConnectionId::new(),
@@ -960,20 +1046,32 @@ pub(crate) async fn create_connection(
 pub(crate) async fn delete_connection(
     State(state): State<AppState>,
     AuthJwt(jwt): AuthJwt,
-    AuthSession(_session): AuthSession,
+    AuthSession(session): AuthSession,
     Path((id, conn_id_str)): Path<(String, String)>,
 ) -> ApiResult<Json<DeleteResponse>> {
     if let Some(client) = remote_process_storage_client(&state) {
+        check_remote_process_edit_permission(&state, client, &id, &jwt, &session).await?;
         client
             .delete_process_connection(&id, &conn_id_str, &jwt)
             .await
             .map_err(map_storage_error)?;
         return Ok(Json(DeleteResponse { deleted: true }));
     }
-
+    // Local-only mode: ownership check on parent process
     let process_id: ProcessId = id
         .parse()
         .map_err(|_| ApiError::bad_request("invalid process ID"))?;
+
+    let process = state
+        .super_agent_service
+        .process_store
+        .get_process(&process_id)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .ok_or_else(|| ApiError::not_found("process not found"))?;
+    if process.user_id != session.user_id {
+        return Err(ApiError::forbidden("only the process creator can delete from this process"));
+    }
+
     let connection_id: ProcessNodeConnectionId = conn_id_str
         .parse()
         .map_err(|_| ApiError::bad_request("invalid connection ID"))?;
