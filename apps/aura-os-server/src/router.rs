@@ -89,6 +89,7 @@ pub fn create_router_with_interface(state: AppState, interface_dir: Option<PathB
         ));
 
     let api_router = Router::new()
+        .route("/health", get(system::health))
         .merge(auth_routes())
         .merge(protected_api_router)
         .layer(cors)
