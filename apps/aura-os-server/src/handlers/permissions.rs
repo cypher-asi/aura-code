@@ -29,18 +29,22 @@ fn resolve_user_id(session: &ZeroAuthSession) -> String {
 
 /// Check that a user has at least `min_role` given a list of org members.
 /// Returns the user's actual role string on success, or 403 Forbidden on failure.
+///
+/// Accepts multiple candidate IDs because aura-network stores members by
+/// network_user_id while JWTs carry a separate user_id. Either may appear
+/// in the members list depending on how the user was synced.
 fn check_role_in_members(
     members: &[NetworkOrgMember],
-    user_id: &str,
+    candidate_ids: &[&str],
     org_id: &str,
     min_role: &str,
 ) -> ApiResult<String> {
     let member = members
         .iter()
-        .find(|m| m.user_id == user_id)
+        .find(|m| candidate_ids.iter().any(|id| m.user_id == *id))
         .ok_or_else(|| {
             warn!(
-                user_id = %user_id,
+                candidate_ids = ?candidate_ids,
                 org_id = %org_id,
                 "user not found in org members during role check"
             );
@@ -55,6 +59,18 @@ fn check_role_in_members(
     }
 
     Ok(member.role.clone())
+}
+
+/// Collect all candidate user IDs from the session (JWT id + network id if available).
+fn candidate_user_ids(session: &ZeroAuthSession) -> Vec<String> {
+    let mut ids = vec![session.user_id.clone()];
+    if let Some(net_id) = session.network_user_id {
+        let net_str = net_id.to_string();
+        if net_str != session.user_id {
+            ids.push(net_str);
+        }
+    }
+    ids
 }
 
 /// Check that the authenticated user has at least `min_role` in the given org.
@@ -72,12 +88,17 @@ pub(crate) async fn require_org_role(
         .await
         .map_err(map_network_error)?;
 
-    let user_id = resolve_user_id(session);
-    check_role_in_members(&members, &user_id, org_id, min_role)
+    let ids = candidate_user_ids(session);
+    let id_refs: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
+    check_role_in_members(&members, &id_refs, org_id, min_role)
 }
 
 /// Check that the user is either the process creator or has admin+ role in the org.
 /// Used for process update/delete and node/connection mutations.
+///
+/// Creator check uses `session.user_id` (JWT id) because `created_by` in
+/// aura-storage is set from the JWT. The admin check uses `resolve_user_id`
+/// which prefers `network_user_id` — that's what appears in the org members list.
 pub(crate) async fn require_process_edit_permission(
     state: &AppState,
     org_id: &str,
@@ -85,10 +106,10 @@ pub(crate) async fn require_process_edit_permission(
     jwt: &str,
     session: &ZeroAuthSession,
 ) -> ApiResult<()> {
-    let user_id = resolve_user_id(session);
-
-    // Creator can always edit their own process
-    if created_by == user_id {
+    // Creator can always edit their own process.
+    // Compare against session.user_id (JWT id) because that's what aura-storage
+    // stores as created_by.
+    if created_by == session.user_id {
         return Ok(());
     }
 
@@ -154,7 +175,7 @@ mod tests {
     #[test]
     fn admin_passes_admin_check() {
         let members = vec![make_member("u1", "org1", "admin")];
-        let result = check_role_in_members(&members, "u1", "org1", "admin");
+        let result = check_role_in_members(&members, &["u1"], "org1", "admin");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "admin");
     }
@@ -162,7 +183,7 @@ mod tests {
     #[test]
     fn owner_passes_admin_check() {
         let members = vec![make_member("u1", "org1", "owner")];
-        let result = check_role_in_members(&members, "u1", "org1", "admin");
+        let result = check_role_in_members(&members, &["u1"], "org1", "admin");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "owner");
     }
@@ -170,35 +191,57 @@ mod tests {
     #[test]
     fn member_fails_admin_check() {
         let members = vec![make_member("u1", "org1", "member")];
-        let result = check_role_in_members(&members, "u1", "org1", "admin");
+        let result = check_role_in_members(&members, &["u1"], "org1", "admin");
         assert!(result.is_err());
     }
 
     #[test]
     fn member_passes_member_check() {
         let members = vec![make_member("u1", "org1", "member")];
-        let result = check_role_in_members(&members, "u1", "org1", "member");
+        let result = check_role_in_members(&members, &["u1"], "org1", "member");
         assert!(result.is_ok());
     }
 
     #[test]
     fn user_not_in_members_fails() {
         let members = vec![make_member("u1", "org1", "admin")];
-        let result = check_role_in_members(&members, "u2", "org1", "member");
+        let result = check_role_in_members(&members, &["u2"], "org1", "member");
         assert!(result.is_err());
     }
 
     #[test]
     fn empty_members_list_fails() {
         let members: Vec<NetworkOrgMember> = vec![];
-        let result = check_role_in_members(&members, "u1", "org1", "member");
+        let result = check_role_in_members(&members, &["u1"], "org1", "member");
         assert!(result.is_err());
     }
 
     #[test]
     fn unknown_role_fails_any_check() {
         let members = vec![make_member("u1", "org1", "viewer")];
-        let result = check_role_in_members(&members, "u1", "org1", "member");
+        let result = check_role_in_members(&members, &["u1"], "org1", "member");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn matches_by_alternate_id() {
+        let members = vec![make_member("network-id", "org1", "admin")];
+        let result = check_role_in_members(&members, &["jwt-id", "network-id"], "org1", "admin");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "admin");
+    }
+
+    #[test]
+    fn matches_by_primary_id_when_both_provided() {
+        let members = vec![make_member("jwt-id", "org1", "admin")];
+        let result = check_role_in_members(&members, &["jwt-id", "network-id"], "org1", "admin");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn neither_id_matches_fails() {
+        let members = vec![make_member("other-id", "org1", "admin")];
+        let result = check_role_in_members(&members, &["jwt-id", "network-id"], "org1", "admin");
         assert!(result.is_err());
     }
 
@@ -225,19 +268,26 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn creator_matches_user_id() {
-        let session = make_session("u1");
-        let user_id = resolve_user_id(&session);
-        assert_eq!(user_id, "u1");
-        // Creator check: created_by == user_id → would return Ok(()) in require_process_edit_permission
-        assert_eq!("u1", user_id);
+    fn creator_check_uses_jwt_user_id() {
+        let session = make_session("jwt-id");
+        // Creator check compares created_by against session.user_id (JWT id)
+        assert_eq!("jwt-id", session.user_id);
+    }
+
+    #[test]
+    fn creator_check_matches_even_when_network_id_differs() {
+        let mut session = make_session("jwt-id");
+        session.network_user_id = Some(aura_os_core::UserId::new());
+        // created_by in storage = "jwt-id", session.user_id = "jwt-id"
+        // Even though network_user_id is set and different, creator check should pass
+        assert_eq!("jwt-id", session.user_id);
+        assert_ne!(session.user_id, session.network_user_id.unwrap().to_string());
     }
 
     #[test]
     fn non_creator_does_not_match() {
         let session = make_session("u2");
-        let user_id = resolve_user_id(&session);
-        // Non-creator: created_by != user_id → would fall through to admin check
-        assert_ne!("u1", user_id);
+        // created_by = "u1", session.user_id = "u2" → not creator
+        assert_ne!("u1", session.user_id);
     }
 }

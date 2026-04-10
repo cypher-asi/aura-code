@@ -1291,9 +1291,16 @@ pub(crate) async fn update_folder(
     Json(req): Json<UpdateFolderRequest>,
 ) -> ApiResult<Json<ProcessFolder>> {
     if let Some(client) = remote_process_storage_client(&state) {
+        // Find the folder's org_id by listing all user folders and matching by ID
         let org_ids = resolve_org_ids(&state, &jwt).await?;
-        let org_id = select_remote_process_org_id(None, &org_ids)?;
-        require_org_role(&state, &org_id, &jwt, &session, "admin").await?;
+        let all_folders = list_remote_process_folders_for_orgs(client, &org_ids, &jwt).await?;
+        let folder_org = all_folders
+            .iter()
+            .find(|f| f.id == id)
+            .and_then(|f| f.org_id.as_deref())
+            .ok_or_else(|| ApiError::not_found("folder not found"))?
+            .to_string();
+        require_org_role(&state, &folder_org, &jwt, &session, "admin").await?;
         let storage_req = aura_os_storage::UpdateProcessFolderRequest {
             name: req.name.clone(),
         };
@@ -1447,8 +1454,15 @@ pub(crate) async fn delete_folder(
 ) -> ApiResult<Json<DeleteResponse>> {
     if let Some(client) = remote_process_storage_client(&state) {
         let org_ids = resolve_org_ids(&state, &jwt).await?;
-        let org_id = select_remote_process_org_id(None, &org_ids)?;
-        require_org_role(&state, &org_id, &jwt, &session, "admin").await?;
+        // Find the folder's org_id by listing all user folders and matching by ID
+        let all_folders = list_remote_process_folders_for_orgs(client, &org_ids, &jwt).await?;
+        let folder_org = all_folders
+            .iter()
+            .find(|f| f.id == id)
+            .and_then(|f| f.org_id.as_deref())
+            .ok_or_else(|| ApiError::not_found("folder not found"))?
+            .to_string();
+        require_org_role(&state, &folder_org, &jwt, &session, "admin").await?;
         // Unassign processes from this folder before deleting
         let processes = list_remote_processes_for_orgs(client, &org_ids, &jwt).await?;
         for p in &processes {
