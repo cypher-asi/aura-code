@@ -11,7 +11,7 @@ use tracing::warn;
 use aura_os_network::{NetworkClient, NetworkComment, NetworkFeedEvent, NetworkProfile};
 
 use crate::error::{map_network_error, ApiResult};
-use crate::state::{AppState, AuthJwt};
+use crate::state::{AppState, AuthJwt, AuthSession};
 
 fn is_uuid(s: &str) -> bool {
     s.len() == 36 && s.chars().filter(|c| *c == '-').count() == 4
@@ -211,9 +211,11 @@ pub(crate) async fn list_feed(
 pub(crate) async fn create_post(
     State(state): State<AppState>,
     AuthJwt(jwt): AuthJwt,
+    AuthSession(session): AuthSession,
     Json(req): Json<CreatePostRequest>,
 ) -> ApiResult<(StatusCode, Json<FeedEventResponse>)> {
     let client = state.require_network_client()?;
+    let profile_id_str = session.profile_id.map(|id| id.to_string());
     let post = client
         .create_post(&aura_os_network::client::CreatePostParams {
             title: &req.title,
@@ -221,6 +223,7 @@ pub(crate) async fn create_post(
             summary: req.summary.as_deref(),
             post_type: req.post_type.as_deref(),
             metadata: req.metadata.clone(),
+            profile_id: profile_id_str.as_deref(),
             project_id: None,
             agent_id: None,
             user_id: None,
